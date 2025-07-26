@@ -44,7 +44,7 @@ export default function AI() {
           'Authorization': `Bearer ${process.env.EXPO_PUBLIC_GROQ_API_KEY}`,
         },
         body: JSON.stringify({
-          model: 'qwen/qwen3-32b',
+          model: 'gemma2-9b-it',
           messages: [...messages, userMessage].map(msg => ({
             role: msg.role,
             content: msg.content,

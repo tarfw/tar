@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     });
 
     const result = await generateText({
-      model: groqClient('qwen/qwen3-32b'),
+      model: groqClient('gemma2-9b-it'),
       messages,
       maxTokens: 1000,
     });

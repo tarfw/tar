@@ -16,6 +16,7 @@
     "@react-native-community/netinfo": "^11.4.1",
     "ai": "^4.3.19",
     "expo": "~53.0.20",
+    "expo-constants": "^17.1.7",
     "expo-router": "^5.1.4",
     "expo-status-bar": "~2.2.3",
     "nativewind": "^4.1.23",

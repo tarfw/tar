@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "tar",
+    "slug": "tar",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "tar2",
+    "linking": {
+      "prefixes": ["tar2://", "https://tar2.app"],
+      "config": {
+        "screens": {
+          "(tabs)": {
+            "screens": {
+              "workspace": "workspace",
+              "ai": "ai",
+              "tasks": "tasks",
+              "people": "people"
+            }
+          },
+          "+not-found": "*"
+        }
+      }
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.tarfwrk.tar"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "00a0a2a8-4862-4b3f-afdc-16d2e3a6cadb"
+      }
+    }
+  }
+}

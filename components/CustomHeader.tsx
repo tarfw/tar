@@ -16,6 +16,7 @@ interface CustomHeaderProps {
 }
 
 const modules = {
+  spaces: { title: 'Spaces', icon: 'star' },
   space: { title: 'Space', icon: 'home' },
   sale: { title: 'Sale', icon: 'tag' },
   products: { title: 'Products', icon: 'package' },
@@ -45,13 +46,15 @@ export default function CustomHeader({ title }: CustomHeaderProps) {
             style={styles.moduleButton}
           >
             {currentModule ? (
-              currentModule.icon === 'home' ? (
+              currentModule.icon === 'star' ? (
+                <Text style={styles.emojiIcon}>💫</Text>
+              ) : currentModule.icon === 'home' ? (
                 <Text style={styles.emojiIcon}>🌌</Text>
               ) : (
                 <Feather name={currentModule.icon as any} size={20} color="#1e293b" />
               )
             ) : (
-              <Text style={styles.emojiIcon}>🌌</Text>
+              <Text style={styles.emojiIcon}>💫</Text>
             )}
           </TouchableOpacity>
           

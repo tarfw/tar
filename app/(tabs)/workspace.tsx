@@ -37,6 +37,13 @@ interface Item {
   titles?: string;
 }
 
+interface WorkspaceService {
+  id: string;
+  title?: string;
+  icon?: string;
+  category?: string;
+}
+
 export default function Workspace() {
   const { selectedModule, setPageProp, setSelectedModule } = useModule();
   const searchParams = useLocalSearchParams();
@@ -44,6 +51,7 @@ export default function Workspace() {
   const [newSaleTitle, setNewSaleTitle] = useState('');
   const [newProductTitle, setNewProductTitle] = useState('');
   const [newItemTitle, setNewItemTitle] = useState('');
+  const [newServiceTitle, setNewServiceTitle] = useState('');
 
   // Handle deep link parameters
   useEffect(() => {
@@ -58,7 +66,7 @@ export default function Workspace() {
     }
   }, [searchParams, selectedModule, setSelectedModule, setPageProp]);
 
-  // Query all data from InstantDB
+  // Query data from InstantDB (excluding workspaceServices which are static)
   const { data, isLoading, error } = db.useQuery({
     spaces: {},
     sales: {},
@@ -71,10 +79,35 @@ export default function Workspace() {
   const products = data?.products || [];
   const items = data?.items || [];
 
+  // Search query for filtering services
+  const [searchQuery, setSearchQuery] = useState('');
+
   const handleItemPress = (title: string, id: string) => {
     setPageProp({ title, id });
     router.push('/ai');
   };
+
+  // Predefined workspace services
+  const predefinedServices = [
+    { title: 'Book Taxi', icon: 'navigation', category: 'Transportation' },
+    { title: 'Book Auto', icon: 'truck', category: 'Transportation' },
+    { title: 'Order Food', icon: 'coffee', category: 'Food & Dining' },
+    { title: 'Book Bus', icon: 'navigation-2', category: 'Transportation' },
+    { title: 'Book Cinema', icon: 'film', category: 'Entertainment' },
+    { title: 'Book Hotel', icon: 'home', category: 'Travel' },
+    { title: 'Book Flight', icon: 'send', category: 'Travel' },
+    { title: 'Order Grocery', icon: 'shopping-bag', category: 'Shopping' },
+    { title: 'Book Doctor', icon: 'heart', category: 'Healthcare' },
+    { title: 'Book Salon', icon: 'scissors', category: 'Personal Care' },
+    { title: 'Laundry Service', icon: 'droplet', category: 'Services' },
+    { title: 'House Cleaning', icon: 'home', category: 'Services' },
+  ];
+
+  // Filter services based on search query
+  const filteredServices = predefinedServices.filter(service =>
+    service.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    service.category.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
 
 
@@ -217,6 +250,22 @@ export default function Workspace() {
     </View>
   );
 
+
+
+  const renderPredefinedService = (service: { title: string; icon: string; category: string }, index: number) => (
+    <TouchableOpacity
+      key={index}
+      style={styles.serviceListItem}
+      onPress={() => handleItemPress(service.title, `predefined-${index}`)}
+    >
+      <View style={styles.itemContent}>
+        <Feather name={service.icon as any} size={20} color="#000000" />
+        <Text style={styles.serviceTitle}>{service.title}</Text>
+      </View>
+      <Feather name="chevron-right" size={16} color="#999" />
+    </TouchableOpacity>
+  );
+
   if (!selectedModule) {
     return (
       <View style={styles.container}>
@@ -240,6 +289,34 @@ export default function Workspace() {
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>Error loading data</Text>
+      </View>
+    );
+  }
+
+  // Show workspace services when spaces module is selected
+  if (selectedModule === 'spaces') {
+    return (
+      <View style={styles.moduleContainer}>
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Search services..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {/* All Services */}
+          <View style={styles.servicesContainer}>
+            {filteredServices.map((service, index) =>
+              renderPredefinedService(service, index)
+            )}
+            {filteredServices.length === 0 && searchQuery.length > 0 && (
+              <Text style={styles.noResultsText}>No services found for "{searchQuery}"</Text>
+            )}
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -511,5 +588,35 @@ const styles = StyleSheet.create({
   settingsItemValue: {
     fontSize: 14,
     color: '#6b7280',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  serviceTitle: {
+    fontSize: 16,
+    color: '#1e293b',
+    marginLeft: 12,
+    flex: 1,
+  },
+  servicesContainer: {
+    backgroundColor: '#ffffff',
+  },
+  serviceListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  noResultsText: {
+    textAlign: 'center',
+    fontSize: 16,
+    color: '#6b7280',
+    marginTop: 32,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
   },
 });

@@ -5,9 +5,20 @@ export async function POST(request: Request) {
   try {
     const { messages } = await request.json();
 
+    // Get API key from environment (server-side)
+    const apiKey = process.env.GROQ_API_KEY || process.env.EXPO_PUBLIC_GROQ_API_KEY;
+
+    if (!apiKey || apiKey.includes('your_groq_') || apiKey.length < 20) {
+      console.error('Invalid Groq API key in server route');
+      return new Response(JSON.stringify({ error: 'API configuration error' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     // Initialize Groq with API key
     const groqClient = groq({
-      apiKey: process.env.GROQ_API_KEY,
+      apiKey: apiKey,
     });
 
     const result = await generateText({

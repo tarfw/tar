@@ -3,6 +3,13 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 interface PageProp {
   title: string;
   id: string;
+  subtitle?: string;
+  icon?: {
+    type: 'icon' | 'image';
+    name?: string;
+    source?: string;
+    style?: 'default' | 'tile';
+  };
 }
 
 interface ModuleContextType {

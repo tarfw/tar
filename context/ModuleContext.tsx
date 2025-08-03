@@ -22,7 +22,7 @@ interface ModuleContextType {
 const ModuleContext = createContext<ModuleContextType | undefined>(undefined);
 
 export function ModuleProvider({ children }: { children: ReactNode }) {
-  const [selectedModule, setSelectedModule] = useState<string | null>('spaces');
+  const [selectedModule, setSelectedModule] = useState<string | null>('space');
   const [pageProp, setPageProp] = useState<PageProp | null>(null);
 
   return (

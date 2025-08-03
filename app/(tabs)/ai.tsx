@@ -38,7 +38,7 @@ export default function AI() {
         return <ProductsAgent context={pageProp} />;
       case 'sale':
         return <SalesAgent context={pageProp} />;
-      case 'space':
+      case 'spaces':
         return <SpaceAgent context={pageProp} />;
       case 'items':
         return <ItemsAgent context={pageProp} />;

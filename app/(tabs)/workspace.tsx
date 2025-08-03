@@ -48,10 +48,9 @@ interface WorkspaceService {
 export default function Workspace() {
   const { selectedModule, setPageProp, setSelectedModule } = useModule();
   const searchParams = useLocalSearchParams();
-  const [newSpaceTitle, setNewSpaceTitle] = useState('');
-  const [newSaleTitle, setNewSaleTitle] = useState('');
-  const [newProductTitle, setNewProductTitle] = useState('');
-  const [newItemTitle, setNewItemTitle] = useState('');
+  const [saleSearchQuery, setSaleSearchQuery] = useState('');
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [newServiceTitle, setNewServiceTitle] = useState('');
 
   // Handle deep link parameters
@@ -112,113 +111,41 @@ export default function Workspace() {
 
 
 
-  const addSpace = async () => {
-    if (!newSpaceTitle.trim()) {
-      Alert.alert('Error', 'Please enter a space title');
-      return;
-    }
+  // Filter functions for search
+  const filteredSales = sales.filter(sale =>
+    (sale.title || '').toLowerCase().includes(saleSearchQuery.toLowerCase())
+  );
 
-    try {
-      await db.transact([
-        db.tx.spaces[id()].update({
-          title: newSpaceTitle.trim(),
-        }),
-      ]);
-      setNewSpaceTitle('');
-    } catch (err) {
-      Alert.alert('Error', 'Failed to add space');
-      console.error('Error adding space:', err);
-    }
-  };
+  const filteredProducts = products.filter(product =>
+    (product.title || '').toLowerCase().includes(productSearchQuery.toLowerCase())
+  );
 
-  // Sales functions
-  const addSale = async () => {
-    if (!newSaleTitle.trim()) {
-      Alert.alert('Error', 'Please enter a sale title');
-      return;
-    }
-
-    try {
-      await db.transact([
-        db.tx.sales[id()].update({
-          title: newSaleTitle.trim(),
-        }),
-      ]);
-      setNewSaleTitle('');
-    } catch (err) {
-      Alert.alert('Error', 'Failed to add sale');
-      console.error('Error adding sale:', err);
-    }
-  };
-
-  // Products functions
-  const addProduct = async () => {
-    if (!newProductTitle.trim()) {
-      Alert.alert('Error', 'Please enter a product title');
-      return;
-    }
-
-    try {
-      await db.transact([
-        db.tx.products[id()].update({
-          title: newProductTitle.trim(),
-        }),
-      ]);
-      setNewProductTitle('');
-    } catch (err) {
-      Alert.alert('Error', 'Failed to add product');
-      console.error('Error adding product:', err);
-    }
-  };
-
-  // Items functions
-  const addItem = async () => {
-    if (!newItemTitle.trim()) {
-      Alert.alert('Error', 'Please enter an item title');
-      return;
-    }
-
-    try {
-      await db.transact([
-        db.tx.items[id()].update({
-          titles: newItemTitle.trim(),
-        }),
-      ]);
-      setNewItemTitle('');
-    } catch (err) {
-      Alert.alert('Error', 'Failed to add item');
-      console.error('Error adding item:', err);
-    }
-  };
+  const filteredItems = items.filter(item =>
+    (item.titles || '').toLowerCase().includes(itemSearchQuery.toLowerCase())
+  );
 
   const renderSpace = ({ item }: { item: Space }) => (
-    <View style={styles.listItem}>
+    <TouchableOpacity 
+      style={styles.listItem}
+      onPress={() => handleItemPress(item.title || 'Untitled', item.id)}
+    >
       <View style={styles.itemContent}>
         <Feather name="home" size={20} color="#2563eb" />
         <Text style={styles.itemTitle}>{item.title || 'Untitled'}</Text>
       </View>
-      <TouchableOpacity
-        style={styles.arrowButton}
-        onPress={() => handleItemPress(item.title || 'Untitled', item.id)}
-      >
-        <Feather name="chevron-right" size={16} color="#999" />
-      </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderSale = ({ item }: { item: Sale }) => (
-    <View style={styles.listItem}>
+    <TouchableOpacity 
+      style={styles.listItem}
+      onPress={() => handleItemPress(item.title || 'Untitled', item.id)}
+    >
       <View style={styles.itemContent}>
         <Feather name="tag" size={20} color="#dc2626" />
         <Text style={styles.itemTitle}>{item.title || 'Untitled'}</Text>
       </View>
-      <TouchableOpacity
-        style={styles.arrowButton}
-        onPress={() => handleItemPress(item.title || 'Untitled', item.id)}
-      >
-        <Feather name="chevron-right" size={16} color="#999" />
-      </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderProduct = ({ item }: { item: Product }) => (
@@ -234,18 +161,15 @@ export default function Workspace() {
   );
 
   const renderItem = ({ item }: { item: Item }) => (
-    <View style={styles.listItem}>
+    <TouchableOpacity 
+      style={styles.listItem}
+      onPress={() => handleItemPress(item.titles || 'Untitled', item.id)}
+    >
       <View style={styles.itemContent}>
         <Feather name="grid" size={20} color="#7c3aed" />
         <Text style={styles.itemTitle}>{item.titles || 'Untitled'}</Text>
       </View>
-      <TouchableOpacity
-        style={styles.arrowButton}
-        onPress={() => handleItemPress(item.titles || 'Untitled', item.id)}
-      >
-        <Feather name="chevron-right" size={16} color="#999" />
-      </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 
 
@@ -291,8 +215,8 @@ export default function Workspace() {
     );
   }
 
-  // Show workspace services when spaces module is selected
-  if (selectedModule === 'spaces') {
+  // Show workspace services when space module is selected
+  if (selectedModule === 'space') {
     return (
       <View style={styles.moduleContainer}>
         <View style={styles.inputContainer}>
@@ -319,33 +243,6 @@ export default function Workspace() {
     );
   }
 
-  // Show spaces list when space module is selected
-  if (selectedModule === 'space') {
-    return (
-      <View style={styles.moduleContainer}>
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Add space..."
-            value={newSpaceTitle}
-            onChangeText={setNewSpaceTitle}
-            onSubmitEditing={addSpace}
-          />
-        </View>
-
-        <FlatList
-          data={spaces}
-          renderItem={renderSpace}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No spaces</Text>
-          }
-        />
-      </View>
-    );
-  }
-
   // Show sales list when sale module is selected
   if (selectedModule === 'sale') {
     return (
@@ -353,20 +250,23 @@ export default function Workspace() {
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
-            placeholder="Add sale..."
-            value={newSaleTitle}
-            onChangeText={setNewSaleTitle}
-            onSubmitEditing={addSale}
+            placeholder="Search sales..."
+            value={saleSearchQuery}
+            onChangeText={setSaleSearchQuery}
           />
         </View>
 
         <FlatList
-          data={sales}
+          data={filteredSales}
           renderItem={renderSale}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>No sales</Text>
+            <Text style={styles.emptyText}>
+              {saleSearchQuery.length > 0 
+                ? `No sales found for "${saleSearchQuery}"`
+                : 'No sales'}
+            </Text>
           }
         />
       </View>
@@ -380,20 +280,23 @@ export default function Workspace() {
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
-            placeholder="Add product..."
-            value={newProductTitle}
-            onChangeText={setNewProductTitle}
-            onSubmitEditing={addProduct}
+            placeholder="Search products..."
+            value={productSearchQuery}
+            onChangeText={setProductSearchQuery}
           />
         </View>
 
         <FlatList
-          data={products}
+          data={filteredProducts}
           renderItem={renderProduct}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>No products</Text>
+            <Text style={styles.emptyText}>
+              {productSearchQuery.length > 0 
+                ? `No products found for "${productSearchQuery}"`
+                : 'No products'}
+            </Text>
           }
         />
       </View>
@@ -407,20 +310,23 @@ export default function Workspace() {
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
-            placeholder="Add item..."
-            value={newItemTitle}
-            onChangeText={setNewItemTitle}
-            onSubmitEditing={addItem}
+            placeholder="Search items..."
+            value={itemSearchQuery}
+            onChangeText={setItemSearchQuery}
           />
         </View>
 
         <FlatList
-          data={items}
+          data={filteredItems}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>No items</Text>
+            <Text style={styles.emptyText}>
+              {itemSearchQuery.length > 0 
+                ? `No items found for "${itemSearchQuery}"`
+                : 'No items'}
+            </Text>
           }
         />
       </View>

@@ -222,18 +222,15 @@ export default function Workspace() {
   );
 
   const renderProduct = ({ item }: { item: Product }) => (
-    <View style={styles.listItem}>
+    <TouchableOpacity 
+      style={styles.listItem}
+      onPress={() => handleItemPress(item.title || 'Untitled', item.id)}
+    >
       <View style={styles.itemContent}>
         <Feather name="package" size={20} color="#16a34a" />
         <Text style={styles.itemTitle}>{item.title || 'Untitled'}</Text>
       </View>
-      <TouchableOpacity
-        style={styles.arrowButton}
-        onPress={() => handleItemPress(item.title || 'Untitled', item.id)}
-      >
-        <Feather name="chevron-right" size={16} color="#999" />
-      </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderItem = ({ item }: { item: Item }) => (
@@ -378,7 +375,29 @@ export default function Workspace() {
 
   // Show products list when products module is selected
   if (selectedModule === 'products') {
-    return <ProductsAgent />;
+    return (
+      <View style={styles.moduleContainer}>
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Add product..."
+            value={newProductTitle}
+            onChangeText={setNewProductTitle}
+            onSubmitEditing={addProduct}
+          />
+        </View>
+
+        <FlatList
+          data={products}
+          renderItem={renderProduct}
+          keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No products</Text>
+          }
+        />
+      </View>
+    );
   }
 
   // Show items list when items module is selected

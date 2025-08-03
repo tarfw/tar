@@ -14,6 +14,7 @@ import { Feather } from '@expo/vector-icons';
 import { id } from '@instantdb/react-native';
 import { db } from '../../lib/db';
 import { router, useLocalSearchParams } from 'expo-router';
+import ProductsAgent from '../../agents/ProductsAgent';
 
 import { parseDeepLinkParams, generateDeepLink } from '../../utils/deepLinking';
 
@@ -377,29 +378,7 @@ export default function Workspace() {
 
   // Show products list when products module is selected
   if (selectedModule === 'products') {
-    return (
-      <View style={styles.moduleContainer}>
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Add product..."
-            value={newProductTitle}
-            onChangeText={setNewProductTitle}
-            onSubmitEditing={addProduct}
-          />
-        </View>
-
-        <FlatList
-          data={products}
-          renderItem={renderProduct}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No products</Text>
-          }
-        />
-      </View>
-    );
+    return <ProductsAgent />;
   }
 
   // Show items list when items module is selected

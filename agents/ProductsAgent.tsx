@@ -178,6 +178,27 @@ export default function ProductsAgent() {
     });
   }, [productData.name, productData.shortNote, productData.images, setPageProp]);
 
+  // Check R2 configuration on mount
+  useEffect(() => {
+    const r2Status = r2Service.getStatus();
+    console.log('R2 Configuration Status:', r2Status);
+    
+    if (!r2Status.configured) {
+      console.error('❌ Cloudflare R2 not configured:', r2Status.error);
+      console.log('Required environment variables:');
+      console.log('- EXPO_PUBLIC_R2_ACCOUNT_ID');
+      console.log('- EXPO_PUBLIC_R2_ACCESS_KEY_ID');
+      console.log('- EXPO_PUBLIC_R2_SECRET_ACCESS_KEY');
+      console.log('- EXPO_PUBLIC_R2_BUCKET_NAME');
+      console.log('- EXPO_PUBLIC_R2_ENDPOINT');
+    } else {
+      console.log('✅ R2 configured successfully:', {
+        bucket: r2Status.bucket,
+        endpoint: r2Status.endpoint
+      });
+    }
+  }, []);
+
   // File management functions
   const handleImageUpload = (files: ProductFile[]) => {
     setProductData(prev => ({

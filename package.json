@@ -15,8 +15,11 @@
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
     "ai": "^4.3.19",
+    "crypto-js": "^4.2.0",
     "expo": "~53.0.20",
     "expo-constants": "^17.1.7",
+    "expo-document-picker": "~12.0.2",
+    "expo-image-picker": "~15.0.7",
     "expo-router": "^5.1.4",
     "expo-status-bar": "~2.2.3",
     "nativewind": "^4.1.23",
@@ -26,10 +29,13 @@
     "react-native-safe-area-context": "^5.5.2",
     "react-native-screens": "^4.13.1",
     "react-native-worklets": "^0.4.0",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "zod": "^3.22.4",
+    "expo-file-system": "~18.1.11"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@types/crypto-js": "^4.2.2",
     "@types/react": "~19.0.10",
     "typescript": "~5.8.3"
   },

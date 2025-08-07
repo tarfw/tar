@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Modal, ActivityIndicator, Button, FlatList, Keyboard, Alert, Animated, PanResponder } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Modal, ActivityIndicator, Button, FlatList, Keyboard, Alert, Animated, PanResponder, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { FileUpload, FileItem } from '../components/FileUpload';
+import { FileUpload, FileItem, FileUploadRef } from '../components/FileUpload';
 import { r2Service } from '../lib/r2-service';
 import { groq } from '@ai-sdk/groq';
 import { generateObject } from 'ai';
@@ -58,6 +58,10 @@ export default function ItemsAgent() {
   const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
   const [dragTargetIndex, setDragTargetIndex] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  
+  // File upload refs
+  const imageUploadRef = useRef<FileUploadRef>(null);
+  const documentUploadRef = useRef<FileUploadRef>(null);
   
   // Option type suggestions for quick input
   const optionTypeSuggestions = [
@@ -681,12 +685,256 @@ const renderDraggableItem = ({ item: group, index }: { item: OptionGroup, index:
   );
 };
 
+  // File drag state
+  const [draggedFileKey, setDraggedFileKey] = useState<string | null>(null);
+  const [dragTargetFileIndex, setDragTargetFileIndex] = useState<number | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+
+  // ImageThumbnail component for handling presigned URLs
+  const ImageThumbnail = ({ 
+    file, 
+    isDragging, 
+    isDragTarget, 
+    isDraggingFile, 
+    onLongPress, 
+    onPress, 
+    onPressIn 
+  }: {
+    file: ItemFile;
+    isDragging: boolean;
+    isDragTarget: boolean;
+    isDraggingFile: boolean;
+    onLongPress: () => void;
+    onPress: () => void;
+    onPressIn: () => void;
+  }) => {
+    const [signedUrl, setSignedUrl] = useState<string | null>(null);
+    const [imageError, setImageError] = useState(false);
+    const [isLoadingUrl, setIsLoadingUrl] = useState(false);
+
+    // Generate presigned URL for the image
+    useEffect(() => {
+      if (!signedUrl && !isLoadingUrl && !imageError) {
+        setIsLoadingUrl(true);
+        r2Service.getSignedUrl(file.key)
+          .then(url => {
+            console.log('Got presigned URL for', file.key, ':', url);
+            setSignedUrl(url);
+          })
+          .catch(error => {
+            console.error('Failed to get presigned URL for', file.key, ':', error);
+            setImageError(true);
+          })
+          .finally(() => {
+            setIsLoadingUrl(false);
+          });
+      }
+    }, [file.key, signedUrl, isLoadingUrl, imageError]);
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.flatFileItem,
+          isDragging && styles.draggingFile,
+          isDragTarget && styles.dragTarget,
+          isDraggingFile && { opacity: 0.7 }
+        ]}
+        onLongPress={onLongPress}
+        onPress={onPress}
+        onPressIn={onPressIn}
+        activeOpacity={0.7}
+        delayLongPress={300}
+      >
+        <View style={styles.fileItemContent}>
+          <View style={styles.fileThumbnail}>
+            {isLoadingUrl ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#3b82f6" />
+              </View>
+            ) : signedUrl && !imageError ? (
+              <Image 
+                source={{ uri: signedUrl }} 
+                style={styles.thumbnailImage}
+                resizeMode="cover"
+                onError={() => {
+                  console.error('Image failed to load:', signedUrl);
+                  setImageError(true);
+                }}
+              />
+            ) : (
+              <View style={styles.errorContainer}>
+                <Feather name="image" size={16} color="#94a3b8" />
+              </View>
+            )}
+          </View>
+          <Text style={styles.fileItemText}>{file.filename}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const handleFileDragStart = (fileKey: string) => {
+    setDraggedFileKey(fileKey);
+    setIsDraggingFile(true);
+    showSnackbar('Drag to reorder files');
+  };
+
+  const handleFileDragOver = (targetIndex: number) => {
+    setDragTargetFileIndex(targetIndex);
+  };
+
+  const handleFileDragEnd = (fromIndex: number, toIndex: number, fileType: 'image' | 'document') => {
+    if (fromIndex !== toIndex && toIndex !== null && fromIndex !== null) {
+      if (fileType === 'image') {
+        setImages(prev => {
+          const newImages = [...prev];
+          if (fromIndex >= 0 && fromIndex < newImages.length && 
+              toIndex >= 0 && toIndex < newImages.length) {
+            const [draggedFile] = newImages.splice(fromIndex, 1);
+            newImages.splice(toIndex, 0, draggedFile);
+            showSnackbar('Image reordered successfully');
+          }
+          return newImages;
+        });
+      } else {
+        setDocuments(prev => {
+          const newDocuments = [...prev];
+          if (fromIndex >= 0 && fromIndex < newDocuments.length && 
+              toIndex >= 0 && toIndex < newDocuments.length) {
+            const [draggedFile] = newDocuments.splice(fromIndex, 1);
+            newDocuments.splice(toIndex, 0, draggedFile);
+            showSnackbar('Document reordered successfully');
+          }
+          return newDocuments;
+        });
+      }
+    }
+    setDraggedFileKey(null);
+    setDragTargetFileIndex(null);
+    setIsDraggingFile(false);
+};
+
   const renderFilesContent = () => {
     return (
-      <View style={styles.tabContentContainer}>
-        {/* Image Upload Section */}
+      <View style={styles.filesContainer}>
+        {/* Files List */}
+        <View style={styles.filesListContainer}>
+          {/* Primary Image */}
+          {images.length > 0 && (
         <View style={styles.fileSection}>
-          <Text style={styles.sectionTitle}>Item Images</Text>
+              <Text style={styles.fileSectionTitle}>Primary Image</Text>
+              <ImageThumbnail
+                file={images[0]}
+                isDragging={draggedFileKey === images[0].key}
+                isDragTarget={dragTargetFileIndex === 0 && draggedFileKey !== images[0].key}
+                isDraggingFile={isDraggingFile && draggedFileKey !== images[0].key}
+                onLongPress={() => handleFileDragStart(images[0].key)}
+                onPress={() => {
+                  if (draggedFileKey && draggedFileKey !== images[0].key) {
+                    const draggedIndex = images.findIndex(file => file.key === draggedFileKey);
+                    if (draggedIndex !== -1) {
+                      handleFileDragEnd(draggedIndex, 0, 'image');
+                    }
+                  } else {
+                    handleDeleteFile(images[0].key, 'image');
+                  }
+                }}
+                onPressIn={() => {
+                  if (draggedFileKey && draggedFileKey !== images[0].key) {
+                    handleFileDragOver(0);
+                  }
+                }}
+              />
+            </View>
+          )}
+
+          {/* Additional Images */}
+          {images.length > 1 && (
+            <View style={styles.fileSection}>
+              <Text style={styles.fileSectionTitle}>Additional Images</Text>
+              {images.slice(1).map((file, index) => (
+                <ImageThumbnail
+                  key={file.key}
+                  file={file}
+                  isDragging={draggedFileKey === file.key}
+                  isDragTarget={dragTargetFileIndex === index + 1 && draggedFileKey !== file.key}
+                  isDraggingFile={isDraggingFile && draggedFileKey !== file.key}
+                  onLongPress={() => handleFileDragStart(file.key)}
+                  onPress={() => {
+                    if (draggedFileKey && draggedFileKey !== file.key) {
+                      const draggedIndex = images.findIndex(f => f.key === draggedFileKey);
+                      if (draggedIndex !== -1) {
+                        handleFileDragEnd(draggedIndex, index + 1, 'image');
+                      }
+                    } else {
+                      handleDeleteFile(file.key, 'image');
+                    }
+                  }}
+                  onPressIn={() => {
+                    if (draggedFileKey && draggedFileKey !== file.key) {
+                      handleFileDragOver(index + 1);
+                    }
+                  }}
+                />
+              ))}
+            </View>
+          )}
+
+          {/* Documents */}
+          {documents.length > 0 && (
+        <View style={styles.fileSection}>
+              <Text style={styles.fileSectionTitle}>Documents</Text>
+              {documents.map((file, index) => (
+                <TouchableOpacity
+                  key={file.key}
+                  style={[
+                    styles.flatFileItem,
+                    draggedFileKey === file.key && styles.draggingFile,
+                    dragTargetFileIndex === index && draggedFileKey !== file.key && styles.dragTarget,
+                    isDraggingFile && draggedFileKey !== file.key && { opacity: 0.7 }
+                  ]}
+                  onLongPress={() => handleFileDragStart(file.key)}
+                  onPress={() => {
+                    if (draggedFileKey && draggedFileKey !== file.key) {
+                      const draggedIndex = documents.findIndex(f => f.key === draggedFileKey);
+                      if (draggedIndex !== -1) {
+                        handleFileDragEnd(draggedIndex, index, 'document');
+                      }
+                    } else {
+                      handleDeleteFile(file.key, 'document');
+                    }
+                  }}
+                  onPressIn={() => {
+                    if (draggedFileKey && draggedFileKey !== file.key) {
+                      handleFileDragOver(index);
+                    }
+                  }}
+                  activeOpacity={0.7}
+                  delayLongPress={300}
+                >
+                  <View style={styles.fileItemContent}>
+                    <Feather name="file" size={20} color="#3b82f6" />
+                    <Text style={styles.fileItemText}>{file.filename}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Empty State */}
+          {images.length === 0 && documents.length === 0 && (
+            <View style={styles.filesEmptyState}>
+              <Feather name="folder" size={48} color="#94a3b8" />
+              <Text style={styles.filesEmptyTitle}>No Files Yet</Text>
+              <Text style={styles.filesEmptySubtitle}>
+                Use the upload buttons below to add images and documents
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* File Upload Components (Hidden) */}
+        <View style={styles.hiddenFileUploads}>
           <FileUpload
             onUploadComplete={handleImageUpload}
             onUploadError={handleFileUploadError}
@@ -694,27 +942,8 @@ const renderDraggableItem = ({ item: group, index }: { item: OptionGroup, index:
             allowMultiple={true}
             maxFiles={5}
             folder="items/images"
+            ref={imageUploadRef}
           />
-
-          {images.length > 0 && (
-            <View style={styles.fileList}>
-              <Text style={styles.fileListTitle}>
-                {images.length} image(s) uploaded
-              </Text>
-              {images.map((file) => (
-                <FileItem
-                  key={file.key}
-                  file={file}
-                  onDelete={(key) => handleDeleteFile(key, 'image')}
-                />
-              ))}
-            </View>
-          )}
-        </View>
-
-        {/* Document Upload Section */}
-        <View style={styles.fileSection}>
-          <Text style={styles.sectionTitle}>Documents</Text>
           <FileUpload
             onUploadComplete={handleDocumentUpload}
             onUploadError={handleFileUploadError}
@@ -722,25 +951,9 @@ const renderDraggableItem = ({ item: group, index }: { item: OptionGroup, index:
             allowMultiple={true}
             maxFiles={3}
             folder="items/documents"
+            ref={documentUploadRef}
           />
-
-          {documents.length > 0 && (
-            <View style={styles.fileList}>
-              <Text style={styles.fileListTitle}>
-                {documents.length} document(s) uploaded
-              </Text>
-              {documents.map((file) => (
-                <FileItem
-                  key={file.key}
-                  file={file}
-                  onDelete={(key) => handleDeleteFile(key, 'document')}
-                />
-              ))}
             </View>
-          )}
-        </View>
-
-        
       </View>
     );
   };
@@ -776,7 +989,27 @@ case 'options':
     </View>
   );
 case 'files':
-        return renderFilesContent();
+        return (
+          <View style={styles.filesContainer}>
+            {renderFilesContent()}
+            <View style={styles.fileUploadButtonsContainer}>
+              <TouchableOpacity
+                style={styles.fileUploadButton}
+                onPress={() => imageUploadRef.current?.handleUpload()}
+              >
+                <Feather name="image" size={20} color="#3b82f6" />
+                <Text style={styles.fileUploadButtonText}>Add Images</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.fileUploadButton}
+                onPress={() => documentUploadRef.current?.handleUpload()}
+              >
+                <Feather name="file-text" size={20} color="#3b82f6" />
+                <Text style={styles.fileUploadButtonText}>Add Documents</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
       case 'notes':
         return <View style={styles.tabContentContainer}><Text style={styles.tabContentText}>Notes Content</Text></View>;
       case 'labels':
@@ -875,6 +1108,8 @@ case 'files':
              </View>
            </View>
          )}
+
+
        
        {/* Snackbar */}
        {snackbarVisible && (
@@ -1192,7 +1427,7 @@ emptySubtext: {
   },
   // File-related styles
   fileSection: {
-    marginBottom: 32,
+    marginBottom: 20,
   },
   fileList: {
     marginTop: 16,
@@ -1429,9 +1664,9 @@ emptySubtext: {
     backgroundColor: '#f8fafc',
   },
      dragTarget: {
-     backgroundColor: '#f1f5f9',
-     borderLeftWidth: 3,
-     borderLeftColor: '#3b82f6',
+     backgroundColor: '#fef3c7',
+     borderColor: '#f59e0b',
+     borderWidth: 1,
    },
          optionsListContainer: {
     paddingBottom: 20,
@@ -1617,6 +1852,217 @@ emptySubtext: {
            color: '#6b7280',
            fontWeight: '500',
          },
-
-    
-    });
+  // Files AI Input Styles
+  filesAiInputContainer: {
+    width: '100%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  filesInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  filesInputInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  filesInput: {
+    flex: 1,
+    fontSize: 16,
+    backgroundColor: 'transparent',
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+    marginRight: 8,
+    maxHeight: 100,
+    textAlignVertical: 'top',
+  },
+  filesSendButton: {
+    backgroundColor: '#3b82f6',
+    padding: 8,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 36,
+    minHeight: 36,
+  },
+  filesSendButtonDisabled: {
+    backgroundColor: '#d1d5db',
+  },
+  filesSuggestionsContainer: {
+    marginTop: 10,
+    paddingHorizontal: 4,
+  },
+  filesSuggestionsScrollContent: {
+    paddingHorizontal: 4,
+  },
+  filesSuggestionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginRight: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  filesSuggestionChipText: {
+    fontSize: 14,
+    color: '#3b82f6',
+    fontWeight: '500',
+    marginLeft: 6,
+  },
+  // Hidden File Uploads (for actual file upload components)
+  hiddenFileUploads: {
+    display: 'none', // Hide these components from the main UI
+  },
+  // Files List Container
+  filesListContainer: {
+    width: '100%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#ffffff',
+    paddingBottom: 80, // Add padding for the buttons
+  },
+  fileSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 12,
+  },
+  filesEmptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 40,
+  },
+  filesEmptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#374151',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  filesEmptySubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  // Files Container
+  filesContainer: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    height: '100%',
+    minHeight: 0,
+  },
+  // File Upload Buttons (at bottom)
+  fileUploadButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  fileUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  fileUploadButtonText: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontWeight: '500',
+    marginLeft: 6,
+  },
+  // Flat File Items (similar to flat options)
+  flatFileItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    marginBottom: 4,
+  },
+  draggingFile: {
+    backgroundColor: '#dbeafe',
+    borderColor: '#3b82f6',
+    borderWidth: 1,
+  },
+  fileItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  fileItemText: {
+    fontSize: 14,
+    color: '#1e293b',
+    marginLeft: 12,
+    flex: 1,
+  },
+  // File thumbnail styles
+  fileThumbnail: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    overflow: 'hidden',
+    backgroundColor: '#f1f5f9',
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
+  },
+  loadingContainer: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+  },
+  errorContainer: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+  },
+});

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -29,15 +29,26 @@ interface FileItemProps {
   onDelete: (key: string) => void;
 }
 
-export function FileUpload({ 
+export interface FileUploadRef {
+  handleUpload: () => Promise<void>;
+}
+
+export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({ 
   onUploadComplete, 
   onUploadError, 
   fileType, 
   allowMultiple = false, 
   maxFiles = 1,
   folder = 'uploads'
-}: FileUploadProps) {
+}, ref) => {
   const [isUploading, setIsUploading] = useState(false);
+
+  // Expose handleUpload method to parent component
+  useImperativeHandle(ref, () => ({
+    handleUpload: async () => {
+      await handleUpload();
+    }
+  }));
 
   const requestPermissions = async () => {
     if (fileType === 'image') {
@@ -227,7 +238,7 @@ export function FileUpload({
       </Text>
     </TouchableOpacity>
   );
-}
+});
 
 export function FileItem({ file, onDelete }: FileItemProps) {
   const [imageError, setImageError] = useState(false);

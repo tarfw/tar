@@ -19,7 +19,6 @@ interface ModulesModalProps {
 const modules = [
   { id: 'space', title: 'Space', icon: 'home', emoji: '🌌' },
   { id: 'sale', title: 'Sale', icon: 'tag' },
-  { id: 'products', title: 'Products', icon: 'package' },
   { id: 'items', title: 'Items', icon: 'grid' },
   { id: 'settings', title: 'Settings', icon: 'settings' },
 ];

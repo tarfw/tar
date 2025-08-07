@@ -28,10 +28,7 @@ interface Sale {
   title?: string;
 }
 
-interface Product {
-  id: string;
-  title?: string;
-}
+
 
 interface Item {
   id: string;
@@ -49,7 +46,6 @@ export default function Workspace() {
   const { selectedModule, setPageProp, setSelectedModule } = useModule();
   const searchParams = useLocalSearchParams();
   const [saleSearchQuery, setSaleSearchQuery] = useState('');
-  const [productSearchQuery, setProductSearchQuery] = useState('');
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [newServiceTitle, setNewServiceTitle] = useState('');
 
@@ -70,13 +66,11 @@ export default function Workspace() {
   const { data, isLoading, error } = db.useQuery({
     spaces: {},
     sales: {},
-    products: {},
     items: {},
   });
 
   const spaces = data?.spaces || [];
   const sales = data?.sales || [];
-  const products = data?.products || [];
   const items = data?.items || [];
 
   // Search query for filtering services
@@ -87,20 +81,19 @@ export default function Workspace() {
     router.push('/ai');
   };
 
-  // Predefined workspace services
+  // Predefined workspace services with colorful emoji icons
   const predefinedServices = [
-    { title: 'Book Taxi', icon: 'navigation', category: 'Transportation' },
-    { title: 'Book Auto', icon: 'truck', category: 'Transportation' },
-    { title: 'Order Food', icon: 'coffee', category: 'Food & Dining' },
-    { title: 'Book Bus', icon: 'navigation-2', category: 'Transportation' },
-    { title: 'Book Cinema', icon: 'film', category: 'Entertainment' },
-    { title: 'Book Hotel', icon: 'home', category: 'Travel' },
-    { title: 'Book Flight', icon: 'send', category: 'Travel' },
-    { title: 'Order Grocery', icon: 'shopping-bag', category: 'Shopping' },
-    { title: 'Book Doctor', icon: 'heart', category: 'Healthcare' },
-    { title: 'Book Salon', icon: 'scissors', category: 'Personal Care' },
-    { title: 'Laundry Service', icon: 'droplet', category: 'Services' },
-    { title: 'House Cleaning', icon: 'home', category: 'Services' },
+    { title: 'Book Taxi', icon: '🚕', category: 'Transportation', color: '#3b82f6', bgColor: '#dbeafe' },
+    { title: 'Book Auto', icon: '🚗', category: 'Transportation', color: '#1d4ed8', bgColor: '#d1d5db' },
+    { title: 'Order Food', icon: '🍕', category: 'Food & Dining', color: '#f59e0b', bgColor: '#fef3c7' },
+    { title: 'Book Bus', icon: '🚌', category: 'Transportation', color: '#059669', bgColor: '#d1fae5' },
+    { title: 'Book Cinema', icon: '🎬', category: 'Entertainment', color: '#7c3aed', bgColor: '#ede9fe' },
+    { title: 'Book Hotel', icon: '🏨', category: 'Travel', color: '#dc2626', bgColor: '#fee2e2' },
+    { title: 'Order Grocery', icon: '🛒', category: 'Shopping', color: '#16a34a', bgColor: '#dcfce7' },
+    { title: 'Book Doctor', icon: '👨‍⚕️', category: 'Healthcare', color: '#ef4444', bgColor: '#fecaca' },
+    { title: 'Book Salon', icon: '💇‍♀️', category: 'Personal Care', color: '#8b5cf6', bgColor: '#e9d5ff' },
+    { title: 'Laundry Service', icon: '👕', category: 'Services', color: '#0ea5e9', bgColor: '#e0f2fe' },
+    { title: 'House Cleaning', icon: '🧹', category: 'Services', color: '#10b981', bgColor: '#d1fae5' },
   ];
 
   // Filter services based on search query
@@ -116,9 +109,7 @@ export default function Workspace() {
     (sale.title || '').toLowerCase().includes(saleSearchQuery.toLowerCase())
   );
 
-  const filteredProducts = products.filter(product =>
-    (product.title || '').toLowerCase().includes(productSearchQuery.toLowerCase())
-  );
+
 
   const filteredItems = items.filter(item =>
     (item.titles || '').toLowerCase().includes(itemSearchQuery.toLowerCase())
@@ -148,17 +139,7 @@ export default function Workspace() {
     </TouchableOpacity>
   );
 
-  const renderProduct = ({ item }: { item: Product }) => (
-    <TouchableOpacity 
-      style={styles.listItem}
-      onPress={() => handleItemPress(item.title || 'Untitled', item.id)}
-    >
-      <View style={styles.itemContent}>
-        <Feather name="package" size={20} color="#16a34a" />
-        <Text style={styles.itemTitle}>{item.title || 'Untitled'}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+
 
   const renderItem = ({ item }: { item: Item }) => (
     <TouchableOpacity 
@@ -174,17 +155,18 @@ export default function Workspace() {
 
 
 
-  const renderPredefinedService = (service: { title: string; icon: string; category: string }, index: number) => (
+  const renderPredefinedService = (service: { title: string; icon: string; category: string; color?: string; bgColor?: string }, index: number) => (
     <TouchableOpacity
       key={index}
       style={styles.serviceListItem}
       onPress={() => handleItemPress(service.title, `predefined-${index}`)}
     >
       <View style={styles.itemContent}>
-        <Feather name={service.icon as any} size={20} color="#000000" />
+        <View style={[styles.emojiContainer, { backgroundColor: service.bgColor || '#f3f4f6' }]}>
+          <Text style={styles.emojiIcon}>{service.icon}</Text>
+        </View>
         <Text style={styles.serviceTitle}>{service.title}</Text>
       </View>
-      <Feather name="chevron-right" size={16} color="#999" />
     </TouchableOpacity>
   );
 
@@ -273,35 +255,7 @@ export default function Workspace() {
     );
   }
 
-  // Show products list when products module is selected
-  if (selectedModule === 'products') {
-    return (
-      <View style={styles.moduleContainer}>
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Search products..."
-            value={productSearchQuery}
-            onChangeText={setProductSearchQuery}
-          />
-        </View>
 
-        <FlatList
-          data={filteredProducts}
-          renderItem={renderProduct}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>
-              {productSearchQuery.length > 0 
-                ? `No products found for "${productSearchQuery}"`
-                : 'No products'}
-            </Text>
-          }
-        />
-      </View>
-    );
-  }
 
   // Show items list when items module is selected
   if (selectedModule === 'items') {
@@ -508,12 +462,22 @@ const styles = StyleSheet.create({
   serviceListItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingVertical: 16,
     paddingHorizontal: 16,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+  },
+  emojiContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  emojiIcon: {
+    fontSize: 20,
   },
   noResultsText: {
     textAlign: 'center',

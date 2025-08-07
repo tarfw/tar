@@ -19,7 +19,6 @@ const modules = {
   spaces: { title: 'Spaces', icon: '🌟' },
   space: { title: 'Space', icon: 'home' },
   sale: { title: 'Sale', icon: 'tag' },
-  products: { title: 'Products', icon: 'package' },
   items: { title: 'Items', icon: 'grid' },
   settings: { title: 'Settings', icon: 'settings' },
 };

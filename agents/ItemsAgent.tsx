@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Modal, ActivityIndicator, Button, FlatList, Keyboard } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Modal, ActivityIndicator, Button, FlatList, Keyboard, Alert, Animated, PanResponder } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { FileUpload, FileItem } from '../components/FileUpload';
 import { r2Service } from '../lib/r2-service';
@@ -49,6 +49,78 @@ export default function ItemsAgent() {
   // File management state
   const [images, setImages] = useState<ItemFile[]>([]);
   const [documents, setDocuments] = useState<ItemFile[]>([]);
+  // Snackbar state
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const snackbarOpacity = new Animated.Value(0);
+  // Drag state
+  const [draggedOptionId, setDraggedOptionId] = useState<string | null>(null);
+  const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
+  const [dragTargetIndex, setDragTargetIndex] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  
+  // Option type suggestions for quick input
+  const optionTypeSuggestions = [
+    'red blue green',
+    'small medium large',
+    'cotton leather silk',
+    'nike adidas puma',
+    '@brand ',
+    '@color ',
+    '@size ',
+    '@material '
+  ];
+  
+  // Add some test data for scrolling
+  useEffect(() => {
+    if (optionGroups.length === 0) {
+      // Add some test data to verify scrolling
+      const testGroups = [
+        {
+          id: 'test1',
+          type: 'Color',
+          options: [
+            { id: 'c1', name: 'Red', value: 'red', color: '#ef4444' },
+            { id: 'c2', name: 'Blue', value: 'blue', color: '#3b82f6' },
+            { id: 'c3', name: 'Green', value: 'green', color: '#10b981' },
+            { id: 'c4', name: 'Yellow', value: 'yellow', color: '#f59e0b' },
+            { id: 'c5', name: 'Purple', value: 'purple', color: '#8b5cf6' },
+          ]
+        },
+        {
+          id: 'test2',
+          type: 'Size',
+          options: [
+            { id: 's1', name: 'Small', value: 'small', textId: 'S' },
+            { id: 's2', name: 'Medium', value: 'medium', textId: 'M' },
+            { id: 's3', name: 'Large', value: 'large', textId: 'L' },
+            { id: 's4', name: 'X-Large', value: 'xlarge', textId: 'XL' },
+          ]
+        },
+        {
+          id: 'test3',
+          type: 'Material',
+          options: [
+            { id: 'm1', name: 'Cotton', value: 'cotton', textId: 'C' },
+            { id: 'm2', name: 'Leather', value: 'leather', textId: 'L' },
+            { id: 'm3', name: 'Silk', value: 'silk', textId: 'S' },
+            { id: 'm4', name: 'Polyester', value: 'polyester', textId: 'P' },
+          ]
+        },
+        {
+          id: 'test4',
+          type: 'Brand',
+          options: [
+            { id: 'b1', name: 'Nike', value: 'nike', textId: 'N' },
+            { id: 'b2', name: 'Adidas', value: 'adidas', textId: 'A' },
+            { id: 'b3', name: 'Puma', value: 'puma', textId: 'P' },
+            { id: 'b4', name: 'Under Armour', value: 'underarmour', textId: 'U' },
+          ]
+        }
+      ];
+      setOptionGroups(testGroups);
+    }
+  }, []);
   
   const tabs = [
     { id: 'inventory', label: 'Inventory' },
@@ -193,21 +265,94 @@ const deleteOption = (groupId: string, optionId: string) => {
   });
 };
 
+const showSnackbar = (message: string) => {
+  setSnackbarMessage(message);
+  setSnackbarVisible(true);
+  Animated.timing(snackbarOpacity, {
+    toValue: 1,
+    duration: 300,
+    useNativeDriver: true,
+  }).start();
+
+  setTimeout(() => {
+    Animated.timing(snackbarOpacity, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setSnackbarVisible(false);
+    });
+  }, 2000);
+};
+
+const handleLongPressDelete = (groupId: string, optionId: string, optionValue: string) => {
+  Alert.alert(
+    'Delete Option',
+    `Are you sure you want to delete "${optionValue}"?`,
+    [
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          deleteOption(groupId, optionId);
+          showSnackbar('Option deleted');
+        },
+      },
+    ]
+  );
+};
+
 const handleModalAiInput = () => {
     if (!modalAiInput.trim()) return;
     
     setModalAiInput('');
   };
 
-const handleMainAiInput = async (input) => {
+const handleMainAiInput = async (input: string) => {
     if (!input.trim()) return;
     
-    // Improved parsing to handle compound words and units
-    // First split by commas, then handle spaces more intelligently
-    const commaSplit = input.split(',').map(item => item.trim()).filter(item => item.length > 0);
+    // Track all existing options to prevent duplicates
+    const existingOptions = new Set<string>();
+    optionGroups.forEach(group => {
+      group.options.forEach(option => {
+        existingOptions.add(option.value.toLowerCase());
+      });
+    });
     
-    const inputs = [];
-    commaSplit.forEach(phrase => {
+    // Parse input for @ custom option names - improved pattern
+    const customOptionPattern = /@(\w+)\s*([^,]+?)(?=,|$|@)/g;
+    const customOptions: { name: string; value: string }[] = [];
+    
+    // Extract custom options with @ symbol
+    let match: RegExpExecArray | null;
+    while ((match = customOptionPattern.exec(input)) !== null) {
+      const optionType = match[1].trim();
+      const values = match[2].trim().split(/\s+/).filter(val => val.length > 0);
+      
+      values.forEach(value => {
+        const trimmedValue = value.trim();
+        if (trimmedValue && !existingOptions.has(trimmedValue.toLowerCase())) {
+          customOptions.push({
+            name: optionType,
+            value: trimmedValue
+          });
+          existingOptions.add(trimmedValue.toLowerCase());
+        }
+      });
+    }
+    
+    // Remove @ custom options from input for regular processing
+    let processedInput = input.replace(customOptionPattern, '').trim();
+    
+    // Process regular inputs (non-@ options)
+    const commaSplit = processedInput.split(',').map((item: string) => item.trim()).filter((item: string) => item.length > 0);
+    
+    const inputs: string[] = [];
+    commaSplit.forEach((phrase: string) => {
       // Check if phrase contains compound words or known units
       const words = phrase.toLowerCase().split(/\s+/);
       
@@ -229,7 +374,7 @@ const handleMainAiInput = async (input) => {
             inputs.push(phrase.trim());
           } else {
             // Split by spaces for regular words
-            phrase.split(/\s+/).forEach(word => {
+            phrase.split(/\s+/).forEach((word: string) => {
               if (word.trim().length > 0) {
                 inputs.push(word.trim());
               }
@@ -239,8 +384,39 @@ const handleMainAiInput = async (input) => {
       }
     });
     
-    // Remove existing duplicates
-    const uniqueInputs = Array.from(new Set(inputs));
+    // Remove duplicates from regular inputs
+    const uniqueInputs = Array.from(new Set(inputs)).filter(input => 
+      !existingOptions.has(input.toLowerCase())
+    );
+
+    // Process custom @ options first
+    customOptions.forEach(customOption => {
+      const { name, value } = customOption;
+      
+      setOptionGroups(prev => {
+        const updatedGroups = [...prev];
+        let foundGroup = updatedGroups.find(group => group.type === name);
+        
+        const newOption: Option = {
+          id: generateId(),
+          name: name,
+          value: value,
+          textId: name.charAt(0).toUpperCase()
+        };
+        
+        if (foundGroup) {
+          foundGroup.options.push(newOption);
+        } else {
+          updatedGroups.push({
+            id: generateId(),
+            type: name,
+            options: [newOption]
+          });
+        }
+        
+        return updatedGroups;
+      });
+    });
 
     try {
       // Set up API key for AI SDK
@@ -253,126 +429,261 @@ const handleMainAiInput = async (input) => {
       const optionClassificationSchema = z.object({
         classifications: z.array(z.object({
           option: z.string(),
-          type: z.enum(['Color', 'Size', 'Material']).optional(),
+          type: z.string(),
           identifier: z.string().optional()
         }))
       });
 
-      // Send request to AI to classify options
+      // Send request to AI to classify options with more specific prompt
       const result = await generateObject({
         model: groq('gemma2-9b-it'),
         schema: optionClassificationSchema,
-        prompt: `You are helping classify product options for e-commerce.
+        prompt: `Classify these items into appropriate categories. For each item, provide the item name, category type, and optionally a short identifier.
 
-Options to classify: ${uniqueInputs.join(', ')}
+Items to classify: ${uniqueInputs.join(', ')}
 
-For each option, determine the most appropriate category type. Common types include:
-- Color (for colors like red, blue, black, orange, etc.)
-- Size (for sizes like small, medium, large, XS, XL)
-- Material (for materials like cotton, leather, wool)
+Please categorize them into logical groups like Color, Size, Material, Brand, etc. For each item, return:
+- option: the original item name
+- type: the category it belongs to
+- identifier: a short code (optional)
 
-For identifiers:
-- Colors: Leave identifier empty (color will be shown visually)
-- Sizes: Use short codes like S, M, L, XL, XXL
-- Materials: Use 3-letter abbreviations like COT (cotton), LEA (leather)
-
-Respond with a JSON array of classifications, each containing:
-- option: the original option text (keep original case)
-- type: the category type
-- identifier: a short display identifier (2-4 characters max, leave empty for colors)
-
-Be intelligent about classification - group similar items together under the same type. Limit to three types.`,
-        maxRetries: 2,
+Example format:
+- "red" → type: "Color", identifier: "RED"
+- "large" → type: "Size", identifier: "L"
+- "cotton" → type: "Material", identifier: "COT"`,
+        maxRetries: 3,
       });
 
       console.log('AI Classification Result:', result.object);
 
-      // Process AI results and update option groups
-      result.object.classifications.forEach(classification => {
-        const { option, type, identifier } = classification;
-        const displayName = identifier || option.trim();
-        const visualProps = getVisualIdentifier(type, option, identifier);
-        
-        // Check for duplicates before adding
-        const duplicateExists = optionGroups.some(group => 
-          group.options.some(opt => opt.value.toLowerCase() === option.toLowerCase())
-        );
-        
-        if (!duplicateExists) {
-          setOptionGroups(prev => {
-            const updatedGroups = [...prev];
-            let foundGroup = updatedGroups.find(group => group.type === type);
-            
-            const newOption: Option = {
-              id: generateId(),
-              name: displayName,
-              value: option.trim(),
-              ...visualProps
-            };
-            
-            if (foundGroup) {
-              foundGroup.options.push(newOption);
-            } else {
-              updatedGroups.push({
-                id: generateId(),
-                type: type,
-                options: [newOption]
-              });
-            }
-            
-            return updatedGroups;
-          });
-        }
-      });
+             // Process AI results and update option groups
+       if (result.object && result.object.classifications) {
+         result.object.classifications.forEach(classification => {
+           const { option, type, identifier } = classification;
+           const displayName = identifier || option.trim();
+           const visualProps = getVisualIdentifier(type, option, identifier || '');
+           
+           // Check for duplicates before adding
+           if (!existingOptions.has(option.toLowerCase())) {
+             existingOptions.add(option.toLowerCase());
+             setOptionGroups(prev => {
+               const updatedGroups = [...prev];
+               let foundGroup = updatedGroups.find(group => group.type === type);
+               
+               const newOption: Option = {
+                 id: generateId(),
+                 name: displayName,
+                 value: option.trim(),
+                 ...visualProps
+               };
+               
+               if (foundGroup) {
+                 foundGroup.options.push(newOption);
+               } else {
+                 updatedGroups.push({
+                   id: generateId(),
+                   type: type,
+                   options: [newOption]
+                 });
+               }
+               
+               return updatedGroups;
+             });
+           }
+         });
+       } else {
+         // If AI response is invalid, fall back to simple classification
+         throw new Error('Invalid AI response format');
+       }
 
     } catch (error) {
       console.error('AI Classification Error:', error);
       
-      // Fallback to simple classification if AI fails
-      uniqueInputs.forEach(singleInput => {
-        const duplicateExists = optionGroups.some(group => 
-          group.options.some(opt => opt.value.toLowerCase() === singleInput.toLowerCase())
-        );
-        
-        if (!duplicateExists) {
-          const defaultType = singleInput.match(/^\d+/) ? 'Size' : 'Material';
-          const identifier = singleInput.trim();
-          const visualProps = getVisualIdentifier(defaultType, singleInput, identifier);
+      // Show user-friendly error message
+      showSnackbar('AI classification failed, using fallback grouping');
+      
+             // Fallback to simple classification if AI fails
+       uniqueInputs.forEach(singleInput => {
+         // Check for duplicates before adding
+         if (!existingOptions.has(singleInput.toLowerCase())) {
+           existingOptions.add(singleInput.toLowerCase());
+           
+           // Improved fallback classification
+           let defaultType = 'Other';
+           const lowerInput = singleInput.toLowerCase();
+           
+           // Color detection
+           if (['red', 'blue', 'green', 'yellow', 'black', 'white', 'gray', 'pink', 'purple', 'orange', 'brown', 'navy', 'lime', 'teal', 'indigo', 'violet', 'rose', 'amber', 'emerald', 'cyan'].includes(lowerInput)) {
+             defaultType = 'Color';
+           }
+           // Size detection
+           else if (['xs', 's', 'm', 'l', 'xl', 'xxl', 'small', 'medium', 'large', 'extra small', 'extra large', 'x-small', 'x-large'].includes(lowerInput)) {
+             defaultType = 'Size';
+           }
+           // Material detection
+           else if (['cotton', 'leather', 'metal', 'wood', 'silk', 'wool', 'polyester', 'nylon', 'denim', 'linen'].includes(lowerInput)) {
+             defaultType = 'Material';
+           }
+           // Brand detection
+           else if (['nike', 'adidas', 'puma', 'reebok', 'under armour', 'apple', 'samsung', 'sony'].includes(lowerInput)) {
+             defaultType = 'Brand';
+           }
+           // Number-based items are likely sizes
+           else if (singleInput.match(/^\d+/) || singleInput.includes('cm') || singleInput.includes('inch')) {
+             defaultType = 'Size';
+           }
+           
+           const identifier = singleInput.trim();
+           const visualProps = getVisualIdentifier(defaultType, singleInput, identifier);
 
-          setOptionGroups(prev => {
-            const updatedGroups = [...prev];
-            let foundGroup = updatedGroups.find(group => group.type === defaultType);
-            
-            const newOption: Option = {
-              id: generateId(),
-              name: identifier,
-              value: identifier,
-              ...visualProps
-            };
-            
-            if (foundGroup) {
-              foundGroup.options.push(newOption);
-            } else {
-              updatedGroups.push({
-                id: generateId(),
-                type: defaultType,
-                options: [newOption]
-              });
-            }
-            
-            return updatedGroups;
-          });
-        }
-      });
+           setOptionGroups(prev => {
+             const updatedGroups = [...prev];
+             let foundGroup = updatedGroups.find(group => group.type === defaultType);
+             
+             const newOption: Option = {
+               id: generateId(),
+               name: identifier,
+               value: identifier,
+               ...visualProps
+             };
+             
+             if (foundGroup) {
+               foundGroup.options.push(newOption);
+             } else {
+               updatedGroups.push({
+                 id: generateId(),
+                 type: defaultType,
+                 options: [newOption]
+               });
+             }
+             
+             return updatedGroups;
+           });
+         }
+       });
     }
 
     setAiInput('');
   };
 
+const handleOptionDragStart = (groupId: string, optionId: string) => {
+  setDraggedGroupId(groupId);
+  setDraggedOptionId(optionId);
+  setIsDragging(true);
+  showSnackbar('Drag to reorder');
+};
+
+const handleOptionDragOver = (targetIndex: number) => {
+  setDragTargetIndex(targetIndex);
+};
+
+const handleOptionDragEnd = (fromIndex: number, toIndex: number, groupId: string) => {
+  if (fromIndex !== toIndex && toIndex !== null && fromIndex !== null) {
+    setOptionGroups(prev => {
+      const newGroups = [...prev];
+      const groupIndex = newGroups.findIndex(g => g.id === groupId);
+      
+      if (groupIndex !== -1) {
+        const group = { ...newGroups[groupIndex] };
+        const options = [...group.options];
+        
+        // Ensure indices are within bounds
+        if (fromIndex >= 0 && fromIndex < options.length && 
+            toIndex >= 0 && toIndex < options.length) {
+          const [draggedOption] = options.splice(fromIndex, 1);
+          options.splice(toIndex, 0, draggedOption);
+          
+          newGroups[groupIndex] = {
+            ...group,
+            options
+          };
+          
+          // Show success message
+          showSnackbar('Option reordered successfully');
+        }
+      }
+      
+      return newGroups;
+    });
+  }
+  setDraggedGroupId(null);
+  setDraggedOptionId(null);
+  setDragTargetIndex(null);
+  setIsDragging(false);
+};
+
+const renderDraggableItem = ({ item: group, index }: { item: OptionGroup, index: number }) => {
+  return (
+    <View style={styles.flatOptionSetContainer}>
+      <View style={styles.flatOptionSetHeader}>
+        <Text style={styles.flatOptionSetName}>{group.type}</Text>
+      </View>
+      <View style={styles.flatOptionValuesContainer}>
+        {group.options.map((option, optionIndex) => {
+          const isDragging = draggedOptionId === option.id;
+          const isDragTarget = dragTargetIndex === optionIndex && draggedGroupId === group.id;
+          
+          return (
+                         <TouchableOpacity 
+               key={option.id} 
+               style={[
+                 styles.flatOptionValue,
+                 draggedOptionId === option.id && styles.draggingOption,
+                 isDragTarget && styles.dragTarget,
+                 isDragging && draggedOptionId !== option.id && { opacity: 0.7 }
+               ]}
+              onLongPress={() => handleOptionDragStart(group.id, option.id)}
+              onPress={() => {
+                if (draggedOptionId && draggedOptionId !== option.id) {
+                  // If dragging, handle drop
+                  const draggedIndex = group.options.findIndex(opt => opt.id === draggedOptionId);
+                  if (draggedIndex !== -1) {
+                    handleOptionDragEnd(draggedIndex, optionIndex, group.id);
+                  }
+                } else {
+                  // If not dragging, handle delete
+                  handleLongPressDelete(group.id, option.id, option.value);
+                }
+              }}
+              onPressIn={() => {
+                if (draggedOptionId && draggedOptionId !== option.id) {
+                  handleOptionDragOver(optionIndex);
+                }
+              }}
+              activeOpacity={0.7}
+              delayLongPress={300}
+            >
+              
+              
+              {/* Visual Identifier */}
+              <View style={[
+                option.color ? styles.colorIdentifier : styles.textIdentifier,
+                option.color ? { backgroundColor: option.color } : {}
+              ]}>
+                {option.color ? (
+                  option.color === '#ffffff' ? (
+                    <View style={styles.whiteColorBorder} />
+                  ) : null
+                ) : (
+                  <Text style={styles.identifierText}>
+                    {option.textId || option.name.charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              
+              {/* Option Value */}
+              <Text style={styles.flatOptionValueText}>{option.value}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+};
 
   const renderFilesContent = () => {
     return (
-      <View style={styles.tabContent}>
+      <View style={styles.tabContentContainer}>
         {/* Image Upload Section */}
         <View style={styles.fileSection}>
           <Text style={styles.sectionTitle}>Item Images</Text>
@@ -429,17 +740,7 @@ Be intelligent about classification - group similar items together under the sam
           )}
         </View>
 
-        {/* File Summary */}
-        {(images.length > 0 || documents.length > 0) && (
-          <View style={styles.fileSummary}>
-            <Text style={styles.summaryText}>
-              Total files: {images.length + documents.length}
-            </Text>
-            <Text style={styles.summarySubtext}>
-              Images: {images.length} • Documents: {documents.length}
-            </Text>
-          </View>
-        )}
+        
       </View>
     );
   };
@@ -447,7 +748,7 @@ Be intelligent about classification - group similar items together under the sam
   const renderTabContent = () => {
     switch (activeTab) {
       case 'inventory':
-        return <Text style={styles.tabContent}>Inventory Content</Text>;
+        return <View style={styles.tabContentContainer}><Text style={styles.tabContentText}>Inventory Content</Text></View>;
 case 'options':
   return (
     <View style={styles.optionsContainer}>
@@ -457,62 +758,29 @@ case 'options':
           <Text style={styles.emptyOptionsTitle}>No Options Yet</Text>
           <Text style={styles.emptyOptionsSubtitle}>
             Type options below to get started{"\n"}
-            e.g., "red blue green" or "small medium large"
+            e.g., "red blue green" or "small medium large"{"\n"}
+            Use @ to create custom groups: "@brand Nike Adidas"
           </Text>
         </View>
       ) : (
-        optionGroups.map((group) => (
-          <View key={group.id} style={styles.optionSection}>
-            <View style={styles.optionHeader}>
-              <Text style={styles.optionTitle}>{group.type}</Text>
-              <View style={styles.optionBadge}>
-                <Text style={styles.optionBadgeText}>{group.options.length}</Text>
-              </View>
-            </View>
-            <View style={styles.valuesGrid}>
-              {group.options.map((option) => (
-                <View key={option.id} style={styles.valueChip}>
-                  {/* Visual Identifier */}
-                  <View style={[
-                    option.color ? styles.colorIdentifier : styles.textIdentifier,
-                    option.color ? { backgroundColor: option.color } : {}
-                  ]}>
-                    {option.color ? (
-                      option.color === '#ffffff' ? (
-                        <View style={styles.whiteColorBorder} />
-                      ) : null
-                    ) : (
-                      <Text style={styles.identifierText}>
-                        {option.textId || option.name.charAt(0).toUpperCase()}
-                      </Text>
-                    )}
-                  </View>
-                  
-                  {/* Option Value */}
-                  <Text style={styles.valueChipText}>{option.value}</Text>
-                  
-                  {/* Delete Button */}
-                  <TouchableOpacity 
-                    style={styles.deleteOptionButton}
-                    onPress={() => deleteOption(group.id, option.id)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Feather name="x" size={14} color="#6b7280" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          </View>
-        ))
+        <FlatList
+          data={optionGroups}
+          keyExtractor={(item) => item.id}
+          renderItem={renderDraggableItem}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={true}
+          contentContainerStyle={styles.optionsListContainer}
+          style={{ flex: 1 }}
+        />
       )}
     </View>
   );
 case 'files':
         return renderFilesContent();
       case 'notes':
-        return <Text style={styles.tabContent}>Notes Content</Text>;
+        return <View style={styles.tabContentContainer}><Text style={styles.tabContentText}>Notes Content</Text></View>;
       case 'labels':
-        return <Text style={styles.tabContent}>Labels Content</Text>;
+        return <View style={styles.tabContentContainer}><Text style={styles.tabContentText}>Labels Content</Text></View>;
       default:
         return null;
     }
@@ -535,48 +803,93 @@ case 'files':
           ))}
         </ScrollView>
       </View>
-      <ScrollView 
-        style={[
-          styles.content,
-          { marginBottom: keyboardHeight > 0 ? keyboardHeight + 80 : 80 }
-        ]} 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        {renderTabContent()}
-      </ScrollView>
-      {/* AI Input at the bottom similar to ChatGPT */}
-      <View style={[
-        styles.aiInputContainer,
-        {
-          position: 'absolute',
-          bottom: keyboardHeight,
-          left: 0,
-          right: 0,
-        }
-      ]}>
-        <TextInput
-          style={styles.aiInput}
-          placeholder="Type a command or ask a question..."
-          placeholderTextColor="#94a3b8"
-          value={aiInput}
-          onChangeText={setAiInput}
-          multiline={false}
-          returnKeyType="send"
-          onSubmitEditing={() => handleMainAiInput(aiInput)}
-          blurOnSubmit={false}
-        />
-        <TouchableOpacity 
-          style={styles.sendButton}
-          onPress={() => handleMainAiInput(aiInput)}
+                           <View 
+          style={[
+            styles.content,
+            { marginBottom: activeTab === 'options' ? 0 : 20 }
+          ]} 
         >
-          <Feather name="send" size={20} color="#ffffff" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
+         {renderTabContent()}
+       </View>
+             
+       
+                               {/* Perfect AI Input Bar - Only show on options tab */}
+         {activeTab === 'options' && (
+           <View style={[
+             styles.perfectAiInputContainer,
+             {
+               position: 'absolute',
+               bottom: keyboardHeight,
+               left: 0,
+               right: 0,
+             }
+           ]}>
+             {/* Main Input Area */}
+             <View style={styles.perfectInputWrapper}>
+               <View style={styles.perfectInputInner}>
+                 <TextInput
+                   style={styles.perfectInput}
+                   placeholder="Type options or use @ to create custom groups..."
+                   placeholderTextColor="#9ca3af"
+                   value={aiInput}
+                   onChangeText={setAiInput}
+                   multiline={true}
+                   maxLength={500}
+                   returnKeyType="default"
+                   blurOnSubmit={false}
+                 />
+                 <TouchableOpacity 
+                   style={[
+                     styles.perfectSendButton,
+                     !aiInput.trim() && styles.perfectSendButtonDisabled
+                   ]}
+                   onPress={() => handleMainAiInput(aiInput)}
+                   disabled={!aiInput.trim()}
+                   activeOpacity={0.7}
+                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                 >
+                   <Feather name="send" size={18} color="#ffffff" />
+                 </TouchableOpacity>
+               </View>
+             </View>
+             
+             {/* Suggestion Chips at Bottom */}
+             <View style={styles.perfectSuggestionsContainer}>
+               <ScrollView 
+                 horizontal 
+                 showsHorizontalScrollIndicator={false}
+                 contentContainerStyle={styles.perfectSuggestionsScrollContent}
+               >
+                 {optionTypeSuggestions.map((suggestion, index) => (
+                                    <TouchableOpacity
+                   key={index}
+                   style={styles.perfectSuggestionChip}
+                   onPress={() => setAiInput(prev => prev + suggestion)}
+                   activeOpacity={0.6}
+                   hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                 >
+                     <Text style={styles.perfectSuggestionChipText}>{suggestion}</Text>
+                   </TouchableOpacity>
+                 ))}
+               </ScrollView>
+             </View>
+           </View>
+         )}
+       
+       {/* Snackbar */}
+       {snackbarVisible && (
+         <Animated.View 
+           style={[
+             styles.snackbar,
+             { opacity: snackbarOpacity }
+           ]}
+         >
+           <Text style={styles.snackbarText}>{snackbarMessage}</Text>
+         </Animated.View>
+       )}
+     </View>
+   );
+ }
 
 const styles = StyleSheet.create({
   container: {
@@ -615,7 +928,13 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: 20,
   },
-  tabContent: {
+  tabContentContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  tabContentText: {
     fontSize: 16,
     color: '#1e293b',
   },
@@ -629,24 +948,38 @@ const styles = StyleSheet.create({
     borderTopColor: '#e2e8f0',
     backgroundColor: '#ffffff',
   },
-  aiInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: '#ffffff',
-    marginRight: 10,
-  },
-  sendButton: {
-    backgroundColor: '#3b82f6',
-    padding: 10,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+           aiInputWrapper: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        backgroundColor: '#ffffff',
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+      },
+   aiInput: {
+     flex: 1,
+     fontSize: 16,
+     backgroundColor: 'transparent',
+     paddingVertical: 8,
+     paddingHorizontal: 0,
+     marginRight: 8,
+     maxHeight: 100,
+     textAlignVertical: 'top',
+   },
+   sendButton: {
+     backgroundColor: '#3b82f6',
+     padding: 8,
+     borderRadius: 20,
+     alignItems: 'center',
+     justifyContent: 'center',
+     minWidth: 36,
+     minHeight: 36,
+   },
+   sendButtonDisabled: {
+     backgroundColor: '#d1d5db',
+   },
   attributesContainer: {
     paddingVertical: 10,
   },
@@ -808,6 +1141,8 @@ emptySubtext: {
     marginBottom: 4,
   },
   flatOptionSetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 16,
     paddingHorizontal: 20,
     backgroundColor: '#ffffff',
@@ -820,21 +1155,23 @@ emptySubtext: {
     color: '#1e293b',
   },
   flatOptionValuesContainer: {
-    backgroundColor: '#fafafa',
+    backgroundColor: '#ffffff',
   },
   flatOptionValue: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 20,
-    paddingLeft: 40,
+    paddingLeft: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
+    backgroundColor: '#ffffff',
   },
   flatOptionValueText: {
     fontSize: 15,
     color: '#374151',
     marginLeft: 12,
+    flex: 1,
   },
   checkboxContainer: {
     marginRight: 8,
@@ -943,6 +1280,8 @@ emptySubtext: {
   optionsContainer: {
     flex: 1,
     backgroundColor: '#ffffff',
+    height: '100%',
+    minHeight: 0,
   },
   optionSection: {
     marginBottom: 40,
@@ -1053,10 +1392,231 @@ emptySubtext: {
     borderColor: '#d1d5db',
     backgroundColor: '#ffffff',
   },
-  deleteOptionButton: {
-    marginLeft: 8,
-    padding: 4,
-    borderRadius: 8,
-    backgroundColor: 'rgba(107, 114, 128, 0.1)',
+     deleteOptionButton: {
+     marginLeft: 8,
+     padding: 4,
+     borderRadius: 8,
+     backgroundColor: 'rgba(107, 114, 128, 0.1)',
+   },
+   // Snackbar styles
+   snackbar: {
+     position: 'absolute',
+     bottom: 100,
+     left: 20,
+     right: 20,
+     backgroundColor: '#1f2937',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderRadius: 8,
+     shadowColor: '#000',
+     shadowOffset: {
+       width: 0,
+       height: 2,
+     },
+     shadowOpacity: 0.25,
+     shadowRadius: 4,
+     elevation: 5,
+   },
+   snackbarText: {
+     color: '#ffffff',
+     fontSize: 14,
+     fontWeight: '500',
+     textAlign: 'center',
+   },
+  draggingOption: {
+    opacity: 0.7,
+    transform: [{ scale: 1.02 }],
+    backgroundColor: '#f8fafc',
   },
-});
+     dragTarget: {
+     backgroundColor: '#f1f5f9',
+     borderLeftWidth: 3,
+     borderLeftColor: '#3b82f6',
+   },
+         optionsListContainer: {
+    paddingBottom: 20,
+    flexGrow: 1,
+    minHeight: '100%',
+  },
+                   suggestionsContainer: {
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#e5e7eb',
+        backgroundColor: '#fafafa',
+      },
+    suggestionsScrollContent: {
+      paddingHorizontal: 4,
+    },
+         suggestionChip: {
+       paddingHorizontal: 12,
+       paddingVertical: 8,
+       backgroundColor: '#ffffff',
+       borderRadius: 20,
+       borderWidth: 1,
+       borderColor: '#d1d5db',
+       marginRight: 8,
+       shadowColor: '#000',
+       shadowOffset: {
+         width: 0,
+         height: 1,
+       },
+       shadowOpacity: 0.1,
+       shadowRadius: 2,
+       elevation: 1,
+     },
+           suggestionChipText: {
+        fontSize: 14,
+        color: '#374151',
+        fontWeight: '500',
+      },
+             suggestionsTitle: {
+         fontSize: 12,
+         color: '#6b7280',
+         fontWeight: '600',
+         marginBottom: 8,
+         marginLeft: 4,
+       },
+       // Cursor AI Input Styles
+       cursorInputWrapper: {
+         backgroundColor: '#ffffff',
+         borderTopWidth: 1,
+         borderTopColor: '#e5e7eb',
+         paddingHorizontal: 16,
+         paddingVertical: 12,
+       },
+       cursorInputInner: {
+         flexDirection: 'row',
+         alignItems: 'flex-end',
+         backgroundColor: '#f9fafb',
+         borderRadius: 12,
+         borderWidth: 1,
+         borderColor: '#d1d5db',
+         paddingHorizontal: 12,
+         paddingVertical: 8,
+         minHeight: 44,
+       },
+       cursorInput: {
+         flex: 1,
+         fontSize: 15,
+         color: '#374151',
+         backgroundColor: 'transparent',
+         paddingVertical: 8,
+         paddingHorizontal: 0,
+         marginRight: 8,
+         maxHeight: 120,
+         textAlignVertical: 'top',
+       },
+       cursorSendButton: {
+         backgroundColor: '#3b82f6',
+         padding: 8,
+         borderRadius: 8,
+         alignItems: 'center',
+         justifyContent: 'center',
+         minWidth: 32,
+         minHeight: 32,
+       },
+       cursorSendButtonDisabled: {
+         backgroundColor: '#d1d5db',
+       },
+       cursorSuggestionsContainer: {
+         paddingHorizontal: 16,
+         paddingVertical: 8,
+         backgroundColor: '#ffffff',
+         borderTopWidth: 1,
+         borderTopColor: '#f3f4f6',
+       },
+       cursorSuggestionsScrollContent: {
+         paddingHorizontal: 4,
+       },
+       cursorSuggestionChip: {
+         paddingHorizontal: 10,
+         paddingVertical: 6,
+         backgroundColor: '#f3f4f6',
+         borderRadius: 16,
+         borderWidth: 1,
+         borderColor: '#e5e7eb',
+         marginRight: 8,
+       },
+               cursorSuggestionChipText: {
+          fontSize: 13,
+          color: '#6b7280',
+          fontWeight: '500',
+        },
+                 // Perfect AI Input Styles - Flat Design
+         perfectAiInputContainer: {
+           backgroundColor: '#ffffff',
+           borderTopWidth: 1,
+           borderTopColor: '#f1f5f9',
+           position: 'relative',
+           zIndex: 1000,
+         },
+         perfectInputWrapper: {
+           paddingHorizontal: 16,
+           paddingVertical: 8,
+           backgroundColor: '#ffffff',
+           position: 'relative',
+         },
+         perfectInputInner: {
+           flexDirection: 'row',
+           alignItems: 'flex-end',
+           backgroundColor: '#ffffff',
+           borderRadius: 8,
+           borderWidth: 1,
+           borderColor: '#e5e7eb',
+           paddingHorizontal: 12,
+           paddingVertical: 8,
+           minHeight: 44,
+           position: 'relative',
+         },
+         perfectInput: {
+           flex: 1,
+           fontSize: 15,
+           color: '#374151',
+           backgroundColor: 'transparent',
+           paddingVertical: 6,
+           paddingHorizontal: 0,
+           marginRight: 8,
+           maxHeight: 100,
+           textAlignVertical: 'top',
+           includeFontPadding: false,
+         },
+         perfectSendButton: {
+           backgroundColor: '#3b82f6',
+           padding: 8,
+           borderRadius: 6,
+           alignItems: 'center',
+           justifyContent: 'center',
+           minWidth: 36,
+           minHeight: 36,
+         },
+         perfectSendButtonDisabled: {
+           backgroundColor: '#d1d5db',
+         },
+         perfectSuggestionsContainer: {
+           paddingHorizontal: 16,
+           paddingVertical: 8,
+           backgroundColor: '#ffffff',
+           borderTopWidth: 1,
+           borderTopColor: '#f8fafc',
+         },
+         perfectSuggestionsScrollContent: {
+           paddingHorizontal: 4,
+         },
+         perfectSuggestionChip: {
+           paddingHorizontal: 10,
+           paddingVertical: 6,
+           backgroundColor: '#ffffff',
+           borderRadius: 16,
+           borderWidth: 1,
+           borderColor: '#e5e7eb',
+           marginRight: 8,
+         },
+         perfectSuggestionChipText: {
+           fontSize: 13,
+           color: '#6b7280',
+           fontWeight: '500',
+         },
+
+    
+    });

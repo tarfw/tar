@@ -9,6 +9,7 @@ import ProductsAgent from '../../agents/ProductsAgent';
 import SalesAgent from '../../agents/SalesAgent';
 import SpaceAgent from '../../agents/SpaceAgent';
 import ItemsAgent from '../../agents/ItemsAgent';
+import FoodOrderAgent from '../../agents/FoodOrderAgent';
 
 export default function AI() {
   const { pageProp, setPageProp, selectedModule } = useModule();
@@ -33,6 +34,11 @@ export default function AI() {
       );
     }
 
+    // Check if this is a food order request
+    if (pageProp.title === 'Order Food') {
+      return <FoodOrderAgent context={pageProp} />;
+    }
+
     switch (selectedModule) {
       case 'products':
         return <ProductsAgent context={pageProp} />;
@@ -40,6 +46,8 @@ export default function AI() {
         return <SalesAgent context={pageProp} />;
       case 'spaces':
         return <SpaceAgent context={pageProp} />;
+      case 'foodorder':
+        return <FoodOrderAgent context={pageProp} />;
       case 'items':
         return <ItemsAgent context={pageProp} />;
       default:

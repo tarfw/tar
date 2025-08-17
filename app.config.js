@@ -8,12 +8,22 @@ export default {
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
+    scheme: 'com.tarfw.tar',
     splash: {
       image: './assets/splash-icon.png',
       resizeMode: 'contain',
       backgroundColor: '#ffffff',
     },
     assetBundlePatterns: ['**/*'],
+    plugins: [
+      [
+        'expo-image-picker',
+        {
+          photosPermission: 'The app accesses your photos to let you share them with others.',
+          cameraPermission: 'The app accesses your camera to let you take photos.',
+        },
+      ],
+    ],
     ios: {
       supportsTablet: true,
     },
@@ -31,7 +41,7 @@ export default {
       EXPO_PUBLIC_GROQ_API_KEY: process.env.EXPO_PUBLIC_GROQ_API_KEY,
       EXPO_PUBLIC_INSTANT_APP_ID: process.env.EXPO_PUBLIC_INSTANT_APP_ID,
       eas: {
-        projectId: "60c861b1-14f0-497a-b4d5-b1e162f7c0e7"
+        projectId: "92518f31-13c3-4b86-acc3-90019ce18133"
       },
     },
   },

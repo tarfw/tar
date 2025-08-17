@@ -11,7 +11,7 @@ import SpaceAgent from '../../agents/SpaceAgent';
 import ItemsAgent from '../../agents/ItemsAgent';
 import FoodOrderAgent from '../../agents/FoodOrderAgent';
 
-export default function AI() {
+function AI() {
   const { pageProp, setPageProp, selectedModule } = useModule();
   const searchParams = useLocalSearchParams();
 
@@ -83,3 +83,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+export default AI;

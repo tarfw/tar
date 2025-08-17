@@ -52,9 +52,19 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
 
   const requestPermissions = async () => {
     if (fileType === 'image') {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant camera roll permissions to upload images.');
+      try {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Please grant camera roll permissions to upload images.');
+          return false;
+        }
+      } catch (error) {
+        console.warn('ImagePicker permissions not available:', error);
+        Alert.alert(
+          'Image Upload Unavailable', 
+          'Image upload requires a development build. Document upload is still available.',
+          [{ text: 'OK' }]
+        );
         return false;
       }
     }
@@ -62,24 +72,33 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   };
 
   const pickImages = async (): Promise<FileToUpload[]> => {
-    // Use the minimal working configuration
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsMultipleSelection: allowMultiple,
-      quality: 0.8,
-      allowsEditing: !allowMultiple,
-      aspect: allowMultiple ? undefined : [4, 3],
-    });
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsMultipleSelection: allowMultiple,
+        quality: 0.8,
+        allowsEditing: !allowMultiple,
+        aspect: allowMultiple ? undefined : [4, 3],
+      });
 
-    if (result.canceled) {
+      if (result.canceled) {
+        return [];
+      }
+
+      return result.assets.map((asset: any) => ({
+        uri: asset.uri,
+        name: asset.fileName || `image_${Date.now()}.jpg`,
+        type: 'image/jpeg',
+        size: asset.fileSize,
+      }));
+    } catch (error) {
+      console.warn('ImagePicker not available:', error);
+      Alert.alert(
+        'Image Upload Unavailable', 
+        'Image upload requires a development build. Please wait for the build to complete or use document upload instead.',
+        [{ text: 'OK' }]
+      );
       return [];
     }
-
-    return result.assets.map((asset: any) => ({
-      uri: asset.uri,
-      name: asset.fileName || `image_${Date.now()}.jpg`,
-      type: 'image/jpeg',
-      size: asset.fileSize,
-    }));
   };
 
   const pickDocuments = async (): Promise<FileToUpload[]> => {

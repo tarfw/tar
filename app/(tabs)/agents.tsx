@@ -1,15 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { Text, View, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView, StatusBar } from 'react-native';
+import { Text, View, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView, StatusBar, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+
+const INFOBAR_PROMOS = [
+  { text: 'Discover the wonders of the universe 🌌', url: 'https://www.nasa.gov/universe' },
+  { text: 'Explore distant planets and galaxies 🚀', url: 'https://www.nasa.gov/planetary-science' },
+  { text: 'Learn about black holes and cosmic mysteries 🕳️', url: 'https://www.nasa.gov/universe/black-holes' },
+  { text: 'Stay updated on space missions and discoveries 🛰️', url: 'https://www.nasa.gov/missions' },
+  { text: 'Journey through space exploration history 📜', url: 'https://www.nasa.gov/history' },
+];
 
 export default function Agents() {
   const [isAgentSelectorVisible, setIsAgentSelectorVisible] = useState(false);
-  const [selectedAgentId, setSelectedAgentId] = useState('products');
+  const [selectedAgentId, setSelectedAgentId] = useState('space');
   const [searchText, setSearchText] = useState('');
   const [inputText, setInputText] = useState('');
   const [viewingDataForAgent, setViewingDataForAgent] = useState<string | null>(null);
+  const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
 
   const agents = [
+    {
+      id: 'space',
+      name: 'Space',
+      icon: '🌌',
+      data: ['Explore planets', 'Black hole facts', 'Mars mission updates', 'Space exploration history'],
+    },
     {
       id: 'sales',
       name: 'Sales',
@@ -68,6 +83,20 @@ export default function Agents() {
   const viewingAgent = viewingDataForAgent ? agents.find(agent => agent.id === viewingDataForAgent) : null;
 
   useEffect(() => {
+    if (selectedAgentId === 'space') {
+      const changePromo = () => {
+        const randomIndex = Math.floor(Math.random() * INFOBAR_PROMOS.length);
+        setCurrentPromo(INFOBAR_PROMOS[randomIndex]);
+      };
+      changePromo(); // Set initial
+      const interval = setInterval(changePromo, 5000);
+      return () => clearInterval(interval);
+    } else {
+      setCurrentPromo(null);
+    }
+  }, [selectedAgentId]);
+
+  useEffect(() => {
     if (isAgentSelectorVisible) {
       StatusBar.setHidden(true, 'slide');
     } else {
@@ -82,12 +111,28 @@ export default function Agents() {
 
   return (
     <View style={styles.container}>
+      {selectedAgentId === 'space' && currentPromo ? (
+        <TouchableOpacity
+          style={styles.infobar}
+          onPress={() => Linking.openURL(currentPromo.url)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.infobarText}>{currentPromo.text}</Text>
+          <MaterialIcons name="chevron-right" size={20} color="#374151" />
+        </TouchableOpacity>
+      ) : null}
+
       <View style={styles.content}>
         <Text>Agents Screen</Text>
       </View>
 
-      {/* AI Chat Input Container */}
-      <View style={styles.inputBarContainer}>
+      {/* Controls Container */}
+      <View style={styles.controlsContainer}>
+        <Text style={{ color: 'black', fontSize: 16 }}>Controls</Text>
+      </View>
+
+      {/* AI Console */}
+      <View style={styles.aiconsoleContainer}>
         <View style={styles.inputBar}>
           <TouchableOpacity
             style={styles.leadingButton}
@@ -200,7 +245,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  inputBarContainer: {
+  infobar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    padding: 24,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  infobarText: {
+    fontSize: 14,
+    color: '#000000',
+    fontWeight: '600',
+    flex: 1,
+  },
+  controlsContainer: {
+    position: 'absolute',
+    bottom: 84, // Above aiconsole height (68 minHeight + 16 padding)
+    left: 0,
+    right: 0,
+    height: 200,
+    backgroundColor: '#f0f9ff',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e7ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  aiconsoleContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
@@ -209,6 +288,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopWidth: 1,
     borderTopColor: '#f3f4f6',
+    zIndex: 10,
   },
   inputBar: {
     flexDirection: 'row',

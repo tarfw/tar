@@ -41,11 +41,7 @@ function EmailStep({ onSendEmail }: { onSendEmail: (email: string) => void }) {
         style={styles.logo}
         resizeMode="contain"
       />
-      <Text style={styles.title}>Let's log you in</Text>
-      <Text style={styles.description}>
-        Enter your email, and we'll send you a verification code. We'll create
-        an account for you too if you don't already have one.
-      </Text>
+      <Text style={styles.title}>Everything app</Text>
       <TextInput
         ref={inputRef}
         style={styles.input}
@@ -81,10 +77,6 @@ function CodeStep({ sentEmail, onReset }: { sentEmail: string; onReset: () => vo
   return (
     <View style={styles.stepContainer}>
       <Text style={styles.title}>Enter your code</Text>
-      <Text style={styles.description}>
-        We sent an email to <Text style={styles.bold}>{sentEmail}</Text>. Check your email, and
-        paste the code you see.
-      </Text>
       <TextInput
         ref={inputRef}
         style={styles.input}
@@ -105,11 +97,12 @@ function CodeStep({ sentEmail, onReset }: { sentEmail: string; onReset: () => vo
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-    backgroundColor: 'white',
+     flex: 1,
+     justifyContent: 'flex-start',
+     alignItems: 'center',
+     paddingHorizontal: 32,
+     paddingTop: 100, // Add some top padding for better spacing
+     backgroundColor: 'white',
   },
   innerContainer: {
     width: '100%',
@@ -123,12 +116,14 @@ const styles = StyleSheet.create({
     height: 120,
     alignSelf: 'center',
     marginBottom: 16,
+      borderRadius: 10,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000',
-    marginBottom: 8,
+     fontSize: 24,
+     fontWeight: 'bold',
+     color: '#000',
+     marginBottom: 8,
+     textAlign: 'center',
   },
   description: {
     fontSize: 16,

@@ -1,13 +1,15 @@
 import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
+    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
       <Tabs.Screen
         name="workspace"
         options={{
@@ -36,5 +38,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </SafeAreaView>
   );
 }

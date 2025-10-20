@@ -1,0 +1,25 @@
+{
+  "cli": {
+    "version": ">= 16.24.1",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+    "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_INSTANT_APP_ID": "1be71d54-11aa-4705-a2b1-e96753009db4"
+      },
+      "secrets": ["INSTANT_APP_ADMIN_TOKEN"]
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

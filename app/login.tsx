@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image } from 'react-native';
 import db from '../db';
 
 export default function Login() {
@@ -36,6 +36,11 @@ function EmailStep({ onSendEmail }: { onSendEmail: (email: string) => void }) {
 
   return (
     <View style={styles.stepContainer}>
+      <Image
+        source={require('../../assets/images/tarlogo.png')}
+        style={styles.logo}
+        resizeMode="contain"
+      />
       <Text style={styles.title}>Let's log you in</Text>
       <Text style={styles.description}>
         Enter your email, and we'll send you a verification code. We'll create
@@ -112,6 +117,12 @@ const styles = StyleSheet.create({
   },
   stepContainer: {
     width: '100%',
+  },
+  logo: {
+    width: 120,
+    height: 120,
+    alignSelf: 'center',
+    marginBottom: 16,
   },
   title: {
     fontSize: 24,

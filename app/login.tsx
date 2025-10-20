@@ -37,7 +37,7 @@ function EmailStep({ onSendEmail }: { onSendEmail: (email: string) => void }) {
   return (
     <View style={styles.stepContainer}>
       <Image
-        source={require('../../assets/images/tarlogo.png')}
+        source={require('../assets/images/tarlogo.png')}
         style={styles.logo}
         resizeMode="contain"
       />

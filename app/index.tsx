@@ -7,7 +7,7 @@ export default function Index() {
   useEffect(() => {
     // Delay navigation to ensure navigator is ready
     const timer = setTimeout(() => {
-      router.replace('/workspace');
+      router.replace('/(tabs)/workspace');
     }, 100);
 
     return () => clearTimeout(timer);

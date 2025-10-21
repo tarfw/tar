@@ -1,10 +1,27 @@
-import React, { useEffect, useState } from 'react';
-import { Text, View, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView, StatusBar, Linking } from 'react-native';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
+import {
+  Text,
+  View,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  ScrollView,
+  StatusBar,
+  Linking,
+  KeyboardAvoidingView,
+  Keyboard,
+  Platform,
+} from 'react-native';
+import type { KeyboardEvent } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { fetch as expoFetch } from 'expo/fetch';
 import { generateAPIUrl } from '../../utils';
+
+const INFOBAR_HEIGHT = 60;
+const CHAT_PADDING_EXTRA = 8;
 
 const INFOBAR_PROMOS = [
   { text: 'Discover the wonders of the universe 🌌', url: 'https://www.nasa.gov/universe' },
@@ -22,6 +39,17 @@ export default function Agents() {
   const [viewingDataForAgent, setViewingDataForAgent] = useState<string | null>(null);
   const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
   const [showControls, setShowControls] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [inputBarHeight, setInputBarHeight] = useState(72);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const shouldAutoScrollRef = useRef(true);
+  const lastLoggedMessageRef = useRef<string | null>(null);
+  const handleInputBarLayout = useCallback(({ nativeEvent: { layout } }) => {
+    setInputBarHeight(prev => (prev === layout.height ? prev : layout.height));
+  }, []);
+
+  const keyboardInset = Platform.OS === 'android' ? keyboardHeight : 0;
+  const contentPaddingBottom = inputBarHeight + CHAT_PADDING_EXTRA + keyboardInset;
 
   const agents = [
     {
@@ -95,6 +123,83 @@ export default function Agents() {
     onError: error => console.error(error, 'ERROR'),
   });
 
+  const getAssistantPreview = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return '';
+    const words = trimmed.split(/\s+/);
+    if (words.length <= 20) {
+      return trimmed;
+    }
+    return `${words.slice(0, 20).join(' ')}…`;
+  };
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      return;
+    }
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const handleShow = (event: KeyboardEvent) => {
+      setKeyboardHeight(event.endCoordinates?.height ?? 0);
+    };
+
+    const handleHide = () => {
+      setKeyboardHeight(0);
+    };
+
+    const showSubscription = Keyboard.addListener(showEvent, handleShow);
+    const hideSubscription = Keyboard.addListener(hideEvent, handleHide);
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedAgentId === 'space') {
+      shouldAutoScrollRef.current = true;
+    }
+  }, [selectedAgentId]);
+
+  useEffect(() => {
+    if (selectedAgentId !== 'space') return;
+    if (!scrollViewRef.current) return;
+    if (!shouldAutoScrollRef.current) return;
+    scrollViewRef.current.scrollToEnd({ animated: true });
+  }, [messages, selectedAgentId]);
+
+  useEffect(() => {
+    const lastAssistant = [...messages].reverse().find(message => message.role === 'assistant');
+    if (!lastAssistant) return;
+
+    const hasStreamingPart = lastAssistant.parts.some(part =>
+      'state' in part && part.state === 'streaming'
+    );
+    if (hasStreamingPart) {
+      return;
+    }
+
+    const text = lastAssistant.parts
+      .map(part => (part.type === 'text' ? part.text : ''))
+      .join('')
+      .trim();
+
+    if (!text) {
+      return;
+    }
+
+    const signature = `${lastAssistant.id}:${text}`;
+    if (lastLoggedMessageRef.current === signature) {
+      return;
+    }
+
+    lastLoggedMessageRef.current = signature;
+    console.log('AI Response:', getAssistantPreview(text));
+  }, [messages]);
+
   useEffect(() => {
     if (selectedAgentId === 'space') {
       const changePromo = () => {
@@ -123,7 +228,11 @@ export default function Agents() {
   }, [isAgentSelectorVisible]);
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? INFOBAR_HEIGHT : 0}
+    >
       {selectedAgentId === 'space' && currentPromo ? (
         <TouchableOpacity
           style={styles.infobar}
@@ -135,25 +244,62 @@ export default function Agents() {
         </TouchableOpacity>
       ) : null}
 
-      <View style={styles.content}>
+      <View
+        style={[
+          styles.content,
+          {
+            paddingTop: selectedAgentId === 'space' && currentPromo ? INFOBAR_HEIGHT + 16 : 16,
+            paddingBottom: contentPaddingBottom,
+          },
+        ]}
+      >
         {selectedAgentId === 'space' ? (
           error ? (
             <Text>{error.message}</Text>
           ) : (
-            <ScrollView style={{ flex: 1 }}>
-              {messages.map(m => (
-                <View key={m.id} style={{ marginVertical: 8, paddingHorizontal: 16 }}>
-                  <View>
-                    <Text style={{ fontWeight: 700 }}>{m.role}</Text>
-                    {m.parts.map((part, i) => {
-                      switch (part.type) {
-                        case 'text':
-                          return <Text key={`${m.id}-${i}`}>{part.text}</Text>;
-                      }
-                    })}
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.chatScroll}
+              contentContainerStyle={styles.chatContent}
+              keyboardShouldPersistTaps="handled"
+              onContentSizeChange={() => {
+                if (shouldAutoScrollRef.current) {
+                  scrollViewRef.current?.scrollToEnd({ animated: true });
+                }
+              }}
+              onScroll={event => {
+                const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+                const distanceFromBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y);
+                shouldAutoScrollRef.current = distanceFromBottom < 48;
+              }}
+              scrollEventThrottle={16}
+            >
+              {messages.map((message, index) => {
+                const timestamp = typeof message.createdAt === 'number'
+                  ? message.createdAt
+                  : typeof message.createdAt === 'string'
+                    ? new Date(message.createdAt).getTime()
+                    : Date.now() + index;
+                const key = `${message.id}-${timestamp}-${index}`;
+                const isUser = message.role === 'user';
+                const messageText = message.parts
+                  .map(part => (part.type === 'text' ? part.text : ''))
+                  .join('');
+                const displayText = isUser
+                  ? messageText
+                  : getAssistantPreview(messageText);
+
+                if (!displayText) return null;
+
+                return (
+                  <View key={key} style={styles.chatMessage}>
+                    <Text style={[styles.chatText, isUser ? styles.userText : styles.assistantText]}>
+                      {displayText}
+                    </Text>
+                    {index < messages.length - 1 && <View style={styles.chatDivider} />}
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
           )
         ) : (
@@ -163,14 +309,14 @@ export default function Agents() {
 
       {/* Controls Container */}
       {showControls && (
-        <View style={styles.controlsContainer}>
+        <View style={[styles.controlsContainer, { bottom: contentPaddingBottom }]}>
           <Text style={{ color: 'black', fontSize: 16 }}>Controls</Text>
         </View>
       )}
 
       {/* AI Console */}
-      <View style={styles.aiconsoleContainer}>
-        <View style={styles.inputBar}>
+      <View style={[styles.aiconsoleContainer, keyboardInset ? { bottom: keyboardInset } : null]}>
+        <View style={styles.inputBar} onLayout={handleInputBarLayout}>
           <TouchableOpacity
             style={styles.leadingButton}
             onPress={() => setIsAgentSelectorVisible(true)}
@@ -187,7 +333,12 @@ export default function Agents() {
             onChangeText={setInputText}
             onSubmitEditing={e => {
               if (selectedAgentId === 'space') {
-                sendMessage({ text: inputText });
+                const next = inputText.trim();
+                if (!next) {
+                  return;
+                }
+                shouldAutoScrollRef.current = true;
+                sendMessage({ text: next });
                 setInputText('');
               }
             }}
@@ -283,7 +434,7 @@ export default function Agents() {
         </View>
       </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -294,8 +445,31 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  },
+  chatScroll: {
+    flex: 1,
+  },
+  chatContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  chatMessage: {
+    paddingVertical: 4,
+  },
+  chatText: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  userText: {
+    color: '#1d4ed8',
+  },
+  assistantText: {
+    color: '#111827',
+  },
+  chatDivider: {
+    height: 1,
+    backgroundColor: '#e5e7eb',
+    marginTop: 8,
   },
   infobar: {
     position: 'absolute',
@@ -337,7 +511,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: 16,
     backgroundColor: 'white',
     borderTopWidth: 1,
     borderTopColor: '#f3f4f6',
@@ -347,9 +520,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'white',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    minHeight: 68,
+    paddingHorizontal: 20,
+    paddingVertical: 0,
+    minHeight: 64,
   },
   textInput: {
     flex: 1,

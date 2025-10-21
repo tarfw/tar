@@ -14,7 +14,12 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: groq('llama-3.1-8b-instant'),
+    system:
+      'Answer each prompt in one short sentence of at most 20 words. Do not add extra commentary or formatting.',
     messages: convertToModelMessages(messages),
+    temperature: 0.2,
+    stopSequences: ['\n\n'],
+    maxOutputTokens: 48,
   });
 
   return result.toUIMessageStreamResponse({

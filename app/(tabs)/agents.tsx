@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Text, View, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView, StatusBar, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
+import { fetch as expoFetch } from 'expo/fetch';
+import { generateAPIUrl } from '../../utils';
 
 const INFOBAR_PROMOS = [
   { text: 'Discover the wonders of the universe 🌌', url: 'https://www.nasa.gov/universe' },
@@ -17,6 +21,7 @@ export default function Agents() {
   const [inputText, setInputText] = useState('');
   const [viewingDataForAgent, setViewingDataForAgent] = useState<string | null>(null);
   const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
+  const [showControls, setShowControls] = useState(false);
 
   const agents = [
     {
@@ -82,6 +87,14 @@ export default function Agents() {
   const selectedAgent = agents.find(agent => agent.id === selectedAgentId);
   const viewingAgent = viewingDataForAgent ? agents.find(agent => agent.id === viewingDataForAgent) : null;
 
+  const { messages, error, sendMessage } = useChat({
+    transport: new DefaultChatTransport({
+      fetch: expoFetch as unknown as typeof globalThis.fetch,
+      api: generateAPIUrl('/api/chat'),
+    }),
+    onError: error => console.error(error, 'ERROR'),
+  });
+
   useEffect(() => {
     if (selectedAgentId === 'space') {
       const changePromo = () => {
@@ -118,18 +131,42 @@ export default function Agents() {
           activeOpacity={0.8}
         >
           <Text style={styles.infobarText}>{currentPromo.text}</Text>
-          <MaterialIcons name="chevron-right" size={20} color="#374151" />
+          <MaterialIcons name="chevron-right" size={20} color="white" />
         </TouchableOpacity>
       ) : null}
 
       <View style={styles.content}>
-        <Text>Agents Screen</Text>
+        {selectedAgentId === 'space' ? (
+          error ? (
+            <Text>{error.message}</Text>
+          ) : (
+            <ScrollView style={{ flex: 1 }}>
+              {messages.map(m => (
+                <View key={m.id} style={{ marginVertical: 8, paddingHorizontal: 16 }}>
+                  <View>
+                    <Text style={{ fontWeight: 700 }}>{m.role}</Text>
+                    {m.parts.map((part, i) => {
+                      switch (part.type) {
+                        case 'text':
+                          return <Text key={`${m.id}-${i}`}>{part.text}</Text>;
+                      }
+                    })}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          )
+        ) : (
+          <Text>Agents Screen</Text>
+        )}
       </View>
 
       {/* Controls Container */}
-      <View style={styles.controlsContainer}>
-        <Text style={{ color: 'black', fontSize: 16 }}>Controls</Text>
-      </View>
+      {showControls && (
+        <View style={styles.controlsContainer}>
+          <Text style={{ color: 'black', fontSize: 16 }}>Controls</Text>
+        </View>
+      )}
 
       {/* AI Console */}
       <View style={styles.aiconsoleContainer}>
@@ -148,10 +185,25 @@ export default function Agents() {
             placeholderTextColor="#9ca3af"
             value={inputText}
             onChangeText={setInputText}
+            onSubmitEditing={e => {
+              if (selectedAgentId === 'space') {
+                sendMessage({ text: inputText });
+                setInputText('');
+              }
+            }}
+            autoFocus={true}
           />
 
           <TouchableOpacity style={styles.iconButton}>
             <MaterialIcons name="graphic-eq" size={20} color="#6b7280" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => setShowControls(!showControls)}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons name="more-vert" size={20} color="#6b7280" />
           </TouchableOpacity>
         </View>
       </View>
@@ -250,11 +302,12 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    padding: 24,
-    backgroundColor: 'white',
+    height: 60,
+    padding: 12,
+    backgroundColor: 'black',
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    borderRadius: 8,
+    borderRadius: 0,
     zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -262,7 +315,7 @@ const styles = StyleSheet.create({
   },
   infobarText: {
     fontSize: 14,
-    color: '#000000',
+    color: 'white',
     fontWeight: '600',
     flex: 1,
   },

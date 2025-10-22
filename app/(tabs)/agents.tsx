@@ -1,13 +1,10 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Text,
   View,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
-  Modal,
   ScrollView,
-  StatusBar,
   Linking,
   KeyboardAvoidingView,
   Keyboard,
@@ -19,10 +16,64 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { fetch as expoFetch } from 'expo/fetch';
 import { generateAPIUrl } from '../../utils';
+import Console from '../../modals/console';
+
+type MessagePart = {
+  type?: string;
+  text?: string;
+  state?: string;
+  [key: string]: unknown;
+};
+
+const extractMessageParts = (message: unknown): MessagePart[] => {
+  if (Array.isArray((message as { parts?: unknown })?.parts)) {
+    return [...((message as { parts: MessagePart[] }).parts)];
+  }
+
+  const content = (message as { content?: unknown })?.content;
+
+  if (Array.isArray(content)) {
+    return content as MessagePart[];
+  }
+
+  if (typeof content === 'string' && content.trim()) {
+    return [{ type: 'text', text: content }];
+  }
+
+  if (typeof (message as { text?: unknown })?.text === 'string') {
+    return [{ type: 'text', text: (message as { text: string }).text }];
+  }
+
+  return [];
+};
+
+const extractMessageText = (message: unknown) => {
+  const parts = extractMessageParts(message);
+
+  const textFromParts = parts
+    .map(part => (part?.type === 'text' && typeof part?.text === 'string' ? part.text : ''))
+    .join('')
+    .trim();
+
+  if (textFromParts) {
+    return textFromParts;
+  }
+
+  const content = (message as { content?: unknown })?.content;
+
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (typeof (message as { text?: unknown })?.text === 'string') {
+    return (message as { text: string }).text;
+  }
+
+  return '';
+};
+
 
 const INFOBAR_HEIGHT = 60;
-const CHAT_PADDING_EXTRA = 8;
-
 const INFOBAR_PROMOS = [
   { text: 'Discover the wonders of the universe 🌌', url: 'https://www.nasa.gov/universe' },
   { text: 'Explore distant planets and galaxies 🚀', url: 'https://www.nasa.gov/planetary-science' },
@@ -32,24 +83,15 @@ const INFOBAR_PROMOS = [
 ];
 
 export default function Agents() {
-  const [isAgentSelectorVisible, setIsAgentSelectorVisible] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState('space');
-  const [searchText, setSearchText] = useState('');
-  const [inputText, setInputText] = useState('');
-  const [viewingDataForAgent, setViewingDataForAgent] = useState<string | null>(null);
   const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
-  const [showControls, setShowControls] = useState(false);
+  
   const scrollViewRef = useRef<ScrollView>(null);
-  const [inputBarHeight, setInputBarHeight] = useState(72);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const shouldAutoScrollRef = useRef(true);
   const lastLoggedMessageRef = useRef<string | null>(null);
-  const handleInputBarLayout = useCallback(({ nativeEvent: { layout } }) => {
-    setInputBarHeight(prev => (prev === layout.height ? prev : layout.height));
-  }, []);
 
   const keyboardInset = Platform.OS === 'android' ? keyboardHeight : 0;
-  const contentPaddingBottom = inputBarHeight + CHAT_PADDING_EXTRA + keyboardInset;
 
   const agents = [
     {
@@ -96,26 +138,8 @@ export default function Agents() {
     },
   ];
 
-  const handleAgentTap = (agentId: string) => {
-    setViewingDataForAgent(agentId);
-  };
-
-  const handleDataSelect = (agentId: string, data: string) => {
-    setSelectedAgentId(agentId);
-    setInputText(data);
-    setIsAgentSelectorVisible(false);
-    setViewingDataForAgent(null);
-  };
-
-  const handleBack = () => {
-    setViewingDataForAgent(null);
-  };
-
-  const filteredAgents = agents.filter(agent => agent.name.toLowerCase().includes(searchText.toLowerCase()));
-  const selectedAgent = agents.find(agent => agent.id === selectedAgentId);
-  const viewingAgent = viewingDataForAgent ? agents.find(agent => agent.id === viewingDataForAgent) : null;
-
   const { messages, error, sendMessage } = useChat({
+    initialMessages: [],
     transport: new DefaultChatTransport({
       fetch: expoFetch as unknown as typeof globalThis.fetch,
       api: generateAPIUrl('/api/chat'),
@@ -168,24 +192,22 @@ export default function Agents() {
     if (selectedAgentId !== 'space') return;
     if (!scrollViewRef.current) return;
     if (!shouldAutoScrollRef.current) return;
+    if (!messages || !Array.isArray(messages)) return;
     scrollViewRef.current.scrollToEnd({ animated: true });
   }, [messages, selectedAgentId]);
 
   useEffect(() => {
+    if (!messages || !Array.isArray(messages) || messages.length === 0) return;
     const lastAssistant = [...messages].reverse().find(message => message.role === 'assistant');
     if (!lastAssistant) return;
 
-    const hasStreamingPart = lastAssistant.parts.some(part =>
-      'state' in part && part.state === 'streaming'
-    );
+    const lastAssistantParts = extractMessageParts(lastAssistant);
+    const hasStreamingPart = lastAssistantParts.some(part => part?.state === 'streaming');
     if (hasStreamingPart) {
       return;
     }
 
-    const text = lastAssistant.parts
-      .map(part => (part.type === 'text' ? part.text : ''))
-      .join('')
-      .trim();
+    const text = extractMessageText(lastAssistant);
 
     if (!text) {
       return;
@@ -214,18 +236,9 @@ export default function Agents() {
     }
   }, [selectedAgentId]);
 
-  useEffect(() => {
-    if (isAgentSelectorVisible) {
-      StatusBar.setHidden(true, 'slide');
-    } else {
-      StatusBar.setHidden(false, 'slide');
-      setViewingDataForAgent(null); // Reset when closing
-    }
 
-    return () => {
-      StatusBar.setHidden(false, 'slide');
-    };
-  }, [isAgentSelectorVisible]);
+
+
 
   return (
     <KeyboardAvoidingView
@@ -249,7 +262,7 @@ export default function Agents() {
           styles.content,
           {
             paddingTop: selectedAgentId === 'space' && currentPromo ? INFOBAR_HEIGHT + 16 : 16,
-            paddingBottom: contentPaddingBottom,
+            paddingBottom: keyboardInset + 80,
           },
         ]}
       >
@@ -274,7 +287,7 @@ export default function Agents() {
               }}
               scrollEventThrottle={16}
             >
-              {messages.map((message, index) => {
+              {(messages || []).map((message, index) => {
                 const timestamp = typeof message.createdAt === 'number'
                   ? message.createdAt
                   : typeof message.createdAt === 'string'
@@ -282,9 +295,7 @@ export default function Agents() {
                     : Date.now() + index;
                 const key = `${message.id}-${timestamp}-${index}`;
                 const isUser = message.role === 'user';
-                const messageText = message.parts
-                  .map(part => (part.type === 'text' ? part.text : ''))
-                  .join('');
+                const messageText = extractMessageText(message);
                 const displayText = isUser
                   ? messageText
                   : getAssistantPreview(messageText);
@@ -307,133 +318,17 @@ export default function Agents() {
         )}
       </View>
 
-      {/* Controls Container */}
-      {showControls && (
-        <View style={[styles.controlsContainer, { bottom: contentPaddingBottom }]}>
-          <Text style={{ color: 'black', fontSize: 16 }}>Controls</Text>
-        </View>
-      )}
 
-      {/* AI Console */}
-      <View style={[styles.aiconsoleContainer, keyboardInset ? { bottom: keyboardInset } : null]}>
-        <View style={styles.inputBar} onLayout={handleInputBarLayout}>
-          <TouchableOpacity
-            style={styles.leadingButton}
-            onPress={() => setIsAgentSelectorVisible(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.agentText}>{selectedAgent?.icon}</Text>
-          </TouchableOpacity>
 
-          <TextInput
-            style={styles.textInput}
-            placeholder="Ask anything"
-            placeholderTextColor="#9ca3af"
-            value={inputText}
-            onChangeText={setInputText}
-            onSubmitEditing={e => {
-              if (selectedAgentId === 'space') {
-                const next = inputText.trim();
-                if (!next) {
-                  return;
-                }
-                shouldAutoScrollRef.current = true;
-                sendMessage({ text: next });
-                setInputText('');
-              }
-            }}
-            autoFocus={true}
-          />
 
-          <TouchableOpacity style={styles.iconButton}>
-            <MaterialIcons name="graphic-eq" size={20} color="#6b7280" />
-          </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => setShowControls(!showControls)}
-            activeOpacity={0.7}
-          >
-            <MaterialIcons name="more-vert" size={20} color="#6b7280" />
-          </TouchableOpacity>
-        </View>
-      </View>
 
-      {/* Agent Selector Modal */}
-      <Modal
-        visible={isAgentSelectorVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsAgentSelectorVisible(false)}
-      >
-        <View style={styles.fullscreenOverlay}>
-          <View style={styles.modalContainer}>
-          <View style={styles.modalInputBar}>
-            {viewingDataForAgent && (
-              <TouchableOpacity style={styles.backButton} onPress={handleBack} activeOpacity={0.7}>
-                <MaterialIcons name="arrow-back" size={24} color="#4b5563" />
-              </TouchableOpacity>
-            )}
-            <TextInput
-              style={styles.modalTextInput}
-              placeholder={viewingDataForAgent ? `Search ${viewingAgent?.name} data...` : "Search agents..."}
-              placeholderTextColor="#9ca3af"
-              value={searchText}
-              onChangeText={setSearchText}
-            />
-            <TouchableOpacity style={styles.modalIconButton} activeOpacity={0.7}>
-              <MaterialIcons name="qr-code-scanner" size={20} color="#4b5563" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.modalContent} contentContainerStyle={styles.modalContentContainer}>
-            {viewingDataForAgent ? (
-              viewingAgent?.data.filter(item => item.toLowerCase().includes(searchText.toLowerCase())).length ? (
-                viewingAgent.data.filter(item => item.toLowerCase().includes(searchText.toLowerCase())).map((data) => (
-                  <TouchableOpacity
-                    key={data}
-                    style={styles.dataItem}
-                    onPress={() => handleDataSelect(viewingDataForAgent, data)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.dataContent}>
-                      <Text style={styles.dataBullet}>•</Text>
-                      <Text style={styles.dataText}>{data}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <Text style={styles.noData}>No data found</Text>
-              )
-            ) : (
-              filteredAgents.length ? (
-                filteredAgents.map((agent) => {
-                  const isSelected = selectedAgentId === agent.id;
-                  return (
-                    <TouchableOpacity
-                      key={agent.id}
-                      style={styles.agentItem}
-                      onPress={() => handleAgentTap(agent.id)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.agentContent}>
-                        <Text style={styles.agentIcon}>{agent.icon}</Text>
-                        <Text style={styles.agentName}>{agent.name}</Text>
-                        {isSelected && (
-                          <MaterialIcons name="check-circle" size={20} color="#6366f1" />
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              ) : (
-                <Text style={styles.noAgents}>No agents found</Text>
-              )
-            )}
-          </ScrollView>
-        </View>
-      </View>
-      </Modal>
+      <Console
+        selectedAgentId={selectedAgentId}
+        agents={agents}
+        onAgentSelect={setSelectedAgentId}
+        onSendMessage={selectedAgentId === 'space' ? (message) => sendMessage({ text: message }) : undefined}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -493,143 +388,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
   },
-  controlsContainer: {
-    position: 'absolute',
-    bottom: 84, // Above aiconsole height (68 minHeight + 16 padding)
-    left: 0,
-    right: 0,
-    height: 200,
-    backgroundColor: '#f0f9ff',
-    borderTopWidth: 1,
-    borderTopColor: '#e0e7ff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 5,
-  },
-  aiconsoleContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
-    zIndex: 10,
-  },
-  inputBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    paddingHorizontal: 20,
-    paddingVertical: 0,
-    minHeight: 64,
-  },
-  textInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1f2937',
-    paddingVertical: 6,
-  },
-  iconButton: {
-    marginLeft: 16,
-    padding: 8,
-  },
-  agentText: {
-    fontSize: 16,
-    color: '#4b5563',
-  },
-  leadingButton: {
-    marginRight: 12,
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#f3f4f6',
-  },
-  fullscreenOverlay: {
-    flex: 1,
-    backgroundColor: 'white',
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'white',
-    paddingTop: 0,
-  },
-  modalInputBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    minHeight: 64,
-  },
-  backButton: {
-    marginRight: 12,
-    padding: 8,
-  },
-  modalTextInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1f2937',
-    paddingVertical: 0,
-  },
-  modalIconButton: {
-    marginLeft: 12,
-  },
 
-  modalContent: {
-    flex: 1,
-  },
-  modalContentContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-  },
-  agentItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  agentContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  agentIcon: {
-    fontSize: 24,
-  },
-  agentName: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1f2937',
-  },
-  noAgents: {
-    fontSize: 16,
-    color: '#9ca3af',
-    textAlign: 'center',
-    paddingVertical: 40,
-  },
-  dataItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  dataContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dataBullet: {
-    fontSize: 18,
-    color: '#6366f1',
-    width: 24,
-  },
-  dataText: {
-    fontSize: 16,
-    color: '#1f2937',
-  },
-  noData: {
-    fontSize: 16,
-    color: '#9ca3af',
-    textAlign: 'center',
-    paddingVertical: 40,
-  },
 });

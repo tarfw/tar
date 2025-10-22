@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Console from '../modals/console';
@@ -27,6 +27,13 @@ const INFOBAR_PROMOS = [
 export default function Agents() {
   const [selectedAgentId, setSelectedAgentId] = useState('space');
   const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
+  const [spaceSendMessage, setSpaceSendMessage] = useState<((message: string) => Promise<void>) | null>(null);
+  const registerSpaceSendHandler = useCallback(
+    (handler: ((message: string) => Promise<void>) | null) => {
+      setSpaceSendMessage(() => handler);
+    },
+    [],
+  );
 
   const agents = [
     {
@@ -73,15 +80,17 @@ export default function Agents() {
     },
   ];
 
-  const terminalComponents = {
-  space: SpaceTerminal,
-  sales: SalesTerminal,
-  orders: OrdersTerminal,
-  products: ProductsTerminal,
-  items: ItemsTerminal,
-  stores: StoresTerminal,
-  files: FilesTerminal,
-  };
+  const terminalComponents = useMemo(
+    () => ({
+      sales: SalesTerminal,
+      orders: OrdersTerminal,
+      products: ProductsTerminal,
+      items: ItemsTerminal,
+      stores: StoresTerminal,
+      files: FilesTerminal,
+    }),
+    [],
+  );
 
   useEffect(() => {
     if (selectedAgentId === 'space') {
@@ -97,9 +106,22 @@ export default function Agents() {
     }
   }, [selectedAgentId]);
 
+  const handleConsoleSend = useCallback(
+    async (message: string) => {
+      if (typeof message !== 'string') {
+        return;
+      }
 
+      if (selectedAgentId !== 'space' || !spaceSendMessage) {
+        return;
+      }
 
+      await spaceSendMessage(message);
+    },
+    [selectedAgentId, spaceSendMessage],
+  );
 
+  const consoleSendHandler = selectedAgentId === 'space' && spaceSendMessage ? handleConsoleSend : undefined;
 
   return (
     <View style={styles.container}>
@@ -122,7 +144,14 @@ export default function Agents() {
           },
         ]}
       >
-        {React.createElement(terminalComponents[selectedAgentId])}
+        {selectedAgentId === 'space' ? (
+          <SpaceTerminal onRegisterSendMessage={registerSpaceSendHandler} />
+        ) : (
+          (() => {
+            const TerminalComponent = terminalComponents[selectedAgentId as keyof typeof terminalComponents];
+            return TerminalComponent ? <TerminalComponent /> : null;
+          })()
+        )}
       </View>
 
 
@@ -134,6 +163,7 @@ export default function Agents() {
         selectedAgentId={selectedAgentId}
         agents={agents}
         onAgentSelect={setSelectedAgentId}
+        onSendMessage={consoleSendHandler}
       />
     </View>
   );

@@ -1,3 +1,7 @@
+export default function TerminalsIndex() {
+  return null;
+}
+
 export { default as SpaceTerminal } from './space';
 export { default as SalesTerminal } from './sales';
 export { default as OrdersTerminal } from './orders';

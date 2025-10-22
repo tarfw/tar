@@ -16,61 +16,18 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { fetch as expoFetch } from 'expo/fetch';
 import { generateAPIUrl } from '../../utils';
-import Console from '../../modals/console';
+import Console from '../modals/console';
+import {
+  SpaceTerminal,
+  SalesTerminal,
+  OrdersTerminal,
+  ProductsTerminal,
+  ItemsTerminal,
+  StoresTerminal,
+  FilesTerminal,
+} from '../terminals';
 
-type MessagePart = {
-  type?: string;
-  text?: string;
-  state?: string;
-  [key: string]: unknown;
-};
 
-const extractMessageParts = (message: unknown): MessagePart[] => {
-  if (Array.isArray((message as { parts?: unknown })?.parts)) {
-    return [...((message as { parts: MessagePart[] }).parts)];
-  }
-
-  const content = (message as { content?: unknown })?.content;
-
-  if (Array.isArray(content)) {
-    return content as MessagePart[];
-  }
-
-  if (typeof content === 'string' && content.trim()) {
-    return [{ type: 'text', text: content }];
-  }
-
-  if (typeof (message as { text?: unknown })?.text === 'string') {
-    return [{ type: 'text', text: (message as { text: string }).text }];
-  }
-
-  return [];
-};
-
-const extractMessageText = (message: unknown) => {
-  const parts = extractMessageParts(message);
-
-  const textFromParts = parts
-    .map(part => (part?.type === 'text' && typeof part?.text === 'string' ? part.text : ''))
-    .join('')
-    .trim();
-
-  if (textFromParts) {
-    return textFromParts;
-  }
-
-  const content = (message as { content?: unknown })?.content;
-
-  if (typeof content === 'string') {
-    return content;
-  }
-
-  if (typeof (message as { text?: unknown })?.text === 'string') {
-    return (message as { text: string }).text;
-  }
-
-  return '';
-};
 
 
 const INFOBAR_HEIGHT = 60;
@@ -85,13 +42,6 @@ const INFOBAR_PROMOS = [
 export default function Agents() {
   const [selectedAgentId, setSelectedAgentId] = useState('space');
   const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
-  
-  const scrollViewRef = useRef<ScrollView>(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const shouldAutoScrollRef = useRef(true);
-  const lastLoggedMessageRef = useRef<string | null>(null);
-
-  const keyboardInset = Platform.OS === 'android' ? keyboardHeight : 0;
 
   const agents = [
     {
@@ -138,6 +88,16 @@ export default function Agents() {
     },
   ];
 
+  const terminalComponents = {
+  space: SpaceTerminal,
+  sales: SalesTerminal,
+  orders: OrdersTerminal,
+  products: ProductsTerminal,
+  items: ItemsTerminal,
+  stores: StoresTerminal,
+  files: FilesTerminal,
+  };
+
   const { messages, error, sendMessage } = useChat({
     initialMessages: [],
     transport: new DefaultChatTransport({
@@ -147,80 +107,7 @@ export default function Agents() {
     onError: error => console.error(error, 'ERROR'),
   });
 
-  const getAssistantPreview = (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return '';
-    const words = trimmed.split(/\s+/);
-    if (words.length <= 20) {
-      return trimmed;
-    }
-    return `${words.slice(0, 20).join(' ')}…`;
-  };
 
-  useEffect(() => {
-    if (Platform.OS === 'web') {
-      return;
-    }
-
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const handleShow = (event: KeyboardEvent) => {
-      setKeyboardHeight(event.endCoordinates?.height ?? 0);
-    };
-
-    const handleHide = () => {
-      setKeyboardHeight(0);
-    };
-
-    const showSubscription = Keyboard.addListener(showEvent, handleShow);
-    const hideSubscription = Keyboard.addListener(hideEvent, handleHide);
-
-    return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (selectedAgentId === 'space') {
-      shouldAutoScrollRef.current = true;
-    }
-  }, [selectedAgentId]);
-
-  useEffect(() => {
-    if (selectedAgentId !== 'space') return;
-    if (!scrollViewRef.current) return;
-    if (!shouldAutoScrollRef.current) return;
-    if (!messages || !Array.isArray(messages)) return;
-    scrollViewRef.current.scrollToEnd({ animated: true });
-  }, [messages, selectedAgentId]);
-
-  useEffect(() => {
-    if (!messages || !Array.isArray(messages) || messages.length === 0) return;
-    const lastAssistant = [...messages].reverse().find(message => message.role === 'assistant');
-    if (!lastAssistant) return;
-
-    const lastAssistantParts = extractMessageParts(lastAssistant);
-    const hasStreamingPart = lastAssistantParts.some(part => part?.state === 'streaming');
-    if (hasStreamingPart) {
-      return;
-    }
-
-    const text = extractMessageText(lastAssistant);
-
-    if (!text) {
-      return;
-    }
-
-    const signature = `${lastAssistant.id}:${text}`;
-    if (lastLoggedMessageRef.current === signature) {
-      return;
-    }
-
-    lastLoggedMessageRef.current = signature;
-    console.log('AI Response:', getAssistantPreview(text));
-  }, [messages]);
 
   useEffect(() => {
     if (selectedAgentId === 'space') {
@@ -241,11 +128,7 @@ export default function Agents() {
 
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? INFOBAR_HEIGHT : 0}
-    >
+    <View style={styles.container}>
       {selectedAgentId === 'space' && currentPromo ? (
         <TouchableOpacity
           style={styles.infobar}
@@ -262,59 +145,12 @@ export default function Agents() {
           styles.content,
           {
             paddingTop: selectedAgentId === 'space' && currentPromo ? INFOBAR_HEIGHT + 16 : 16,
-            paddingBottom: keyboardInset + 80,
           },
         ]}
       >
-        {selectedAgentId === 'space' ? (
-          error ? (
-            <Text>{error.message}</Text>
-          ) : (
-            <ScrollView
-              ref={scrollViewRef}
-              style={styles.chatScroll}
-              contentContainerStyle={styles.chatContent}
-              keyboardShouldPersistTaps="handled"
-              onContentSizeChange={() => {
-                if (shouldAutoScrollRef.current) {
-                  scrollViewRef.current?.scrollToEnd({ animated: true });
-                }
-              }}
-              onScroll={event => {
-                const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
-                const distanceFromBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y);
-                shouldAutoScrollRef.current = distanceFromBottom < 48;
-              }}
-              scrollEventThrottle={16}
-            >
-              {(messages || []).map((message, index) => {
-                const timestamp = typeof message.createdAt === 'number'
-                  ? message.createdAt
-                  : typeof message.createdAt === 'string'
-                    ? new Date(message.createdAt).getTime()
-                    : Date.now() + index;
-                const key = `${message.id}-${timestamp}-${index}`;
-                const isUser = message.role === 'user';
-                const messageText = extractMessageText(message);
-                const displayText = isUser
-                  ? messageText
-                  : getAssistantPreview(messageText);
-
-                if (!displayText) return null;
-
-                return (
-                  <View key={key} style={styles.chatMessage}>
-                    <Text style={[styles.chatText, isUser ? styles.userText : styles.assistantText]}>
-                      {displayText}
-                    </Text>
-                    {index < messages.length - 1 && <View style={styles.chatDivider} />}
-                  </View>
-                );
-              })}
-            </ScrollView>
-          )
-        ) : (
-          <Text>Agents Screen</Text>
+        {React.createElement(
+          terminalComponents[selectedAgentId],
+          selectedAgentId === 'space' ? { messages, error, sendMessage } : {}
         )}
       </View>
 
@@ -329,7 +165,7 @@ export default function Agents() {
         onAgentSelect={setSelectedAgentId}
         onSendMessage={selectedAgentId === 'space' ? (message) => sendMessage({ text: message }) : undefined}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -373,7 +209,7 @@ const styles = StyleSheet.create({
     right: 0,
     height: 60,
     padding: 12,
-    backgroundColor: 'black',
+    backgroundColor: '#1e3a8a',
     borderWidth: 1,
     borderColor: '#e5e7eb',
     borderRadius: 0,

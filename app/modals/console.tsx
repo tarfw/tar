@@ -79,14 +79,6 @@ const Console: React.FC<ConsoleProps> = ({
     <>
       <View style={styles.collapsedContainer}>
         <TouchableOpacity
-          style={styles.workspaceButton}
-          onPress={() => router.push('/(tabs)/workspace')}
-          activeOpacity={0.7}
-        >
-          <MaterialIcons name="dashboard" size={22} color="white" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={styles.agentButton}
           onPress={() => setIsAgentSelectorVisible(true)}
           activeOpacity={0.7}
@@ -94,12 +86,18 @@ const Console: React.FC<ConsoleProps> = ({
           <Text style={styles.agentIcon}>{selectedAgent?.icon || '🤖'}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.slashContainer} onPress={handleOpen} activeOpacity={0.8}>
-          <Text style={styles.slashText}>/</Text>
-        </TouchableOpacity>
+        <View style={styles.middleContainer}>
+          <TouchableOpacity style={styles.slashContainer} onPress={handleOpen} activeOpacity={0.8}>
+            <Text style={styles.slashText}>/</Text>
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity style={styles.audioButton} activeOpacity={0.7}>
-          <MaterialIcons name="mic" size={24} color="#6b7280" />
+        <TouchableOpacity
+          style={styles.workspaceButton}
+          onPress={() => router.push('/(tabs)/workspace')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.hashText}>#</Text>
         </TouchableOpacity>
       </View>
 
@@ -168,6 +166,7 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: 'white',
     borderTopWidth: 1,
     borderTopColor: '#e5e7eb',
@@ -182,29 +181,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#f3f4f6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   workspaceButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#111827',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
   },
   agentIcon: {
     fontSize: 20,
   },
-  slashContainer: {
+  middleContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hashText: {
+    fontSize: 22,
+    color: '#6b7280',
+    fontWeight: 'bold',
+    lineHeight: 24,
+  },
+  slashContainer: {
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#f9fafb',
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    marginHorizontal: 8,
     maxWidth: 120,
   },
   slashText: {

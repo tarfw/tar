@@ -1,15 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   TextInput,
-  Modal,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  StatusBar,
-  InteractionManager,
+  Pressable,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import AgentsDb from './agentsdb';
@@ -27,71 +25,30 @@ const Console: React.FC<ConsoleProps> = ({
   onAgentSelect,
   onSendMessage,
 }) => {
-  const [expanded, setExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [inputText, setInputText] = useState('');
   const [isAgentSelectorVisible, setIsAgentSelectorVisible] = useState(false);
   const inputRef = useRef<TextInput>(null);
-  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const animationFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
-  const interactionHandleRef = useRef<ReturnType<typeof InteractionManager.runAfterInteractions> | null>(null);
 
   const selectedAgent = agents.find(agent => agent.id === selectedAgentId);
 
-  const clearFocusTimers = useCallback(() => {
-    if (focusTimeoutRef.current) {
-      clearTimeout(focusTimeoutRef.current);
-      focusTimeoutRef.current = null;
-    }
+  useEffect(() => {
+    if (!isExpanded) return;
 
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
+    const id = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
 
-    if (interactionHandleRef.current) {
-      interactionHandleRef.current.cancel?.();
-      interactionHandleRef.current = null;
-    }
-  }, []);
+    return () => clearTimeout(id);
+  }, [isExpanded]);
 
-  const focusInput = useCallback(() => {
-    const field = inputRef.current;
-    if (!field) {
-      return;
-    }
-
-    if (!field.isFocused()) {
-      field.focus();
-    }
-  }, []);
-
-  const scheduleFocus = useCallback(() => {
-    clearFocusTimers();
-
-    focusInput();
-
-    animationFrameRef.current = requestAnimationFrame(() => {
-      focusInput();
-    });
-
-    focusTimeoutRef.current = setTimeout(() => {
-      focusInput();
-    }, 250);
-
-    interactionHandleRef.current = InteractionManager.runAfterInteractions(() => {
-      focusInput();
-      interactionHandleRef.current = null;
-    });
-  }, [clearFocusTimers, focusInput]);
-
-  const handleInputPress = () => {
-    setExpanded(true);
+  const handleOpen = () => {
+    setIsExpanded(true);
   };
 
-  const handleCloseExpanded = () => {
-    setExpanded(false);
+  const handleClose = () => {
+    setIsExpanded(false);
     inputRef.current?.blur();
-    clearFocusTimers();
   };
 
   const handleAgentSelect = (agentId: string) => {
@@ -99,21 +56,18 @@ const Console: React.FC<ConsoleProps> = ({
     setIsAgentSelectorVisible(false);
   };
 
-  useEffect(() => {
-    if (!expanded) {
+  const handleSubmit = () => {
+    const trimmed = inputText.trim();
+    if (!trimmed || !onSendMessage) {
       return;
     }
-
-    scheduleFocus();
-
-    return () => {
-      clearFocusTimers();
-    };
-  }, [expanded, scheduleFocus, clearFocusTimers]);
+    onSendMessage(trimmed);
+    setInputText('');
+    handleClose();
+  };
 
   return (
     <>
-      {/* Collapsed State - Bottom Bar */}
       <View style={styles.collapsedContainer}>
         <TouchableOpacity
           style={styles.agentButton}
@@ -123,11 +77,7 @@ const Console: React.FC<ConsoleProps> = ({
           <Text style={styles.agentIcon}>{selectedAgent?.icon || '🤖'}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.slashContainer}
-          onPress={handleInputPress}
-          activeOpacity={0.8}
-        >
+        <TouchableOpacity style={styles.slashContainer} onPress={handleOpen} activeOpacity={0.8}>
           <Text style={styles.slashText}>/</Text>
         </TouchableOpacity>
 
@@ -136,55 +86,51 @@ const Console: React.FC<ConsoleProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Expanded State - Full Screen Modal */}
-      <Modal
-        visible={expanded}
-        transparent={false}
-        animationType="slide"
-        onRequestClose={handleCloseExpanded}
-        onShow={scheduleFocus}
-      >
-        <StatusBar barStyle="dark-content" backgroundColor="white" />
-        <KeyboardAvoidingView
-          style={styles.expandedContainer}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <TextInput
-            ref={inputRef}
-            style={styles.expandedInput}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder={`Ask ${selectedAgent?.name || 'Agent'}...`}
-            placeholderTextColor="#9ca3af"
-            multiline
-            autoFocus
-            textAlignVertical="top"
-            onLayout={() => {
-              if (expanded) {
-                scheduleFocus();
-              }
-            }}
-          />
+      {isExpanded && (
+        <View style={styles.overlay} pointerEvents="box-none">
+          <Pressable style={styles.backdrop} onPress={handleClose} />
+          <KeyboardAvoidingView
+            style={styles.expandedContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={styles.expandedContent}>
+              <View style={styles.expandedHeader}>
+                <TouchableOpacity onPress={handleClose} style={styles.closeButton} activeOpacity={0.7}>
+                  <MaterialIcons name="close" size={24} color="#111827" />
+                </TouchableOpacity>
+                <Text style={styles.expandedTitle}>{selectedAgent?.name || 'Agent'}</Text>
+              </View>
 
-          {onSendMessage && (
-            <TouchableOpacity
-              style={styles.sendButton}
-              activeOpacity={0.8}
-              onPress={() => {
-                if (inputText.trim()) {
-                  onSendMessage(inputText.trim());
-                  setInputText('');
-                  setExpanded(false);
-                }
-              }}
-            >
-              <MaterialIcons name="arrow-upward" size={24} color="white" />
-            </TouchableOpacity>
-          )}
-        </KeyboardAvoidingView>
-      </Modal>
+              <TextInput
+                ref={inputRef}
+                style={styles.expandedInput}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder={`Ask ${selectedAgent?.name || 'Agent'}...`}
+                placeholderTextColor="#9ca3af"
+                multiline
+                autoFocus
+                textAlignVertical="top"
+                returnKeyType="send"
+                blurOnSubmit={false}
+                onSubmitEditing={handleSubmit}
+              />
 
-      {/* Agent Selector Modal */}
+              {onSendMessage && (
+                <TouchableOpacity
+                  style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
+                  activeOpacity={0.8}
+                  onPress={handleSubmit}
+                  disabled={!inputText.trim()}
+                >
+                  <MaterialIcons name="arrow-upward" size={24} color="white" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      )}
+
       <AgentsDb
         visible={isAgentSelectorVisible}
         onClose={() => setIsAgentSelectorVisible(false)}
@@ -209,7 +155,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#e5e7eb',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 12, // Account for home indicator
+    paddingBottom: Platform.OS === 'ios' ? 34 : 12,
   },
   agentButton: {
     width: 40,
@@ -242,34 +188,70 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 12,
   },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
   expandedContainer: {
     flex: 1,
+    justifyContent: 'flex-end',
+  },
+  expandedContent: {
     backgroundColor: 'white',
     paddingHorizontal: 20,
     paddingTop: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    minHeight: '70%',
+  },
+  expandedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  expandedTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    marginLeft: 8,
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
   },
   expandedInput: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    lineHeight: 40,
+    fontSize: 18,
+    color: '#111827',
+    lineHeight: 26,
     flex: 1,
   },
   sendButton: {
-    position: 'absolute',
-    bottom: 40,
-    right: 20,
+    marginTop: 24,
+    backgroundColor: '#111827',
+    borderRadius: 28,
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: 'black',
     justifyContent: 'center',
     alignItems: 'center',
+    alignSelf: 'flex-end',
     elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#9ca3af',
+    shadowOpacity: 0,
   },
 });
 

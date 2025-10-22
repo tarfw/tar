@@ -10,6 +10,7 @@ import {
   Pressable,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import AgentsDb from './agentsdb';
 
 const INFOBAR_OFFSET = 76;
@@ -27,6 +28,7 @@ const Console: React.FC<ConsoleProps> = ({
   onAgentSelect,
   onSendMessage,
 }) => {
+  const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
   const [inputText, setInputText] = useState('');
   const [isAgentSelectorVisible, setIsAgentSelectorVisible] = useState(false);
@@ -76,6 +78,14 @@ const Console: React.FC<ConsoleProps> = ({
   return (
     <>
       <View style={styles.collapsedContainer}>
+        <TouchableOpacity
+          style={styles.workspaceButton}
+          onPress={() => router.push('/(tabs)/workspace')}
+          activeOpacity={0.7}
+        >
+          <MaterialIcons name="dashboard" size={22} color="white" />
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.agentButton}
           onPress={() => setIsAgentSelectorVisible(true)}
@@ -173,6 +183,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+  },
+  workspaceButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#111827',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
   },
   agentIcon: {
     fontSize: 20,

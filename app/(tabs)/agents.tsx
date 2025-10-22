@@ -1,21 +1,6 @@
-import React, { useEffect, useState, useRef } from 'react';
-import {
-  Text,
-  View,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  Linking,
-  KeyboardAvoidingView,
-  Keyboard,
-  Platform,
-} from 'react-native';
-import type { KeyboardEvent } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Text, View, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport } from 'ai';
-import { fetch as expoFetch } from 'expo/fetch';
-import { generateAPIUrl } from '../../utils';
 import Console from '../modals/console';
 import {
   SpaceTerminal,
@@ -98,17 +83,6 @@ export default function Agents() {
   files: FilesTerminal,
   };
 
-  const { messages, error, sendMessage } = useChat({
-    initialMessages: [],
-    transport: new DefaultChatTransport({
-      fetch: expoFetch as unknown as typeof globalThis.fetch,
-      api: generateAPIUrl('/api/chat'),
-    }),
-    onError: error => console.error(error, 'ERROR'),
-  });
-
-
-
   useEffect(() => {
     if (selectedAgentId === 'space') {
       const changePromo = () => {
@@ -148,10 +122,7 @@ export default function Agents() {
           },
         ]}
       >
-        {React.createElement(
-          terminalComponents[selectedAgentId],
-          selectedAgentId === 'space' ? { messages, error, sendMessage } : {}
-        )}
+        {React.createElement(terminalComponents[selectedAgentId])}
       </View>
 
 
@@ -163,7 +134,6 @@ export default function Agents() {
         selectedAgentId={selectedAgentId}
         agents={agents}
         onAgentSelect={setSelectedAgentId}
-        onSendMessage={selectedAgentId === 'space' ? (message) => sendMessage({ text: message }) : undefined}
       />
     </View>
   );

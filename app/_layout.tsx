@@ -1,4 +1,3 @@
-import '@/polyfills';
 import { Stack } from "expo-router";
 import { View, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';

@@ -9,7 +9,7 @@ import {
   Platform,
   Pressable,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Foundation } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AgentsDb from './agentsdb';
 
@@ -88,7 +88,7 @@ const Console: React.FC<ConsoleProps> = ({
 
         <View style={styles.middleContainer}>
           <TouchableOpacity style={styles.slashContainer} onPress={handleOpen} activeOpacity={0.8}>
-            <Text style={styles.slashText}>/</Text>
+            <Foundation name="asterisk" size={24} color="#6b7280" />
           </TouchableOpacity>
         </View>
 
@@ -209,11 +209,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
     borderRadius: 20,
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    maxWidth: 120,
+    paddingHorizontal: 28,
+    minWidth: 120,
   },
   slashText: {
-    fontSize: 22,
+    fontSize: 18,
     color: '#6b7280',
     fontWeight: 'bold',
     lineHeight: 24,

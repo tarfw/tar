@@ -12,6 +12,8 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import AgentsDb from './agentsdb';
 
+const INFOBAR_OFFSET = 76;
+
 interface ConsoleProps {
   selectedAgentId: string;
   agents: Array<{ id: string; name: string; icon: string; data: string[] }>;
@@ -57,10 +59,15 @@ const Console: React.FC<ConsoleProps> = ({
   };
 
   const handleSubmit = () => {
-    const trimmed = inputText.trim();
-    if (!trimmed || !onSendMessage) {
+    if (!onSendMessage) {
       return;
     }
+
+    const trimmed = inputText.trim();
+    if (!trimmed) {
+      return;
+    }
+
     onSendMessage(trimmed);
     setInputText('');
     handleClose();
@@ -93,7 +100,7 @@ const Console: React.FC<ConsoleProps> = ({
             style={styles.expandedContainer}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <View style={styles.expandedContent}>
+              <View style={[styles.expandedContent, { marginTop: INFOBAR_OFFSET }]}>
               <View style={styles.expandedHeader}>
                 <TouchableOpacity onPress={handleClose} style={styles.closeButton} activeOpacity={0.7}>
                   <MaterialIcons name="close" size={24} color="#111827" />
@@ -116,16 +123,17 @@ const Console: React.FC<ConsoleProps> = ({
                 onSubmitEditing={handleSubmit}
               />
 
-              {onSendMessage && (
-                <TouchableOpacity
-                  style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
-                  activeOpacity={0.8}
-                  onPress={handleSubmit}
-                  disabled={!inputText.trim()}
-                >
-                  <MaterialIcons name="arrow-upward" size={24} color="white" />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  (!onSendMessage || !inputText.trim()) && styles.sendButtonDisabled,
+                ]}
+                activeOpacity={0.8}
+                onPress={handleSubmit}
+                disabled={!onSendMessage || !inputText.trim()}
+              >
+                <MaterialIcons name="arrow-upward" size={24} color="white" />
+              </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
         </View>
@@ -173,11 +181,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f9fafb',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginHorizontal: 8,
+    maxWidth: 120,
   },
   slashText: {
-    fontSize: 24,
+    fontSize: 22,
     color: '#6b7280',
     fontWeight: 'bold',
+    lineHeight: 24,
   },
   audioButton: {
     width: 40,
@@ -190,7 +205,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -198,16 +213,16 @@ const styles = StyleSheet.create({
   },
   expandedContainer: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
   },
   expandedContent: {
+    flex: 1,
     backgroundColor: 'white',
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: Platform.OS === 'ios' ? 40 : 20,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    minHeight: '70%',
   },
   expandedHeader: {
     flexDirection: 'row',
@@ -243,15 +258,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'flex-end',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
   },
   sendButtonDisabled: {
     backgroundColor: '#9ca3af',
-    shadowOpacity: 0,
   },
 });
 

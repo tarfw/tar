@@ -24,7 +24,7 @@ const _schema = i.schema({
     }),
     customers: i.entity({
       email: i.string().optional(),
-      name: i.string().optional(),
+      name: i.string().indexed().optional(),
       phone: i.number().optional(),
     }),
     discounts: i.entity({
@@ -49,10 +49,10 @@ const _schema = i.schema({
       op2: i.string().optional(),
       op3: i.string().optional(),
       price: i.number().optional(),
-      sku: i.string().optional(),
+      sku: i.string().indexed().optional(),
     }),
     locations: i.entity({
-      name: i.string().optional(),
+      name: i.string().indexed().optional(),
     }),
     logs: i.entity({
       actor: i.any().optional(),
@@ -68,7 +68,7 @@ const _schema = i.schema({
       tax: i.number().optional(),
     }),
     orders: i.entity({
-      createdat: i.date().optional(),
+      createdat: i.date().indexed().optional(),
       disctotal: i.number().optional(),
       fullstatus: i.string().optional(),
       paystatus: i.string().optional(),
@@ -88,14 +88,14 @@ const _schema = i.schema({
       medias: i.string().optional(),
       notes: i.string().optional(),
       status: i.string().optional(),
-      title: i.string().optional(),
+      title: i.string().indexed().optional(),
       type: i.string().optional(),
       vendor: i.string().optional(),
     }),
     stores: i.entity({
       currency: i.string().optional(),
       domain: i.string().unique().optional(),
-      name: i.string().optional(),
+      name: i.string().indexed().optional(),
       subdomain: i.string().unique().optional(),
       timezone: i.string().optional(),
     }),

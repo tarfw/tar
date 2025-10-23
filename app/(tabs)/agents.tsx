@@ -4,13 +4,13 @@ import { MaterialIcons } from '@expo/vector-icons';
 import Console from '../modals/console';
 import {
   SpaceTerminal,
-  SalesTerminal,
   OrdersTerminal,
   ProductsTerminal,
   ItemsTerminal,
   StoresTerminal,
   FilesTerminal,
 } from '../terminals';
+import db from '../../db';
 
 
 
@@ -28,6 +28,61 @@ export default function Agents() {
   const [selectedAgentId, setSelectedAgentId] = useState('space');
   const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
   const [spaceSendMessage, setSpaceSendMessage] = useState<((message: string) => Promise<void>) | null>(null);
+
+  // Fetch data for each agent
+  const { data: productsData } = db.useQuery({
+    products: {
+      $: {
+        order: { title: 'asc' },
+        limit: 50
+      }
+    }
+  });
+  const { data: ordersData, isLoading: ordersLoading, error: ordersError } = db.useQuery({
+    orders: {
+      $: {
+        limit: 50
+      }
+    }
+  });
+  const { data: itemsData } = db.useQuery({
+    items: {
+      $: {
+        order: { sku: 'asc' },
+        limit: 50
+      }
+    }
+  });
+  const { data: storesData } = db.useQuery({
+    stores: {
+      $: {
+        order: { name: 'asc' },
+        limit: 50
+      }
+    }
+  });
+  const { data: filesData } = db.useQuery({
+    $files: {
+      $: {
+        order: { path: 'asc' },
+        limit: 50
+      }
+    }
+  });
+  const { data: locationsData, isLoading: locationsLoading, error: locationsError } = db.useQuery({
+    locations: {
+      $: {
+        limit: 50
+      }
+    }
+  });
+  const { data: customersData, isLoading: customersLoading, error: customersError } = db.useQuery({
+    customers: {
+      $: {
+        limit: 50
+      }
+    }
+  });
   const registerSpaceSendHandler = useCallback(
     (handler: ((message: string) => Promise<void>) | null) => {
       setSpaceSendMessage(() => handler);
@@ -40,49 +95,54 @@ export default function Agents() {
       id: 'space',
       name: 'Space',
       icon: '🌌',
-      data: ['Explore planets', 'Black hole facts', 'Mars mission updates', 'Space exploration history'],
-    },
-    {
-      id: 'sales',
-      name: 'Sales',
-      icon: '📈',
-      data: ['Revenue summary', 'Top opportunities', 'Pipeline at risk', 'Regional leaderboard'],
+      data: ['Space 1', 'Space 2', 'Space 3', 'Space 4'],
     },
     {
       id: 'orders',
       name: 'Orders',
       icon: '🛒',
-      data: ['Order #4832', 'Order #5921', 'Order #6103', 'Order #7018'],
+      data: ordersData?.orders?.map(o => o.id) || (ordersError ? ['Error loading orders'] : ordersLoading ? ['Loading orders...'] : ['No orders found']),
     },
     {
       id: 'products',
       name: 'Products',
       icon: '🛍️',
-      data: ['Product Alpha', 'Product Sigma', 'Product Echo', 'Product Delta'],
+      data: productsData?.products?.map(p => p.title || 'Unnamed Product') || [],
     },
     {
       id: 'items',
       name: 'Items',
       icon: '📦',
-      data: ['Item K21-B', 'Item R04-C', 'Item Q88', 'Item L10'],
+      data: itemsData?.items?.map(i => i.sku || 'Unnamed Item') || [],
     },
     {
       id: 'stores',
       name: 'Stores',
       icon: '🎈',
-      data: ['Store Downtown', 'Store Uptown', 'Store Westside', 'Store Riverside'],
+      data: storesData?.stores?.map(s => s.name || 'Unnamed Store') || [],
     },
     {
       id: 'files',
       name: 'Files',
       icon: '📁',
-      data: ['Q1 Report.pdf', 'SupplierContract.docx', 'OnboardingChecklist.md', 'BrandGuidelines.pptx'],
+      data: filesData?.$files?.map(f => f.path) || [],
+    },
+    {
+      id: 'locations',
+      name: 'Locations',
+      icon: '🏢',
+      data: locationsData?.locations?.map(l => l.name || 'Unnamed Location') || (locationsError ? ['Error loading locations'] : locationsLoading ? ['Loading locations...'] : ['No locations found']),
+    },
+    {
+      id: 'customers',
+      name: 'Customers',
+      icon: '👥',
+      data: customersData?.customers?.map(c => c.name || c.email || 'Unnamed Customer') || (customersError ? ['Error loading customers'] : customersLoading ? ['Loading customers...'] : ['No customers found']),
     },
   ];
 
   const terminalComponents = useMemo(
     () => ({
-      sales: SalesTerminal,
       orders: OrdersTerminal,
       products: ProductsTerminal,
       items: ItemsTerminal,

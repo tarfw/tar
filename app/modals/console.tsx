@@ -12,6 +12,7 @@ import {
 import { MaterialIcons, Foundation } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AgentsDb from './agentsdb';
+import DataList from './datalist';
 
 const INFOBAR_OFFSET = 76;
 
@@ -32,6 +33,7 @@ const Console: React.FC<ConsoleProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [inputText, setInputText] = useState('');
   const [isAgentSelectorVisible, setIsAgentSelectorVisible] = useState(false);
+  const [isDataListVisible, setIsDataListVisible] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   const selectedAgent = agents.find(agent => agent.id === selectedAgentId);
@@ -94,7 +96,7 @@ const Console: React.FC<ConsoleProps> = ({
 
         <TouchableOpacity
           style={styles.workspaceButton}
-          onPress={() => router.push('/(tabs)/workspace')}
+          onPress={() => setIsDataListVisible(true)}
           activeOpacity={0.7}
         >
           <Text style={styles.hashText}>#</Text>
@@ -154,6 +156,14 @@ const Console: React.FC<ConsoleProps> = ({
         agents={agents}
         selectedAgentId={selectedAgentId}
       />
+
+      {selectedAgent && (
+        <DataList
+          visible={isDataListVisible}
+          onClose={() => setIsDataListVisible(false)}
+          selectedAgent={selectedAgent}
+        />
+      )}
     </>
   );
 };

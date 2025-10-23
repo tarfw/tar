@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  StatusBar,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -30,7 +31,8 @@ const AgentsDb: React.FC<AgentsDbProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent={false} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent={true} animationType="none" statusBarTranslucent={false} onRequestClose={onClose}>
+      <StatusBar backgroundColor="#FFFFFF" barStyle="dark-content" />
       <View style={styles.fullscreenContainer}>
         <View style={styles.header}>
           <Text style={styles.title}>Select Agent</Text>

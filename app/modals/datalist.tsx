@@ -21,7 +21,7 @@ const DataList: React.FC<DataListProps> = ({
   selectedAgent,
 }) => {
   return (
-    <Modal visible={visible} transparent={false} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent={true} animationType="none" statusBarTranslucent={true} onRequestClose={onClose}>
       <View style={styles.fullscreenContainer}>
         <View style={styles.header}>
           <Text style={styles.title}>{selectedAgent.name} Data</Text>
@@ -45,13 +45,15 @@ const styles = StyleSheet.create({
   fullscreenContainer: {
     flex: 1,
     backgroundColor: 'white',
+    top: 0,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 50,
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },

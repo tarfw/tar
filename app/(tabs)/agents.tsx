@@ -28,6 +28,7 @@ export default function Agents() {
   const [selectedAgentId, setSelectedAgentId] = useState('space');
   const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
   const [spaceSendMessage, setSpaceSendMessage] = useState<((message: string) => Promise<void>) | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
 
   // Fetch data for each agent
   const { data: productsData } = db.useQuery({
@@ -108,6 +109,7 @@ export default function Agents() {
       name: 'Products',
       icon: '🛍️',
       data: productsData?.products?.map(p => p.title || 'Unnamed Product') || [],
+      fullData: productsData?.products || [],
     },
     {
       id: 'items',
@@ -181,6 +183,10 @@ export default function Agents() {
     [selectedAgentId, spaceSendMessage],
   );
 
+  const handleItemSelect = useCallback((item: any) => {
+    setSelectedProduct(item);
+  }, []);
+
   const consoleSendHandler = selectedAgentId === 'space' && spaceSendMessage ? handleConsoleSend : undefined;
 
   return (
@@ -208,6 +214,9 @@ export default function Agents() {
           <SpaceTerminal onRegisterSendMessage={registerSpaceSendHandler} />
         ) : (
           (() => {
+            if (selectedAgentId === 'products') {
+              return <ProductsTerminal selectedProduct={selectedProduct} />;
+            }
             const TerminalComponent = terminalComponents[selectedAgentId as keyof typeof terminalComponents];
             return TerminalComponent ? <TerminalComponent /> : null;
           })()
@@ -224,6 +233,7 @@ export default function Agents() {
         agents={agents}
         onAgentSelect={setSelectedAgentId}
         onSendMessage={consoleSendHandler}
+        onItemSelect={handleItemSelect}
       />
     </View>
   );

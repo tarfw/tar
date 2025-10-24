@@ -67,8 +67,7 @@ export default function SpaceTerminal({ onRegisterSendMessage }: SpaceTerminalPr
       <ScrollView ref={scrollRef} contentContainerStyle={styles.messagesContent}>
         {messages.length === 0 ? (
           <View style={styles.placeholderContainer}>
-            <Text style={styles.placeholderTitle}>Space Exploration Assistant</Text>
-            <Text style={styles.placeholderText}>Ask about planets, missions, and the cosmos.</Text>
+            <Text style={styles.placeholderTitle}>Spaces</Text>
           </View>
         ) : (
           messages.map(message => {

@@ -12,13 +12,15 @@ import { MaterialIcons } from '@expo/vector-icons';
 interface DataListProps {
   visible: boolean;
   onClose: () => void;
-  selectedAgent: { id: string; name: string; icon: string; data: string[] };
+  selectedAgent: { id: string; name: string; icon: string; data: string[]; fullData?: any[] };
+  onItemSelect?: (item: any) => void;
 }
 
 const DataList: React.FC<DataListProps> = ({
   visible,
   onClose,
   selectedAgent,
+  onItemSelect,
 }) => {
   return (
     <Modal visible={visible} transparent={true} animationType="none" statusBarTranslucent={true} onRequestClose={onClose}>
@@ -30,11 +32,37 @@ const DataList: React.FC<DataListProps> = ({
           </TouchableOpacity>
         </View>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-          {selectedAgent.data.map((item, index) => (
-            <View key={index} style={styles.dataItem}>
-              <Text style={styles.dataText}>{item}</Text>
+          {selectedAgent.id === 'products' ? (
+            <View style={styles.tableContainer}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.tableHeaderText, styles.titleColumn]}>Title</Text>
+                <Text style={[styles.tableHeaderText, styles.statusColumn]}>Status</Text>
+                <Text style={[styles.tableHeaderText, styles.typeColumn]}>Type</Text>
+                <Text style={[styles.tableHeaderText, styles.vendorColumn]}>Vendor</Text>
+              </View>
+              {selectedAgent.fullData?.map((product, index) => (
+                <TouchableOpacity
+                  key={product.id || index}
+                  style={styles.tableRow}
+                  onPress={() => {
+                    onItemSelect?.(product);
+                    onClose();
+                  }}
+                >
+                  <Text style={[styles.tableCellText, styles.titleColumn]}>{product.title || 'Unnamed'}</Text>
+                  <Text style={[styles.tableCellText, styles.statusColumn]}>{product.status || '-'}</Text>
+                  <Text style={[styles.tableCellText, styles.typeColumn]}>{product.type || '-'}</Text>
+                  <Text style={[styles.tableCellText, styles.vendorColumn]}>{product.vendor || '-'}</Text>
+                </TouchableOpacity>
+              )) || <Text style={styles.noDataText}>No products found</Text>}
             </View>
-          ))}
+          ) : (
+            selectedAgent.data.map((item, index) => (
+              <TouchableOpacity key={index} style={styles.dataItem} onPress={() => onItemSelect?.(item)}>
+                <Text style={styles.dataText}>{item}</Text>
+              </TouchableOpacity>
+            ))
+          )}
         </ScrollView>
       </View>
     </Modal>
@@ -80,6 +108,55 @@ const styles = StyleSheet.create({
   dataText: {
     fontSize: 16,
     color: '#1f2937',
+  },
+  tableContainer: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#f9fafb',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  tableHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+    backgroundColor: 'white',
+  },
+  tableCellText: {
+    fontSize: 14,
+    color: '#1f2937',
+  },
+  titleColumn: {
+    flex: 2,
+  },
+  statusColumn: {
+    flex: 1,
+  },
+  typeColumn: {
+    flex: 1,
+  },
+  vendorColumn: {
+    flex: 1,
+  },
+  noDataText: {
+    textAlign: 'center',
+    fontSize: 16,
+    color: '#6b7280',
+    paddingVertical: 20,
   },
 });
 

@@ -18,9 +18,10 @@ const INFOBAR_OFFSET = 76;
 
 interface ConsoleProps {
   selectedAgentId: string;
-  agents: Array<{ id: string; name: string; icon: string; data: string[] }>;
+  agents: Array<{ id: string; name: string; icon: string; data: string[]; fullData?: any[] }>;
   onAgentSelect: (agentId: string) => void;
   onSendMessage?: (message: string) => void;
+  onItemSelect?: (item: any) => void;
 }
 
 const Console: React.FC<ConsoleProps> = ({
@@ -28,6 +29,7 @@ const Console: React.FC<ConsoleProps> = ({
   agents,
   onAgentSelect,
   onSendMessage,
+  onItemSelect,
 }) => {
   const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -162,6 +164,7 @@ const Console: React.FC<ConsoleProps> = ({
           visible={isDataListVisible}
           onClose={() => setIsDataListVisible(false)}
           selectedAgent={selectedAgent}
+          onItemSelect={onItemSelect}
         />
       )}
     </>

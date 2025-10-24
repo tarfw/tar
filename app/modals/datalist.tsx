@@ -26,36 +26,39 @@ const DataList: React.FC<DataListProps> = ({
     <Modal visible={visible} transparent={true} animationType="none" statusBarTranslucent={true} onRequestClose={onClose}>
       <View style={styles.fullscreenContainer}>
         <View style={styles.header}>
-          <Text style={styles.title}>{selectedAgent.name} Data</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <MaterialIcons name="close" size={24} color="#6b7280" />
-          </TouchableOpacity>
+        {selectedAgent.id === 'products' && (
+        <TouchableOpacity onPress={() => {
+        // Navigate to products dashboard
+        onItemSelect?.(null); // null = dashboard mode
+        onClose();
+        }} style={styles.dashboardButton}>
+        <Text style={styles.dashboardButtonText}>Dashboard</Text>
+        </TouchableOpacity>
+        )}
+        <TouchableOpacity onPress={() => {
+          // For products, "Add" button should open terminal in add mode
+          if (selectedAgent.id === 'products') {
+          onItemSelect?.({ __addMode: true }); // Pass special object to indicate add mode
+        }
+        onClose();
+        }} style={styles.addButton}>
+        <Text style={styles.addButtonText}>Add</Text>
+        </TouchableOpacity>
         </View>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
           {selectedAgent.id === 'products' ? (
-            <View style={styles.tableContainer}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderText, styles.titleColumn]}>Title</Text>
-                <Text style={[styles.tableHeaderText, styles.statusColumn]}>Status</Text>
-                <Text style={[styles.tableHeaderText, styles.typeColumn]}>Type</Text>
-                <Text style={[styles.tableHeaderText, styles.vendorColumn]}>Vendor</Text>
-              </View>
-              {selectedAgent.fullData?.map((product, index) => (
-                <TouchableOpacity
-                  key={product.id || index}
-                  style={styles.tableRow}
-                  onPress={() => {
-                    onItemSelect?.(product);
-                    onClose();
-                  }}
-                >
-                  <Text style={[styles.tableCellText, styles.titleColumn]}>{product.title || 'Unnamed'}</Text>
-                  <Text style={[styles.tableCellText, styles.statusColumn]}>{product.status || '-'}</Text>
-                  <Text style={[styles.tableCellText, styles.typeColumn]}>{product.type || '-'}</Text>
-                  <Text style={[styles.tableCellText, styles.vendorColumn]}>{product.vendor || '-'}</Text>
-                </TouchableOpacity>
-              )) || <Text style={styles.noDataText}>No products found</Text>}
-            </View>
+            selectedAgent.fullData?.map((product, index) => (
+              <TouchableOpacity
+                key={product.id || index}
+                style={styles.dataItem}
+                onPress={() => {
+                  onItemSelect?.(product);
+                  onClose();
+                }}
+              >
+                <Text style={styles.dataText}>{product.title || 'Unnamed Product'}</Text>
+              </TouchableOpacity>
+            )) || <Text style={styles.noDataText}>No products found</Text>
           ) : (
             selectedAgent.data.map((item, index) => (
               <TouchableOpacity key={index} style={styles.dataItem} onPress={() => onItemSelect?.(item)}>
@@ -85,13 +88,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
+
+  dashboardButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  dashboardButtonText: {
+    color: '#007AFF',
+    fontWeight: '600',
+    fontSize: 17,
+  },
   title: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#1f2937',
   },
-  closeButton: {
-    padding: 8,
+  addButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  addButtonText: {
+    color: '#007AFF',
+    fontWeight: '600',
+    fontSize: 17,
   },
   scrollView: {
     flex: 1,

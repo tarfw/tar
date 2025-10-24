@@ -215,7 +215,7 @@ export default function Agents() {
         ) : (
           (() => {
             if (selectedAgentId === 'products') {
-              return <ProductsTerminal selectedProduct={selectedProduct} />;
+              return <ProductsTerminal selectedProduct={selectedProduct} onProductChange={setSelectedProduct} />;
             }
             const TerminalComponent = terminalComponents[selectedAgentId as keyof typeof terminalComponents];
             return TerminalComponent ? <TerminalComponent /> : null;

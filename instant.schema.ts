@@ -87,6 +87,7 @@ const _schema = i.schema({
       img: i.string().optional(),
       medias: i.string().optional(),
       notes: i.string().optional(),
+      options: i.string().optional(),
       status: i.string().optional(),
       title: i.string().indexed().optional(),
       type: i.string().optional(),

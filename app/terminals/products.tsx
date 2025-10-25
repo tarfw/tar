@@ -269,7 +269,52 @@ export default function ProductsTerminal({ selectedProduct, onProductChange }: P
         </View>
       ) : null}
 
-      {isEditMode && (
+      {(isEditMode || isAddMode) && groups.length > 0 && (
+        groups.map((group, index) => {
+          const validValues = group.values.filter(v => v.label && v.label.trim() !== '');
+          const isColorGroup = group.name.toLowerCase() === 'color' || group.name.toLowerCase() === 'colour';
+          
+          return validValues.length > 0 ? (
+            <View key={index} style={styles.infobar}>
+              <TouchableOpacity 
+                style={styles.infobarTouchableRow} 
+                onPress={() => setIsOptionsModalVisible(true)}
+              >
+                <Text style={styles.optionGroupName}>{group.name}:</Text>
+                <View style={styles.optionValuesContainer}>
+                  {isColorGroup ? (
+                    // Visual color circles for color groups
+                    validValues.map((value, vIndex) => {
+                      const colorCode = value.identifier && value.identifier.startsWith('#') 
+                        ? value.identifier 
+                        : '#cccccc';
+                      return (
+                        <View 
+                          key={vIndex} 
+                          style={[styles.colorDot, { backgroundColor: colorCode }]} 
+                        />
+                      );
+                    })
+                  ) : (
+                    // Tag containers for other groups
+                    validValues.map((value, vIndex) => {
+                      const displayText = value.identifier && value.identifier.trim() !== '' 
+                        ? value.identifier 
+                        : value.label;
+                      return (
+                        <View key={vIndex} style={styles.valueTag}>
+                          <Text style={styles.valueTagText}>{displayText}</Text>
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
+          ) : null;
+        })
+      )}
+      {(isEditMode || isAddMode) && groups.length === 0 && (
         <View style={styles.infobar}>
           <TouchableOpacity style={styles.infobarTouchable} onPress={() => setIsOptionsModalVisible(true)}>
             <Text style={styles.infobarText}>Options</Text>
@@ -633,6 +678,46 @@ const styles = StyleSheet.create({
   },
   infobarTouchable: {
     flex: 1,
+  },
+  infobarTouchableRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  optionGroupName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginRight: 8,
+  },
+  optionValuesContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  colorDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#d1d5db',
+  },
+  valueTag: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    minHeight: 32,
+    justifyContent: 'center',
+  },
+  valueTagText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#4b5563',
   },
 
   scrollView: {

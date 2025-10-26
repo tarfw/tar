@@ -1,0 +1,9 @@
+{
+  "name": "chat-api-worker",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "dependencies": {
+    "@ai-sdk/groq": "^0.0.1",
+    "ai": "^4.0.0"
+  }
+}

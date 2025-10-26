@@ -1,9 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport } from 'ai';
-import { fetch as expoFetch } from 'expo/fetch';
 import { generateAPIUrl } from '../../utils';
+
+type Message = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+};
 
 type SendMessageHandler = (message: string) => Promise<void>;
 
@@ -13,20 +16,9 @@ interface SpaceTerminalProps {
 
 export default function SpaceTerminal({ onRegisterSendMessage }: SpaceTerminalProps) {
   const scrollRef = useRef<ScrollView>(null);
-
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        fetch: expoFetch as unknown as typeof globalThis.fetch,
-        api: generateAPIUrl('/api/chat'),
-      }),
-    [],
-  );
-
-  const { messages, sendMessage, isLoading, error } = useChat({
-    id: 'space-terminal-chat',
-    transport,
-  });
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSendMessage = useCallback<SendMessageHandler>(
     async message => {
@@ -39,9 +31,41 @@ export default function SpaceTerminal({ onRegisterSendMessage }: SpaceTerminalPr
         return;
       }
 
-      await sendMessage({ text: trimmed });
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: 'user',
+        content: trimmed,
+      };
+
+      setMessages(prev => [...prev, userMessage]);
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(generateAPIUrl('/api/chat'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: [userMessage] }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: data.text,
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+        } else {
+          setError('Failed to get response');
+        }
+      } catch (err) {
+        setError('Network error');
+      } finally {
+        setIsLoading(false);
+      }
     },
-    [sendMessage],
+    [],
   );
 
   useEffect(() => {
@@ -71,11 +95,6 @@ export default function SpaceTerminal({ onRegisterSendMessage }: SpaceTerminalPr
           </View>
         ) : (
           messages.map(message => {
-            const text = message.parts
-              .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
-              .map(part => part.text)
-              .join('');
-
             const isUser = message.role === 'user';
 
             return (
@@ -86,9 +105,7 @@ export default function SpaceTerminal({ onRegisterSendMessage }: SpaceTerminalPr
                 <Text style={[styles.messageAuthor, isUser ? styles.userAuthor : styles.assistantAuthor]}>
                   {isUser ? 'You' : 'Space'}
                 </Text>
-                {text ? (
-                  <Text style={[styles.messageText, isUser && styles.userMessageText]}>{text}</Text>
-                ) : null}
+                <Text style={[styles.messageText, isUser && styles.userMessageText]}>{message.content}</Text>
               </View>
             );
           })
@@ -102,7 +119,7 @@ export default function SpaceTerminal({ onRegisterSendMessage }: SpaceTerminalPr
         </View>
       ) : null}
 
-      {error ? <Text style={styles.errorText}>{error.message}</Text> : null}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>
   );
 }
@@ -128,11 +145,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
     marginBottom: 8,
-  },
-  placeholderText: {
-    fontSize: 15,
-    color: '#6b7280',
-    textAlign: 'center',
   },
   messageBubble: {
     padding: 12,

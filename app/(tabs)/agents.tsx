@@ -1,16 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { id } from '@instantdb/react-native';
 import Console from '../modals/console';
 import {
   SpaceTerminal,
   OrdersTerminal,
-  ProductsTerminal,
+  ProductterTerminal,
   ItemsTerminal,
   StoresTerminal,
   FilesTerminal,
 } from '../terminals';
 import db from '../../db';
+import { generateAPIUrl } from '../../utils';
 
 
 
@@ -28,6 +30,7 @@ export default function Agents() {
   const [selectedAgentId, setSelectedAgentId] = useState('space');
   const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
   const [spaceSendMessage, setSpaceSendMessage] = useState<((message: string) => Promise<void>) | null>(null);
+  const [productSendMessage, setProductSendMessage] = useState<((message: string) => Promise<void>) | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
 
   // Fetch data for each agent
@@ -146,7 +149,7 @@ export default function Agents() {
   const terminalComponents = useMemo(
     () => ({
       orders: OrdersTerminal,
-      products: ProductsTerminal,
+      products: ProductterTerminal,
       items: ItemsTerminal,
       stores: StoresTerminal,
       files: FilesTerminal,
@@ -183,11 +186,171 @@ export default function Agents() {
     [selectedAgentId, spaceSendMessage],
   );
 
+  const handleProductAISend = useCallback(async (message: string) => {
+    console.log('Product AI Generate triggered with input:', message);
+
+    try {
+  const messages = [{
+    id: Date.now().toString(),
+      role: 'user' as const,
+        content: message.trim()
+      }];
+
+      const apiUrl = generateAPIUrl('/api/products/generate');
+  console.log('Making API call to:', apiUrl);
+
+      const response = await fetch(apiUrl, {
+  method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+        messages,
+        existingProduct: selectedProduct ? {
+          title: selectedProduct.title,
+          type: selectedProduct.type,
+            img: selectedProduct.img,
+            notes: selectedProduct.notes,
+            options: selectedProduct.options
+          } : null
+        }),
+      });
+
+      console.log('API response status:', response.status, response.ok);
+
+      if (response.ok) {
+  const data = await response.json();
+      console.log('API response received:', data);
+
+        let generatedProduct = data.product;
+
+        // If structured product is not available, try to parse from text
+  if (!generatedProduct && data.text) {
+        try {
+        // Extract JSON from the text response
+          const jsonMatch = data.text.match(/```json\s*([\s\S]*?)\s*```/);
+            if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[1]);
+
+              // Handle options that come as JSON strings
+  if (parsed.options && typeof parsed.options === 'string') {
+              try {
+                parsed.options = JSON.parse(parsed.options);
+                } catch (e) {
+                console.error('Failed to parse options string:', e);
+                }
+              }
+
+              // Handle options format conversion if needed
+  if (parsed.options && Array.isArray(parsed.options)) {
+              // Convert array format [["Size", "small"]] to object format {"Size": [["Small", "S"]]}
+              const optionsObj: Record<string, [string, string][]> = {};
+                parsed.options.forEach(([group, value]: [string, string]) => {
+                if (!optionsObj[group]) optionsObj[group] = [];
+                // Try to create proper identifiers
+                  let identifier = value;
+                  if (group.toLowerCase().includes('color') && !value.startsWith('#')) {
+                  // Generate basic hex codes for common colors
+                  const colorMap: Record<string, string> = {
+                      'red': '#FF0000',
+                      'blue': '#0000FF',
+                      'green': '#00FF00',
+                    'yellow': '#FFFF00',
+                    'black': '#000000',
+                    'white': '#FFFFFF',
+                      'gray': '#808080',
+                      'grey': '#808080',
+                      'brown': '#964B00'
+                    };
+                    identifier = colorMap[value.toLowerCase()] || '#CCCCCC';
+                  } else if (group.toLowerCase().includes('size')) {
+                    // Standardize size identifiers
+                  const sizeMap: Record<string, string> = {
+                    'small': 'S',
+                    'medium': 'M',
+                      'large': 'L',
+                      'extra large': 'XL',
+                      'extra small': 'XS'
+                    };
+                    identifier = sizeMap[value.toLowerCase()] || value.toUpperCase().substring(0, 2);
+                  }
+                  optionsObj[group].push([value, identifier]);
+                });
+                parsed.options = optionsObj;
+              }
+
+              generatedProduct = parsed;
+  }
+          } catch (e) {
+            console.error('Failed to parse product from text:', e);
+          }
+        }
+
+        if (generatedProduct) {
+  if (selectedProduct) {
+        // Update existing product
+          const updateData: any = {};
+          if (generatedProduct.title !== undefined) updateData.title = generatedProduct.title;
+          if (generatedProduct.type !== undefined) updateData.type = generatedProduct.type;
+          if (generatedProduct.notes !== undefined) updateData.notes = generatedProduct.notes;
+          if (generatedProduct.options !== undefined) updateData.options = JSON.stringify(generatedProduct.options);
+
+  await db.transact(
+          db.tx.products[selectedProduct.id].update(updateData)
+            );
+
+  // Update the local state immediately to reflect changes
+          setSelectedProduct({
+          ...selectedProduct,
+            ...generatedProduct,
+            options: generatedProduct.options ? JSON.stringify(generatedProduct.options) : selectedProduct.options
+            });
+          } else {
+        // Create new product
+          const newProductData: any = {
+        id: id(),
+  title: generatedProduct.title || 'New Product',
+      type: generatedProduct.type || 'Product',
+        notes: generatedProduct.notes || '',
+        options: generatedProduct.options ? JSON.stringify(generatedProduct.options) : null,
+      img: generatedProduct.img || null,
+    };
+
+    await db.transact(
+  db.tx.products[newProductData.id].update(newProductData)
+  );
+
+  // Set as selected product
+  setSelectedProduct(newProductData);
+  }
+  } else {
+  console.error('No product data found in response');
+  }
+
+  } else {
+  const errorText = await response.text();
+  console.error('Failed to generate product data. Status:', response.status, 'Response:', errorText);
+  }
+  } catch (error) {
+  console.error('AI generation error:', error);
+  }
+  }, [selectedProduct]);
+
   const handleItemSelect = useCallback((item: any) => {
     setSelectedProduct(item);
   }, []);
 
-  const consoleSendHandler = selectedAgentId === 'space' && spaceSendMessage ? handleConsoleSend : undefined;
+  const handleProductRegisterSendMessage = useCallback((handler: ((message: string) => Promise<void>) | null) => {
+    setProductSendMessage(handler);
+  }, []);
+
+  const consoleSendHandler = useCallback(async (message: string) => {
+    if (!message || typeof message !== 'string') return;
+
+    if (selectedAgentId === 'space' && handleConsoleSend) {
+      await handleConsoleSend(message);
+    } else if (selectedAgentId === 'products') {
+      await handleProductAISend(message);
+    }
+  }, [selectedAgentId, handleConsoleSend, handleProductAISend]);
 
   return (
     <View style={styles.container}>
@@ -214,11 +377,15 @@ export default function Agents() {
           <SpaceTerminal onRegisterSendMessage={registerSpaceSendHandler} />
         ) : (
           (() => {
-            if (selectedAgentId === 'products') {
-              return <ProductsTerminal selectedProduct={selectedProduct} onProductChange={setSelectedProduct} />;
-            }
             const TerminalComponent = terminalComponents[selectedAgentId as keyof typeof terminalComponents];
-            return TerminalComponent ? <TerminalComponent /> : null;
+            if (selectedAgentId === 'products') {
+              return <ProductterTerminal
+                selectedProduct={selectedProduct}
+                onProductChange={setSelectedProduct}
+                onRegisterSendMessage={handleProductRegisterSendMessage}
+              />;
+            }
+            return TerminalComponent ? <TerminalComponent selectedProduct={selectedProduct} onProductChange={setSelectedProduct} /> : null;
           })()
         )}
       </View>
@@ -234,6 +401,7 @@ export default function Agents() {
         onAgentSelect={setSelectedAgentId}
         onSendMessage={consoleSendHandler}
         onItemSelect={handleItemSelect}
+        placeholder={selectedAgentId === 'products' ? 'Describe product changes with AI...' : undefined}
       />
     </View>
   );

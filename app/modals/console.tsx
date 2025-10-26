@@ -22,6 +22,7 @@ interface ConsoleProps {
   onAgentSelect: (agentId: string) => void;
   onSendMessage?: (message: string) => void;
   onItemSelect?: (item: any) => void;
+  placeholder?: string;
 }
 
 const Console: React.FC<ConsoleProps> = ({
@@ -30,6 +31,7 @@ const Console: React.FC<ConsoleProps> = ({
   onAgentSelect,
   onSendMessage,
   onItemSelect,
+  placeholder,
 }) => {
   const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -69,7 +71,7 @@ const Console: React.FC<ConsoleProps> = ({
       return;
     }
 
-    const trimmed = inputText.trim();
+    const trimmed = inputText?.trim();
     if (!trimmed) {
       return;
     }
@@ -125,7 +127,7 @@ const Console: React.FC<ConsoleProps> = ({
                 style={styles.expandedInput}
                 value={inputText}
                 onChangeText={setInputText}
-                placeholder={`Ask ${selectedAgent?.name || 'Agent'}...`}
+                placeholder={placeholder || `Ask ${selectedAgent?.name || 'Agent'}...`}
                 placeholderTextColor="#9ca3af"
                 multiline
                 autoFocus
@@ -138,11 +140,11 @@ const Console: React.FC<ConsoleProps> = ({
               <TouchableOpacity
                 style={[
                   styles.sendButton,
-                  (!onSendMessage || !inputText.trim()) && styles.sendButtonDisabled,
+                  (!onSendMessage || !inputText?.trim()) && styles.sendButtonDisabled,
                 ]}
                 activeOpacity={0.8}
                 onPress={handleSubmit}
-                disabled={!onSendMessage || !inputText.trim()}
+                disabled={!onSendMessage || !inputText?.trim()}
               >
                 <MaterialIcons name="arrow-upward" size={24} color="white" />
               </TouchableOpacity>

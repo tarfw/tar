@@ -243,12 +243,21 @@ export default function ProductterTerminal({ selectedProduct, onProductChange, o
                   {groups.map((group, groupIndex) => (
                     <View key={groupIndex} style={styles.optionGroup}>
                       <Text style={styles.optionGroupTitle}>{group.name}</Text>
-                      {group.values.map((value, valueIndex) => (
-                        <View key={valueIndex} style={styles.optionRow}>
-                          <Text style={styles.optionLabel}>{value.label}</Text>
-                          <Text style={styles.optionIdentifier}>{value.identifier}</Text>
-                        </View>
-                      ))}
+                      {group.values.map((value, valueIndex) => {
+                        const isColorOption = group.name.toLowerCase().includes('color') && value.identifier.startsWith('#');
+                        return (
+                          <View key={valueIndex} style={styles.optionRow}>
+                            <Text style={styles.optionLabel}>{value.label}</Text>
+                            {isColorOption ? (
+                              <View style={styles.colorContainer}>
+                                <View style={[styles.colorCircle, { backgroundColor: value.identifier }]} />
+                              </View>
+                            ) : (
+                              <Text style={styles.optionIdentifier}>{value.identifier}</Text>
+                            )}
+                          </View>
+                        );
+                      })}
                     </View>
                   ))}
                 </View>
@@ -404,6 +413,20 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'right',
     flex: 1,
+  },
+  colorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flex: 1,
+  },
+  colorCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   itemsSection: {
     marginTop: 20,

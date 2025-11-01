@@ -22,6 +22,10 @@ const _schema = i.schema({
       pincode: i.number().optional(),
       state: i.string().optional(),
     }),
+    consumption: i.entity({
+      qty: i.number().optional(),
+      unit: i.string().optional(),
+    }),
     customers: i.entity({
       email: i.string().optional(),
       name: i.string().indexed().optional(),
@@ -37,17 +41,19 @@ const _schema = i.schema({
     }),
     inventory: i.entity({
       available: i.number().optional(),
+      batch: i.string().optional(),
       committed: i.number().optional(),
+      expiry: i.string().optional(),
       incoming: i.number().optional(),
+      type: i.string().optional(),
       updatedat: i.date().optional(),
     }),
     items: i.entity({
+      attribute: i.any().optional(),
       barcode: i.string().optional(),
       cost: i.number().optional(),
       image: i.string().optional(),
-      op1: i.string().optional(),
-      op2: i.string().optional(),
-      op3: i.string().optional(),
+      option: i.string().optional(),
       price: i.number().optional(),
       sku: i.string().indexed().optional(),
     }),
@@ -60,6 +66,11 @@ const _schema = i.schema({
       entity: i.string().optional(),
       location: i.string().optional(),
       timestamp: i.date().optional(),
+    }),
+    modifiers: i.entity({
+      name: i.string().optional(),
+      price: i.number().optional(),
+      qty: i.number().optional(),
     }),
     orderlines: i.entity({
       discount: i.number().optional(),
@@ -76,6 +87,13 @@ const _schema = i.schema({
       tax: i.number().optional(),
       total: i.number().optional(),
     }),
+    pages: i.entity({
+      desc: i.string().optional(),
+      medias: i.string().optional(),
+      metafields: i.string().optional(),
+      note: i.string().optional(),
+      seo: i.string().optional(),
+    }),
     payments: i.entity({
       amount: i.number().optional(),
       method: i.string().optional(),
@@ -84,14 +102,12 @@ const _schema = i.schema({
       transaction: i.string().optional(),
     }),
     products: i.entity({
+      category: i.string().optional(),
       img: i.string().optional(),
-      medias: i.string().optional(),
-      notes: i.string().optional(),
       options: i.string().optional(),
       status: i.string().optional(),
+      supplier: i.string().optional(),
       title: i.string().indexed().optional(),
-      type: i.string().optional(),
-      vendor: i.string().optional(),
     }),
     stores: i.entity({
       currency: i.string().optional(),
@@ -119,6 +135,30 @@ const _schema = i.schema({
         on: "$users",
         has: "many",
         label: "linkedGuestUsers",
+      },
+    },
+    consumptionInventory: {
+      forward: {
+        on: "consumption",
+        has: "one",
+        label: "inventory",
+      },
+      reverse: {
+        on: "inventory",
+        has: "one",
+        label: "components",
+      },
+    },
+    consumptionItems: {
+      forward: {
+        on: "consumption",
+        has: "many",
+        label: "items",
+      },
+      reverse: {
+        on: "items",
+        has: "many",
+        label: "components",
       },
     },
     customersAddress: {
@@ -206,6 +246,18 @@ const _schema = i.schema({
         label: "locations",
       },
     },
+    modifiersInventory: {
+      forward: {
+        on: "modifiers",
+        has: "many",
+        label: "inventory",
+      },
+      reverse: {
+        on: "inventory",
+        has: "many",
+        label: "modifiers",
+      },
+    },
     orderlinesItems: {
       forward: {
         on: "orderlines",
@@ -228,6 +280,18 @@ const _schema = i.schema({
         on: "orders",
         has: "many",
         label: "orderlines",
+      },
+    },
+    pagesProducts: {
+      forward: {
+        on: "pages",
+        has: "one",
+        label: "products",
+      },
+      reverse: {
+        on: "products",
+        has: "one",
+        label: "content",
       },
     },
     paymentsOrders: {

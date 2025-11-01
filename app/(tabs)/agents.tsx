@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { id } from '@instantdb/react-native';
+import { useNavigation } from 'expo-router';
 import Console from '../modals/console';
 import {
   SpaceTerminal,
@@ -17,21 +18,24 @@ import { generateAPIUrl } from '../../utils';
 
 
 
-const INFOBAR_HEIGHT = 60;
-const INFOBAR_PROMOS = [
-  { text: 'Discover the wonders of the universe 🌌', url: 'https://www.nasa.gov/universe' },
-  { text: 'Explore distant planets and galaxies 🚀', url: 'https://www.nasa.gov/planetary-science' },
-  { text: 'Learn about black holes and cosmic mysteries 🕳️', url: 'https://www.nasa.gov/universe/black-holes' },
-  { text: 'Stay updated on space missions and discoveries 🛰️', url: 'https://www.nasa.gov/missions' },
-  { text: 'Journey through space exploration history 📜', url: 'https://www.nasa.gov/history' },
-];
+
 
 export default function Agents() {
+  const navigation = useNavigation();
   const [selectedAgentId, setSelectedAgentId] = useState('space');
   const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
   const [spaceSendMessage, setSpaceSendMessage] = useState<((message: string) => Promise<void>) | null>(null);
   const [productSendMessage, setProductSendMessage] = useState<((message: string) => Promise<void>) | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
+
+  const INFOBAR_HEIGHT = 60;
+  const INFOBAR_PROMOS = [
+    { text: '🛍️ Exclusive Fashion Deals', url: 'https://example.com/fashion' },
+    { text: '💻 Tech Gadgets on Sale', url: 'https://example.com/tech' },
+    { text: '🏠 Home Decor Offers', url: 'https://example.com/home' },
+    { text: '🏋️ Fitness Gear Discounts', url: 'https://example.com/fitness' },
+    { text: '✈️ Travel Packages Deals', url: 'https://example.com/travel' },
+  ];
 
   // Fetch data for each agent
   const { data: productsData } = db.useQuery({
@@ -104,7 +108,7 @@ export default function Agents() {
     {
       id: 'orders',
       name: 'Orders',
-      icon: '🛒',
+      icon: '🎈',
       data: ordersData?.orders?.map(o => o.id) || (ordersError ? ['Error loading orders'] : ordersLoading ? ['Loading orders...'] : ['No orders found']),
     },
     {
@@ -123,7 +127,7 @@ export default function Agents() {
     {
       id: 'stores',
       name: 'Stores',
-      icon: '🎈',
+      icon: '🌟',
       data: storesData?.stores?.map(s => s.name || 'Unnamed Store') || [],
     },
     {
@@ -135,13 +139,13 @@ export default function Agents() {
     {
       id: 'locations',
       name: 'Locations',
-      icon: '🏢',
+      icon: '🌍',
       data: locationsData?.locations?.map(l => l.name || 'Unnamed Location') || (locationsError ? ['Error loading locations'] : locationsLoading ? ['Loading locations...'] : ['No locations found']),
     },
     {
       id: 'customers',
       name: 'Customers',
-      icon: '👥',
+      icon: '@',
       data: customersData?.customers?.map(c => c.name || c.email || 'Unnamed Customer') || (customersError ? ['Error loading customers'] : customersLoading ? ['Loading customers...'] : ['No customers found']),
     },
   ];
@@ -205,12 +209,13 @@ export default function Agents() {
         body: JSON.stringify({
         messages,
         existingProduct: selectedProduct ? {
-          title: selectedProduct.title,
-          type: selectedProduct.type,
-            img: selectedProduct.img,
-            notes: selectedProduct.notes,
-            options: selectedProduct.options
-          } : null
+        title: selectedProduct.title,
+        category: selectedProduct.category,
+        img: selectedProduct.img,
+        status: selectedProduct.status,
+        supplier: selectedProduct.supplier,
+        options: selectedProduct.options
+        } : null
         }),
       });
 
@@ -221,109 +226,128 @@ export default function Agents() {
       console.log('API response received:', data);
 
         let generatedProduct = data.product;
+        let generatedItems = data.items || [];
 
         // If structured product is not available, try to parse from text
-  if (!generatedProduct && data.text) {
-        try {
-        // Extract JSON from the text response
-          const jsonMatch = data.text.match(/```json\s*([\s\S]*?)\s*```/);
-            if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[1]);
+        if (!generatedProduct && data.text) {
+          try {
+          // The AI should now output clean JSON, so try direct parsing first
+          let parsed;
+          try {
+          parsed = JSON.parse(data.text.trim());
+          } catch {
+          console.log('Direct JSON parse failed, trying fallbacks. Raw text:', data.text);
 
-              // Handle options that come as JSON strings
-  if (parsed.options && typeof parsed.options === 'string') {
-              try {
-                parsed.options = JSON.parse(parsed.options);
-                } catch (e) {
-                console.error('Failed to parse options string:', e);
-                }
-              }
-
-              // Handle options format conversion if needed
-  if (parsed.options && Array.isArray(parsed.options)) {
-              // Convert array format [["Size", "small"]] to object format {"Size": [["Small", "S"]]}
-              const optionsObj: Record<string, [string, string][]> = {};
-                parsed.options.forEach(([group, value]: [string, string]) => {
-                if (!optionsObj[group]) optionsObj[group] = [];
-                // Try to create proper identifiers
-                  let identifier = value;
-                  if (group.toLowerCase().includes('color') && !value.startsWith('#')) {
-                  // Generate basic hex codes for common colors
-                  const colorMap: Record<string, string> = {
-                      'red': '#FF0000',
-                      'blue': '#0000FF',
-                      'green': '#00FF00',
-                    'yellow': '#FFFF00',
-                    'black': '#000000',
-                    'white': '#FFFFFF',
-                      'gray': '#808080',
-                      'grey': '#808080',
-                      'brown': '#964B00'
-                    };
-                    identifier = colorMap[value.toLowerCase()] || '#CCCCCC';
-                  } else if (group.toLowerCase().includes('size')) {
-                    // Standardize size identifiers
-                  const sizeMap: Record<string, string> = {
-                    'small': 'S',
-                    'medium': 'M',
-                      'large': 'L',
-                      'extra large': 'XL',
-                      'extra small': 'XS'
-                    };
-                    identifier = sizeMap[value.toLowerCase()] || value.toUpperCase().substring(0, 2);
-                  }
-                  optionsObj[group].push([value, identifier]);
-                });
-                parsed.options = optionsObj;
-              }
-
-              generatedProduct = parsed;
-  }
-          } catch (e) {
-            console.error('Failed to parse product from text:', e);
+            // Try to handle escaped JSON string from older AI responses
+          try {
+            let text = data.text;
+          // If it starts and ends with quotes, remove them
+          if (text.startsWith('"') && text.endsWith('"')) {
+            text = text.slice(1, -1);
           }
-        }
+          // Unescape quotes
+          text = text.replace(/"/g, '"');
+          parsed = JSON.parse(text);
+          } catch (e1) {
+          console.log('Escaped JSON parse failed:', e1);
+            // Try to extract JSON-like content as last resort
+          try {
+                const jsonLike = data.text.match(/\{.*\}/s);
+            if (jsonLike) {
+              parsed = JSON.parse(jsonLike[0]);
+          } else {
+            throw new Error('No valid JSON found in response');
+          }
+          } catch (e2) {
+          console.log('Final parsing attempt failed:', e2);
+          throw new Error('No valid JSON found in response');
+          }
+          }
+          }
+
+              // Validate and clean the parsed product data
+              if (parsed.title || parsed.category || parsed.options) {
+                generatedProduct = {
+                  title: parsed.title || 'New Product',
+                  category: parsed.category || parsed.type || 'Product', // Handle legacy 'type' field
+                  img: parsed.img || null,
+                  status: parsed.status || null,
+                supplier: parsed.supplier || null,
+                options: parsed.options || null
+                };
+              }
+            } catch (e) {
+              console.error('Failed to parse product from text:', e);
+            }
+          }
 
         if (generatedProduct) {
-  if (selectedProduct) {
-        // Update existing product
-          const updateData: any = {};
-          if (generatedProduct.title !== undefined) updateData.title = generatedProduct.title;
-          if (generatedProduct.type !== undefined) updateData.type = generatedProduct.type;
-          if (generatedProduct.notes !== undefined) updateData.notes = generatedProduct.notes;
+                let productId: string;
+
+          if (selectedProduct) {
+            // Update existing product
+            productId = selectedProduct.id;
+            const updateData: any = {};
+            if (generatedProduct.title !== undefined) updateData.title = generatedProduct.title;
+          if (generatedProduct.category !== undefined) updateData.category = generatedProduct.category;
+            if (generatedProduct.status !== undefined) updateData.status = generatedProduct.status;
+                  if (generatedProduct.supplier !== undefined) updateData.supplier = generatedProduct.supplier;
           if (generatedProduct.options !== undefined) updateData.options = JSON.stringify(generatedProduct.options);
 
-  await db.transact(
-          db.tx.products[selectedProduct.id].update(updateData)
-            );
+            await db.transact(
+                    db.tx.products[productId].update(updateData)
+          );
 
-  // Update the local state immediately to reflect changes
-          setSelectedProduct({
+        // Update the local state immediately to reflect changes
+        setSelectedProduct({
           ...selectedProduct,
             ...generatedProduct,
-            options: generatedProduct.options ? JSON.stringify(generatedProduct.options) : selectedProduct.options
+              options: generatedProduct.options ? JSON.stringify(generatedProduct.options) : selectedProduct.options
             });
           } else {
-        // Create new product
-          const newProductData: any = {
-        id: id(),
-  title: generatedProduct.title || 'New Product',
-      type: generatedProduct.type || 'Product',
-        notes: generatedProduct.notes || '',
-        options: generatedProduct.options ? JSON.stringify(generatedProduct.options) : null,
-      img: generatedProduct.img || null,
-    };
+            // Create new product
+            productId = id();
+            const newProductData: any = {
+              id: productId,
+            title: generatedProduct.title || 'New Product',
+            category: generatedProduct.category || 'Product',
+                  status: generatedProduct.status || null,
+              supplier: generatedProduct.supplier || null,
+                  options: generatedProduct.options ? JSON.stringify(generatedProduct.options) : null,
+                    img: generatedProduct.img || null,
+                  };
 
-    await db.transact(
-  db.tx.products[newProductData.id].update(newProductData)
-  );
+                  await db.transact(
+                    db.tx.products[productId].update(newProductData)
+                  );
 
-  // Set as selected product
-  setSelectedProduct(newProductData);
-  }
-  } else {
-  console.error('No product data found in response');
-  }
+                  // Set as selected product
+                  setSelectedProduct(newProductData);
+          }
+
+          // Create items if any were generated
+          if (generatedItems.length > 0) {
+            const itemTxOps = generatedItems.map((item: any) => {
+              const itemId = id();
+              return db.tx.items[itemId].update({
+                id: itemId,
+                sku: item.sku,
+                option: item.option,
+                price: item.price,
+                cost: item.cost,
+                barcode: item.barcode,
+                image: item.image,
+                attribute: item.attribute ? JSON.stringify(item.attribute) : null,
+                product: productId // Link to the product
+              });
+            });
+
+            await db.transact(itemTxOps);
+            console.log(`Created ${generatedItems.length} items for product ${productId}`);
+          }
+        } else {
+          console.error('No product data found in response');
+        }
 
   } else {
   const errorText = await response.text();
@@ -341,6 +365,12 @@ export default function Agents() {
   const handleProductRegisterSendMessage = useCallback((handler: ((message: string) => Promise<void>) | null) => {
     setProductSendMessage(handler);
   }, []);
+
+  const handleExpandedChange = useCallback((expanded: boolean) => {
+    navigation.setOptions({
+      tabBarStyle: expanded ? { display: 'none' } : undefined,
+    });
+  }, [navigation]);
 
   const consoleSendHandler = useCallback(async (message: string) => {
     if (!message || typeof message !== 'string') return;
@@ -402,6 +432,7 @@ export default function Agents() {
         onSendMessage={consoleSendHandler}
         onItemSelect={handleItemSelect}
         placeholder={selectedAgentId === 'products' ? 'Describe product changes with AI...' : undefined}
+        onExpandedChange={handleExpandedChange}
       />
     </View>
   );
@@ -447,7 +478,7 @@ const styles = StyleSheet.create({
     right: 0,
     height: 60,
     padding: 12,
-    backgroundColor: '#1e3a8a',
+    backgroundColor: 'white',
     borderWidth: 1,
     borderColor: '#e5e7eb',
     borderRadius: 0,
@@ -458,7 +489,7 @@ const styles = StyleSheet.create({
   },
   infobarText: {
     fontSize: 14,
-    color: 'white',
+    color: 'black',
     fontWeight: '600',
     flex: 1,
   },

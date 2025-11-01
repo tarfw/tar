@@ -1,9 +1,24 @@
 {
   "name": "chat-api-worker",
   "version": "1.0.0",
-  "main": "src/index.js",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 3141",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "types": "wrangler types"
+  },
   "dependencies": {
-    "@ai-sdk/groq": "^0.0.1",
-    "ai": "^4.0.0"
+    "@voltagent/core": "^1.1.37",
+    "@ai-sdk/groq": "^2.0.24",
+    "ai": "^5.0.76",
+    "hono": "^4.6.14",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.38.0"
   }
 }

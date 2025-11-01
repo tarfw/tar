@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import AgentsDb from './agentsdb';
 import DataList from './datalist';
 
-const INFOBAR_OFFSET = 76;
+const INFOBAR_OFFSET = 0;
 
 interface ConsoleProps {
   selectedAgentId: string;
@@ -23,6 +23,7 @@ interface ConsoleProps {
   onSendMessage?: (message: string) => void;
   onItemSelect?: (item: any) => void;
   placeholder?: string;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 const Console: React.FC<ConsoleProps> = ({
@@ -32,6 +33,7 @@ const Console: React.FC<ConsoleProps> = ({
   onSendMessage,
   onItemSelect,
   placeholder,
+  onExpandedChange,
 }) => {
   const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -54,10 +56,12 @@ const Console: React.FC<ConsoleProps> = ({
 
   const handleOpen = () => {
     setIsExpanded(true);
+    onExpandedChange?.(true);
   };
 
   const handleClose = () => {
     setIsExpanded(false);
+    onExpandedChange?.(false);
     inputRef.current?.blur();
   };
 
@@ -193,7 +197,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: 'white',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -205,7 +209,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   agentIcon: {
-    fontSize: 20,
+    fontSize: 24,
+    color: '#6b7280',
+    fontWeight: 'bold',
   },
   middleContainer: {
     flex: 1,
@@ -245,6 +251,7 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-start',
+    zIndex: 100,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -258,7 +265,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'white',
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 0,
     paddingBottom: Platform.OS === 'ios' ? 40 : 20,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,

@@ -1,7 +1,10 @@
 name = "chat-api-worker"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = [
+  "nodejs_compat",
+  "nodejs_compat_populate_process_env"
+]
 
 [vars]
-# GROQ_API_KEY will be set as a secret
+# GROQ_API_KEY will be set as a secret via: wrangler secret put GROQ_API_KEY

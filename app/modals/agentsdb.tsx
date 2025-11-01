@@ -31,33 +31,27 @@ const AgentsDb: React.FC<AgentsDbProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent={true} animationType="none" statusBarTranslucent={false} onRequestClose={onClose}>
-      <StatusBar backgroundColor="#FFFFFF" barStyle="dark-content" />
-      <View style={styles.fullscreenContainer}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Select Agent</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <MaterialIcons name="close" size={24} color="#6b7280" />
-          </TouchableOpacity>
-        </View>
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-          {agents.map((agent) => (
-            <TouchableOpacity
-              key={agent.id}
-              style={styles.agentItem}
-              onPress={() => handleSelect(agent.id)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.agentIcon}>{agent.icon}</Text>
-              <Text style={styles.agentName}>{agent.name}</Text>
-              {selectedAgentId === agent.id && (
-                <MaterialIcons name="check-circle" size={20} color="#6366f1" />
-              )}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-    </Modal>
+  <Modal visible={visible} transparent={true} animationType="none" statusBarTranslucent={false} onRequestClose={onClose}>
+  <StatusBar backgroundColor="#FFFFFF" barStyle="dark-content" />
+  <View style={styles.fullscreenContainer}>
+  <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+  {agents.map((agent) => (
+    <TouchableOpacity
+    key={agent.id}
+  style={styles.agentItem}
+  onPress={() => handleSelect(agent.id)}
+  activeOpacity={0.7}
+  >
+  <Text style={styles.agentIcon}>{agent.icon}</Text>
+  <Text style={styles.agentName}>{agent.name}</Text>
+  {selectedAgentId === agent.id && (
+  <MaterialIcons name="check-circle" size={20} color="#6366f1" />
+  )}
+  </TouchableOpacity>
+  ))}
+  </ScrollView>
+  </View>
+  </Modal>
   );
 };
 
@@ -66,45 +60,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'white',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1f2937',
-  },
-  closeButton: {
-    padding: 8,
-  },
   scrollView: {
     flex: 1,
   },
   content: {
     paddingHorizontal: 20,
     paddingVertical: 20,
+    paddingTop: 40,
   },
   agentItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: '#f9fafb',
   },
   agentIcon: {
-    fontSize: 24,
+    fontSize: 32,
     marginRight: 15,
+    color: '#6b7280',
+    fontWeight: 'bold',
   },
   agentName: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 28,
     color: '#1f2937',
+    fontWeight: '600',
+    lineHeight: 36,
   },
 });
 

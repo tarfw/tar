@@ -1,7 +1,10 @@
 import React from 'react';
 import { Text, View, ScrollView, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { useRouter } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 
 export default function Workspace() {
+  const router = useRouter();
 
   const projects = [
     {
@@ -62,6 +65,12 @@ export default function Workspace() {
 
   return (
     <View style={{ flex: 1, backgroundColor: 'white' }}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Workspace</Text>
+        <TouchableOpacity onPress={() => router.push('/(tabs)/people')}>
+          <MaterialIcons name="inbox" size={24} color="#6b7280" />
+        </TouchableOpacity>
+      </View>
       <View style={{ paddingHorizontal: 16, paddingVertical: 20 }}>
         <View style={styles.heroCard}>
           <View style={styles.heroHeader}>
@@ -102,6 +111,20 @@ export default function Workspace() {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
   heroCard: {
     backgroundColor: '#f9fafb',
     borderRadius: 24,

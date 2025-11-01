@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Dimensions, Image } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import db from '../../db';
 import { generateAPIUrl } from '../../utils';
+import { id } from '@instantdb/react-native';
 
 interface OptionValue {
   label: string;
@@ -22,11 +23,36 @@ interface ProductterTerminalProps {
 
 export default function ProductterTerminal({ selectedProduct, onProductChange, onRegisterSendMessage }: ProductterTerminalProps) {
   const [title, setTitle] = useState('');
-  const [type, setType] = useState('');
-  const [notes, setNotes] = useState('');
+  const [category, setCategory] = useState('');
+  const [status, setStatus] = useState('');
+  const [supplier, setSupplier] = useState('');
   const [groups, setGroups] = useState<OptionGroup[]>([]);
 
   const prevSelectedProductRef = useRef<any>(null);
+
+  // Auto-categorization helper
+  const autoCategorize = async (productTitle: string): Promise<string | null> => {
+    try {
+      const categorizerUrl = generateAPIUrl('/api/categorize', 'https://taragent-categorizer.tar-54d.workers.dev');
+      console.log('[AutoCategorize] Calling:', categorizerUrl, 'for:', productTitle);
+      
+      const response = await fetch(categorizerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: productTitle })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[AutoCategorize] Response:', data);
+        return data.category;
+      }
+      return null;
+    } catch (error) {
+      console.error('[AutoCategorize] Error:', error);
+      return null;
+    }
+  };
 
   // AI generation handler
   const handleAISend = useCallback(async (message: string) => {
@@ -48,13 +74,14 @@ export default function ProductterTerminal({ selectedProduct, onProductChange, o
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages,
-          existingProduct: {
-            title: selectedProduct.title,
-            type: selectedProduct.type,
-            img: selectedProduct.img,
-            notes: selectedProduct.notes,
-            options: selectedProduct.options
+        messages,
+        existingProduct: {
+        title: selectedProduct.title,
+        category: selectedProduct.category,
+        img: selectedProduct.img,
+        status: selectedProduct.status,
+        supplier: selectedProduct.supplier,
+          options: selectedProduct.options
           }
         }),
       });
@@ -66,6 +93,7 @@ export default function ProductterTerminal({ selectedProduct, onProductChange, o
         console.log('API response received:', data);
 
         let generatedProduct = data.product;
+        let generatedItems = data.items || [];
 
         // Parse AI-generated structured output from text if needed
         if (!generatedProduct && data.text) {
@@ -91,16 +119,46 @@ export default function ProductterTerminal({ selectedProduct, onProductChange, o
         }
 
         if (generatedProduct) {
-          // Update product in database with AI-generated data
-          const updateData: any = {};
-          if (generatedProduct.title !== undefined) updateData.title = generatedProduct.title;
-          if (generatedProduct.type !== undefined) updateData.type = generatedProduct.type;
-          if (generatedProduct.notes !== undefined) updateData.notes = generatedProduct.notes;
-          if (generatedProduct.options !== undefined) updateData.options = JSON.stringify(generatedProduct.options);
+        // Auto-categorize if category is missing
+        if (!generatedProduct.category && generatedProduct.title) {
+          console.log('[ProductAI] No category, auto-categorizing:', generatedProduct.title);
+          const autoCategory = await autoCategorize(generatedProduct.title);
+          if (autoCategory) {
+            console.log('[ProductAI] Auto-category assigned:', autoCategory);
+            generatedProduct.category = autoCategory;
+          }
+        }
 
-          await db.transact(
-            db.tx.products[selectedProduct.id].update(updateData)
-          );
+        // Update product in database with AI-generated data
+        const updateData: any = {};
+        if (generatedProduct.title !== undefined) updateData.title = generatedProduct.title;
+        if (generatedProduct.category !== undefined) updateData.category = generatedProduct.category;
+        if (generatedProduct.status !== undefined) updateData.status = generatedProduct.status;
+        if (generatedProduct.supplier !== undefined) updateData.supplier = generatedProduct.supplier;
+        if (generatedProduct.options !== undefined) updateData.options = JSON.stringify(generatedProduct.options);
+
+        // Prepare transaction operations
+        const txOps = [
+          db.tx.products[selectedProduct.id].update(updateData)
+          ];
+
+          // Add item creation operations
+          for (const item of generatedItems) {
+            txOps.push(
+              db.tx.items[id()].update({
+                sku: item.sku,
+                option: item.option,
+                price: item.price,
+                cost: item.cost,
+                barcode: item.barcode,
+                image: item.image,
+                attribute: item.attribute ? JSON.stringify(item.attribute) : null,
+                product: selectedProduct.id // Link to the product
+              })
+            );
+          }
+
+          await db.transact(txOps);
 
           // Update local state immediately for instant UI feedback
           if (onProductChange) {
@@ -151,8 +209,10 @@ export default function ProductterTerminal({ selectedProduct, onProductChange, o
           limit: 50
         },
         inventory: {
-          locations: {}
-        }
+          locations: {},
+          modifiers: {}
+        },
+        components: {} // consumption data
       }
     } : {}
   );
@@ -162,9 +222,10 @@ export default function ProductterTerminal({ selectedProduct, onProductChange, o
     prevSelectedProductRef.current = selectedProduct;
 
     if (selectedProduct) {
-      setTitle(selectedProduct.title || '');
-      setType(selectedProduct.type || '');
-      setNotes(selectedProduct.notes || '');
+    setTitle(selectedProduct.title || '');
+    setCategory(selectedProduct.category || '');
+    setStatus(selectedProduct.status || '');
+      setSupplier(selectedProduct.supplier || '');
 
       // Clean options parsing with AI-generated structured output support
       try {
@@ -193,9 +254,10 @@ export default function ProductterTerminal({ selectedProduct, onProductChange, o
         setGroups([]);
       }
     } else {
-      setTitle('');
-      setType('');
-      setNotes('');
+    setTitle('');
+    setCategory('');
+    setStatus('');
+    setSupplier('');
       setGroups([]);
     }
   }, [selectedProduct]);
@@ -225,16 +287,20 @@ export default function ProductterTerminal({ selectedProduct, onProductChange, o
             <>
               {/* Product Details */}
               <View style={styles.productHeader}>
-                <Text style={styles.productTitle}>{title || 'Untitled Product'}</Text>
-                <Text style={styles.productType}>{type || 'No type'}</Text>
-              </View>
-
-              {notes ? (
-                <View style={styles.notesSection}>
-                  <Text style={styles.notesTitle}>Notes</Text>
-                  <Text style={styles.notesText}>{notes}</Text>
+                <View style={styles.productHeaderTop}>
+                  {selectedProduct?.img ? (
+                    <Image source={{uri: selectedProduct.img}} style={styles.productImage} />
+                  ) : (
+                    <View style={styles.productImagePlaceholder} />
+                  )}
+                  <View style={styles.productHeaderTexts}>
+                    <Text style={styles.productTitle}>{title || 'Untitled Product'}</Text>
+                    <Text style={styles.productCategory}>{category || 'No category'}</Text>
+                  </View>
                 </View>
-              ) : null}
+                {status ? <Text style={styles.productStatus}>Status: {status}</Text> : null}
+                {supplier ? <Text style={styles.productSupplier}>Supplier: {supplier}</Text> : null}
+              </View>
 
               {/* Options Table - AI Generated Structured Output */}
               {groups.length > 0 && (
@@ -269,19 +335,24 @@ export default function ProductterTerminal({ selectedProduct, onProductChange, o
                 {productItemsData?.items && productItemsData.items.length > 0 ? (
                   <View style={styles.itemsContainer}>
                     {productItemsData.items.map((item, index) => {
-                      const totalAvailable = item.inventory?.reduce((sum, inv) => sum + (inv.available || 0), 0) || 0;
+                    const totalAvailable = item.inventory?.reduce((sum, inv) => sum + (inv.available || 0), 0) || 0;
 
-                      return (
-                        <View key={item.id || index} style={styles.itemRow}>
-                          <View style={styles.itemInfo}>
+                    return (
+                      <View key={item.id || index} style={styles.itemRow}>
+                        <View style={styles.itemStart}>
+                          {item.image ? (
+                            <Image source={{uri: item.image}} style={styles.itemImage} />
+                          ) : (
+                            <View style={styles.itemImagePlaceholder} />
+                          )}
+                          <View style={styles.itemLeft}>
                             <Text style={styles.itemSku}>{String(item.sku || 'No SKU')}</Text>
-                            <View style={styles.itemDetails}>
-                              <Text style={styles.itemPrice}>${String(item.price || 0)}</Text>
-                              <Text style={styles.itemStock}>Stock: {String(totalAvailable)}</Text>
-                            </View>
+                            <Text style={styles.itemPrice}>${String(item.price || 0)}</Text>
                           </View>
                         </View>
-                      );
+                        <Text style={styles.itemStock}>{String(totalAvailable)}</Text>
+                      </View>
+                    );
                     })}
                   </View>
                 ) : (
@@ -343,31 +414,46 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
+  productHeaderTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  productImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 15,
+  },
+  productImagePlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 15,
+    backgroundColor: '#f3f4f6',
+  },
+  productHeaderTexts: {
+    flex: 1,
+  },
   productTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#111827',
     marginBottom: 4,
   },
-  productType: {
+  productCategory: {
     fontSize: 16,
     color: '#6b7280',
-  },
-  notesSection: {
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  notesTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
     marginBottom: 8,
   },
-  notesText: {
-    fontSize: 16,
-    color: '#374151',
-    lineHeight: 24,
+  productStatus: {
+    fontSize: 14,
+    color: '#059669',
+    fontWeight: '600',
+  },
+  productSupplier: {
+    fontSize: 14,
+    color: '#6b7280',
   },
   optionsSection: {
     marginTop: 20,
@@ -435,9 +521,33 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   itemRow: {
-    backgroundColor: '#f9fafb',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  itemStart: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  itemLeft: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  itemImage: {
+    width: 50,
+    height: 50,
     borderRadius: 8,
-    padding: 12,
+    marginRight: 15,
+  },
+  itemImagePlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    marginRight: 15,
+    backgroundColor: '#f3f4f6',
   },
   itemInfo: {
     flex: 1,
@@ -446,21 +556,46 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
+  },
+  itemOptions: {
     marginBottom: 8,
+  },
+  itemOption: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  itemAttributes: {
+    marginBottom: 8,
+  },
+  itemAttribute: {
+    fontSize: 14,
+    color: '#6b7280',
+    fontStyle: 'italic',
   },
   itemDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 4,
   },
   itemPrice: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#059669',
+    color: '#111827',
   },
   itemStock: {
-    fontSize: 14,
-    color: '#6b7280',
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  itemMeta: {
+    marginTop: 4,
+  },
+  itemMetaText: {
+    fontSize: 12,
+    color: '#9ca3af',
+    fontStyle: 'italic',
   },
   noItemsText: {
     fontSize: 14,

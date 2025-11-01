@@ -8,6 +8,7 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
+          tabBarStyle: { display: 'none' },
         }}
       >
       <Tabs.Screen
@@ -20,13 +21,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="agents"
-        options={{
-          title: 'Agents',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="square-rounded-outline" size={size} color={color} />
-          ),
-        }}
+         name="agents"
+         options={{
+           title: 'Agents',
+           tabBarIcon: ({ color, size }) => (
+             <MaterialCommunityIcons name="square-rounded-outline" size={size} color={color} />
+           ),
+         }}
       />
       <Tabs.Screen
         name="people"

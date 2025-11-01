@@ -11,7 +11,7 @@
 ## Architecture Overview
 - **Main app**: Expo React Native app with file-based routing (expo-router)
 - **Database**: InstantDB for real-time data with comprehensive e-commerce schema (stores, products, orders, customers, inventory, payments)
-- **Subproject**: Cloudflare Worker (`cloudflare-worker/`) for chat API using AI SDK
+- **AI Agent**: TarAgent (`taragent/`) - VoltAgent-powered product categorization and generation agent deployed on Cloudflare Workers
 - **Auth**: InstantDB magic code authentication
 - **TypeScript**: Strict mode with path mapping `@/*` → `./*`
 

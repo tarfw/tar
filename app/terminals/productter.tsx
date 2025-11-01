@@ -67,7 +67,7 @@ export default function ProductterTerminal({ selectedProduct, onProductChange, o
         content: message.trim()
       }];
 
-      const apiUrl = generateAPIUrl('/api/products/generate');
+      const apiUrl = generateAPIUrl('/api/products/generate', 'https://taragent-categorizer.tar-54d.workers.dev');
       console.log('Making API call to:', apiUrl);
 
       const response = await fetch(apiUrl, {

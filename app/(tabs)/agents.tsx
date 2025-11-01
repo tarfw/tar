@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Text, View, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { id } from '@instantdb/react-native';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import Console from '../modals/console';
 import {
   SpaceTerminal,
@@ -22,13 +22,15 @@ import { generateAPIUrl } from '../../utils';
 
 export default function Agents() {
   const navigation = useNavigation();
+  const router = useRouter();
   const [selectedAgentId, setSelectedAgentId] = useState('space');
   const [currentPromo, setCurrentPromo] = useState<{ text: string; url: string } | null>(null);
   const [spaceSendMessage, setSpaceSendMessage] = useState<((message: string) => Promise<void>) | null>(null);
   const [productSendMessage, setProductSendMessage] = useState<((message: string) => Promise<void>) | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
 
-  const INFOBAR_HEIGHT = 60;
+  const STATUS_BAR_HEIGHT = 60;
+const INFOBAR_HEIGHT = 60;
   const INFOBAR_PROMOS = [
     { text: '🛍️ Exclusive Fashion Deals', url: 'https://example.com/fashion' },
     { text: '💻 Tech Gadgets on Sale', url: 'https://example.com/tech' },
@@ -384,6 +386,16 @@ export default function Agents() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.statusBar}>
+        <TouchableOpacity
+          style={styles.statusBarIcon}
+          onPress={() => router.push('/workspace')}
+          activeOpacity={0.7}
+        >
+          <MaterialIcons name="radio-button-unchecked" size={20} color="#6b7280" />
+        </TouchableOpacity>
+        <Text style={styles.statusBarText}>Agent: {agents.find(a => a.id === selectedAgentId)?.name || 'None'}</Text>
+      </View>
       {selectedAgentId === 'space' && currentPromo ? (
         <TouchableOpacity
           style={styles.infobar}
@@ -399,7 +411,7 @@ export default function Agents() {
         style={[
           styles.content,
           {
-            paddingTop: selectedAgentId === 'space' && currentPromo ? INFOBAR_HEIGHT + 16 : 16,
+            paddingTop: selectedAgentId === 'space' && currentPromo ? INFOBAR_HEIGHT + STATUS_BAR_HEIGHT + 16 : STATUS_BAR_HEIGHT + 16,
           },
         ]}
       >
@@ -473,7 +485,7 @@ const styles = StyleSheet.create({
   },
   infobar: {
     position: 'absolute',
-    top: 0,
+    top: 60,
     left: 0,
     right: 0,
     height: 60,
@@ -492,6 +504,29 @@ const styles = StyleSheet.create({
     color: 'black',
     fontWeight: '600',
     flex: 1,
+  },
+  statusBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+    padding: 12,
+    backgroundColor: '#f3f4f6',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    zIndex: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusBarText: {
+    fontSize: 12,
+    color: '#374151',
+    fontWeight: '500',
+    flex: 1,
+  },
+  statusBarIcon: {
+    marginRight: 8,
   },
 
 });

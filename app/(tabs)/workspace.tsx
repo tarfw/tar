@@ -67,9 +67,14 @@ export default function Workspace() {
     <View style={{ flex: 1, backgroundColor: 'white' }}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Workspace</Text>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/people')}>
-          <MaterialIcons name="inbox" size={24} color="#6b7280" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 16 }}>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/people')}>
+            <MaterialIcons name="inbox" size={24} color="#6b7280" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/agents')}>
+            <Text style={{ fontSize: 24 }}>🎮</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <View style={{ paddingHorizontal: 16, paddingVertical: 20 }}>
         <View style={styles.heroCard}>

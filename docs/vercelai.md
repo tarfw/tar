@@ -63,7 +63,7 @@ Create a `.env.local` file in your project root and add your OpenAI API Key. Thi
 Edit the `.env.local` file:
 
 ```env filename=".env.local"
-OPENAI_API_KEY=xxxxxxxxx
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
 Replace `xxxxxxxxx` with your actual OpenAI API key.

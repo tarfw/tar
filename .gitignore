@@ -4,7 +4,9 @@
 node_modules/
 
 # Expo
-.expo/
+.expo
+.taragent/.wrangler/
+**/.wrangler//
 dist/
 web-build/
 expo-env.d.ts

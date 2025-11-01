@@ -19,7 +19,7 @@ You need an API key from either OpenAI or Groq.
 3. Generate an API key
 4. Add to `.env` file:
 ```bash
-echo "GROQ_API_KEY=gsk_your_key_here" > .env
+echo "GROQ_API_KEY=your_groq_api_key_here" > .env
 ```
 
 #### Option B: OpenAI
@@ -28,7 +28,7 @@ echo "GROQ_API_KEY=gsk_your_key_here" > .env
 3. Generate API key
 4. Add to `.env` file:
 ```bash
-echo "OPENAI_API_KEY=sk-your_key_here" > .env
+echo "OPENAI_API_KEY=your_openai_api_key_here" > .env
 ```
 
 ### Step 3: Run the Server
@@ -194,9 +194,9 @@ export const productAgent = new Agent({
 
 Make sure you have created `.env` file with either:
 ```bash
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=your_openai_api_key_here
 # OR
-GROQ_API_KEY=gsk-...
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
 ### Module Resolution Errors

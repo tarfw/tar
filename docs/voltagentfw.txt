@@ -36,7 +36,7 @@ npm create voltagent-app@latest my-voltagent-app
 cd my-voltagent-app
 
 # Add API keys to the generated .env file
-echo "OPENAI_API_KEY=sk-..." > .env # Example for OpenAI
+echo "OPENAI_API_KEY=your_openai_api_key_here" > .env # Example for OpenAI
 
 # Start the development server
 npm run dev

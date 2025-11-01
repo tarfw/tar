@@ -122,13 +122,13 @@ Choose one:
 **Option A: Groq (Free)**
 ```bash
 # Get key from https://console.groq.com
-echo "GROQ_API_KEY=gsk_your_key" > .env
+echo "GROQ_API_KEY=your_groq_api_key_here" > .env
 ```
 
 **Option B: OpenAI**
 ```bash
 # Get key from https://platform.openai.com
-echo "OPENAI_API_KEY=sk_your_key" > .env
+echo "OPENAI_API_KEY=your_openai_api_key_here" > .env
 ```
 
 ### 3. Run Tests

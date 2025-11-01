@@ -22,10 +22,10 @@ A VoltAgent-powered AI agent that automatically categorizes products based on th
    ```bash
    # Create .env file and add your API key
    # Option 1: OpenAI (recommended for best quality)
-   echo "OPENAI_API_KEY=sk-..." > .env
+   echo "OPENAI_API_KEY=your_openai_api_key_here" > .env
    
    # Option 2: Groq (faster, free tier available at https://console.groq.com)
-   echo "GROQ_API_KEY=gsk-..." > .env
+   echo "GROQ_API_KEY=your_groq_api_key_here" > .env
    ```
 
 3. **Run the server:**

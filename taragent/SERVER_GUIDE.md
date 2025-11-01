@@ -169,7 +169,7 @@ If port 4310 is already in use, VoltAgent will automatically try another port.
 ### API Key Issues
 Make sure `.env` file has valid API key:
 ```
-GROQ_API_KEY=gsk_your_key_here
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
 ### Module Not Found

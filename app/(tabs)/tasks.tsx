@@ -1,10 +1,10 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-export default function AgentsScreen() {
+export default function TasksScreen() {
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>Agents</Text>
-            <Text style={styles.subtitle}>Primary Interface</Text>
+            <Text style={styles.title}>Tasks</Text>
+            <Text style={styles.subtitle}>Manage your workflow</Text>
         </View>
     );
 }

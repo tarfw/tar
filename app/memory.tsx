@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Platform, SafeAreaView, SectionList, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SectionList, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useMemoryStore } from '../hooks/use-memory-store';
 import { syncDb } from '../lib/db';
 
@@ -112,7 +112,7 @@ export default function MemoryScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             <StatusBar barStyle="dark-content" />
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>Commerce Memories</Text>
@@ -152,7 +152,7 @@ export default function MemoryScreen() {
                     </TouchableOpacity>
                 )}
             />
-        </SafeAreaView>
+        </View>
     );
 }
 
@@ -160,7 +160,6 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#fff',
-        paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
     },
     header: {
         paddingHorizontal: 20,

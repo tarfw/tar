@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, FlatList, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { dbHelpers } from '../lib/db';
 import { useEmbeddingService } from '../lib/embedding-service';
 
@@ -9,8 +9,12 @@ export default function SearchScreen() {
     const router = useRouter();
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<any[]>([]);
-    const { generateEmbedding, isEmbeddingReady, isEmbeddingGenerating } = useEmbeddingService();
+    const { generateEmbedding, isEmbeddingReady, isEmbeddingGenerating, embeddingError } = useEmbeddingService();
     const [isSearching, setIsSearching] = useState(false);
+
+    useEffect(() => {
+        console.log('[Search] Embedding Service State:', { isEmbeddingReady, isEmbeddingGenerating, embeddingError });
+    }, [isEmbeddingReady, isEmbeddingGenerating, embeddingError]);
 
     const handleSearch = async () => {
         if (!query.trim() || !isEmbeddingReady) return;
@@ -30,7 +34,7 @@ export default function SearchScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                     <MaterialCommunityIcons name="arrow-left" size={24} color="#000" />
@@ -58,8 +62,27 @@ export default function SearchScreen() {
                         )}
                     </TouchableOpacity>
                 </View>
-                {!isEmbeddingReady && (
-                    <Text style={styles.loadingText}>Loading AI model (can take a few seconds)...</Text>
+                {!isEmbeddingReady && !embeddingError && (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="small" color="#006AFF" />
+                        <Text style={styles.loadingText}>Initializing AI (Downloading 80MB model)...</Text>
+                    </View>
+                )}
+                {embeddingError && (
+                    <View style={styles.errorContainer}>
+                        <MaterialCommunityIcons name="alert-circle" size={24} color="#FF3B30" />
+                        <Text style={styles.errorText}>AI Ready: {isEmbeddingReady ? 'Yes' : 'No'}</Text>
+                        <Text style={styles.errorText}>Error: {embeddingError.message || 'Check connection'}</Text>
+
+                        <TouchableOpacity
+                            style={styles.retryButton}
+                            onPress={() => router.replace('/search')}
+                        >
+                            <Text style={styles.retryButtonText}>Reload Search</Text>
+                        </TouchableOpacity>
+
+                        <Text style={styles.errorHint}>If this persists, verify your internet and ensure you're in a Dev Build.</Text>
+                    </View>
                 )}
             </View>
 
@@ -80,7 +103,7 @@ export default function SearchScreen() {
                     ) : null
                 }
             />
-        </SafeAreaView>
+        </View>
     );
 }
 
@@ -119,11 +142,28 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#000',
     },
+    loadingContainer: {
+        marginTop: 15,
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 10,
+    },
     loadingText: {
-        fontSize: 12,
+        fontSize: 14,
         color: '#666',
-        marginTop: 8,
         textAlign: 'center',
+    },
+    retryButton: {
+        backgroundColor: '#006AFF',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 8,
+        marginTop: 15,
+    },
+    retryButtonText: {
+        color: '#fff',
+        fontWeight: '600',
     },
     listContent: {
         padding: 20,
@@ -151,5 +191,26 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 40,
         color: '#999',
+    },
+    errorContainer: {
+        marginTop: 15,
+        alignItems: 'center',
+        backgroundColor: '#FFF5F5',
+        padding: 15,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#FFDCDC',
+    },
+    errorText: {
+        color: '#FF3B30',
+        fontWeight: '600',
+        marginTop: 8,
+        textAlign: 'center',
+    },
+    errorHint: {
+        color: '#666',
+        fontSize: 12,
+        marginTop: 4,
+        textAlign: 'center',
     }
 });

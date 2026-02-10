@@ -14,81 +14,79 @@ export async function getDb(): Promise<Database> {
         });
 
         // Initialize schema
-        await dbInstance.exec(`
-      CREATE TABLE IF NOT EXISTS actors (
-        id TEXT PRIMARY KEY,
-        parentid TEXT,
-        actortype TEXT NOT NULL,
-        globalcode TEXT NOT NULL,
-        name TEXT NOT NULL,
-        metadata TEXT,
-        vector F32_BLOB(384),
-        pushtoken TEXT
-      );
+        const schema = [
+            `CREATE TABLE IF NOT EXISTS actors (
+                id TEXT PRIMARY KEY,
+                parentid TEXT,
+                actortype TEXT NOT NULL,
+                globalcode TEXT NOT NULL,
+                name TEXT NOT NULL,
+                metadata TEXT,
+                vector F32_BLOB(384),
+                pushtoken TEXT
+            )`,
+            `CREATE TABLE IF NOT EXISTS collab (
+                id TEXT PRIMARY KEY,
+                actorid TEXT NOT NULL,
+                targettype TEXT NOT NULL,
+                targetid TEXT NOT NULL,
+                role TEXT NOT NULL,
+                permissions TEXT,
+                createdat TEXT NOT NULL,
+                expiresat TEXT
+            )`,
+            `CREATE TABLE IF NOT EXISTS nodes (
+                id TEXT PRIMARY KEY,
+                parentid TEXT,
+                nodetype TEXT NOT NULL,
+                universalcode TEXT NOT NULL,
+                title TEXT NOT NULL,
+                payload TEXT,
+                embedding F32_BLOB(384)
+            )`,
+            `CREATE TABLE IF NOT EXISTS points (
+                id TEXT PRIMARY KEY,
+                noderef TEXT NOT NULL,
+                sellerid TEXT NOT NULL,
+                sku TEXT NOT NULL,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
+                stock TEXT,
+                price REAL NOT NULL,
+                notes TEXT,
+                version INTEGER DEFAULT 0
+            )`,
+            `CREATE TABLE IF NOT EXISTS streams (
+                id TEXT PRIMARY KEY,
+                scope TEXT NOT NULL,
+                createdby TEXT NOT NULL,
+                createdat TEXT NOT NULL
+            )`,
+            `CREATE TABLE IF NOT EXISTS streamcollab (
+                streamid TEXT NOT NULL,
+                actorid TEXT NOT NULL,
+                role TEXT NOT NULL,
+                joinedat TEXT,
+                PRIMARY KEY (streamid, actorid)
+            )`,
+            `CREATE TABLE IF NOT EXISTS orevents (
+                id TEXT PRIMARY KEY,
+                streamid TEXT NOT NULL,
+                opcode INTEGER NOT NULL,
+                refid TEXT NOT NULL,
+                lat REAL,
+                lng REAL,
+                delta REAL DEFAULT 0,
+                payload TEXT,
+                scope TEXT NOT NULL,
+                status TEXT,
+                ts TEXT NOT NULL
+            )`
+        ];
 
-      CREATE TABLE IF NOT EXISTS collab (
-        id TEXT PRIMARY KEY,
-        actorid TEXT NOT NULL,
-        targettype TEXT NOT NULL,
-        targetid TEXT NOT NULL,
-        role TEXT NOT NULL,
-        permissions TEXT,
-        createdat TEXT NOT NULL,
-        expiresat TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS nodes (
-        id TEXT PRIMARY KEY,
-        parentid TEXT,
-        nodetype TEXT NOT NULL,
-        universalcode TEXT NOT NULL,
-        title TEXT NOT NULL,
-        payload TEXT,
-        embedding F32_BLOB(384)
-      );
-
-      CREATE TABLE IF NOT EXISTS points (
-        id TEXT PRIMARY KEY,
-        noderef TEXT NOT NULL,
-        sellerid TEXT NOT NULL,
-        sku TEXT NOT NULL,
-        lat REAL NOT NULL,
-        lon REAL NOT NULL,
-        stock TEXT,
-        price REAL NOT NULL,
-        notes TEXT,
-        version INTEGER DEFAULT 0
-      );
-
-      CREATE TABLE IF NOT EXISTS streams (
-        id TEXT PRIMARY KEY,
-        scope TEXT NOT NULL,
-        createdby TEXT NOT NULL,
-        createdat TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS streamcollab (
-        streamid TEXT NOT NULL,
-        actorid TEXT NOT NULL,
-        role TEXT NOT NULL,
-        joinedat TEXT,
-        PRIMARY KEY (streamid, actorid)
-      );
-
-      CREATE TABLE IF NOT EXISTS orevents (
-        id TEXT PRIMARY KEY,
-        streamid TEXT NOT NULL,
-        opcode INTEGER NOT NULL,
-        refid TEXT NOT NULL,
-        lat REAL,
-        lng REAL,
-        delta REAL DEFAULT 0,
-        payload TEXT,
-        scope TEXT NOT NULL,
-        status TEXT,
-        ts TEXT NOT NULL
-      );
-    `);
+        for (const statement of schema) {
+            await dbInstance.exec(statement);
+        }
     }
     return dbInstance;
 }

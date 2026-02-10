@@ -15,6 +15,13 @@ export default function AgentsScreen() {
             >
                 <Text style={styles.searchButtonText}>Try Semantic Search</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+                style={[styles.searchButton, styles.addButton]}
+                onPress={() => router.push('/add-node')}
+            >
+                <Text style={styles.searchButtonText}>Add New Node Data</Text>
+            </TouchableOpacity>
         </View>
     );
 }
@@ -43,6 +50,12 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
         paddingVertical: 12,
         borderRadius: 25,
+        marginBottom: 12,
+        width: '80%',
+        alignItems: 'center',
+    },
+    addButton: {
+        backgroundColor: '#34C759', // Green for adding
     },
     searchButtonText: {
         color: '#fff',

@@ -9,10 +9,9 @@ import { ALL_MINILM_L6_V2, useTextEmbeddings } from 'react-native-executorch';
  * We stabilize the model config with useMemo to prevent
  * unnecessary re-renders from re-triggering downloads.
  *
- * NOTE: Requires an EAS development build that includes the
- * react-native-executorch native module (C++ tokenizer + model loader).
- * If you see "Unexpected issue while loading tokenizer", rebuild:
- *   eas build --profile development --platform android
+ * Using react-native-executorch@0.5.10 which has a working
+ * tokenizer implementation (v0.7.0's HFTokenizer has a bug
+ * with WordPiece tokenizers on Android).
  */
 export function useEmbeddingService() {
     // Stabilize the model config reference — prevents "Already downloading"

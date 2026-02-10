@@ -2,39 +2,102 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Platform, SafeAreaView, SectionList, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useMemoryStore } from '../hooks/use-memory-store';
+import { syncDb } from '../lib/db';
 
 /**
- * STRICT COMMERCE MEMORY CLASSIFICATION
- * Categories: LTM, STM, WM
- * Entities: Products, Inventory, Orders, Cart
+ * REFINED COMMERCE MEMORY CLASSIFICATION
+ * Categories: LTM, STM
+ * Includes detailed OREvents hierarchy in STM (Clean text version)
  */
 
-const COMMERCE_MEMORY = [
+interface MemoryItem {
+    id: string;
+    title: string;
+    type?: 'parent' | 'child';
+}
+
+interface MemorySection {
+    title: string;
+    data: MemoryItem[];
+}
+
+const COMMERCE_MEMORY: MemorySection[] = [
     {
         title: 'Long-term Memory (LTM)',
         data: [
-            { id: 'l1', title: 'Products Catalog' },
-            { id: 'l2', title: 'Inventory Stock Levels' },
-            { id: 'l3', title: 'Finalized Orders Archive' },
-            { id: 'l4', title: 'Global Compliance Rules' },
+            { id: 'l1', title: 'Nodes', type: 'parent' },
+            { id: 'l2', title: 'Products Catalog', type: 'child' },
+            { id: 'l3', title: 'Points', type: 'parent' },
+            { id: 'l4', title: 'Inventory Stock Levels', type: 'child' },
+            { id: 'l5', title: 'S3', type: 'parent' },
+            { id: 'l6', title: 'Finalized Order Archives', type: 'child' },
+            { id: 'l7', title: 'Actors', type: 'parent' },
+            { id: 'l8', title: 'People', type: 'child' },
+            { id: 'l9', title: 'Merchants', type: 'child' },
         ],
     },
     {
         title: 'Short-term Memory (STM)',
         data: [
-            { id: 's1', title: 'Current Shopping Cart' },
-            { id: 's2', title: 'Recent Order History' },
-            { id: 's3', title: 'User Session Intent' },
-            { id: 's4', title: 'Active Checkout State' },
-        ],
-    },
-    {
-        title: 'Working Memory (WM)',
-        data: [
-            { id: 'w1', title: 'Active Order Processing' },
-            { id: 'w2', title: 'Real-time Tax Logic' },
-            { id: 'w3', title: 'Promo Code Verification' },
-            { id: 'w4', title: 'Shipping Fee Calculation' },
+            { id: 's_or', title: 'OREvents', type: 'parent' },
+            // Stock Group
+            { id: 's_or_1', title: '🧱 Stock', type: 'parent' },
+            { id: 's101', title: 'Stock In', type: 'child' },
+            { id: 's102', title: 'Sale Out', type: 'child' },
+            { id: 's103', title: 'Sale Return', type: 'child' },
+            { id: 's104', title: 'Stock Adjust', type: 'child' },
+            { id: 's105', title: 'Stock Transfer Out', type: 'child' },
+            { id: 's106', title: 'Stock Transfer In', type: 'child' },
+            { id: 's107', title: 'Stock Void', type: 'child' },
+            // Invoice Group
+            { id: 's_or_2', title: '🧾 Invoice / Billing', type: 'parent' },
+            { id: 's201', title: 'Invoice Create', type: 'child' },
+            { id: 's202', title: 'Invoice Item Add', type: 'child' },
+            { id: 's203', title: 'Invoice Payment', type: 'child' },
+            { id: 's204', title: 'Invoice Payment Fail', type: 'child' },
+            { id: 's205', title: 'Invoice Void', type: 'child' },
+            { id: 's206', title: 'Invoice Item Define', type: 'child' },
+            { id: 's207', title: 'Invoice Refund', type: 'child' },
+            // Tasks Group
+            { id: 's_or_3', title: '🧑💼 Tasks / Workflow', type: 'parent' },
+            { id: 's301', title: 'Task Create', type: 'child' },
+            { id: 's302', title: 'Task Assign', type: 'child' },
+            { id: 's303', title: 'Task Start', type: 'child' },
+            { id: 's304', title: 'Task Progress', type: 'child' },
+            { id: 's305', title: 'Task Done', type: 'child' },
+            { id: 's306', title: 'Task Fail', type: 'child' },
+            { id: 's307', title: 'Task Block', type: 'child' },
+            { id: 's308', title: 'Task Resume', type: 'child' },
+            { id: 's309', title: 'Task Void', type: 'child' },
+            { id: 's310', title: 'Task Link', type: 'child' },
+            { id: 's311', title: 'Task Comment', type: 'child' },
+            // Accounts Group
+            { id: 's_or_4', title: '💰 Accounts / Ledger', type: 'parent' },
+            { id: 's401', title: 'Account Pay In', type: 'child' },
+            { id: 's402', title: 'Account Pay Out', type: 'child' },
+            { id: 's403', title: 'Account Refund', type: 'child' },
+            { id: 's404', title: 'Account Adjust', type: 'child' },
+            // Orders Group
+            { id: 's_or_5', title: '🚚 Orders / Delivery', type: 'parent' },
+            { id: 's501', title: 'Order Create', type: 'child' },
+            { id: 's502', title: 'Order Ship', type: 'child' },
+            { id: 's503', title: 'Order Deliver', type: 'child' },
+            { id: 's504', title: 'Order Cancel', type: 'child' },
+            // Transport Group
+            { id: 's_or_6', title: '🚕 Transport / Booking / Rental', type: 'parent' },
+            { id: 's601', title: 'Ride Create', type: 'child' },
+            { id: 's602', title: 'Ride Start', type: 'child' },
+            { id: 's603', title: 'Ride Done', type: 'child' },
+            { id: 's604', title: 'Ride Cancel', type: 'child' },
+            { id: 's611', title: 'Booking Create', type: 'child' },
+            { id: 's612', title: 'Booking Done', type: 'child' },
+            { id: 's621', title: 'Rental Start', type: 'child' },
+            { id: 's622', title: 'Rental End', type: 'child' },
+            // Other STM
+            { id: 's_cart', title: 'Current Shopping Cart', type: 'parent' },
+            { id: 's_hist', title: 'Recent Order History', type: 'parent' },
+            { id: 's_intent', title: 'User Session Intent', type: 'parent' },
+            { id: 's_checkout', title: 'Active Checkout State', type: 'parent' },
         ],
     },
 ];
@@ -53,9 +116,14 @@ export default function MemoryScreen() {
             <StatusBar barStyle="dark-content" />
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>Commerce Memories</Text>
-                <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-                    <MaterialCommunityIcons name="close" size={24} color="#000" />
-                </TouchableOpacity>
+                <View style={styles.headerButtons}>
+                    <TouchableOpacity onPress={() => syncDb()} style={styles.syncButton}>
+                        <MaterialCommunityIcons name="sync" size={24} color="#006AFF" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+                        <MaterialCommunityIcons name="close" size={24} color="#000" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <SectionList
@@ -68,11 +136,19 @@ export default function MemoryScreen() {
                 )}
                 renderItem={({ item }) => (
                     <TouchableOpacity
-                        style={styles.memoryItem}
+                        style={[
+                            styles.memoryItem,
+                            item.type === 'child' && styles.childItem
+                        ]}
                         onPress={() => handleSelect(item.title)}
                         activeOpacity={0.6}
                     >
-                        <Text style={styles.itemTitle}>{item.title}</Text>
+                        <Text style={[
+                            styles.itemTitle,
+                            item.type === 'child' ? styles.childText : styles.parentText
+                        ]}>
+                            {item.title}
+                        </Text>
                     </TouchableOpacity>
                 )}
             />
@@ -95,6 +171,14 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#f0f0f0',
     },
+    headerButtons: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    syncButton: {
+        padding: 5,
+        marginRight: 10,
+    },
     headerTitle: {
         fontSize: 22,
         fontWeight: '700',
@@ -109,7 +193,7 @@ const styles = StyleSheet.create({
         paddingBottom: 40,
     },
     sectionHeader: {
-        fontSize: 14,
+        fontSize: 18,
         fontWeight: '700',
         color: '#006AFF', // Square Blue for headers
         textTransform: 'uppercase',
@@ -122,9 +206,17 @@ const styles = StyleSheet.create({
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: '#f0f0f0',
     },
+    childItem: {
+    },
     itemTitle: {
         fontSize: 16,
-        fontWeight: '500',
-        color: '#1a1a1a',
+    },
+    parentText: {
+        fontWeight: '600',
+        color: '#000000',
+    },
+    childText: {
+        fontWeight: '400',
+        color: '#8E8E93',
     },
 });

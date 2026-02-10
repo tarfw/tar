@@ -15,14 +15,25 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
     return (
         <View style={styles.tabBarContainer}>
-            <TouchableOpacity
-                style={styles.memorySelector}
-                onPress={() => router.push('/memory')}
-                activeOpacity={0.8}
-            >
-                <MaterialCommunityIcons name="brain" size={14} color="#000" />
-                <Text style={styles.memoryText}>{memory}</Text>
-            </TouchableOpacity>
+            <View style={styles.selectorRow}>
+                <TouchableOpacity
+                    style={styles.memorySelector}
+                    onPress={() => router.push('/memory')}
+                    activeOpacity={0.8}
+                >
+                    <MaterialCommunityIcons name="brain" size={14} color="#000" />
+                    <Text style={styles.memoryText}>{memory}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[styles.memorySelector, styles.actionButton]}
+                    onPress={() => { }}
+                    activeOpacity={0.8}
+                >
+                    <MaterialCommunityIcons name="message-text-outline" size={14} color="#000" />
+                    <Text style={styles.memoryText}>Ask AI</Text>
+                </TouchableOpacity>
+            </View>
 
             <BlurView intensity={90} tint="light" style={styles.blurContainer}>
                 <View style={styles.tabBarWrapper}>
@@ -117,7 +128,12 @@ const styles = StyleSheet.create({
         bottom: 40,
         alignSelf: 'center',
         width: width * 0.85,
-        alignItems: 'flex-start',
+    },
+    selectorRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        width: '100%',
     },
     memorySelector: {
         backgroundColor: '#fff',
@@ -126,9 +142,13 @@ const styles = StyleSheet.create({
         borderRadius: 24,
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 12,
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.1)',
+        marginBottom: 12,
+    },
+    actionButton: {
+        backgroundColor: '#F2F2F2',
+        borderColor: 'rgba(0,0,0,0.05)',
     },
     memoryText: {
         fontSize: 14,

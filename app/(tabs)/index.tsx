@@ -1,10 +1,20 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function AgentsScreen() {
+    const router = useRouter();
+
     return (
         <View style={styles.container}>
             <Text style={styles.title}>Agents</Text>
             <Text style={styles.subtitle}>Primary Interface</Text>
+
+            <TouchableOpacity
+                style={styles.searchButton}
+                onPress={() => router.push('/search')}
+            >
+                <Text style={styles.searchButtonText}>Try Semantic Search</Text>
+            </TouchableOpacity>
         </View>
     );
 }
@@ -26,5 +36,17 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#666',
         marginTop: 8,
+        marginBottom: 30,
+    },
+    searchButton: {
+        backgroundColor: '#006AFF',
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 25,
+    },
+    searchButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
     },
 });

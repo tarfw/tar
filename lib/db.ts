@@ -92,6 +92,21 @@ export async function getDb(): Promise<Database> {
 }
 
 /**
+ * DB Event System for Reactivity
+ */
+type DbChangeListener = () => void;
+const listeners = new Set<DbChangeListener>();
+
+export function subscribeToDbChanges(listener: DbChangeListener) {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+}
+
+export function notifyDbChanges() {
+    listeners.forEach(l => l());
+}
+
+/**
  * Universal Sync Function
  * Pulls changes from remote and pushes local changes to remote.
  */
@@ -103,6 +118,7 @@ export async function syncDb() {
             const pullApplied = await database.pull();
             if (pullApplied) {
                 console.log('[Sync] Remote changes pulled and applied.');
+                notifyDbChanges();
             }
             await database.push();
             console.log('[Sync] Local changes pushed to remote.');
@@ -130,10 +146,12 @@ export const dbHelpers = {
     },
     insertActor: async (actor: { id: string, actortype: string, globalcode: string, name: string, parentid?: string, metadata?: string }) => {
         const db = await getDb();
-        return await db.run(
+        const result = await db.run(
             'INSERT INTO actors (id, actortype, globalcode, name, parentid, metadata) VALUES (?, ?, ?, ?, ?, ?)',
             [actor.id, actor.actortype, actor.globalcode, actor.name, actor.parentid || null, actor.metadata || null]
         );
+        notifyDbChanges();
+        return result;
     },
 
     // Nodes (Catalog/Categories/Products)
@@ -146,10 +164,12 @@ export const dbHelpers = {
     },
     insertNode: async (node: { id: string, nodetype: string, universalcode: string, title: string, parentid?: string, payload?: string }) => {
         const db = await getDb();
-        return await db.run(
+        const result = await db.run(
             'INSERT INTO nodes (id, nodetype, universalcode, title, parentid, payload) VALUES (?, ?, ?, ?, ?, ?)',
             [node.id, node.nodetype, node.universalcode, node.title, node.parentid || null, node.payload || null]
         );
+        notifyDbChanges();
+        return result;
     },
 
     // OREvents (Operational Events)

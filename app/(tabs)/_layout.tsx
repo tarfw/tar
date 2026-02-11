@@ -1,10 +1,11 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
-import { Tabs, useRouter } from 'expo-router';
+import { Tabs, usePathname, useRouter } from 'expo-router';
 import React from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useMemoryStore } from '../../hooks/use-memory-store';
+import { syncDb } from '../../lib/db';
 
 const { width } = Dimensions.get('window');
 
@@ -81,21 +82,40 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 function TopBar() {
     const { memory } = useMemoryStore();
     const router = useRouter();
+    const pathname = usePathname();
+
+    const handleSync = async () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        await syncDb();
+    };
+
+    const isAgentsScreen = pathname === '/' || pathname === '/index';
 
     return (
         <View style={styles.topBarContainer}>
             <View style={styles.pillSelector}>
-                <MaterialCommunityIcons name="brain" size={14} color="#000" />
                 <Text style={styles.pillText}>{memory}</Text>
             </View>
 
-            <TouchableOpacity
-                style={styles.relayButton}
-                onPress={() => router.push('/relay')}
-                activeOpacity={0.7}
-            >
-                <MaterialCommunityIcons name="asterisk" size={24} color="#000" />
-            </TouchableOpacity>
+            <View style={styles.rightActions}>
+                {!isAgentsScreen && (
+                    <TouchableOpacity
+                        style={styles.topActionItem}
+                        onPress={handleSync}
+                        activeOpacity={0.7}
+                    >
+                        <MaterialCommunityIcons name="brain" size={24} color="#000" />
+                    </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                    style={styles.topActionItem}
+                    onPress={() => router.push('/relay')}
+                    activeOpacity={0.7}
+                >
+                    <MaterialCommunityIcons name="asterisk" size={24} color="#000" />
+                </TouchableOpacity>
+            </View>
         </View>
     );
 }
@@ -164,7 +184,7 @@ const styles = StyleSheet.create({
     },
     pillSelector: {
         backgroundColor: '#fff',
-        paddingHorizontal: 20,
+        paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 20,
         flexDirection: 'row',
@@ -176,7 +196,6 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '600',
         color: '#333',
-        marginLeft: 6,
     },
     leftContainer: {
         flexDirection: 'row',
@@ -203,8 +222,13 @@ const styles = StyleSheet.create({
         width: 65, // Adjusted for single button
         justifyContent: 'center',
     },
-    relayButton: {
-        padding: 8,
+    rightActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 15,
+    },
+    topActionItem: {
+        padding: 5,
     },
     tabItem: {
         padding: 10,

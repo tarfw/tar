@@ -39,7 +39,6 @@ export default function AddNodeScreen() {
             };
 
             await dbHelpers.insertNode(newNode);
-            alert('Node saved successfully!');
             router.back();
         } catch (error) {
             console.error('Failed to save node:', error);

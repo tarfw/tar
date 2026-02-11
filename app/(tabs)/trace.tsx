@@ -162,6 +162,11 @@ export default function TraceScreen() {
                         onSubmitEditing={handleSearch}
                         returnKeyType="search"
                     />
+                    {searchQuery.length > 0 && !isSearching && !isEmbeddingGenerating && (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <MaterialCommunityIcons name="close-circle" size={18} color="#8E8E93" />
+                        </TouchableOpacity>
+                    )}
                     {(isSearching || isEmbeddingGenerating) && (
                         <ActivityIndicator size="small" color="#006AFF" />
                     )}

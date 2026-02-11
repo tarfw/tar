@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
-import { Tabs, usePathname, useRouter } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import React from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useMemoryStore } from '../../hooks/use-memory-store';
@@ -16,49 +16,49 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             {/* Left Section: Tabs */}
             <View style={styles.leftWrapper}>
                 <BlurView intensity={90} tint="light" style={styles.leftContainer}>
-                    {state.routes.map((route: any, index: number) => {
-                        const { options } = descriptors[route.key];
-                        const isFocused = state.index === index;
+                    {state.routes
+                        .filter((route: any) => route.name !== 'relay')
+                        .map((route: any, index: number) => {
+                            const { options } = descriptors[route.key];
+                            const isFocused = state.index === index;
 
-                        const onPress = () => {
-                            const event = navigation.emit({
-                                type: 'tabPress',
-                                target: route.key,
-                                canPreventDefault: true,
-                            });
+                            const onPress = () => {
+                                const event = navigation.emit({
+                                    type: 'tabPress',
+                                    target: route.key,
+                                    canPreventDefault: true,
+                                });
 
-                            if (!isFocused && !event.defaultPrevented) {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                navigation.navigate(route.name);
+                                if (!isFocused && !event.defaultPrevented) {
+                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    navigation.navigate(route.name);
+                                }
+                            };
+
+                            let iconName: any;
+                            if (route.name === 'trace') {
+                                iconName = isFocused ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline';
+                            } else if (route.name === 'index') {
+                                iconName = isFocused ? 'square-rounded' : 'square-rounded-outline';
                             }
-                        };
 
-                        let iconName: any;
-                        if (route.name === 'trace') {
-                            iconName = isFocused ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline';
-                        } else if (route.name === 'index') {
-                            iconName = isFocused ? 'square-rounded' : 'square-rounded-outline';
-                        } else if (route.name === 'relay') {
-                            iconName = 'asterisk';
-                        }
-
-                        return (
-                            <TouchableOpacity
-                                key={route.name}
-                                accessibilityRole="button"
-                                accessibilityState={isFocused ? { selected: true } : {}}
-                                onPress={onPress}
-                                style={styles.tabItem}
-                                activeOpacity={0.7}
-                            >
-                                <MaterialCommunityIcons
-                                    name={iconName}
-                                    size={28}
-                                    color={isFocused ? '#006AFF' : '#8E8E93'}
-                                />
-                            </TouchableOpacity>
-                        );
-                    })}
+                            return (
+                                <TouchableOpacity
+                                    key={route.name}
+                                    accessibilityRole="button"
+                                    accessibilityState={isFocused ? { selected: true } : {}}
+                                    onPress={onPress}
+                                    style={styles.tabItem}
+                                    activeOpacity={0.7}
+                                >
+                                    <MaterialCommunityIcons
+                                        name={iconName}
+                                        size={28}
+                                        color={isFocused ? '#006AFF' : '#8E8E93'}
+                                    />
+                                </TouchableOpacity>
+                            );
+                        })}
                 </BlurView>
             </View>
 
@@ -66,16 +66,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             <View style={styles.rightWrapper}>
                 <BlurView intensity={90} tint="light" style={styles.rightContainer}>
                     <TouchableOpacity
-                        style={styles.actionItem}
-                        onPress={() => router.push('/search')}
-                        activeOpacity={0.7}
-                    >
-                        <MaterialCommunityIcons name="magnify" size={28} color="#000" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
                         style={[styles.actionItem, styles.addButton]}
-                        onPress={() => router.push('/add-node')}
+                        onPress={() => router.push('/memory')}
                         activeOpacity={0.7}
                     >
                         <MaterialCommunityIcons name="plus" size={28} color="#fff" />
@@ -88,22 +80,22 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
 function TopBar() {
     const { memory } = useMemoryStore();
-    const pathname = usePathname();
-
-    const getTitle = () => {
-        if (pathname === '/trace') return 'Trace';
-        if (pathname.includes('index') || pathname === '/') return 'Agents';
-        if (pathname === '/relay') return 'Relay';
-        return 'Trace';
-    };
+    const router = useRouter();
 
     return (
         <View style={styles.topBarContainer}>
-            <Text style={styles.topBarTitle}>{getTitle()}</Text>
             <View style={styles.pillSelector}>
                 <MaterialCommunityIcons name="brain" size={14} color="#000" />
                 <Text style={styles.pillText}>{memory}</Text>
             </View>
+
+            <TouchableOpacity
+                style={styles.relayButton}
+                onPress={() => router.push('/relay')}
+                activeOpacity={0.7}
+            >
+                <MaterialCommunityIcons name="asterisk" size={24} color="#000" />
+            </TouchableOpacity>
         </View>
     );
 }
@@ -162,12 +154,6 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: 20,
     },
-    topBarTitle: {
-        fontSize: 22,
-        fontWeight: '700',
-        color: '#000',
-        letterSpacing: -0.5,
-    },
     leftWrapper: {
         flex: 1,
         marginRight: 15,
@@ -214,7 +200,11 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.05)',
-        gap: 5,
+        width: 65, // Adjusted for single button
+        justifyContent: 'center',
+    },
+    relayButton: {
+        padding: 8,
     },
     tabItem: {
         padding: 10,

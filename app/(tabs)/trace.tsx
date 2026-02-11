@@ -1,138 +1,201 @@
-import { SectionList, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    SectionList,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import { useMemoryStore } from '../../hooks/use-memory-store';
+import { dbHelpers, subscribeToDbChanges } from '../../lib/db';
+import { useEmbeddingService } from '../../lib/embedding-service';
 
 /**
- * REFINED TASKS VIEW (Mirroring Trace/Memory Design)
+ * TRACE SCREEN
+ * Displays real data from Turso with Semantic Search.
  */
 
-interface TaskItem {
+interface TraceItem {
     id: string;
     title: string;
-    type?: 'parent' | 'child';
+    type: 'actor' | 'node' | 'event';
+    subtitle?: string;
 }
 
-interface TaskSection {
+interface TraceSection {
     title: string;
-    data: TaskItem[];
+    data: TraceItem[];
 }
-
-const TASK_DATA: TaskSection[] = [
-    {
-        title: 'Long-term Memory (LTM)',
-        data: [
-            { id: 'l1', title: 'Nodes', type: 'parent' },
-            { id: 'l2', title: 'Products Catalog', type: 'child' },
-            { id: 'l3', title: 'Points', type: 'parent' },
-            { id: 'l4', title: 'Inventory Stock Levels', type: 'child' },
-            { id: 'l5', title: 'S3', type: 'parent' },
-            { id: 'l6', title: 'Finalized Order Archives', type: 'child' },
-            { id: 'l7', title: 'Actors', type: 'parent' },
-            { id: 'l8', title: 'People', type: 'child' },
-            { id: 'l9', title: 'Merchants', type: 'child' },
-        ],
-    },
-    {
-        title: 'Short-term Memory (STM)',
-        data: [
-            { id: 's_or', title: 'OREvents', type: 'parent' },
-            // Stock Group
-            { id: 's_or_1', title: '🧱 Stock', type: 'parent' },
-            { id: 's101', title: 'Stock In', type: 'child' },
-            { id: 's102', title: 'Sale Out', type: 'child' },
-            { id: 's103', title: 'Sale Return', type: 'child' },
-            { id: 's104', title: 'Stock Adjust', type: 'child' },
-            { id: 's105', title: 'Stock Transfer Out', type: 'child' },
-            { id: 's106', title: 'Stock Transfer In', type: 'child' },
-            { id: 's107', title: 'Stock Void', type: 'child' },
-            // Invoice Group
-            { id: 's_or_2', title: '🧾 Invoice / Billing', type: 'parent' },
-            { id: 's201', title: 'Invoice Create', type: 'child' },
-            { id: 's202', title: 'Invoice Item Add', type: 'child' },
-            { id: 's203', title: 'Invoice Payment', type: 'child' },
-            { id: 's204', title: 'Invoice Payment Fail', type: 'child' },
-            { id: 's205', title: 'Invoice Void', type: 'child' },
-            { id: 's206', title: 'Invoice Item Define', type: 'child' },
-            { id: 's207', title: 'Invoice Refund', type: 'child' },
-            // Tasks Group
-            { id: 's_or_3', title: '🧑💼 Tasks / Workflow', type: 'parent' },
-            { id: 's301', title: 'Task Create', type: 'child' },
-            { id: 's302', title: 'Task Assign', type: 'child' },
-            { id: 's303', title: 'Task Start', type: 'child' },
-            { id: 's304', title: 'Task Progress', type: 'child' },
-            { id: 's305', title: 'Task Done', type: 'child' },
-            { id: 's306', title: 'Task Fail', type: 'child' },
-            { id: 's307', title: 'Task Block', type: 'child' },
-            { id: 's308', title: 'Task Resume', type: 'child' },
-            { id: 's309', title: 'Task Void', type: 'child' },
-            { id: 's310', title: 'Task Link', type: 'child' },
-            { id: 's311', title: 'Task Comment', type: 'child' },
-            // Accounts Group
-            { id: 's_or_4', title: '💰 Accounts / Ledger', type: 'parent' },
-            { id: 's401', title: 'Account Pay In', type: 'child' },
-            { id: 's402', title: 'Account Pay Out', type: 'child' },
-            { id: 's403', title: 'Account Refund', type: 'child' },
-            { id: 's404', title: 'Account Adjust', type: 'child' },
-            // Orders Group
-            { id: 's_or_5', title: '🚚 Orders / Delivery', type: 'parent' },
-            { id: 's501', title: 'Order Create', type: 'child' },
-            { id: 's502', title: 'Order Ship', type: 'child' },
-            { id: 's503', title: 'Order Deliver', type: 'child' },
-            { id: 's504', title: 'Order Cancel', type: 'child' },
-            // Transport Group
-            { id: 's_or_6', title: '🚕 Transport / Booking / Rental', type: 'parent' },
-            { id: 's601', title: 'Ride Create', type: 'child' },
-            { id: 's602', title: 'Ride Start', type: 'child' },
-            { id: 's603', title: 'Ride Done', type: 'child' },
-            { id: 's604', title: 'Ride Cancel', type: 'child' },
-            { id: 's611', title: 'Booking Create', type: 'child' },
-            { id: 's612', title: 'Booking Done', type: 'child' },
-            { id: 's621', title: 'Rental Start', type: 'child' },
-            { id: 's622', title: 'Rental End', type: 'child' },
-            // Other STM
-            { id: 's_cart', title: 'Current Shopping Cart', type: 'parent' },
-            { id: 's_hist', title: 'Recent Order History', type: 'parent' },
-            { id: 's_intent', title: 'User Session Intent', type: 'parent' },
-            { id: 's_checkout', title: 'Active Checkout State', type: 'parent' },
-        ],
-    },
-];
 
 export default function TraceScreen() {
-    const { setMemory } = useMemoryStore();
+    const [sections, setSections] = useState<TraceSection[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
+    const [searchResults, setSearchResults] = useState<TraceItem[] | null>(null);
 
-    const handleSelect = (title: string) => {
-        setMemory(title);
+    const { setMemory } = useMemoryStore();
+    const { generateEmbedding, isEmbeddingReady, isEmbeddingGenerating } = useEmbeddingService();
+
+    const fetchData = async () => {
+        try {
+            const [actors, nodes, events] = await Promise.all([
+                dbHelpers.getActors(),
+                dbHelpers.getNodes(),
+                dbHelpers.getEvents()
+            ]);
+
+            const newSections: TraceSection[] = [
+                {
+                    title: 'Actors',
+                    data: actors.map((a: any) => ({
+                        id: a.id,
+                        title: a.name,
+                        type: 'actor' as const,
+                        subtitle: a.actortype
+                    }))
+                },
+                {
+                    title: 'Nodes',
+                    data: nodes.map((n: any) => ({
+                        id: n.id,
+                        title: n.title,
+                        type: 'node' as const,
+                        subtitle: n.nodetype
+                    }))
+                },
+                {
+                    title: 'OR Events',
+                    data: events.map((e: any) => ({
+                        id: e.id,
+                        title: e.scope,
+                        type: 'event' as const,
+                        subtitle: e.status
+                    }))
+                }
+            ].filter(section => section.data.length > 0) as TraceSection[];
+
+            setSections(newSections);
+        } catch (error) {
+            console.error('[Trace] Fetch error:', error);
+        }
     };
+
+    useEffect(() => {
+        fetchData();
+        const unsubscribe = subscribeToDbChanges(fetchData);
+        return () => {
+            unsubscribe();
+        };
+    }, []);
+
+    const handleSearch = async () => {
+        if (!searchQuery.trim() || !isEmbeddingReady) {
+            setSearchResults(null);
+            return;
+        }
+
+        setIsSearching(true);
+        try {
+            const vector = await generateEmbedding(searchQuery);
+            if (vector) {
+                const nodeResults = await dbHelpers.semanticSearchNodes(vector, 10);
+                setSearchResults(nodeResults.map((n: any) => ({
+                    id: n.id,
+                    title: n.title,
+                    type: 'node',
+                    subtitle: `Match: ${(1 - n.distance).toFixed(2)}`
+                })));
+            }
+        } catch (error) {
+            console.error('[Trace] Search error:', error);
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    useEffect(() => {
+        if (searchQuery === '') {
+            setSearchResults(null);
+        }
+    }, [searchQuery]);
+
+    const renderItem = ({ item }: { item: TraceItem }) => (
+        <TouchableOpacity
+            style={styles.itemContainer}
+            onPress={() => setMemory(item.title)}
+            activeOpacity={0.7}
+        >
+            <View style={styles.iconContainer}>
+                <MaterialCommunityIcons
+                    name={
+                        item.type === 'actor' ? 'account' :
+                            item.type === 'node' ? 'database' : 'lightning-bolt'
+                    }
+                    size={20}
+                    color="#006AFF"
+                />
+            </View>
+            <View style={styles.textContainer}>
+                <Text style={styles.itemTitle}>{item.title}</Text>
+                {item.subtitle && <Text style={styles.itemSubtitle}>{item.subtitle}</Text>}
+            </View>
+        </TouchableOpacity>
+    );
 
     return (
         <View style={styles.container}>
             <StatusBar barStyle="dark-content" />
-            <SectionList
-                sections={TASK_DATA}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={[styles.listContent, { paddingTop: 20 }]}
-                stickySectionHeadersEnabled={false}
-                renderSectionHeader={({ section: { title } }) => (
-                    <Text style={styles.sectionHeader}>{title}</Text>
-                )}
-                renderItem={({ item }) => (
-                    <TouchableOpacity
-                        style={[
-                            styles.memoryItem,
-                            item.type === 'child' && styles.childItem
-                        ]}
-                        onPress={() => item.type === 'child' && handleSelect(item.title)}
-                        activeOpacity={item.type === 'child' ? 0.6 : 1}
-                    >
-                        <Text style={[
-                            styles.itemTitle,
-                            item.type === 'child' ? styles.childText : styles.parentText
-                        ]}>
-                            {item.title}
-                        </Text>
-                    </TouchableOpacity>
-                )}
-            />
+
+            <View style={styles.searchContainer}>
+                <View style={styles.searchBar}>
+                    <MaterialCommunityIcons name="magnify" size={20} color="#8E8E93" />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Semantic search across memory..."
+                        placeholderTextColor="#8E8E93"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        onSubmitEditing={handleSearch}
+                        returnKeyType="search"
+                    />
+                    {(isSearching || isEmbeddingGenerating) && (
+                        <ActivityIndicator size="small" color="#006AFF" />
+                    )}
+                </View>
+            </View>
+
+            {searchResults ? (
+                <SectionList
+                    sections={[{ title: 'Search Results', data: searchResults }]}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={styles.listContent}
+                    renderSectionHeader={({ section: { title } }) => (
+                        <Text style={styles.sectionHeader}>{title}</Text>
+                    )}
+                    renderItem={renderItem}
+                />
+            ) : (
+                <SectionList
+                    sections={sections}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={styles.listContent}
+                    stickySectionHeadersEnabled={false}
+                    renderSectionHeader={({ section: { title } }) => (
+                        <Text style={styles.sectionHeader}>{title}</Text>
+                    )}
+                    renderItem={renderItem}
+                    ListEmptyComponent={
+                        <View style={styles.emptyContainer}>
+                            <MaterialCommunityIcons name="database-off" size={48} color="#D1D1D6" />
+                            <Text style={styles.emptyText}>No data in local memory.</Text>
+                        </View>
+                    }
+                />
+            )}
         </View>
     );
 }
@@ -142,53 +205,77 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fff',
     },
-    header: {
+    searchContainer: {
         paddingHorizontal: 20,
-        paddingVertical: 15,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        paddingVertical: 12,
+        backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#f0f0f0',
     },
-    headerTitle: {
-        fontSize: 22,
-        fontWeight: '700',
-        color: '#000',
-        letterSpacing: -0.5,
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F2F2F7',
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        height: 40,
     },
-    syncButton: {
-        padding: 5,
+    searchInput: {
+        flex: 1,
+        marginLeft: 8,
+        fontSize: 15,
+        color: '#000',
     },
     listContent: {
         padding: 20,
-        paddingBottom: 100, // Extra padding for tab bar
+        paddingBottom: 100,
     },
     sectionHeader: {
-        fontSize: 18,
+        fontSize: 14,
         fontWeight: '700',
-        color: '#006AFF',
+        color: '#8E8E93',
         textTransform: 'uppercase',
         letterSpacing: 1,
-        marginBottom: 12,
+        marginBottom: 8,
         marginTop: 24,
     },
-    memoryItem: {
-        paddingVertical: 16,
+    itemContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: '#f0f0f0',
     },
-    childItem: {
+    iconContainer: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#F0F7FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    textContainer: {
+        flex: 1,
     },
     itemTitle: {
         fontSize: 16,
-    },
-    parentText: {
         fontWeight: '600',
-        color: '#000000',
+        color: '#000',
     },
-    childText: {
-        fontWeight: '400',
+    itemSubtitle: {
+        fontSize: 13,
         color: '#8E8E93',
+        marginTop: 2,
+    },
+    emptyContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 60,
+    },
+    emptyText: {
+        marginTop: 12,
+        color: '#8E8E93',
+        fontSize: 15,
     },
 });

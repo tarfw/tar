@@ -1,13 +1,12 @@
 import { useRouter } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 export default function AgentsScreen() {
     const router = useRouter();
 
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>Agents</Text>
-            <Text style={styles.subtitle}>Primary Interface</Text>
+            {/* Content for Agents screen */}
         </View>
     );
 }

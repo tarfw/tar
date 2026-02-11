@@ -33,13 +33,7 @@ export default function RootLayout() {
                 <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
                     <Stack screenOptions={{ headerShown: false }}>
                         <Stack.Screen name="(tabs)" />
-                        <Stack.Screen
-                            name="memory"
-                            options={{
-                                presentation: 'fullScreenModal',
-                                animation: 'slide_from_bottom'
-                            }}
-                        />
+
                     </Stack>
                     <StatusBar style="dark" />
                 </SafeAreaView>

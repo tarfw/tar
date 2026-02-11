@@ -1,27 +1,22 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { SectionList, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useMemoryStore } from '../hooks/use-memory-store';
-import { syncDb } from '../lib/db';
+import { useMemoryStore } from '../../hooks/use-memory-store';
 
 /**
- * REFINED COMMERCE MEMORY CLASSIFICATION
- * Categories: LTM, STM
- * Includes detailed OREvents hierarchy in STM (Clean text version)
+ * REFINED TASKS VIEW (Mirroring Trace/Memory Design)
  */
 
-interface MemoryItem {
+interface TaskItem {
     id: string;
     title: string;
     type?: 'parent' | 'child';
 }
 
-interface MemorySection {
+interface TaskSection {
     title: string;
-    data: MemoryItem[];
+    data: TaskItem[];
 }
 
-const COMMERCE_MEMORY: MemorySection[] = [
+const TASK_DATA: TaskSection[] = [
     {
         title: 'Long-term Memory (LTM)',
         data: [
@@ -102,34 +97,20 @@ const COMMERCE_MEMORY: MemorySection[] = [
     },
 ];
 
-export default function MemoryScreen() {
-    const router = useRouter();
+export default function TraceScreen() {
     const { setMemory } = useMemoryStore();
 
     const handleSelect = (title: string) => {
         setMemory(title);
-        router.back();
     };
 
     return (
         <View style={styles.container}>
             <StatusBar barStyle="dark-content" />
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Commerce Memories</Text>
-                <View style={styles.headerButtons}>
-                    <TouchableOpacity onPress={() => syncDb()} style={styles.syncButton}>
-                        <MaterialCommunityIcons name="sync" size={24} color="#006AFF" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-                        <MaterialCommunityIcons name="close" size={24} color="#000" />
-                    </TouchableOpacity>
-                </View>
-            </View>
-
             <SectionList
-                sections={COMMERCE_MEMORY}
+                sections={TASK_DATA}
                 keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.listContent}
+                contentContainerStyle={[styles.listContent, { paddingTop: 20 }]}
                 stickySectionHeadersEnabled={false}
                 renderSectionHeader={({ section: { title } }) => (
                     <Text style={styles.sectionHeader}>{title}</Text>
@@ -140,8 +121,8 @@ export default function MemoryScreen() {
                             styles.memoryItem,
                             item.type === 'child' && styles.childItem
                         ]}
-                        onPress={() => handleSelect(item.title)}
-                        activeOpacity={0.6}
+                        onPress={() => item.type === 'child' && handleSelect(item.title)}
+                        activeOpacity={item.type === 'child' ? 0.6 : 1}
                     >
                         <Text style={[
                             styles.itemTitle,
@@ -170,31 +151,23 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#f0f0f0',
     },
-    headerButtons: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    syncButton: {
-        padding: 5,
-        marginRight: 10,
-    },
     headerTitle: {
         fontSize: 22,
         fontWeight: '700',
         color: '#000',
         letterSpacing: -0.5,
     },
-    closeButton: {
+    syncButton: {
         padding: 5,
     },
     listContent: {
         padding: 20,
-        paddingBottom: 40,
+        paddingBottom: 100, // Extra padding for tab bar
     },
     sectionHeader: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#006AFF', // Square Blue for headers
+        color: '#006AFF',
         textTransform: 'uppercase',
         letterSpacing: 1,
         marginBottom: 12,

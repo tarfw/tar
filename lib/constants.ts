@@ -1,9 +1,9 @@
 export const TABLES = [
-    { id: 'orevents', name: 'Timeline', icon: 'clock-outline' },
-    { id: 'actors', name: 'Actors', icon: 'account' },
-    { id: 'nodes', name: 'Nodes', icon: 'database' },
-    { id: 'collab', name: 'Collab', icon: 'account-group' },
-    { id: 'points', name: 'Points', icon: 'map-marker' },
-    { id: 'streams', name: 'Streams', icon: 'waves' },
-    { id: 'streamcollab', name: 'Str Collab', icon: 'link' },
+    { id: 'orevents', name: 'Timeline', icon: 'clock-fast' },
+    { id: 'nodes', name: 'Nodes', icon: 'cube-outline' },
+    { id: 'points', name: 'Points', icon: 'circle-slice-8' },
+    { id: 'actors', name: 'Actors', icon: 'account-circle-outline' },
+    { id: 'collab', name: 'Collab', icon: 'merge' },
+    { id: 'streams', name: 'Streams', icon: 'sine-wave' },
+    { id: 'streamcollab', name: 'Str Collab', icon: 'set-center' },
 ];

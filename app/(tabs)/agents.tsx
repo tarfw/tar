@@ -1,15 +1,16 @@
-import { useRouter } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { useThemeColors } from '../../hooks/use-theme-colors';
 
 export default function AgentsScreen() {
     const router = useRouter();
+    const colors = useThemeColors();
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Content for Agents screen */}
         </View>
     );
 }
+
 
 const styles = StyleSheet.create({
     container: {

@@ -2,11 +2,16 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Tabs, usePathname, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useColorScheme } from 'nativewind';
 import React from 'react';
 import { Dimensions, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useMemoryStore } from '../../hooks/use-memory-store';
+import { useThemeColors } from '../../hooks/use-theme-colors';
 import { TABLES } from '../../lib/constants';
 import { syncDb } from '../../lib/db';
+
+
 
 const { width } = Dimensions.get('window');
 
@@ -14,7 +19,10 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     const { memory, setMemory } = useMemoryStore();
     const router = useRouter();
     const pathname = usePathname();
+    const colors = useThemeColors();
+    const { colorScheme } = useColorScheme();
     const [isFilterModalVisible, setIsFilterModalVisible] = React.useState(false);
+
 
     const activeTable = TABLES.find(t => t.id === memory);
     const memoryDisplayName = activeTable ? activeTable.name : (memory === 'Memory' ? 'Memory' : memory);
@@ -22,7 +30,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     return (
         <View style={styles.tabBarContainer}>
             <View style={styles.leftWrapper}>
-                <BlurView intensity={90} tint="light" style={styles.tabBarInner}>
+                <BlurView intensity={90} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={[styles.tabBarInner, { backgroundColor: colors.tabBarBackground, borderColor: colors.border }]}>
+
                     {state.routes
                         .filter((route: any) => route.name !== 'relay')
                         .map((route: any, index: number) => {
@@ -85,40 +94,42 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                         style={styles.modalOverlayBottom}
                         onPress={() => setIsFilterModalVisible(false)}
                     >
-                        <View style={styles.dropdownMenuBottom}>
-                            <Text style={styles.dropdownHeader}>Filter Memory</Text>
+                        <View style={[styles.dropdownMenuBottom, { backgroundColor: colors.dropdownBackground }]}>
+
                             <FlatList
                                 data={TABLES}
                                 keyExtractor={(item) => item.id}
-                                renderItem={({ item }) => (
-                                    <TouchableOpacity
-                                        style={[
-                                            styles.dropdownItem,
-                                            memory === item.id && styles.dropdownItemActive
-                                        ]}
-                                        onPress={() => {
-                                            setMemory(item.id);
-                                            setIsFilterModalVisible(false);
-                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        }}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name={item.icon as any}
-                                            size={20}
-                                            color={memory === item.id ? '#006AFF' : '#636366'}
-                                            style={{ marginRight: 12 }}
-                                        />
-                                        <Text style={[
-                                            styles.dropdownItemText,
-                                            memory === item.id && styles.dropdownItemTextActive
-                                        ]}>
-                                            {item.name}
-                                        </Text>
-                                        {memory === item.id && (
-                                            <MaterialCommunityIcons name="check" size={18} color="#006AFF" style={{ marginLeft: 'auto' }} />
-                                        )}
-                                    </TouchableOpacity>
-                                )}
+                                renderItem={({ item }) => {
+                                    const isActive = memory === item.id;
+                                    return (
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.dropdownItem,
+                                                isActive && { backgroundColor: colorScheme === 'dark' ? 'rgba(94, 106, 210, 0.25)' : 'rgba(94, 106, 210, 0.15)' }
+                                            ]}
+                                            onPress={() => {
+                                                setMemory(item.id);
+                                                setIsFilterModalVisible(false);
+                                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                            }}
+                                        >
+                                            <MaterialCommunityIcons
+                                                name={item.icon as any}
+                                                size={18}
+                                                color={isActive ? (colorScheme === 'dark' ? '#8B8EF8' : '#5E6AD2') : colors.secondaryText}
+                                                style={{ marginRight: 10 }}
+                                            />
+                                            <Text style={[
+                                                styles.dropdownItemText,
+                                                { color: colors.text },
+                                                isActive && { color: colorScheme === 'dark' ? '#8B8EF8' : '#5E6AD2', fontWeight: '600' }
+                                            ]}>
+                                                {item.name}
+                                            </Text>
+                                        </TouchableOpacity>
+
+                                    );
+                                }}
                             />
                         </View>
                     </Pressable>
@@ -126,13 +137,15 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             </View>
 
             <View style={styles.rightWrapper}>
-                <BlurView intensity={90} tint="light" style={styles.rightContainer}>
+                <BlurView intensity={90} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={[styles.rightContainer, { backgroundColor: colors.tabBarBackground, borderColor: colors.border }]}>
                     <TouchableOpacity
-                        style={[styles.actionItem, styles.addButton]}
+                        style={[styles.actionItem, styles.addButton, { backgroundColor: colors.accent }]}
+
                         onPress={() => {
-                            // Logic for add button if needed, or just stay as plus
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            router.push('/memory');
                         }}
+
                         activeOpacity={0.7}
                     >
                         <MaterialCommunityIcons name="plus" size={28} color="#fff" />
@@ -146,18 +159,36 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 function TopBar() {
     const router = useRouter();
     const pathname = usePathname();
+    const colors = useThemeColors();
+    const { colorScheme, setColorScheme } = useColorScheme();
 
     const handleSync = async () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         await syncDb();
     };
 
+    const toggleTheme = () => {
+        const nextScheme = colorScheme === 'dark' ? 'light' : 'dark';
+        setColorScheme(nextScheme);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    };
+
     const isAgentsScreen = pathname === '/agents';
 
     return (
-        <View style={styles.topBarContainer}>
+        <View style={[styles.topBarContainer, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
             <View style={styles.leftGroup}>
-                {/* Clean top bar left section */}
+                <TouchableOpacity
+                    style={styles.topActionItem}
+                    onPress={toggleTheme}
+                    activeOpacity={0.7}
+                >
+                    <MaterialCommunityIcons
+                        name={colorScheme === 'dark' ? "weather-sunny" : "weather-night"}
+                        size={20}
+                        color={colors.text}
+                    />
+                </TouchableOpacity>
             </View>
 
             <View style={styles.rightActionsGroup}>
@@ -167,7 +198,7 @@ function TopBar() {
                         onPress={handleSync}
                         activeOpacity={0.7}
                     >
-                        <MaterialCommunityIcons name="brain" size={20} color="#000" />
+                        <MaterialCommunityIcons name="brain" size={20} color={colors.text} />
                     </TouchableOpacity>
                 )}
 
@@ -176,14 +207,14 @@ function TopBar() {
                     onPress={() => router.push('/relay')}
                     activeOpacity={0.7}
                 >
-                    <MaterialCommunityIcons name="asterisk" size={20} color="#000" />
+                    <MaterialCommunityIcons name="asterisk" size={20} color={colors.text} />
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                    style={styles.profileCircle}
+                    style={[styles.profileCircle, { backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F7F6F3', borderColor: colors.border }]}
                     activeOpacity={0.8}
                 >
-                    <Text style={styles.profileInitial}>A</Text>
+                    <Text style={[styles.profileInitial, { color: colors.text }]}>A</Text>
                 </TouchableOpacity>
             </View>
         </View>
@@ -191,9 +222,14 @@ function TopBar() {
 }
 
 export default function TabLayout() {
+    const colors = useThemeColors();
+    const { colorScheme } = useColorScheme();
+
     return (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+            <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
             <TopBar />
+
             <Tabs
                 tabBar={(props) => <CustomTabBar {...props} />}
                 screenOptions={{
@@ -315,50 +351,40 @@ const styles = StyleSheet.create({
     },
     modalOverlayBottom: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.3)',
+        backgroundColor: 'rgba(0,0,0,0.4)',
         justifyContent: 'flex-end',
         paddingBottom: 110,
         paddingHorizontal: 16,
     },
     dropdownMenuBottom: {
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 8,
+        backgroundColor: '#1F2023',
+        borderRadius: 10,
+        paddingVertical: 4,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-        elevation: 5,
+        shadowOpacity: 0.25,
+        shadowRadius: 16,
+        elevation: 8,
         maxHeight: 400,
-    },
-    dropdownHeader: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#8E8E93',
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: '#F2F2F7',
     },
     dropdownItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        marginHorizontal: 4,
+        borderRadius: 6,
     },
     dropdownItemActive: {
-        backgroundColor: '#F0F7FF',
+        backgroundColor: 'rgba(94, 106, 210, 0.15)',
     },
     dropdownItemText: {
-        fontSize: 16,
-        color: '#1C1C1E',
+        fontSize: 14,
+        color: '#E8E9EB',
         fontWeight: '500',
     },
     dropdownItemTextActive: {
-        color: '#006AFF',
+        color: '#8B8EF8',
         fontWeight: '600',
     },
     topActionItem: {

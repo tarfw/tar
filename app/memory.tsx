@@ -1,7 +1,9 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useColorScheme } from 'nativewind';
 import React from 'react';
-import { SectionList, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SectionList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useThemeColors } from '../hooks/use-theme-colors';
 
 /**
  * MEMORY SELECTION SCREEN FOR CREATION
@@ -102,6 +104,8 @@ const MEMORY_DATA: MemorySection[] = [
 
 export default function MemorySelectionScreen() {
     const router = useRouter();
+    const colors = useThemeColors();
+    const { colorScheme } = useColorScheme();
 
     const handleSelect = (title: string) => {
         if (title === 'Nodes') {
@@ -112,12 +116,11 @@ export default function MemorySelectionScreen() {
     };
 
     return (
-        <View style={styles.container}>
-            <StatusBar barStyle="dark-content" />
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Create Memory</Text>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <View style={[styles.header, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>Create Memory</Text>
                 <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-                    <MaterialCommunityIcons name="close" size={24} color="#000" />
+                    <MaterialCommunityIcons name="close" size={24} color={colors.text} />
                 </TouchableOpacity>
             </View>
 
@@ -127,20 +130,21 @@ export default function MemorySelectionScreen() {
                 contentContainerStyle={styles.listContent}
                 stickySectionHeadersEnabled={false}
                 renderSectionHeader={({ section: { title } }) => (
-                    <Text style={styles.sectionHeader}>{title}</Text>
+                    <Text style={[styles.sectionHeader, { color: colors.accent }]}>{title}</Text>
                 )}
                 renderItem={({ item }) => (
                     <TouchableOpacity
                         style={[
                             styles.memoryItem,
-                            item.type === 'child' && styles.childItem
+                            item.type === 'child' && styles.childItem,
+                            { borderBottomColor: colors.border }
                         ]}
                         onPress={() => handleSelect(item.title)}
                         activeOpacity={0.6}
                     >
                         <Text style={[
                             styles.itemTitle,
-                            item.type === 'child' ? styles.childText : styles.parentText
+                            item.type === 'child' ? [styles.childText, { color: colors.secondaryText }] : [styles.parentText, { color: colors.text }]
                         ]}>
                             {item.title}
                         </Text>
@@ -154,7 +158,6 @@ export default function MemorySelectionScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
     },
     header: {
         paddingHorizontal: 20,
@@ -163,12 +166,10 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
     },
     headerTitle: {
         fontSize: 22,
         fontWeight: '700',
-        color: '#000',
         letterSpacing: -0.5,
     },
     closeButton: {
@@ -181,7 +182,6 @@ const styles = StyleSheet.create({
     sectionHeader: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#006AFF',
         textTransform: 'uppercase',
         letterSpacing: 1,
         marginBottom: 12,
@@ -190,7 +190,6 @@ const styles = StyleSheet.create({
     memoryItem: {
         paddingVertical: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: '#f0f0f0',
     },
     childItem: {
     },
@@ -199,10 +198,8 @@ const styles = StyleSheet.create({
     },
     parentText: {
         fontWeight: '600',
-        color: '#000000',
     },
     childText: {
         fontWeight: '400',
-        color: '#8E8E93',
     },
 });

@@ -1,10 +1,10 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useColorScheme } from 'nativewind';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
-    StatusBar,
     StyleSheet,
     Text,
     TextInput,
@@ -12,8 +12,10 @@ import {
     View
 } from 'react-native';
 import { useMemoryStore } from '../../hooks/use-memory-store';
+import { useThemeColors } from '../../hooks/use-theme-colors';
 import { dbHelpers, subscribeToDbChanges } from '../../lib/db';
 import { useEmbeddingService } from '../../lib/embedding-service';
+
 
 /**
  * TRACE SCREEN
@@ -23,11 +25,14 @@ import { useEmbeddingService } from '../../lib/embedding-service';
 export default function TraceScreen() {
     const router = useRouter();
     const { memory: activeTab, setMemory: setActiveTab } = useMemoryStore();
+    const colors = useThemeColors();
+    const { colorScheme } = useColorScheme();
 
     const [tableData, setTableData] = useState<Record<string, any[]>>({});
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearching, setIsSearching] = useState(false);
     const [searchResults, setSearchResults] = useState<any[] | null>(null);
+
 
     const { generateEmbedding, isEmbeddingReady, isEmbeddingGenerating } = useEmbeddingService();
 
@@ -142,28 +147,38 @@ export default function TraceScreen() {
                         activeOpacity={0.7}
                     >
                         {/* 1. Icon Thumbnail */}
-                        <View style={[styles.timelineThumbnail, { backgroundColor: item.status === 'success' ? '#F0FDF4' : item.status === 'failed' ? '#FEF2F2' : '#F8FAFC' }]}>
+                        <View style={[
+                            styles.timelineThumbnail,
+                            {
+                                backgroundColor: item.status === 'success'
+                                    ? (colorScheme === 'dark' ? 'rgba(34, 197, 94, 0.15)' : '#F0FDF4')
+                                    : item.status === 'failed'
+                                        ? (colorScheme === 'dark' ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2')
+                                        : (colorScheme === 'dark' ? '#2C2C2E' : '#F8FAFC')
+                            }
+                        ]}>
                             <MaterialCommunityIcons
                                 name={typeIcon}
                                 size={18}
-                                color={item.status === 'success' ? '#22C55E' : item.status === 'failed' ? '#EF4444' : '#64748B'}
+                                color={item.status === 'success' ? '#22C55E' : item.status === 'failed' ? '#EF4444' : (colorScheme === 'dark' ? '#94A3B8' : '#64748B')}
                             />
                         </View>
 
                         {/* 2. Title and Status */}
                         <View style={styles.timelineInfo}>
-                            <Text style={styles.timelineTitle} numberOfLines={1}>{title}</Text>
+                            <Text style={[styles.timelineTitle, { color: colors.timelineTitle }]} numberOfLines={1}>{title}</Text>
                             <View style={styles.statusBadge}>
                                 <View style={[styles.statusDot, { backgroundColor: item.status === 'success' ? '#22C55E' : item.status === 'failed' ? '#EF4444' : '#94A3B8' }]} />
-                                <Text style={styles.statusText}>{subtitle}</Text>
+                                <Text style={[styles.statusText, { color: colors.statusText }]}>{subtitle}</Text>
                             </View>
                         </View>
 
                         {/* 3. Time on Right End */}
                         <View style={styles.timelineTrailing}>
-                            <Text style={styles.timeLabel}>{timeStr}</Text>
+                            <Text style={[styles.timeLabel, { color: colors.timeLabel }]}>{timeStr}</Text>
                         </View>
                     </TouchableOpacity>
+
                 );
             case 'collab':
                 title = item.role;
@@ -198,7 +213,7 @@ export default function TraceScreen() {
 
         return (
             <TouchableOpacity
-                style={styles.itemContainer}
+                style={[styles.itemContainer, { borderBottomColor: colors.border }]}
                 onPress={() => {
                     router.push({
                         pathname: '/mstate',
@@ -212,29 +227,28 @@ export default function TraceScreen() {
                 }}
                 activeOpacity={0.7}
             >
-                <View style={styles.iconContainer}>
-                    <MaterialCommunityIcons name={typeIcon} size={20} color="#006AFF" />
+                <View style={[styles.iconContainer, { backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F0F7FF' }]}>
+                    <MaterialCommunityIcons name={typeIcon} size={20} color={colors.accent} />
                 </View>
                 <View style={styles.textContainer}>
-                    <Text style={styles.itemTitle} numberOfLines={1}>{title}</Text>
-                    {subtitle && <Text style={styles.itemSubtitle}>{subtitle}</Text>}
+                    <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>{title}</Text>
+                    {subtitle && <Text style={[styles.itemSubtitle, { color: colors.secondaryText }]}>{subtitle}</Text>}
                 </View>
-                <MaterialCommunityIcons name="chevron-right" size={16} color="#C7C7CC" />
+                <MaterialCommunityIcons name="chevron-right" size={16} color={colors.secondaryText} />
             </TouchableOpacity>
         );
+
     };
 
     return (
-        <View style={styles.container}>
-            <StatusBar barStyle="dark-content" />
-
-            <View style={styles.header}>
-                <View style={styles.searchBar}>
-                    <MaterialCommunityIcons name="magnify" size={24} color="#8E8E93" />
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <View style={[styles.header, { backgroundColor: colors.searchBar }]}>
+                <View style={[styles.searchBar, { backgroundColor: colors.searchBar }]}>
+                    <MaterialCommunityIcons name="magnify" size={24} color={colors.secondaryText} />
                     <TextInput
-                        style={styles.searchInput}
+                        style={[styles.searchInput, { color: colors.text }]}
                         placeholder="Semantic search across memory..."
-                        placeholderTextColor="#8E8E93"
+                        placeholderTextColor={colors.secondaryText}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         onSubmitEditing={handleSearch}
@@ -242,14 +256,15 @@ export default function TraceScreen() {
                     />
                     {searchQuery.length > 0 && !isSearching && !isEmbeddingGenerating && (
                         <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-                            <MaterialCommunityIcons name="close-circle" size={20} color="#8E8E93" />
+                            <MaterialCommunityIcons name="close-circle" size={20} color={colors.secondaryText} />
                         </TouchableOpacity>
                     )}
                     {(isSearching || isEmbeddingGenerating) && (
-                        <ActivityIndicator size="small" color="#006AFF" style={{ marginRight: 8 }} />
+                        <ActivityIndicator size="small" color={colors.accent} style={{ marginRight: 8 }} />
                     )}
                 </View>
             </View>
+
 
             {searchResults ? (
                 <FlatList
@@ -257,7 +272,7 @@ export default function TraceScreen() {
                     keyExtractor={(item) => item.id}
                     contentContainerStyle={styles.listContent}
                     renderItem={renderItem}
-                    ListHeaderComponent={<Text style={styles.sectionHeader}>Search Results</Text>}
+                    ListHeaderComponent={<Text style={[styles.sectionHeader, { color: colors.accent }]}>Search Results</Text>}
                 />
             ) : (
                 <FlatList
@@ -267,14 +282,15 @@ export default function TraceScreen() {
                     renderItem={renderItem}
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
-                            <View style={styles.emptyIconContainer}>
-                                <MaterialCommunityIcons name="database-off" size={48} color="#D1D1D6" />
+                            <View style={[styles.emptyIconContainer, { backgroundColor: colors.secondaryBackground }]}>
+                                <MaterialCommunityIcons name="database-off" size={48} color={colors.secondaryText} />
                             </View>
-                            <Text style={styles.emptyText}>No data in {activeTab}.</Text>
+                            <Text style={[styles.emptyText, { color: colors.secondaryText }]}>No data in {activeTab}.</Text>
                         </View>
                     }
                 />
             )}
+
         </View>
     );
 }
@@ -352,7 +368,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 14,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: '#F1F5F9',
+        borderBottomColor: 'rgba(148, 163, 184, 0.1)',
     },
     timelineThumbnail: {
         width: 36,
@@ -368,7 +384,7 @@ const styles = StyleSheet.create({
     timelineTitle: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#0F172A',
+        color: '#0F172A', // Overridden in renderItem inline for theme awareness
         marginBottom: 2,
     },
     statusBadge: {
@@ -384,7 +400,6 @@ const styles = StyleSheet.create({
     statusText: {
         fontSize: 12,
         fontWeight: '600',
-        color: '#64748B',
         textTransform: 'capitalize',
     },
     timelineTrailing: {
@@ -394,7 +409,6 @@ const styles = StyleSheet.create({
     timeLabel: {
         fontSize: 12,
         fontWeight: '700',
-        color: '#94A3B8',
     },
     emptyContainer: {
         alignItems: 'center',
@@ -405,14 +419,13 @@ const styles = StyleSheet.create({
         width: 80,
         height: 80,
         borderRadius: 40,
-        backgroundColor: '#F2F2F7',
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 16,
     },
     emptyText: {
-        color: '#8E8E93',
         fontSize: 16,
         fontWeight: '500',
     },
 });
+

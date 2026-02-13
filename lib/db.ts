@@ -182,10 +182,36 @@ export const dbHelpers = {
     },
     insertEvent: async (event: { id: string, streamid: string, opcode: number, refid: string, scope: string, status?: string, payload?: string }) => {
         const db = await getDb();
-        return await db.run(
+        const result = await db.run(
             'INSERT INTO orevents (id, streamid, opcode, refid, scope, status, payload, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [event.id, event.streamid, event.opcode, event.refid, event.scope, event.status || 'pending', event.payload || null, new Date().toISOString()]
         );
+        notifyDbChanges();
+        return result;
+    },
+
+    // Collab
+    getCollab: async () => {
+        const db = await getDb();
+        return await db.all('SELECT * FROM collab');
+    },
+
+    // Points
+    getPoints: async () => {
+        const db = await getDb();
+        return await db.all('SELECT * FROM points');
+    },
+
+    // Streams
+    getStreams: async () => {
+        const db = await getDb();
+        return await db.all('SELECT * FROM streams');
+    },
+
+    // StreamCollab
+    getStreamCollab: async () => {
+        const db = await getDb();
+        return await db.all('SELECT * FROM streamcollab');
     },
 
     // Semantic Search

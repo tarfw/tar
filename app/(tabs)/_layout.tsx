@@ -1,4 +1,5 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Tabs, usePathname, useRouter } from 'expo-router';
@@ -38,10 +39,13 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
                             let iconName: any;
                             if (route.name === 'trace') {
-                                iconName = isFocused ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline';
+                                iconName = 'record-circle-outline';
                             } else if (route.name === 'index') {
-                                iconName = isFocused ? 'square-rounded' : 'square-rounded-outline';
+                                iconName = 'square-rounded-outline';
                             }
+
+                            const IconComponent = route.name === 'trace' ? Feather : MaterialCommunityIcons;
+                            const finalIconName = route.name === 'trace' ? 'circle' : iconName;
 
                             return (
                                 <TouchableOpacity
@@ -52,9 +56,9 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                                     style={styles.tabItem}
                                     activeOpacity={0.7}
                                 >
-                                    <MaterialCommunityIcons
-                                        name={iconName}
-                                        size={28}
+                                    <IconComponent
+                                        name={finalIconName as any}
+                                        size={route.name === 'trace' ? 24 : 28}
                                         color={isFocused ? '#006AFF' : '#8E8E93'}
                                     />
                                 </TouchableOpacity>
@@ -83,6 +87,14 @@ function TopBar() {
     const { memory } = useMemoryStore();
     const router = useRouter();
     const pathname = usePathname();
+    const [currentTime, setCurrentTime] = React.useState(new Date());
+
+    React.useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const timeString = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     const handleSync = async () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -93,18 +105,29 @@ function TopBar() {
 
     return (
         <View style={styles.topBarContainer}>
-            <View style={styles.pillSelector}>
-                <Text style={styles.pillText}>{memory}</Text>
+            <View style={styles.leftGroup}>
+                <TouchableOpacity
+                    style={styles.pillSelector}
+                    onPress={() => router.push('/memory')}
+                    activeOpacity={0.7}
+                >
+                    <MaterialCommunityIcons name="brain" size={18} color="#006AFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.pillText}>Memory</Text>
+                </TouchableOpacity>
+
+                <View style={styles.clockContainer}>
+                    <Text style={styles.clockText}>{timeString}</Text>
+                </View>
             </View>
 
-            <View style={styles.rightActions}>
+            <View style={styles.rightActionsGroup}>
                 {!isAgentsScreen && (
                     <TouchableOpacity
                         style={styles.topActionItem}
                         onPress={handleSync}
                         activeOpacity={0.7}
                     >
-                        <MaterialCommunityIcons name="brain" size={24} color="#000" />
+                        <MaterialCommunityIcons name="brain" size={20} color="#000" />
                     </TouchableOpacity>
                 )}
 
@@ -113,7 +136,14 @@ function TopBar() {
                     onPress={() => router.push('/relay')}
                     activeOpacity={0.7}
                 >
-                    <MaterialCommunityIcons name="asterisk" size={24} color="#000" />
+                    <MaterialCommunityIcons name="asterisk" size={20} color="#000" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={styles.profileCircle}
+                    activeOpacity={0.8}
+                >
+                    <Text style={styles.profileInitial}>A</Text>
                 </TouchableOpacity>
             </View>
         </View>
@@ -165,14 +195,38 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     topBarContainer: {
-        height: 70,
+        height: 60,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: 'rgba(0,0,0,0.05)',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
+        paddingHorizontal: 16,
+    },
+    rightActionsGroup: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    leftGroup: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    clockContainer: {
+        backgroundColor: '#F8F9FA',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#E9ECEF',
+    },
+    clockText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#495057',
+        fontFamily: 'monospace',
     },
     leftWrapper: {
         flex: 1,
@@ -184,18 +238,18 @@ const styles = StyleSheet.create({
     },
     pillSelector: {
         backgroundColor: '#fff',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 4,
         flexDirection: 'row',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.1)',
+        borderColor: 'rgba(0,0,0,0.05)',
     },
     pillText: {
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: '600',
-        color: '#333',
+        color: '#37352F',
     },
     leftContainer: {
         flexDirection: 'row',
@@ -228,7 +282,23 @@ const styles = StyleSheet.create({
         gap: 15,
     },
     topActionItem: {
-        padding: 5,
+        padding: 4,
+    },
+    profileCircle: {
+        width: 22,
+        height: 22,
+        borderRadius: 4,
+        backgroundColor: '#F7F6F3',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.08)',
+        marginLeft: 4,
+    },
+    profileInitial: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#37352F',
     },
     tabItem: {
         padding: 10,

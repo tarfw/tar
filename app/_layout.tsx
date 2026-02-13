@@ -40,6 +40,22 @@ export default function RootLayout() {
                                 animation: 'slide_from_bottom'
                             }}
                         />
+                        <Stack.Screen
+                            name="mstate"
+                            options={{
+                                title: 'Memory Details',
+                                headerShown: false,
+                                animation: 'fade_from_bottom',
+                                animationDuration: 200
+                            }}
+                        />
+                        <Stack.Screen
+                            name="add-event"
+                            options={{
+                                title: 'Create Event',
+                                headerShown: false,
+                            }}
+                        />
                     </Stack>
                     <StatusBar style="dark" />
                 </SafeAreaView>

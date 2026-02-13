@@ -106,6 +106,8 @@ export default function MemorySelectionScreen() {
     const handleSelect = (title: string) => {
         if (title === 'Nodes') {
             router.replace('/add-node');
+        } else if (title === 'OREvents') {
+            router.replace('/add-event');
         }
     };
 

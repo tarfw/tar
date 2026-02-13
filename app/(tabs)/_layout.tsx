@@ -1,30 +1,40 @@
-import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import React from 'react';
-import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useMemoryStore } from '../../hooks/use-memory-store';
+import { TABLES } from '../../lib/constants';
 import { syncDb } from '../../lib/db';
 
 const { width } = Dimensions.get('window');
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
+    const { memory, setMemory } = useMemoryStore();
     const router = useRouter();
+    const pathname = usePathname();
+    const [isFilterModalVisible, setIsFilterModalVisible] = React.useState(false);
+
+    const activeTable = TABLES.find(t => t.id === memory);
+    const memoryDisplayName = activeTable ? activeTable.name : (memory === 'Memory' ? 'Memory' : memory);
 
     return (
         <View style={styles.tabBarContainer}>
-            {/* Left Section: Tabs */}
             <View style={styles.leftWrapper}>
-                <BlurView intensity={90} tint="light" style={styles.leftContainer}>
+                <BlurView intensity={90} tint="light" style={styles.tabBarInner}>
                     {state.routes
                         .filter((route: any) => route.name !== 'relay')
                         .map((route: any, index: number) => {
-                            const { options } = descriptors[route.key];
                             const isFocused = state.index === index;
 
                             const onPress = () => {
+                                if (route.name === 'index' && isFocused) {
+                                    setIsFilterModalVisible(true);
+                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                    return;
+                                }
+
                                 const event = navigation.emit({
                                     type: 'tabPress',
                                     target: route.key,
@@ -38,41 +48,91 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                             };
 
                             let iconName: any;
-                            if (route.name === 'trace') {
-                                iconName = 'record-circle-outline';
-                            } else if (route.name === 'index') {
+                            let IconComponent: any = MaterialCommunityIcons;
+
+                            if (route.name === 'index') {
+                                // Home / Trace tab: show active memory icon
+                                iconName = activeTable?.icon || 'clock-outline';
+                            } else if (route.name === 'agents') {
                                 iconName = 'square-rounded-outline';
                             }
-
-                            const IconComponent = route.name === 'trace' ? Feather : MaterialCommunityIcons;
-                            const finalIconName = route.name === 'trace' ? 'circle' : iconName;
 
                             return (
                                 <TouchableOpacity
                                     key={route.name}
-                                    accessibilityRole="button"
-                                    accessibilityState={isFocused ? { selected: true } : {}}
                                     onPress={onPress}
                                     style={styles.tabItem}
                                     activeOpacity={0.7}
                                 >
                                     <IconComponent
-                                        name={finalIconName as any}
-                                        size={route.name === 'trace' ? 24 : 28}
+                                        name={iconName as any}
+                                        size={28}
                                         color={isFocused ? '#006AFF' : '#8E8E93'}
                                     />
                                 </TouchableOpacity>
                             );
                         })}
+
                 </BlurView>
+
+                <Modal
+                    visible={isFilterModalVisible}
+                    transparent={true}
+                    animationType="fade"
+                    onRequestClose={() => setIsFilterModalVisible(false)}
+                >
+                    <Pressable
+                        style={styles.modalOverlayBottom}
+                        onPress={() => setIsFilterModalVisible(false)}
+                    >
+                        <View style={styles.dropdownMenuBottom}>
+                            <Text style={styles.dropdownHeader}>Filter Memory</Text>
+                            <FlatList
+                                data={TABLES}
+                                keyExtractor={(item) => item.id}
+                                renderItem={({ item }) => (
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.dropdownItem,
+                                            memory === item.id && styles.dropdownItemActive
+                                        ]}
+                                        onPress={() => {
+                                            setMemory(item.id);
+                                            setIsFilterModalVisible(false);
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        }}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name={item.icon as any}
+                                            size={20}
+                                            color={memory === item.id ? '#006AFF' : '#636366'}
+                                            style={{ marginRight: 12 }}
+                                        />
+                                        <Text style={[
+                                            styles.dropdownItemText,
+                                            memory === item.id && styles.dropdownItemTextActive
+                                        ]}>
+                                            {item.name}
+                                        </Text>
+                                        {memory === item.id && (
+                                            <MaterialCommunityIcons name="check" size={18} color="#006AFF" style={{ marginLeft: 'auto' }} />
+                                        )}
+                                    </TouchableOpacity>
+                                )}
+                            />
+                        </View>
+                    </Pressable>
+                </Modal>
             </View>
 
-            {/* Right Section: Actions */}
             <View style={styles.rightWrapper}>
                 <BlurView intensity={90} tint="light" style={styles.rightContainer}>
                     <TouchableOpacity
                         style={[styles.actionItem, styles.addButton]}
-                        onPress={() => router.push('/memory')}
+                        onPress={() => {
+                            // Logic for add button if needed, or just stay as plus
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        }}
                         activeOpacity={0.7}
                     >
                         <MaterialCommunityIcons name="plus" size={28} color="#fff" />
@@ -84,40 +144,20 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 }
 
 function TopBar() {
-    const { memory } = useMemoryStore();
     const router = useRouter();
     const pathname = usePathname();
-    const [currentTime, setCurrentTime] = React.useState(new Date());
-
-    React.useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-        return () => clearInterval(timer);
-    }, []);
-
-    const timeString = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     const handleSync = async () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         await syncDb();
     };
 
-    const isAgentsScreen = pathname === '/' || pathname === '/index';
+    const isAgentsScreen = pathname === '/agents';
 
     return (
         <View style={styles.topBarContainer}>
             <View style={styles.leftGroup}>
-                <TouchableOpacity
-                    style={styles.pillSelector}
-                    onPress={() => router.push('/memory')}
-                    activeOpacity={0.7}
-                >
-                    <MaterialCommunityIcons name="brain" size={18} color="#006AFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.pillText}>Memory</Text>
-                </TouchableOpacity>
-
-                <View style={styles.clockContainer}>
-                    <Text style={styles.clockText}>{timeString}</Text>
-                </View>
+                {/* Clean top bar left section */}
             </View>
 
             <View style={styles.rightActionsGroup}>
@@ -162,13 +202,13 @@ export default function TabLayout() {
                 }}
             >
                 <Tabs.Screen
-                    name="trace"
+                    name="index"
                     options={{
                         headerTitle: 'Trace',
                     }}
                 />
                 <Tabs.Screen
-                    name="index"
+                    name="agents"
                     options={{
                         headerTitle: 'Agents',
                     }}
@@ -214,20 +254,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 12,
     },
-    clockContainer: {
-        backgroundColor: '#F8F9FA',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 6,
-        borderWidth: 1,
-        borderColor: '#E9ECEF',
-    },
-    clockText: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#495057',
-        fontFamily: 'monospace',
-    },
     leftWrapper: {
         flex: 1,
         marginRight: 15,
@@ -236,33 +262,22 @@ const styles = StyleSheet.create({
     rightWrapper: {
         alignItems: 'flex-end',
     },
-    pillSelector: {
-        backgroundColor: '#fff',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 4,
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.05)',
-    },
-    pillText: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#37352F',
-    },
-    leftContainer: {
+    tabBarInner: {
         flexDirection: 'row',
         backgroundColor: 'rgba(255, 255, 255, 0.9)',
         borderRadius: 35,
         height: 65,
         alignItems: 'center',
+        justifyContent: 'space-evenly',
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.05)',
-        width: width * 0.45,
-        justifyContent: 'space-around',
+        paddingHorizontal: 10,
+        minWidth: 180,
     },
+
+
+
     rightContainer: {
         flexDirection: 'row',
         backgroundColor: 'rgba(255, 255, 255, 0.9)',
@@ -273,13 +288,78 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.05)',
-        width: 65, // Adjusted for single button
+        width: 65,
         justifyContent: 'center',
     },
-    rightActions: {
+    tabItem: {
+        padding: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        minWidth: 50,
+    },
+    divider: {
+        width: 1,
+        height: 24,
+        backgroundColor: 'rgba(0,0,0,0.05)',
+    },
+    actionItem: {
+        width: 50,
+        height: 50,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 25,
+    },
+    addButton: {
+        backgroundColor: '#006AFF',
+    },
+    modalOverlayBottom: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        justifyContent: 'flex-end',
+        paddingBottom: 110,
+        paddingHorizontal: 16,
+    },
+    dropdownMenuBottom: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 5,
+        maxHeight: 400,
+    },
+    dropdownHeader: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#8E8E93',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: '#F2F2F7',
+    },
+    dropdownItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 15,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 10,
+    },
+    dropdownItemActive: {
+        backgroundColor: '#F0F7FF',
+    },
+    dropdownItemText: {
+        fontSize: 16,
+        color: '#1C1C1E',
+        fontWeight: '500',
+    },
+    dropdownItemTextActive: {
+        color: '#006AFF',
+        fontWeight: '600',
     },
     topActionItem: {
         padding: 4,
@@ -299,22 +379,5 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '700',
         color: '#37352F',
-    },
-    tabItem: {
-        padding: 10,
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100%',
-        flex: 1,
-    },
-    actionItem: {
-        width: 50,
-        height: 50,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 25,
-    },
-    addButton: {
-        backgroundColor: '#006AFF',
     },
 });

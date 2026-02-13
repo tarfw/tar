@@ -62,8 +62,6 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                             if (route.name === 'index') {
                                 // Home / Trace tab: show active memory icon
                                 iconName = activeTable?.icon || 'clock-outline';
-                            } else if (route.name === 'agents') {
-                                iconName = 'square-rounded-outline';
                             }
 
                             return (
@@ -243,12 +241,7 @@ export default function TabLayout() {
                         headerTitle: 'Trace',
                     }}
                 />
-                <Tabs.Screen
-                    name="agents"
-                    options={{
-                        headerTitle: 'Agents',
-                    }}
-                />
+
                 <Tabs.Screen
                     name="relay"
                     options={{
@@ -304,12 +297,12 @@ const styles = StyleSheet.create({
         borderRadius: 35,
         height: 65,
         alignItems: 'center',
-        justifyContent: 'space-evenly',
+        justifyContent: 'center',
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.05)',
-        paddingHorizontal: 10,
-        minWidth: 180,
+        paddingHorizontal: 0,
+        width: 100,
     },
 
 
@@ -324,15 +317,14 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.05)',
-        width: 65,
+        width: 100,
         justifyContent: 'center',
     },
     tabItem: {
-        padding: 10,
         alignItems: 'center',
         justifyContent: 'center',
         height: '100%',
-        minWidth: 50,
+        width: '100%',
     },
     divider: {
         width: 1,

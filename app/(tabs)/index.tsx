@@ -87,13 +87,49 @@ export default function TraceScreen() {
         try {
             const vector = await generateEmbedding(searchQuery);
             if (vector) {
-                const nodeResults = await dbHelpers.semanticSearchNodes(vector, 10);
-                setSearchResults(nodeResults.map((n: any) => ({
+                // Perform multiple searches in parallel
+                const [nodeResults, actorResults, eventResults] = await Promise.all([
+                    dbHelpers.semanticSearchNodes(vector, 5),
+                    dbHelpers.semanticSearchActors(vector, 5),
+                    dbHelpers.semanticSearchEvents(vector, 5)
+                ]);
+
+                // Map to common result format
+                const formattedNodes = nodeResults.map((n: any) => ({
+                    ...n,
                     id: n.id,
                     title: n.title,
-                    type: 'node',
-                    subtitle: `Match: ${(1 - n.distance).toFixed(2)}`
-                })));
+                    type: 'nodes',
+                    subtitle: n.nodetype,
+                    distance: n.distance
+                }));
+
+                const formattedActors = actorResults.map((a: any) => ({
+                    ...a,
+                    id: a.id,
+                    title: a.name,
+                    type: 'actors',
+                    subtitle: a.actortype,
+                    distance: a.distance
+                }));
+
+                const formattedEvents = eventResults.map((e: any) => ({
+                    ...e,
+                    id: e.id,
+                    title: e.scope,
+                    type: 'orevents',
+                    subtitle: e.status,
+                    distance: e.distance
+                }));
+
+                // Combine and sort by distance (lower is better for cosine distance in Turso)
+                const combinedResults = [
+                    ...formattedNodes,
+                    ...formattedActors,
+                    ...formattedEvents
+                ].sort((a, b) => a.distance - b.distance);
+
+                setSearchResults(combinedResults);
             }
         } catch (error) {
             console.error('[Trace] Search error:', error);
@@ -112,23 +148,24 @@ export default function TraceScreen() {
         let title = '';
         let subtitle = '';
         let typeIcon: any = 'database';
+        const itemType = (searchResults && item.type) ? item.type : activeTab;
 
-        switch (activeTab) {
+        switch (itemType) {
             case 'actors':
-                title = item.name;
-                subtitle = item.actortype;
+                title = item.name || item.title;
+                subtitle = item.actortype || item.subtitle;
                 typeIcon = 'account';
                 break;
             case 'nodes':
                 title = item.title;
-                subtitle = item.nodetype;
+                subtitle = item.nodetype || item.subtitle;
                 typeIcon = 'database';
                 break;
             case 'orevents':
                 const date = new Date(item.ts);
                 const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                title = item.scope;
-                subtitle = item.status;
+                title = item.scope || item.title;
+                subtitle = item.status || item.subtitle;
                 typeIcon = 'lightning-bolt';
                 return (
                     <TouchableOpacity
@@ -140,13 +177,12 @@ export default function TraceScreen() {
                                     ...item,
                                     title,
                                     subtitle,
-                                    type: activeTab
+                                    type: 'orevents'
                                 }
                             });
                         }}
                         activeOpacity={0.7}
                     >
-                        {/* 1. Icon Thumbnail */}
                         <View style={[
                             styles.timelineThumbnail,
                             {
@@ -164,7 +200,6 @@ export default function TraceScreen() {
                             />
                         </View>
 
-                        {/* 2. Title and Status */}
                         <View style={styles.timelineInfo}>
                             <Text style={[styles.timelineTitle, { color: colors.timelineTitle }]} numberOfLines={1}>{title}</Text>
                             <View style={styles.statusBadge}>
@@ -173,12 +208,10 @@ export default function TraceScreen() {
                             </View>
                         </View>
 
-                        {/* 3. Time on Right End */}
                         <View style={styles.timelineTrailing}>
                             <Text style={[styles.timeLabel, { color: colors.timeLabel }]}>{timeStr}</Text>
                         </View>
                     </TouchableOpacity>
-
                 );
             case 'collab':
                 title = item.role;
@@ -204,13 +237,6 @@ export default function TraceScreen() {
                 title = item.id;
         }
 
-        // If it's a search result, override formatting
-        if (searchResults && searchResults.includes(item)) {
-            title = item.title;
-            subtitle = item.subtitle;
-            typeIcon = item.type === 'actor' ? 'account' : 'database';
-        }
-
         return (
             <TouchableOpacity
                 style={[styles.itemContainer, { borderBottomColor: colors.border }]}
@@ -221,7 +247,7 @@ export default function TraceScreen() {
                             ...item,
                             title,
                             subtitle,
-                            type: activeTab
+                            type: itemType
                         }
                     });
                 }}
@@ -237,7 +263,6 @@ export default function TraceScreen() {
                 <MaterialCommunityIcons name="chevron-right" size={16} color={colors.secondaryText} />
             </TouchableOpacity>
         );
-
     };
 
     return (

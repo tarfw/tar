@@ -4,10 +4,14 @@ const TURSO_URL = process.env.EXPO_PUBLIC_TURSO_URL || '';
 const TURSO_AUTH_TOKEN = process.env.EXPO_PUBLIC_TURSO_AUTH_TOKEN || '';
 
 let dbInstance: Database | null = null;
+let initPromise: Promise<Database> | null = null;
 
 export async function getDb(): Promise<Database> {
-    if (!dbInstance) {
-        dbInstance = await connect({
+    if (dbInstance) return dbInstance;
+    if (initPromise) return initPromise;
+
+    initPromise = (async () => {
+        const instance = await connect({
             path: 'tar.db',
             url: TURSO_URL,
             authToken: TURSO_AUTH_TOKEN,
@@ -80,15 +84,28 @@ export async function getDb(): Promise<Database> {
                 payload TEXT,
                 scope TEXT NOT NULL,
                 status TEXT,
-                ts TEXT NOT NULL
+                ts TEXT NOT NULL,
+                embedding F32_BLOB(384)
             )`
         ];
 
         for (const statement of schema) {
-            await dbInstance.exec(statement);
+            await instance.exec(statement);
         }
-    }
-    return dbInstance;
+
+        // Migration: Add embedding column to orevents if it doesn't exist
+        try {
+            await instance.exec('ALTER TABLE orevents ADD COLUMN embedding F32_BLOB(384)');
+            console.log('[DB] Migration: Added embedding column to orevents');
+        } catch (e) {
+            // Ignore error if column already exists
+        }
+
+        dbInstance = instance;
+        return instance;
+    })();
+
+    return initPromise;
 }
 
 /**
@@ -234,6 +251,17 @@ export const dbHelpers = {
             `SELECT *, vector_distance_cos(vector, ?) as distance 
              FROM actors 
              WHERE vector IS NOT NULL 
+             ORDER BY distance 
+             LIMIT ?`,
+            [queryVector.buffer.slice(0) as ArrayBuffer, limit]
+        );
+    },
+    semanticSearchEvents: async (queryVector: Float32Array, limit: number = 5) => {
+        const db = await getDb();
+        return await db.all(
+            `SELECT *, vector_distance_cos(embedding, ?) as distance 
+             FROM orevents 
+             WHERE embedding IS NOT NULL 
              ORDER BY distance 
              LIMIT ?`,
             [queryVector.buffer.slice(0) as ArrayBuffer, limit]

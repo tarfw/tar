@@ -92,6 +92,37 @@ export function useIndexingService() {
                 }
             }
 
+            // 3. Process Events (Timeline)
+            const unindexedEvents = await db.all('SELECT * FROM orevents WHERE embedding IS NULL LIMIT 20');
+
+            if (unindexedEvents.length > 0) {
+                console.log(`[Indexing] Found ${unindexedEvents.length} unindexed events.`);
+
+                for (const event of unindexedEvents) {
+                    try {
+                        const textParts = [
+                            event.scope,
+                            event.status,
+                            event.payload || ''
+                        ].filter(Boolean);
+
+                        const textToEmbed = textParts.join(' ');
+                        const embedding = await generateEmbedding(textToEmbed);
+
+                        if (embedding) {
+                            await db.run(
+                                'UPDATE orevents SET embedding = ? WHERE id = ?',
+                                [embedding.buffer as ArrayBuffer, event.id]
+                            );
+                            setStats(prev => ({ ...prev, totalProcessed: prev.totalProcessed + 1 }));
+                        }
+                    } catch (e) {
+                        console.error(`[Indexing] Failed to index event ${event.id}:`, e);
+                        setStats(prev => ({ ...prev, totalErrors: prev.totalErrors + 1 }));
+                    }
+                }
+            }
+
         } catch (error) {
             console.error('[Indexing] Indexing process failed:', error);
         } finally {

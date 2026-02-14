@@ -27,6 +27,7 @@ const SYSTEM_PROMPT = `You are a product data assistant. Given a natural languag
 Return ONLY valid JSON (no markdown, no backticks) matching this exact schema:
 
 {
+  "title": "string — short product title (e.g. 'Nike Air Max 90')",
   "description": "string — rich product description",
   "brand": "string or null",
   "gtin": "string or null",
@@ -38,10 +39,13 @@ Return ONLY valid JSON (no markdown, no backticks) matching this exact schema:
   "specifications": { "key": "value" },
   "delivery": "string or null",
   "return_policy": "string or null",
-  "images": []
+  "images": [],
+  "universal_code": "string — suggested SKU like PRD-BRAND-001"
 }
 
 Rules:
+- Always include a concise, descriptive "title"
+- Always suggest a "universal_code" (format: PRD-BRANDABBREV-RANDOM3DIGITS)
 - Infer reasonable values when the user is vague (e.g. if they say "sneakers" → category: "Footwear")
 - Use "USD" as default currency unless stated
 - Set availability to "in stock" unless stated otherwise
@@ -49,7 +53,14 @@ Rules:
 - Keep descriptions concise but informative
 - Return ONLY the JSON object, nothing else`;
 
+const REFINE_SYSTEM_PROMPT = `You are a product data assistant. You will receive existing product data as JSON and a user instruction to modify it.
+
+Apply the user's requested changes to the existing data and return the FULL updated JSON object.
+Do NOT remove fields that the user did not mention — keep them as-is.
+Return ONLY valid JSON (no markdown, no backticks), nothing else.`;
+
 export interface ProductPayload {
+    title?: string;
     description?: string;
     brand?: string;
     gtin?: string;
@@ -62,6 +73,7 @@ export interface ProductPayload {
     delivery?: string;
     return_policy?: string;
     images?: string[];
+    universal_code?: string;
 }
 
 /**
@@ -105,6 +117,55 @@ export async function generateProductPayload(
     }
 
     // Parse the JSON — strip markdown code fences if present
+    const cleaned = content.replace(/^```json?\n?/i, '').replace(/\n?```$/i, '').trim();
+    return JSON.parse(cleaned) as ProductPayload;
+}
+
+/**
+ * Refine existing product data with a natural language instruction.
+ * Sends the current payload + refinement prompt to the LLM.
+ */
+export async function refineProductPayload(
+    currentPayload: ProductPayload,
+    refinementInstruction: string
+): Promise<ProductPayload> {
+    const apiKey = await getGroqApiKey();
+    if (!apiKey) {
+        throw new Error('Groq API key not configured. Please add it in Settings.');
+    }
+
+    const response = await fetch(GROQ_API_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            model: GROQ_MODEL,
+            messages: [
+                { role: 'system', content: REFINE_SYSTEM_PROMPT },
+                {
+                    role: 'user',
+                    content: `Current product data:\n${JSON.stringify(currentPayload, null, 2)}\n\nInstruction: ${refinementInstruction}`,
+                },
+            ],
+            temperature: 0.3,
+            max_tokens: 1024,
+        }),
+    });
+
+    if (!response.ok) {
+        const err = await response.text();
+        throw new Error(`Groq API error (${response.status}): ${err}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim();
+
+    if (!content) {
+        throw new Error('No response from Groq LLM.');
+    }
+
     const cleaned = content.replace(/^```json?\n?/i, '').replace(/\n?```$/i, '').trim();
     return JSON.parse(cleaned) as ProductPayload;
 }

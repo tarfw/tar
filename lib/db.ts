@@ -188,6 +188,19 @@ export const dbHelpers = {
         notifyDbChanges();
         return result;
     },
+    updateNode: async (id: string, updates: { title?: string; universalcode?: string; payload?: string }) => {
+        const db = await getDb();
+        const sets: string[] = [];
+        const vals: any[] = [];
+        if (updates.title !== undefined) { sets.push('title = ?'); vals.push(updates.title); }
+        if (updates.universalcode !== undefined) { sets.push('universalcode = ?'); vals.push(updates.universalcode); }
+        if (updates.payload !== undefined) { sets.push('payload = ?'); vals.push(updates.payload); }
+        if (sets.length === 0) return;
+        vals.push(id);
+        const result = await db.run(`UPDATE nodes SET ${sets.join(', ')} WHERE id = ?`, vals);
+        notifyDbChanges();
+        return result;
+    },
 
     // OREvents (Operational Events)
     getEvents: async (streamid?: string) => {

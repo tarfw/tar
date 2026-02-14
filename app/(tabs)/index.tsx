@@ -240,6 +240,20 @@ export default function TraceScreen() {
                 title = item.id;
         }
 
+        // For nodes with payload, parse it for rich display
+        let payloadData: any = null;
+        if (itemType === 'nodes' && typeof item.payload === 'string') {
+            try { payloadData = JSON.parse(item.payload); } catch { }
+        }
+
+        const isProduct = itemType === 'nodes' && (item.nodetype === 'Product' || item.nodetype === 'Products');
+        const priceStr = payloadData?.price?.amount != null
+            ? `${payloadData.price.currency || '$'}${payloadData.price.amount}`
+            : null;
+        const brandStr = payloadData?.brand || null;
+        const categoryStr = payloadData?.categorization?.category || null;
+        const isInStock = payloadData?.availability?.toLowerCase().includes('stock');
+
         return (
             <TouchableOpacity
                 style={[styles.itemContainer, { borderBottomColor: colors.border }]}
@@ -260,10 +274,21 @@ export default function TraceScreen() {
                     <MaterialCommunityIcons name={typeIcon} size={20} color={colors.accent} />
                 </View>
                 <View style={styles.textContainer}>
-                    <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>{title}</Text>
-                    {subtitle && <Text style={[styles.itemSubtitle, { color: colors.secondaryText }]}>{subtitle}</Text>}
+                    <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>{title}</Text>
+                    {isProduct && (priceStr || brandStr || categoryStr) ? (
+                        <View style={styles.richSubRow}>
+                            {priceStr && <Text style={styles.priceTag}>{priceStr}</Text>}
+                            {brandStr && <Text style={[styles.metaTag, { color: colors.secondaryText }]}>{brandStr}</Text>}
+                            {categoryStr && <Text style={[styles.metaTag, { color: colors.secondaryText }]}>· {categoryStr}</Text>}
+                            {payloadData?.availability && (
+                                <View style={[styles.stockDot, { backgroundColor: isInStock ? '#22C55E' : '#F59E0B' }]} />
+                            )}
+                        </View>
+                    ) : subtitle ? (
+                        <Text style={[styles.itemSubtitle, { color: colors.secondaryText }]}>{subtitle}</Text>
+                    ) : null}
                 </View>
-                <MaterialCommunityIcons name="chevron-right" size={16} color={colors.secondaryText} />
+
             </TouchableOpacity>
         );
     };
@@ -473,6 +498,27 @@ const styles = StyleSheet.create({
     emptyText: {
         fontSize: 16,
         fontWeight: '500',
+    },
+    richSubRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 3,
+    },
+    priceTag: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#111827',
+    },
+    metaTag: {
+        fontSize: 13,
+        fontWeight: '400',
+    },
+    stockDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        marginLeft: 4,
     },
 });
 

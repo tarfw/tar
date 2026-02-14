@@ -64,7 +64,7 @@ const MemoryListItem = React.memo(({ item, memory, setMemory, setIsFilterModalVi
 
             {isNodes && (
                 <View style={{ paddingLeft: 36 }}>
-                    {['Products', 'Collections', 'Options', 'Groups'].map((subItem) => {
+                    {['Products', 'Collections'].map((subItem) => {
                         const subId = `nodes:${subItem}`;
                         const isSubActive = memory === subId;
                         return (

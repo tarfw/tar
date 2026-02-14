@@ -5,33 +5,32 @@ import { Tabs, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import React from 'react';
-import { Dimensions, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMemoryStore } from '../../hooks/use-memory-store';
 import { useThemeColors } from '../../hooks/use-theme-colors';
 import { TABLES } from '../../lib/constants';
 import { syncDb } from '../../lib/db';
-
-
 
 const { width } = Dimensions.get('window');
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
     const { memory, setMemory } = useMemoryStore();
     const router = useRouter();
-    const pathname = usePathname();
     const colors = useThemeColors();
     const { colorScheme } = useColorScheme();
     const [isFilterModalVisible, setIsFilterModalVisible] = React.useState(false);
 
-
     const activeTable = TABLES.find(t => t.id === memory);
-    const memoryDisplayName = activeTable ? activeTable.name : (memory === 'Memory' ? 'Memory' : memory);
 
     return (
         <View style={styles.tabBarContainer}>
             <View style={styles.leftWrapper}>
-                <BlurView intensity={90} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={[styles.tabBarInner, { backgroundColor: colors.tabBarBackground, borderColor: colors.border }]}>
-
+                <BlurView
+                    intensity={90}
+                    tint={colorScheme === 'dark' ? 'dark' : 'light'}
+                    style={[styles.tabBarInner, { backgroundColor: colors.tabBarBackground, borderColor: colors.border }]}
+                >
                     {state.routes
                         .filter((route: any) => route.name !== 'relay')
                         .map((route: any, index: number) => {
@@ -57,11 +56,10 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                             };
 
                             let iconName: any;
-                            let IconComponent: any = MaterialCommunityIcons;
-
                             if (route.name === 'index') {
-                                // Home / Trace tab: show active memory icon
                                 iconName = activeTable?.icon || 'clock-outline';
+                            } else {
+                                iconName = 'view-grid-outline';
                             }
 
                             return (
@@ -71,79 +69,98 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                                     style={styles.tabItem}
                                     activeOpacity={0.7}
                                 >
-                                    <IconComponent
+                                    <MaterialCommunityIcons
                                         name={iconName as any}
                                         size={28}
-                                        color={isFocused ? '#006AFF' : '#8E8E93'}
+                                        color={isFocused ? colors.accent : (colorScheme === 'dark' ? '#5E5E62' : '#8E8E93')}
                                     />
                                 </TouchableOpacity>
                             );
                         })}
-
                 </BlurView>
-
-                <Modal
-                    visible={isFilterModalVisible}
-                    transparent={true}
-                    animationType="fade"
-                    onRequestClose={() => setIsFilterModalVisible(false)}
-                >
-                    <Pressable
-                        style={styles.modalOverlayBottom}
-                        onPress={() => setIsFilterModalVisible(false)}
-                    >
-                        <View style={[styles.dropdownMenuBottom, { backgroundColor: colors.dropdownBackground }]}>
-
-                            <FlatList
-                                data={TABLES}
-                                keyExtractor={(item) => item.id}
-                                renderItem={({ item }) => {
-                                    const isActive = memory === item.id;
-                                    return (
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.dropdownItem,
-                                                isActive && { backgroundColor: colorScheme === 'dark' ? 'rgba(94, 106, 210, 0.25)' : 'rgba(94, 106, 210, 0.15)' }
-                                            ]}
-                                            onPress={() => {
-                                                setMemory(item.id);
-                                                setIsFilterModalVisible(false);
-                                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                            }}
-                                        >
-                                            <MaterialCommunityIcons
-                                                name={item.icon as any}
-                                                size={18}
-                                                color={isActive ? (colorScheme === 'dark' ? '#8B8EF8' : '#5E6AD2') : colors.secondaryText}
-                                                style={{ marginRight: 10 }}
-                                            />
-                                            <Text style={[
-                                                styles.dropdownItemText,
-                                                { color: colors.text },
-                                                isActive && { color: colorScheme === 'dark' ? '#8B8EF8' : '#5E6AD2', fontWeight: '600' }
-                                            ]}>
-                                                {item.name}
-                                            </Text>
-                                        </TouchableOpacity>
-
-                                    );
-                                }}
-                            />
-                        </View>
-                    </Pressable>
-                </Modal>
             </View>
 
+            <Modal
+                visible={isFilterModalVisible}
+                animationType="slide"
+                transparent={false}
+                onRequestClose={() => setIsFilterModalVisible(false)}
+            >
+                <View style={[styles.fullScreenModal, { backgroundColor: colors.background }]}>
+                    <SafeAreaView style={{ flex: 1 }}>
+                        <View style={styles.modalHeader}>
+                            <View>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>Memories</Text>
+                                <Text style={[styles.modalSubtitle, { color: colors.secondaryText }]}>Select a partition to explore</Text>
+                            </View>
+                            <TouchableOpacity
+                                onPress={() => setIsFilterModalVisible(false)}
+                                style={styles.modalCloseButton}
+                            >
+                                <MaterialCommunityIcons name="close" size={28} color={colors.text} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <FlatList
+                            data={TABLES}
+                            keyExtractor={(item) => item.id}
+                            contentContainerStyle={styles.modalListContent}
+                            renderItem={({ item }) => {
+                                const isActive = memory === item.id;
+                                return (
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.memoryListItem,
+                                            { borderBottomColor: colors.border },
+                                        ]}
+                                        onPress={() => {
+                                            setMemory(item.id);
+                                            setIsFilterModalVisible(false);
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        }}
+                                        activeOpacity={0.6}
+                                    >
+                                        <MaterialCommunityIcons
+                                            name={item.icon as any}
+                                            size={22}
+                                            color={isActive ? colors.accent : colors.secondaryText}
+                                            style={{ marginRight: 14 }}
+                                        />
+                                        <Text style={[
+                                            styles.memoryListItemText,
+                                            { color: colors.text },
+                                            isActive && { color: colors.accent, fontWeight: '700' }
+                                        ]}>
+                                            {item.name}
+                                        </Text>
+                                        {isActive && (
+                                            <MaterialCommunityIcons
+                                                name="check"
+                                                size={20}
+                                                color={colors.accent}
+                                                style={{ marginLeft: 'auto' }}
+                                            />
+                                        )}
+                                    </TouchableOpacity>
+                                );
+                            }}
+                        />
+                    </SafeAreaView>
+                </View>
+            </Modal>
+
             <View style={styles.rightWrapper}>
-                <BlurView intensity={90} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={[styles.rightContainer, { backgroundColor: colors.tabBarBackground, borderColor: colors.border }]}>
+                <BlurView
+                    intensity={90}
+                    tint={colorScheme === 'dark' ? 'dark' : 'light'}
+                    style={[styles.rightContainer, { backgroundColor: colors.tabBarBackground, borderColor: colors.border }]}
+                >
                     <TouchableOpacity
                         style={[styles.actionItem, styles.addButton, { backgroundColor: colors.accent }]}
-
                         onPress={() => {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                             router.push('/memory');
                         }}
-
                         activeOpacity={0.7}
                     >
                         <MaterialCommunityIcons name="plus" size={28} color="#fff" />
@@ -293,30 +310,22 @@ const styles = StyleSheet.create({
     },
     tabBarInner: {
         flexDirection: 'row',
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
         borderRadius: 35,
         height: 65,
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.05)',
-        paddingHorizontal: 0,
         width: 100,
     },
-
-
-
     rightContainer: {
         flexDirection: 'row',
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
         borderRadius: 35,
         paddingHorizontal: 5,
         height: 65,
         alignItems: 'center',
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.05)',
         width: 100,
         justifyContent: 'center',
     },
@@ -325,11 +334,6 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         height: '100%',
         width: '100%',
-    },
-    divider: {
-        width: 1,
-        height: 24,
-        backgroundColor: 'rgba(0,0,0,0.05)',
     },
     actionItem: {
         width: 50,
@@ -341,44 +345,6 @@ const styles = StyleSheet.create({
     addButton: {
         backgroundColor: '#006AFF',
     },
-    modalOverlayBottom: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        justifyContent: 'flex-end',
-        paddingBottom: 110,
-        paddingHorizontal: 16,
-    },
-    dropdownMenuBottom: {
-        backgroundColor: '#1F2023',
-        borderRadius: 10,
-        paddingVertical: 4,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.25,
-        shadowRadius: 16,
-        elevation: 8,
-        maxHeight: 400,
-    },
-    dropdownItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        marginHorizontal: 4,
-        borderRadius: 6,
-    },
-    dropdownItemActive: {
-        backgroundColor: 'rgba(94, 106, 210, 0.15)',
-    },
-    dropdownItemText: {
-        fontSize: 14,
-        color: '#E8E9EB',
-        fontWeight: '500',
-    },
-    dropdownItemTextActive: {
-        color: '#8B8EF8',
-        fontWeight: '600',
-    },
     topActionItem: {
         padding: 4,
     },
@@ -386,16 +352,57 @@ const styles = StyleSheet.create({
         width: 22,
         height: 22,
         borderRadius: 4,
-        backgroundColor: '#F7F6F3',
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.08)',
         marginLeft: 4,
     },
     profileInitial: {
         fontSize: 11,
         fontWeight: '700',
-        color: '#37352F',
+    },
+    fullScreenModal: {
+        flex: 1,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+        paddingTop: 20,
+        paddingBottom: 20,
+    },
+    modalTitle: {
+        fontSize: 32,
+        fontWeight: '800',
+        letterSpacing: -1,
+    },
+    modalSubtitle: {
+        fontSize: 16,
+        fontWeight: '500',
+        marginTop: 4,
+    },
+    modalCloseButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(142, 142, 147, 0.1)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    modalListContent: {
+        paddingHorizontal: 24,
+        paddingTop: 8,
+        paddingBottom: 40,
+    },
+    memoryListItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 16,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    memoryListItemText: {
+        fontSize: 17,
+        fontWeight: '500',
     },
 });

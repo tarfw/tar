@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import React from 'react';
 import { SectionList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useThemeColors } from '../hooks/use-theme-colors';
 
 /**
@@ -116,7 +117,7 @@ export default function MemorySelectionScreen() {
     };
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Create Memory</Text>
                 <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
@@ -151,7 +152,7 @@ export default function MemorySelectionScreen() {
                     </TouchableOpacity>
                 )}
             />
-        </View>
+        </SafeAreaView>
     );
 }
 

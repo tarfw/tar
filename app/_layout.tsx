@@ -5,7 +5,6 @@ import { useEffect } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import "../global.css";
 import { getDb, syncDb } from '../lib/db';
-import { getGroqApiKey } from '../lib/groq-service';
 import { useIndexingService } from '../lib/indexing-service';
 
 const queryClient = new QueryClient();
@@ -20,11 +19,6 @@ export default function RootLayout() {
                 await getDb();
                 // Perform initial sync
                 await syncDb();
-                // Seed Groq API key if not already set
-                const existing = await getGroqApiKey();
-                if (!existing) {
-                    // await setGroqApiKey('YOUR_KEY_HERE');
-                }
             } catch (error) {
                 console.error('Failed to initialize database:', error);
             }

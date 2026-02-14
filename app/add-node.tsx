@@ -27,11 +27,11 @@ export default function AddNodeScreen() {
 
     // Core node fields
     const [title, setTitle] = useState('');
-    const [nodeType, setNodeType] = useState('Product');
+    const [nodeType, setNodeType] = useState('Products');
     const [universalCode, setUniversalCode] = useState('');
     const [isSaving, setIsSaving] = useState(false);
 
-    // Payload form fields
+    // Product form fields
     const [brand, setBrand] = useState('');
     const [description, setDescription] = useState('');
     const [availability, setAvailability] = useState('in stock');
@@ -45,8 +45,22 @@ export default function AddNodeScreen() {
     const [tags, setTags] = useState('');
     const [delivery, setDelivery] = useState('');
     const [returnPolicy, setReturnPolicy] = useState('');
-    const [specsRaw, setSpecsRaw] = useState(''); // "Weight: 1.2kg, Material: Glass"
-    const [optionsRaw, setOptionsRaw] = useState(''); // "Size: S, M, L | Color: Red, Blue"
+    const [specsRaw, setSpecsRaw] = useState('');
+    const [optionsRaw, setOptionsRaw] = useState('');
+
+    // Collections form fields
+    const [collectionName, setCollectionName] = useState('');
+    const [collectionDescription, setCollectionDescription] = useState('');
+    const [collectionTags, setCollectionTags] = useState('');
+
+    // Options form fields
+    const [optionName, setOptionName] = useState('');
+    const [optionValues, setOptionValues] = useState('');
+
+    // Group form fields
+    const [groupName, setGroupName] = useState('');
+    const [groupDescription, setGroupDescription] = useState('');
+    const [groupMembers, setGroupMembers] = useState('');
 
     // AI mode
     const [entryMode, setEntryMode] = useState<EntryMode>('form');
@@ -229,7 +243,7 @@ export default function AddNodeScreen() {
                 <View style={styles.field}>
                     <Text style={styles.fieldLabel}>Node Type</Text>
                     <View style={styles.typeContainer}>
-                        {['Product', 'Category', 'Collection'].map((type) => (
+                        {['Products', 'Collections', 'Options', 'Group'].map((type) => (
                             <TouchableOpacity
                                 key={type}
                                 style={[styles.typeBtn, nodeType === type && styles.typeBtnActive]}
@@ -312,72 +326,102 @@ export default function AddNodeScreen() {
                 ) : (
                     /* ─── Form Mode ─── */
                     <View style={styles.formSections}>
-                        {/* Basic */}
-                        <Text style={styles.sectionLabel}>Basic</Text>
-                        {renderFormField('Brand', brand, setBrand, 'e.g. Nike')}
-                        {renderFormField('Description', description, setDescription, 'Product description...', true)}
+                        {nodeType === 'Products' && (
+                            <>
+                                {/* Basic */}
+                                <Text style={styles.sectionLabel}>Basic</Text>
+                                {renderFormField('Brand', brand, setBrand, 'e.g. Nike')}
+                                {renderFormField('Description', description, setDescription, 'Product description...', true)}
 
-                        <View style={styles.field}>
-                            <Text style={styles.fieldLabel}>Availability</Text>
-                            <View style={styles.typeContainer}>
-                                {['in stock', 'out of stock', 'preorder'].map((a) => (
-                                    <TouchableOpacity
-                                        key={a}
-                                        style={[styles.typeBtn, availability === a && styles.typeBtnActive]}
-                                        onPress={() => setAvailability(a)}
-                                    >
-                                        <Text style={[styles.typeBtnText, availability === a && styles.typeBtnTextActive]}>
-                                            {a}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
+                                <View style={styles.field}>
+                                    <Text style={styles.fieldLabel}>Availability</Text>
+                                    <View style={styles.typeContainer}>
+                                        {['in stock', 'out of stock', 'preorder'].map((a) => (
+                                            <TouchableOpacity
+                                                key={a}
+                                                style={[styles.typeBtn, availability === a && styles.typeBtnActive]}
+                                                onPress={() => setAvailability(a)}
+                                            >
+                                                <Text style={[styles.typeBtnText, availability === a && styles.typeBtnTextActive]}>
+                                                    {a}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                </View>
 
-                        {/* Pricing */}
-                        <Text style={styles.sectionLabel}>Pricing</Text>
-                        <View style={styles.fieldRow}>
-                            <View style={{ flex: 2 }}>
-                                {renderFormField('Amount', priceAmount, setPriceAmount, '49.99')}
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                {renderFormField('Currency', priceCurrency, setPriceCurrency, 'USD')}
-                            </View>
-                        </View>
-                        {renderFormField('Range', priceRange, setPriceRange, 'e.g. $40 - $60')}
+                                {/* Pricing */}
+                                <Text style={styles.sectionLabel}>Pricing</Text>
+                                <View style={styles.fieldRow}>
+                                    <View style={{ flex: 2 }}>
+                                        {renderFormField('Amount', priceAmount, setPriceAmount, '49.99')}
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        {renderFormField('Currency', priceCurrency, setPriceCurrency, 'USD')}
+                                    </View>
+                                </View>
+                                {renderFormField('Range', priceRange, setPriceRange, 'e.g. $40 - $60')}
 
-                        {/* Identifiers */}
-                        <Text style={styles.sectionLabel}>Identifiers</Text>
-                        {renderFormField('GTIN', gtin, setGtin, 'EAN / UPC barcode')}
-                        {renderFormField('MPN', mpn, setMpn, 'Manufacturer Part Number')}
+                                {/* Identifiers */}
+                                <Text style={styles.sectionLabel}>Identifiers</Text>
+                                {renderFormField('GTIN', gtin, setGtin, 'EAN / UPC barcode')}
+                                {renderFormField('MPN', mpn, setMpn, 'Manufacturer Part Number')}
 
-                        {/* Category */}
-                        <Text style={styles.sectionLabel}>Category</Text>
-                        {renderFormField('Category', category, setCategory, 'e.g. Electronics')}
-                        {renderFormField('Subcategory', subcategory, setSubcategory, 'e.g. Smart Lighting')}
-                        {renderFormField('Tags', tags, setTags, 'tag1, tag2, tag3')}
+                                {/* Category */}
+                                <Text style={styles.sectionLabel}>Category</Text>
+                                {renderFormField('Category', category, setCategory, 'e.g. Electronics')}
+                                {renderFormField('Subcategory', subcategory, setSubcategory, 'e.g. Smart Lighting')}
+                                {renderFormField('Tags', tags, setTags, 'tag1, tag2, tag3')}
 
-                        {/* Options & Specs */}
-                        <Text style={styles.sectionLabel}>Options & Specs</Text>
-                        {renderFormField(
-                            'Options',
-                            optionsRaw,
-                            setOptionsRaw,
-                            'Size: S, M, L | Color: Red, Blue',
-                            true
+                                {/* Options & Specs */}
+                                <Text style={styles.sectionLabel}>Options & Specs</Text>
+                                {renderFormField(
+                                    'Options',
+                                    optionsRaw,
+                                    setOptionsRaw,
+                                    'Size: S, M, L | Color: Red, Blue',
+                                    true
+                                )}
+                                {renderFormField(
+                                    'Specifications',
+                                    specsRaw,
+                                    setSpecsRaw,
+                                    'Weight: 1.2kg, Material: Glass',
+                                    true
+                                )}
+
+                                {/* Shipping */}
+                                <Text style={styles.sectionLabel}>Shipping</Text>
+                                {renderFormField('Delivery', delivery, setDelivery, 'Ships in 2-3 business days')}
+                                {renderFormField('Return Policy', returnPolicy, setReturnPolicy, '30 days easy return')}
+                            </>
                         )}
-                        {renderFormField(
-                            'Specifications',
-                            specsRaw,
-                            setSpecsRaw,
-                            'Weight: 1.2kg, Material: Glass',
-                            true
+
+                        {nodeType === 'Collections' && (
+                            <>
+                                <Text style={styles.sectionLabel}>Collection Details</Text>
+                                {renderFormField('Collection Name', collectionName, setCollectionName, 'e.g. Summer Sale')}
+                                {renderFormField('Description', collectionDescription, setCollectionDescription, 'Describe this collection...', true)}
+                                {renderFormField('Tags', collectionTags, setCollectionTags, 'tag1, tag2, tag3')}
+                            </>
                         )}
 
-                        {/* Shipping */}
-                        <Text style={styles.sectionLabel}>Shipping</Text>
-                        {renderFormField('Delivery', delivery, setDelivery, 'Ships in 2-3 business days')}
-                        {renderFormField('Return Policy', returnPolicy, setReturnPolicy, '30 days easy return')}
+                        {nodeType === 'Options' && (
+                            <>
+                                <Text style={styles.sectionLabel}>Option Details</Text>
+                                {renderFormField('Option Name', optionName, setOptionName, 'e.g. Size, Color, Material')}
+                                {renderFormField('Option Values', optionValues, setOptionValues, 'e.g. Small, Medium, Large', true)}
+                            </>
+                        )}
+
+                        {nodeType === 'Group' && (
+                            <>
+                                <Text style={styles.sectionLabel}>Group Details</Text>
+                                {renderFormField('Group Name', groupName, setGroupName, 'e.g. Electronics Bundle')}
+                                {renderFormField('Description', groupDescription, setGroupDescription, 'Describe this group...', true)}
+                                {renderFormField('Members / Items', groupMembers, setGroupMembers, 'List items in this group...', true)}
+                            </>
+                        )}
                     </View>
                 )}
 
@@ -408,7 +452,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 20,
-        paddingBottom: 16,
+        paddingTop: 4,
+        paddingBottom: 12,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: '#E5E7EB',
     },
@@ -468,7 +513,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     typeBtnActive: {
-        backgroundColor: '#111827',
+        backgroundColor: '#0139E6',
     },
     typeBtnText: {
         fontSize: 13,
@@ -497,7 +542,7 @@ const styles = StyleSheet.create({
         borderRadius: 8,
     },
     modeBtnActive: {
-        backgroundColor: '#111827',
+        backgroundColor: '#0139E6',
     },
     modeBtnText: {
         fontSize: 13,
@@ -540,7 +585,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        backgroundColor: '#111827',
+        backgroundColor: '#0139E6',
         paddingVertical: 14,
         borderRadius: 10,
     },
@@ -558,7 +603,7 @@ const styles = StyleSheet.create({
 
     // --- Save ---
     saveBtn: {
-        backgroundColor: '#111827',
+        backgroundColor: '#0139E6',
         borderRadius: 12,
         paddingVertical: 16,
         alignItems: 'center',

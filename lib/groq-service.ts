@@ -13,9 +13,13 @@ export async function setGroqApiKey(key: string): Promise<void> {
 
 /**
  * Retrieve the stored Groq API key.
+ * Checks SecureStore first, then falls back to process.env.EXPO_PUBLIC_GROQ_API_KEY.
  */
 export async function getGroqApiKey(): Promise<string | null> {
-    return SecureStore.getItemAsync(GROQ_API_KEY_STORE);
+    const stored = await SecureStore.getItemAsync(GROQ_API_KEY_STORE);
+    if (stored) return stored;
+
+    return process.env.EXPO_PUBLIC_GROQ_API_KEY || null;
 }
 
 const SYSTEM_PROMPT = `You are a product data assistant. Given a natural language product description, extract structured product metadata as JSON.

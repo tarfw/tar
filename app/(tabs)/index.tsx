@@ -144,11 +144,13 @@ export default function TraceScreen() {
         }
     }, [searchQuery]);
 
+    const [baseTab, filter] = activeTab.split(':');
+
     const renderItem = ({ item }: { item: any }) => {
         let title = '';
         let subtitle = '';
         let typeIcon: any = 'database';
-        const itemType = (searchResults && item.type) ? item.type : activeTab;
+        const itemType = (searchResults && item.type) ? item.type : baseTab;
 
         switch (itemType) {
             case 'actors':
@@ -158,7 +160,8 @@ export default function TraceScreen() {
                 break;
             case 'nodes':
                 title = item.title;
-                subtitle = item.nodetype || item.subtitle;
+                // If filtering by specific type (and not searching), hide the redundant type label
+                subtitle = (filter && !searchResults) ? '' : (item.nodetype || item.subtitle);
                 typeIcon = 'database';
                 break;
             case 'orevents':
@@ -265,6 +268,24 @@ export default function TraceScreen() {
         );
     };
 
+    // Filter data based on active tab and optional filter (e.g. nodes:Product)
+    const filteredData = React.useMemo(() => {
+        const data = tableData[baseTab] || [];
+        if (filter && baseTab === 'nodes') {
+            // Basic filtering by nodetype if available, or just subtitle match
+            // Assuming nodetype matches "Product" or "Collections" (singular/plural handling might be needed)
+            // Let's assume loose matching for now
+            return data.filter(item => {
+                const type = item.nodetype || '';
+                // Handle "Products" vs "Product" (singular/plural)
+                if (filter === 'Products') return type === 'Product' || type === 'Products';
+                if (filter === 'Collections') return type === 'Collection' || type === 'Collections';
+                return type === filter;
+            });
+        }
+        return data;
+    }, [tableData, baseTab, filter]);
+
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             <View style={[styles.header, { backgroundColor: colors.searchBar }]}>
@@ -301,7 +322,7 @@ export default function TraceScreen() {
                 />
             ) : (
                 <FlatList
-                    data={tableData[activeTab] || []}
+                    data={filteredData}
                     keyExtractor={(item, index) => item.id || `item-${index}`}
                     contentContainerStyle={styles.listContent}
                     renderItem={renderItem}
@@ -315,6 +336,7 @@ export default function TraceScreen() {
                     }
                 />
             )}
+
 
         </View>
     );

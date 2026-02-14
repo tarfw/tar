@@ -14,6 +14,92 @@ import { syncDb } from '../../lib/db';
 
 const { width } = Dimensions.get('window');
 
+const MemoryListItem = React.memo(({ item, memory, setMemory, setIsFilterModalVisible, colors }: any) => {
+    const isActive = memory === item.id;
+    const isNodes = item.id === 'nodes';
+
+    const handleSubSelect = (type: string) => {
+        setMemory(`nodes:${type}`);
+        setIsFilterModalVisible(false);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    };
+
+    return (
+        <View>
+            <TouchableOpacity
+                style={[
+                    styles.memoryListItem,
+                    { borderBottomColor: colors.border },
+                ]}
+                onPress={() => {
+                    setMemory(item.id);
+                    setIsFilterModalVisible(false);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                activeOpacity={0.6}
+            >
+                <MaterialCommunityIcons
+                    name={item.icon as any}
+                    size={22}
+                    color={isActive || (isNodes && memory.startsWith('nodes:')) ? colors.accent : colors.secondaryText}
+                    style={{ marginRight: 14 }}
+                />
+                <Text style={[
+                    styles.memoryListItemText,
+                    { color: colors.text },
+                    (isActive || (isNodes && memory.startsWith('nodes:'))) && { color: colors.accent, fontWeight: '700' }
+                ]}>
+                    {item.name}
+                </Text>
+
+                {isActive && !isNodes && (
+                    <MaterialCommunityIcons
+                        name="check"
+                        size={20}
+                        color={colors.accent}
+                        style={{ marginLeft: 'auto' }}
+                    />
+                )}
+            </TouchableOpacity>
+
+            {isNodes && (
+                <View style={{ paddingLeft: 36 }}>
+                    {['Products', 'Collections', 'Options', 'Groups'].map((subItem) => {
+                        const subId = `nodes:${subItem}`;
+                        const isSubActive = memory === subId;
+                        return (
+                            <TouchableOpacity
+                                key={subItem}
+                                style={[
+                                    styles.memoryListItem,
+                                    { borderBottomColor: colors.border, paddingVertical: 12 }
+                                ]}
+                                onPress={() => handleSubSelect(subItem)}
+                            >
+                                <Text style={[
+                                    styles.memoryListItemText,
+                                    { fontSize: 15, color: colors.secondaryText },
+                                    isSubActive && { color: colors.accent, fontWeight: '600' }
+                                ]}>
+                                    {subItem}
+                                </Text>
+                                {isSubActive && (
+                                    <MaterialCommunityIcons
+                                        name="check"
+                                        size={18}
+                                        color={colors.accent}
+                                        style={{ marginLeft: 'auto' }}
+                                    />
+                                )}
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+            )}
+        </View>
+    );
+});
+
 function CustomTabBar({ state, descriptors, navigation }: any) {
     const { memory, setMemory } = useMemoryStore();
     const router = useRouter();
@@ -23,60 +109,49 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
     const activeTable = TABLES.find(t => t.id === memory);
 
+    const renderMemoryItem = React.useCallback(({ item }: { item: any }) => (
+        <MemoryListItem
+            item={item}
+            memory={memory}
+            setMemory={setMemory}
+            setIsFilterModalVisible={setIsFilterModalVisible}
+            colors={colors}
+        />
+    ), [memory, setMemory, setIsFilterModalVisible, colors]);
+
+    const formattedMemory = React.useMemo(() => {
+        if (!memory) return 'Memory';
+        if (memory.includes(':')) {
+            const [, type] = memory.split(':');
+            return type;
+        }
+        return memory.charAt(0).toUpperCase() + memory.slice(1);
+    }, [memory]);
+
     return (
         <View style={styles.tabBarContainer}>
             <View style={styles.leftWrapper}>
                 <BlurView
                     intensity={90}
                     tint={colorScheme === 'dark' ? 'dark' : 'light'}
-                    style={[styles.tabBarInner, { backgroundColor: colors.tabBarBackground, borderColor: colors.border }]}
+                    style={[styles.tabBarInner, { backgroundColor: colors.tabBarBackground, borderColor: colors.border, width: 'auto', minWidth: 100, paddingHorizontal: 20 }]}
                 >
-                    {state.routes
-                        .filter((route: any) => route.name !== 'relay')
-                        .map((route: any, index: number) => {
-                            const isFocused = state.index === index;
-
-                            const onPress = () => {
-                                if (route.name === 'index' && isFocused) {
-                                    setIsFilterModalVisible(true);
-                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                                    return;
-                                }
-
-                                const event = navigation.emit({
-                                    type: 'tabPress',
-                                    target: route.key,
-                                    canPreventDefault: true,
-                                });
-
-                                if (!isFocused && !event.defaultPrevented) {
-                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                    navigation.navigate(route.name);
-                                }
-                            };
-
-                            let iconName: any;
-                            if (route.name === 'index') {
-                                iconName = activeTable?.icon || 'clock-outline';
-                            } else {
-                                iconName = 'view-grid-outline';
-                            }
-
-                            return (
-                                <TouchableOpacity
-                                    key={route.name}
-                                    onPress={onPress}
-                                    style={styles.tabItem}
-                                    activeOpacity={0.7}
-                                >
-                                    <MaterialCommunityIcons
-                                        name={iconName as any}
-                                        size={28}
-                                        color={isFocused ? colors.accent : (colorScheme === 'dark' ? '#5E5E62' : '#8E8E93')}
-                                    />
-                                </TouchableOpacity>
-                            );
-                        })}
+                    <TouchableOpacity
+                        onPress={() => {
+                            setIsFilterModalVisible(true);
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        }}
+                        style={styles.tabItem}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={{
+                            fontSize: 16,
+                            fontWeight: '600',
+                            color: colors.text
+                        }}>
+                            {formattedMemory}
+                        </Text>
+                    </TouchableOpacity>
                 </BlurView>
             </View>
 
@@ -105,45 +180,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                             data={TABLES}
                             keyExtractor={(item) => item.id}
                             contentContainerStyle={styles.modalListContent}
-                            renderItem={({ item }) => {
-                                const isActive = memory === item.id;
-                                return (
-                                    <TouchableOpacity
-                                        style={[
-                                            styles.memoryListItem,
-                                            { borderBottomColor: colors.border },
-                                        ]}
-                                        onPress={() => {
-                                            setMemory(item.id);
-                                            setIsFilterModalVisible(false);
-                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        }}
-                                        activeOpacity={0.6}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name={item.icon as any}
-                                            size={22}
-                                            color={isActive ? colors.accent : colors.secondaryText}
-                                            style={{ marginRight: 14 }}
-                                        />
-                                        <Text style={[
-                                            styles.memoryListItemText,
-                                            { color: colors.text },
-                                            isActive && { color: colors.accent, fontWeight: '700' }
-                                        ]}>
-                                            {item.name}
-                                        </Text>
-                                        {isActive && (
-                                            <MaterialCommunityIcons
-                                                name="check"
-                                                size={20}
-                                                color={colors.accent}
-                                                style={{ marginLeft: 'auto' }}
-                                            />
-                                        )}
-                                    </TouchableOpacity>
-                                );
-                            }}
+                            renderItem={renderMemoryItem}
                         />
                     </SafeAreaView>
                 </View>
@@ -153,8 +190,28 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 <BlurView
                     intensity={90}
                     tint={colorScheme === 'dark' ? 'dark' : 'light'}
-                    style={[styles.rightContainer, { backgroundColor: colors.tabBarBackground, borderColor: colors.border }]}
+                    style={[
+                        styles.rightContainer,
+                        { backgroundColor: colors.tabBarBackground, borderColor: colors.border },
+                        (memory === 'nodes:Products' || memory === 'nodes:Collections') && { width: 140 }
+                    ]}
                 >
+                    {(memory === 'nodes:Products' || memory === 'nodes:Collections') && (
+                        <TouchableOpacity
+                            style={[styles.actionItem, { marginRight: 8 }]}
+                            onPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                const type = memory.split(':')[1];
+                                router.push({ pathname: '/add-node', params: { type } });
+                            }}
+                            activeOpacity={0.7}
+                        >
+                            <View style={[styles.aiButtonBadge, { backgroundColor: colors.accent }]}>
+                                <Text style={styles.aiButtonText}>AI</Text>
+                            </View>
+                        </TouchableOpacity>
+                    )}
+
                     <TouchableOpacity
                         style={[styles.actionItem, styles.addButton, { backgroundColor: colors.accent }]}
                         onPress={() => {
@@ -404,5 +461,17 @@ const styles = StyleSheet.create({
     memoryListItemText: {
         fontSize: 17,
         fontWeight: '500',
+    },
+    aiButtonBadge: {
+        width: 50,
+        height: 50,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 25,
+    },
+    aiButtonText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 16,
     },
 });

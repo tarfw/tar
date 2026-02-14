@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -24,10 +24,15 @@ type EntryMode = 'form' | 'ai';
 
 export default function AddNodeScreen() {
     const router = useRouter();
+    const params = useLocalSearchParams();
+    const initialType = typeof params.type === 'string' ? params.type : 'Products';
+
+    // Check if type is fixed from navigation params
+    const isTypeFixed = typeof params.type === 'string';
 
     // Core node fields
     const [title, setTitle] = useState('');
-    const [nodeType, setNodeType] = useState('Products');
+    const [nodeType, setNodeType] = useState(initialType);
     const [universalCode, setUniversalCode] = useState('');
     const [isSaving, setIsSaving] = useState(false);
 
@@ -49,16 +54,13 @@ export default function AddNodeScreen() {
     const [optionsRaw, setOptionsRaw] = useState('');
 
     // Collections form fields
-    const [collectionName, setCollectionName] = useState('');
     const [collectionDescription, setCollectionDescription] = useState('');
     const [collectionTags, setCollectionTags] = useState('');
 
     // Options form fields
-    const [optionName, setOptionName] = useState('');
     const [optionValues, setOptionValues] = useState('');
 
     // Group form fields
-    const [groupName, setGroupName] = useState('');
     const [groupDescription, setGroupDescription] = useState('');
     const [groupMembers, setGroupMembers] = useState('');
 
@@ -232,28 +234,48 @@ export default function AddNodeScreen() {
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                     <MaterialCommunityIcons name="arrow-left" size={24} color="#000" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Add Node</Text>
+                <Text style={styles.headerTitle}>Add {isTypeFixed ? nodeType.slice(0, -1) : 'Node'}</Text>
                 <View style={{ width: 40 }} />
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
                 {/* Core fields */}
-                {renderFormField('Title', title, setTitle, 'e.g. Smart LED Bulb')}
+                {renderFormField(
+                    nodeType === 'Collections' ? 'Collection Name' :
+                        nodeType === 'Options' ? 'Option Name' :
+                            nodeType === 'Group' ? 'Group Name' : 'Title',
+                    title,
+                    setTitle,
+                    nodeType === 'Collections' ? 'e.g. Summer Sale' :
+                        nodeType === 'Options' ? 'e.g. Size, Color' :
+                            nodeType === 'Group' ? 'e.g. Electronics Bundle' : 'e.g. Smart LED Bulb'
+                )}
 
                 <View style={styles.field}>
                     <Text style={styles.fieldLabel}>Node Type</Text>
                     <View style={styles.typeContainer}>
-                        {['Products', 'Collections', 'Options', 'Group'].map((type) => (
+                        {isTypeFixed ? (
                             <TouchableOpacity
-                                key={type}
-                                style={[styles.typeBtn, nodeType === type && styles.typeBtnActive]}
-                                onPress={() => setNodeType(type)}
+                                style={[styles.typeBtn, styles.typeBtnActive, { flex: 0, paddingHorizontal: 24 }]}
+                                disabled={true}
                             >
-                                <Text style={[styles.typeBtnText, nodeType === type && styles.typeBtnTextActive]}>
-                                    {type}
+                                <Text style={[styles.typeBtnText, styles.typeBtnTextActive]}>
+                                    {nodeType}
                                 </Text>
                             </TouchableOpacity>
-                        ))}
+                        ) : (
+                            ['Products', 'Collections', 'Options', 'Group'].map((type) => (
+                                <TouchableOpacity
+                                    key={type}
+                                    style={[styles.typeBtn, nodeType === type && styles.typeBtnActive]}
+                                    onPress={() => setNodeType(type)}
+                                >
+                                    <Text style={[styles.typeBtnText, nodeType === type && styles.typeBtnTextActive]}>
+                                        {type}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))
+                        )}
                     </View>
                 </View>
 
@@ -400,7 +422,6 @@ export default function AddNodeScreen() {
                         {nodeType === 'Collections' && (
                             <>
                                 <Text style={styles.sectionLabel}>Collection Details</Text>
-                                {renderFormField('Collection Name', collectionName, setCollectionName, 'e.g. Summer Sale')}
                                 {renderFormField('Description', collectionDescription, setCollectionDescription, 'Describe this collection...', true)}
                                 {renderFormField('Tags', collectionTags, setCollectionTags, 'tag1, tag2, tag3')}
                             </>
@@ -409,7 +430,6 @@ export default function AddNodeScreen() {
                         {nodeType === 'Options' && (
                             <>
                                 <Text style={styles.sectionLabel}>Option Details</Text>
-                                {renderFormField('Option Name', optionName, setOptionName, 'e.g. Size, Color, Material')}
                                 {renderFormField('Option Values', optionValues, setOptionValues, 'e.g. Small, Medium, Large', true)}
                             </>
                         )}
@@ -417,7 +437,6 @@ export default function AddNodeScreen() {
                         {nodeType === 'Group' && (
                             <>
                                 <Text style={styles.sectionLabel}>Group Details</Text>
-                                {renderFormField('Group Name', groupName, setGroupName, 'e.g. Electronics Bundle')}
                                 {renderFormField('Description', groupDescription, setGroupDescription, 'Describe this group...', true)}
                                 {renderFormField('Members / Items', groupMembers, setGroupMembers, 'List items in this group...', true)}
                             </>

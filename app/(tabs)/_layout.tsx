@@ -64,7 +64,7 @@ const MemoryListItem = React.memo(({ item, memory, setMemory, setIsFilterModalVi
 
             {isNodes && (
                 <View style={{ paddingLeft: 36 }}>
-                    {['Products', 'Collections'].map((subItem) => {
+                    {['Products', 'Collections', 'Posts'].map((subItem) => {
                         const subId = `nodes:${subItem}`;
                         const isSubActive = memory === subId;
                         return (
@@ -193,12 +193,11 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                     style={[
                         styles.rightContainer,
                         { backgroundColor: colors.tabBarBackground, borderColor: colors.border },
-                        (memory === 'nodes:Products' || memory === 'nodes:Collections') && { width: 140 }
                     ]}
                 >
-                    {(memory === 'nodes:Products' || memory === 'nodes:Collections') && (
+                    {(memory === 'nodes:Products' || memory === 'nodes:Collections' || memory === 'nodes:Posts') && (
                         <TouchableOpacity
-                            style={[styles.actionItem, { marginRight: 8 }]}
+                            style={styles.actionItem}
                             onPress={() => {
                                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                 const type = memory.split(':')[1];
@@ -211,17 +210,6 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                             </View>
                         </TouchableOpacity>
                     )}
-
-                    <TouchableOpacity
-                        style={[styles.actionItem, styles.addButton, { backgroundColor: colors.accent }]}
-                        onPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            router.push('/memory');
-                        }}
-                        activeOpacity={0.7}
-                    >
-                        <MaterialCommunityIcons name="plus" size={28} color="#fff" />
-                    </TouchableOpacity>
                 </BlurView>
             </View>
         </View>

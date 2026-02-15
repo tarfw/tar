@@ -162,7 +162,7 @@ export default function TraceScreen() {
                 title = item.title;
                 // If filtering by specific type (and not searching), hide the redundant type label
                 subtitle = (filter && !searchResults) ? '' : (item.nodetype || item.subtitle);
-                typeIcon = 'database';
+                typeIcon = (item.nodetype === 'Post' || item.nodetype === 'Posts') ? 'file-document-outline' : 'database';
                 break;
             case 'orevents':
                 const date = new Date(item.ts);
@@ -247,12 +247,18 @@ export default function TraceScreen() {
         }
 
         const isProduct = itemType === 'nodes' && (item.nodetype === 'Product' || item.nodetype === 'Products');
+        const isPost = itemType === 'nodes' && (item.nodetype === 'Post' || item.nodetype === 'Posts');
+
         const priceStr = payloadData?.price?.amount != null
             ? `${payloadData.price.currency || '$'}${payloadData.price.amount}`
             : null;
         const brandStr = payloadData?.brand || null;
         const categoryStr = payloadData?.categorization?.category || null;
         const isInStock = payloadData?.availability?.toLowerCase().includes('stock');
+
+        // Post-specific data
+        const postContent = payloadData?.content || null;
+        const postTags = payloadData?.tags || null;
 
         return (
             <TouchableOpacity
@@ -284,6 +290,21 @@ export default function TraceScreen() {
                                 <View style={[styles.stockDot, { backgroundColor: isInStock ? '#22C55E' : '#F59E0B' }]} />
                             )}
                         </View>
+                    ) : isPost && (postContent || postTags) ? (
+                        <View style={{ marginTop: 4 }}>
+                            {postContent && (
+                                <Text style={[styles.itemSubtitle, { color: colors.secondaryText }]} numberOfLines={2}>
+                                    {postContent}
+                                </Text>
+                            )}
+                            {postTags && postTags.length > 0 && (
+                                <View style={{ flexDirection: 'row', marginTop: 4, gap: 4 }}>
+                                    {postTags.map((tag: string, i: number) => (
+                                        <Text key={i} style={[styles.metaTag, { color: colors.accent, fontSize: 11 }]}>#{tag}</Text>
+                                    ))}
+                                </View>
+                            )}
+                        </View>
                     ) : subtitle ? (
                         <Text style={[styles.itemSubtitle, { color: colors.secondaryText }]}>{subtitle}</Text>
                     ) : null}
@@ -305,6 +326,7 @@ export default function TraceScreen() {
                 // Handle "Products" vs "Product" (singular/plural)
                 if (filter === 'Products') return type === 'Product' || type === 'Products';
                 if (filter === 'Collections') return type === 'Collection' || type === 'Collections';
+                if (filter === 'Posts') return type === 'Post' || type === 'Posts';
                 return type === filter;
             });
         }

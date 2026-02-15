@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
+import { useColorScheme } from 'nativewind';
 import { useEffect } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import "../global.css";
@@ -11,6 +13,7 @@ const queryClient = new QueryClient();
 
 export default function RootLayout() {
     useIndexingService(); // Runs in background when model is ready
+    const { setColorScheme } = useColorScheme();
 
     useEffect(() => {
         const initDb = async () => {
@@ -24,7 +27,20 @@ export default function RootLayout() {
             }
         };
 
+        const checkDefaultTheme = async () => {
+            try {
+                const hasSetDefaultTheme = await SecureStore.getItemAsync('hasSetDefaultTheme');
+                if (!hasSetDefaultTheme) {
+                    setColorScheme('light');
+                    await SecureStore.setItemAsync('hasSetDefaultTheme', 'true');
+                }
+            } catch (error) {
+                console.error('Failed to set default theme:', error);
+            }
+        };
+
         initDb();
+        checkDefaultTheme();
     }, []);
 
     return (
@@ -57,7 +73,7 @@ export default function RootLayout() {
                             }}
                         />
                     </Stack>
-                    <StatusBar style="dark" />
+                    <StatusBar style="auto" />
                 </SafeAreaView>
             </QueryClientProvider>
         </SafeAreaProvider>

@@ -63,6 +63,8 @@ export default function AddNodeScreen() {
     const [optionsRaw, setOptionsRaw] = useState('');
     const [collectionDescription, setCollectionDescription] = useState('');
     const [collectionTags, setCollectionTags] = useState('');
+    const [postContent, setPostContent] = useState('');
+    const [postTags, setPostTags] = useState('');
 
     // Inline editing
     const [editingField, setEditingField] = useState<string | null>(null);
@@ -97,6 +99,12 @@ export default function AddNodeScreen() {
             }).start();
         }
     }, [generatedPayload]);
+
+    useEffect(() => {
+        if (nodeType !== 'Products' && !generatedPayload) {
+            setShowFullForm(true);
+        }
+    }, [nodeType, generatedPayload]);
 
     // ─── Populate from payload ───
     const populateFormFromPayload = (p: ProductPayload) => {
@@ -222,6 +230,19 @@ export default function AddNodeScreen() {
         }
         if (delivery.trim()) payload.delivery = delivery.trim();
         if (returnPolicy.trim()) payload.return_policy = returnPolicy.trim();
+
+        // Collection-specific
+        if (nodeType === 'Collections') {
+            if (collectionDescription.trim()) payload.description = collectionDescription.trim();
+            if (collectionTags.trim()) payload.tags = collectionTags.split(',').map(t => t.trim()).filter(Boolean);
+        }
+
+        // Post-specific
+        if (nodeType === 'Posts') {
+            if (postContent.trim()) payload.content = postContent.trim();
+            if (postTags.trim()) payload.tags = postTags.split(',').map(t => t.trim()).filter(Boolean);
+        }
+
         return JSON.stringify(payload);
     };
 
@@ -296,7 +317,7 @@ export default function AddNodeScreen() {
                 {/* Node type pills (right side) */}
                 {!isTypeFixed && (
                     <View style={s.typePills}>
-                        {['Products', 'Collections'].map((type) => (
+                        {['Products', 'Collections', 'Posts'].map((type) => (
                             <TouchableOpacity
                                 key={type}
                                 style={[s.pill, nodeType === type && s.pillActive]}
@@ -310,7 +331,8 @@ export default function AddNodeScreen() {
                     </View>
                 )}
 
-                {generatedPayload && (
+                {/* Save button — always visible for non-Products, or when generatedPayload exists for Products */}
+                {(generatedPayload || nodeType !== 'Products') && (
                     <TouchableOpacity
                         style={[s.saveTopBtn, isSaving && { opacity: 0.5 }]}
                         onPress={handleSave}
@@ -341,22 +363,71 @@ export default function AddNodeScreen() {
                 />
 
                 {/* ─── Universal Code (inline) ─── */}
-                {(editedCode || generatedPayload) ? (
-                    <TouchableOpacity
-                        style={s.codeInline}
-                        onPress={() => startInlineEdit('universal_code', editedCode)}
-                        activeOpacity={0.6}
-                    >
-                        <MaterialCommunityIcons name="barcode-scan" size={14} color="#7C3AED" />
-                        <Text style={s.codeInlineText}>{editedCode || 'Set code'}</Text>
-                    </TouchableOpacity>
-                ) : null}
+                <View style={s.codeInline}>
+                    <MaterialCommunityIcons name="barcode-scan" size={14} color="#7C3AED" />
+                    <TextInput
+                        style={s.codeInlineInput}
+                        placeholder="Set code (e.g. PST-001)"
+                        placeholderTextColor="#C4B5FD"
+                        value={editedCode}
+                        onChangeText={setEditedCode}
+                    />
+                </View>
 
                 {/* ─── Divider ─── */}
                 <View style={s.divider} />
 
-                {/* ─── AI Input (before generation) ─── */}
-                {!generatedPayload && (
+                {/* ─── POSTS / COLLECTIONS: Direct Form ─── */}
+                {nodeType === 'Posts' && (
+                    <View style={s.directForm}>
+                        <TextInput
+                            style={s.postContentInput}
+                            placeholder="Write your post content here..."
+                            placeholderTextColor="#CBD5E1"
+                            value={postContent}
+                            onChangeText={setPostContent}
+                            multiline
+                            textAlignVertical="top"
+                        />
+                        <View style={s.directFormField}>
+                            <MaterialCommunityIcons name="tag-multiple-outline" size={16} color="#9CA3AF" style={{ marginRight: 8, marginTop: 2 }} />
+                            <TextInput
+                                style={s.directFormInput}
+                                placeholder="Add tags (comma separated)"
+                                placeholderTextColor="#CBD5E1"
+                                value={postTags}
+                                onChangeText={setPostTags}
+                            />
+                        </View>
+                    </View>
+                )}
+
+                {nodeType === 'Collections' && (
+                    <View style={s.directForm}>
+                        <TextInput
+                            style={s.postContentInput}
+                            placeholder="Describe this collection..."
+                            placeholderTextColor="#CBD5E1"
+                            value={collectionDescription}
+                            onChangeText={setCollectionDescription}
+                            multiline
+                            textAlignVertical="top"
+                        />
+                        <View style={s.directFormField}>
+                            <MaterialCommunityIcons name="tag-multiple-outline" size={16} color="#9CA3AF" style={{ marginRight: 8, marginTop: 2 }} />
+                            <TextInput
+                                style={s.directFormInput}
+                                placeholder="Add tags (comma separated)"
+                                placeholderTextColor="#CBD5E1"
+                                value={collectionTags}
+                                onChangeText={setCollectionTags}
+                            />
+                        </View>
+                    </View>
+                )}
+
+                {/* ─── PRODUCTS: AI Input (before generation) ─── */}
+                {!generatedPayload && nodeType === 'Products' && (
                     <View style={s.aiSection}>
                         <TextInput
                             style={s.aiInput}
@@ -405,8 +476,8 @@ export default function AddNodeScreen() {
                     </View>
                 )}
 
-                {/* ─── Generated Data (Notion property list) ─── */}
-                {generatedPayload && (
+                {/* ─── Generated Data (Notion property list) — Products only ─── */}
+                {generatedPayload && nodeType === 'Products' && (
                     <Animated.View style={[s.propertiesSection, {
                         opacity: previewFadeAnim,
                         transform: [{ translateY: previewFadeAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }]
@@ -527,33 +598,22 @@ export default function AddNodeScreen() {
                             <View style={s.fullForm}>
                                 {renderFormField('Title', editedTitle, setEditedTitle, 'Product title')}
                                 {renderFormField('Universal Code', editedCode, setEditedCode, 'PRD-XXX-001')}
-                                {nodeType === 'Products' && (
-                                    <>
-                                        {renderFormField('Brand', brand, setBrand, 'e.g. Nike')}
-                                        {renderFormField('Description', description, setDescription, 'Product description...', true)}
-                                        <View style={s.fieldRow}>
-                                            <View style={{ flex: 2 }}>{renderFormField('Price', priceAmount, setPriceAmount, '49.99')}</View>
-                                            <View style={{ flex: 1 }}>{renderFormField('Currency', priceCurrency, setPriceCurrency, 'USD')}</View>
-                                        </View>
-                                        {renderFormField('Range', priceRange, setPriceRange, 'e.g. $40 - $60')}
-                                        {renderFormField('GTIN', gtin, setGtin, 'EAN / UPC barcode')}
-                                        {renderFormField('MPN', mpn, setMpn, 'Manufacturer Part Number')}
-                                        {renderFormField('Category', category, setCategory, 'e.g. Electronics')}
-                                        {renderFormField('Subcategory', subcategory, setSubcategory, 'e.g. Smart Lighting')}
-                                        {renderFormField('Tags', tags, setTags, 'tag1, tag2, tag3')}
-                                        {renderFormField('Options', optionsRaw, setOptionsRaw, 'Size: S, M, L | Color: Red, Blue', true)}
-                                        {renderFormField('Specifications', specsRaw, setSpecsRaw, 'Weight: 1.2kg, Material: Glass', true)}
-                                        {renderFormField('Delivery', delivery, setDelivery, 'Ships in 2-3 business days')}
-                                        {renderFormField('Return Policy', returnPolicy, setReturnPolicy, '30 days easy return')}
-                                    </>
-                                )}
-                                {nodeType === 'Collections' && (
-                                    <>
-                                        {renderFormField('Description', collectionDescription, setCollectionDescription, 'Describe...', true)}
-                                        {renderFormField('Tags', collectionTags, setCollectionTags, 'tag1, tag2')}
-                                    </>
-                                )}
-
+                                {renderFormField('Brand', brand, setBrand, 'e.g. Nike')}
+                                {renderFormField('Description', description, setDescription, 'Product description...', true)}
+                                <View style={s.fieldRow}>
+                                    <View style={{ flex: 2 }}>{renderFormField('Price', priceAmount, setPriceAmount, '49.99')}</View>
+                                    <View style={{ flex: 1 }}>{renderFormField('Currency', priceCurrency, setPriceCurrency, 'USD')}</View>
+                                </View>
+                                {renderFormField('Range', priceRange, setPriceRange, 'e.g. $40 - $60')}
+                                {renderFormField('GTIN', gtin, setGtin, 'EAN / UPC barcode')}
+                                {renderFormField('MPN', mpn, setMpn, 'Manufacturer Part Number')}
+                                {renderFormField('Category', category, setCategory, 'e.g. Electronics')}
+                                {renderFormField('Subcategory', subcategory, setSubcategory, 'e.g. Smart Lighting')}
+                                {renderFormField('Tags', tags, setTags, 'tag1, tag2, tag3')}
+                                {renderFormField('Options', optionsRaw, setOptionsRaw, 'Size: S, M, L | Color: Red, Blue', true)}
+                                {renderFormField('Specifications', specsRaw, setSpecsRaw, 'Weight: 1.2kg, Material: Glass', true)}
+                                {renderFormField('Delivery', delivery, setDelivery, 'Ships in 2-3 business days')}
+                                {renderFormField('Return Policy', returnPolicy, setReturnPolicy, '30 days easy return')}
                             </View>
                         )}
                     </Animated.View>
@@ -667,6 +727,39 @@ const s = StyleSheet.create({
         fontWeight: '500',
         color: '#7C3AED',
         letterSpacing: 0.5,
+    },
+    codeInlineInput: {
+        flex: 1,
+        fontSize: 13,
+        fontWeight: '500',
+        color: '#7C3AED',
+        letterSpacing: 0.5,
+        paddingVertical: 0,
+    },
+
+    // ── Direct Form (Posts / Collections) ──
+    directForm: {
+        gap: 16,
+    },
+    postContentInput: {
+        fontSize: 16,
+        color: '#374151',
+        lineHeight: 24,
+        minHeight: 200,
+        paddingVertical: 0,
+    },
+    directFormField: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        borderTopWidth: 1,
+        borderTopColor: '#F3F4F6',
+        paddingTop: 12,
+    },
+    directFormInput: {
+        flex: 1,
+        fontSize: 14,
+        color: '#374151',
+        paddingVertical: 0,
     },
 
     // ── Divider ──

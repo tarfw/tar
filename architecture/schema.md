@@ -1,276 +1,128 @@
 # The Universal Schema
 
-4 tables per tenant. 2 tables global. Zero bloat.
+Unified architecture across Public and Private instances.
+
+- **Public DB:** `nodes`, `points`
+- **Private DB:** `nodes`, `points`, `events`
 
 ---
 
-## Part A: Private Tenant DB
+## 1. Table Relationships
 
-Every tenant receives their own isolated SQLite file (`/tenants/{id}.db`).
-Only `published` nodes sync to the Public DB for global discovery.
+| From     | To       | Relationship                                    |
+| :------- | :------- | :---------------------------------------------- |
+| `nodes`  | `points` | A node has many points (stock, price, location) |
+| `nodes`  | `events` | A node undergoes many events (private DB only)  |
+| `points` | `events` | An event can reference a specific point         |
 
 ---
 
-### 1. Entity Relationship Diagram
+## 2. Table: `nodes`
 
-```mermaid
-erDiagram
-    nodes ||--o{ events : "undergoes events"
-    actors ||--o{ events : "performs"
-    nodes ||--o{ points : "has dynamic states"
-    actors ||--o{ points : "has live state"
+Present in both **Public** and **Private** DB.
+Permanent entities: products, collections, services, users, actors, locations.
 
-    nodes {
-        TEXT id PK
-        TEXT parentid
-        TEXT nodetype
-        TEXT universalcode
-        TEXT title
-        TEXT status
-        TEXT payload
-        F32_BLOB embedding
-        TEXT createdat
-        TEXT updatedat
-    }
-
-    actors {
-        TEXT id PK
-        TEXT parentid
-        TEXT actortype
-        TEXT globalcode
-        TEXT name
-        TEXT payload
-        F32_BLOB embedding
-        TEXT pushtoken
-        TEXT createdat
-        TEXT updatedat
-    }
-
-    events {
-        TEXT id PK
-        TEXT streamid NOT NULL
-        INTEGER opcode NOT NULL
-        TEXT targetid NOT NULL
-        REAL lat
-        REAL lng
-        REAL delta
-        TEXT payload
-        TEXT ts NOT NULL
-    }
-
-    points {
-        TEXT nodeid PK
-        TEXT subid PK
-        REAL lat
-        REAL lng
-        REAL val
-        TEXT payload
-        TEXT createdat
-        TEXT updatedat
-    }
+```sql
+CREATE TABLE nodes (
+  id TEXT PRIMARY KEY,
+  workspaceId TEXT,
+  parentId TEXT,
+  nodeType TEXT,
+  title TEXT,
+  embedding BLOB,
+  createdAt TEXT,
+  payload TEXT
+);
 ```
 
-### Relationship Summary
-
-| From     | To       | Relationship                  |
-| :------- | :------- | :---------------------------- |
-| `nodes`  | `events` | A node undergoes many events  |
-| `actors` | `events` | An actor performs many events |
-| `nodes`  | `points` | A node has dynamic sub-states |
-| `actors` | `points` | An actor has live state       |
-
----
-
-### 2. Table: `nodes`
-
-Permanent entities: products, variants, orders, collections, services, rentals, stores.
-
-**Schema:**
-
-| Column          | Type | Key | Description                                         |
-| :-------------- | :--- | :-- | :-------------------------------------------------- |
-| `id`            | TEXT | PK  | Unique ID, e.g. `prod-123`, `ord-456`               |
-| `parentid`      | TEXT | FK  | Hierarchical links (e.g. variants to products)      |
-| `nodetype`      | TEXT |     | Categorization: `product`, `variant`, `order`       |
-| `universalcode` | TEXT |     | Barcode / QR code identifier                        |
-| `title`         | TEXT |     | Human-readable name                                 |
-| `status`        | TEXT |     | Visibility: `published`, `draft`, `archived`        |
-| `payload`       | TEXT |     | JSON for all dynamic attributes (price, desc, etc.) |
-| `embedding`     | F32  |     | 384-dim vector for semantic search                  |
-| `createdat`     | TEXT |     | ISO 8601 creation timestamp                         |
-| `updatedat`     | TEXT |     | ISO 8601 last update timestamp                      |
-
-**Example Data:**
-
-| id          | parentid   | nodetype | title              | status    | payload                                              | createdat            |
-| :---------- | :--------- | :------- | :----------------- | :-------- | :--------------------------------------------------- | :------------------- |
-| `prod-001`  | `null`     | product  | Classic Book       | published | `{"price": 12.99, "author": "John Doe"}`             | 2026-02-20T10:00:00Z |
-| `prod-002`  | `null`     | product  | Basic T-Shirt      | published | `{"brand": "Tar", "desc": "100% Cotton"}`            | 2026-02-20T11:00:00Z |
-| `var-ts-sm` | `prod-002` | variant  | Small Blue T-Shirt | published | `{"size": "Small", "color": "Blue", "price": 19.99}` | 2026-02-20T11:05:00Z |
-| `var-ts-lg` | `prod-002` | variant  | Large Red T-Shirt  | draft     | `{"size": "Large", "color": "Red", "price": 21.99}`  | 2026-02-20T11:05:00Z |
-| `ord-789`   | `null`     | order    | Table 4 Order      | draft     | `{"notes": "No onions", "total": 32.98}`             | 2026-02-20T14:35:00Z |
-| `srv-11`    | `null`     | service  | Pipe Repair        | published | `{"price": 150, "durationmins": 60}`                 | 2026-02-20T09:00:00Z |
-| `prop-09`   | `null`     | rental   | Downtown Loft      | published | `{"pricepernight": 200, "bedrooms": 2}`              | 2026-02-20T09:30:00Z |
+| Column        | Type | Key | Description                            |
+| :------------ | :--- | :-- | :------------------------------------- |
+| `id`          | TEXT | PK  | Unique ID                              |
+| `workspaceId` | TEXT |     | Workspace (tenant) identifier          |
+| `parentId`    | TEXT |     | Hierarchical links                     |
+| `nodeType`    | TEXT |     | Categorization type                    |
+| `title`       | TEXT |     | Human-readable name                    |
+| `embedding`   | BLOB |     | Vector embedding for semantic search   |
+| `createdAt`   | TEXT |     | Creation timestamp                     |
+| `payload`     | TEXT |     | JSON for all dynamic/custom attributes |
 
 ---
 
-### 3. Table: `actors`
+## 3. Table: `points`
 
-People and systems interacting with the tenant database.
+Present in both **Public** and **Private** DB.
+Dynamic state cache. Handles stock, pricing, live GPS, availability, etc.
 
-**Schema:**
+```sql
+CREATE TABLE points (
+  id TEXT PRIMARY KEY,
+  nodeId TEXT,
+  workspaceId TEXT,
+  qty INTEGER,
+  price REAL,
+  currency TEXT,
+  availability TEXT,
+  locationText TEXT,
+  lat REAL,
+  lng REAL,
+  openNow BOOLEAN,
+  validFrom TEXT,
+  validTo TEXT,
+  payload TEXT
+);
+```
 
-| Column       | Type | Key | Description                                      |
-| :----------- | :--- | :-- | :----------------------------------------------- |
-| `id`         | TEXT | PK  | Unique ID, e.g. `John`, `System`                 |
-| `parentid`   | TEXT | FK  | Group or hierarchy association                   |
-| `actortype`  | TEXT |     | Determines behavior: `merchant`, `driver`, `bot` |
-| `globalcode` | TEXT |     | Universal cross-tenant identifier                |
-| `name`       | TEXT |     | Human-readable name                              |
-| `payload`    | TEXT |     | JSON (preferences, stats, overrides)             |
-| `embedding`  | F32  |     | 384-dim vector for semantic search               |
-| `pushtoken`  | TEXT |     | Expo Push Token for mobile alerts                |
-| `createdat`  | TEXT |     | ISO 8601 creation timestamp                      |
-| `updatedat`  | TEXT |     | ISO 8601 last update timestamp                   |
-
-**Example Data:**
-
-| id            | parentid   | actortype | name            | pushtoken         | createdat            |
-| :------------ | :--------- | :-------- | :-------------- | :---------------- | :------------------- |
-| `John`        | `null`     | merchant  | John Doe        | `ExponentPush...` | 2026-02-01T10:00:00Z |
-| `Driver-Mike` | `fleet-01` | driver    | Michael         | `ExponentPush...` | 2026-02-15T08:30:00Z |
-| `System`      | `null`     | system    | Tar Bot         | `null`            | 2026-01-01T00:00:00Z |
-| `POS-Term-1`  | `null`     | terminal  | Front Desk iPad | `null`            | 2026-02-10T11:00:00Z |
-
----
-
-### 4. Table: `points`
-
-High-frequency dynamic state cache. Handles variant stock, live GPS, surge pricing, ratings — anything that updates rapidly without bloating the event ledger or reserializing JSON payloads.
-
-**Schema:**
-
-| Column      | Type | Key    | Description                                                  |
-| :---------- | :--- | :----- | :----------------------------------------------------------- |
-| `nodeid`    | TEXT | PK, FK | Master node/actor ID (e.g., `prod-002`, `Driver-Mike`)       |
-| `subid`     | TEXT | PK     | Sub-identifier (e.g., `var-sm`, `motion`, `surge`)           |
-| `lat`       | REAL |        | Live GPS latitude                                            |
-| `lng`       | REAL |        | Live GPS longitude                                           |
-| `val`       | REAL |        | Numeric value (stock count, price, surge multiplier, rating) |
-| `payload`   | TEXT |        | JSON for additional sub-state attributes                     |
-| `createdat` | TEXT |        | ISO 8601 creation timestamp                                  |
-| `updatedat` | TEXT |        | ISO 8601 last update timestamp (staleness check)             |
-
-**Example Data:**
-
-| nodeid        | subid    | lat     | lng     |    val | updatedat            | Scenario                        |
-| :------------ | :------- | :------ | :------ | -----: | :------------------- | :------------------------------ |
-| `prod-002`    | `var-sm` | `null`  | `null`  |    150 | 2026-02-20T14:35:00Z | Variant stock count             |
-| `prod-002`    | `var-lg` | `null`  | `null`  |     10 | 2026-02-20T14:35:00Z | Variant stock count             |
-| `Driver-Mike` | `motion` | 25.2048 | 55.2708 | `null` | 2026-02-20T14:45:00Z | Live GPS ping (overwriting)     |
-| `srv-11`      | `rating` | `null`  | `null`  |    4.8 | 2026-02-20T15:00:00Z | Live average rating             |
-| `prop-09`     | `avail`  | `null`  | `null`  |      1 | 2026-02-20T15:00:00Z | Availability (1=open, 0=booked) |
+| Column         | Type    | Key | Description                   |
+| :------------- | :------ | :-- | :---------------------------- |
+| `id`           | TEXT    | PK  | Unique ID                     |
+| `nodeId`       | TEXT    |     | Associated node ID            |
+| `workspaceId`  | TEXT    |     | Workspace (tenant) identifier |
+| `qty`          | INTEGER |     | Quantity / Stock count        |
+| `price`        | REAL    |     | Price value                   |
+| `currency`     | TEXT    |     | Currency code (e.g. USD)      |
+| `availability` | TEXT    |     | Availability summary          |
+| `locationText` | TEXT    |     | Human-readable location       |
+| `lat`          | REAL    |     | Live GPS latitude             |
+| `lng`          | REAL    |     | Live GPS longitude            |
+| `openNow`      | BOOLEAN |     | True if currently open/active |
+| `validFrom`    | TEXT    |     | Validity start timestamp      |
+| `validTo`      | TEXT    |     | Validity end timestamp        |
+| `payload`      | TEXT    |     | JSON for extra attributes     |
 
 ---
 
-### 5. Table: `events`
+## 4. Table: `events`
 
+Present in **Private DB** only.
 The universal event-sourced ledger. Immutable, append-only.
-_Note: Once an event set for a specific `streamid` is considered historically complete (e.g. an order is fulfilled and closed), it is purged from the hot SQLite database and archived to deep storage (S3/R2) to keep the tenant DB ultra-lean._
 
-**Schema:**
+```sql
+CREATE TABLE events (
+  id TEXT PRIMARY KEY,
+  streamId TEXT,
+  opcode INTEGER,
+  nodeId TEXT,
+  pointId TEXT,
+  delta REAL,
+  payload TEXT,
+  ts TIMESTAMPTZ
+);
+```
 
-| Column     | Type    | Key | Description                                          |
-| :--------- | :------ | :-- | :--------------------------------------------------- |
-| `id`       | TEXT    | PK  | Unique event ID                                      |
-| `streamid` | TEXT    | FK  | Which business stream this event belongs to          |
-| `opcode`   | INTEGER |     | Defines exactly what happened (see Opcode Map below) |
-| `targetid` | TEXT    | FK  | What entity this affected                            |
-| `lat`      | REAL    |     | Point-in-time GPS snapshot                           |
-| `lng`      | REAL    |     | Point-in-time GPS snapshot                           |
-| `delta`    | REAL    |     | Quantitative change (stock +/-, price adjustment)    |
-| `payload`  | TEXT    |     | JSON parameters specific to this event               |
-| `ts`       | TEXT    |     | ISO 8601 event timestamp                             |
-
-**Example Data:**
-
-| id        | streamid  | targetid      | opcode | lat     | lng     | delta | payload                 | ts                   | Scenario                    |
-| :-------- | :-------- | :------------ | -----: | :------ | :------ | ----: | :---------------------- | :------------------- | :-------------------------- |
-| `evt-001` | `sys-inv` | `prod-001`    |    101 | 25.1972 | 55.2744 |   +50 | `{"supplier": "X"}`     | 2026-02-19T08:00:00Z | Stock In at warehouse       |
-| `evt-002` | `sys-inv` | `var-ts-sm`   |    104 | 25.1972 | 55.2744 |    -5 | `{"reason": "Damaged"}` | 2026-02-19T08:05:00Z | Stock Adjust (damaged)      |
-| `evt-003` | `ord-789` | `John`        |    501 | `null`  | `null`  |     0 | `{"channel": "web"}`    | 2026-02-20T14:30:00Z | Order Created               |
-| `evt-004` | `ord-789` | `var-ts-sm`   |    102 | `null`  | `null`  |    -2 | `{"pricepaid": 39.98}`  | 2026-02-20T14:31:00Z | Sale Out (inventory deduct) |
-| `evt-005` | `ord-789` | `System`      |    203 | `null`  | `null`  |     0 | `{"stripeid": "ch_"}`   | 2026-02-20T14:32:00Z | Invoice Payment             |
-| `evt-006` | `ord-789` | `Driver-Mike` |    302 | `null`  | `null`  |     0 | `{"vehicle": "Bike"}`   | 2026-02-20T14:40:00Z | Task Assign (driver)        |
-| `evt-007` | `ord-789` | `Driver-Mike` |    503 | 25.2100 | 55.2800 |     0 | `{"signature": "pdf"}`  | 2026-02-20T15:00:00Z | Order Delivered             |
+| Column     | Type        | Key | Description                                 |
+| :--------- | :---------- | :-- | :------------------------------------------ |
+| `id`       | TEXT        | PK  | Unique event ID                             |
+| `streamId` | TEXT        |     | Which business stream this event belongs to |
+| `opcode`   | INTEGER     |     | Defines exactly what happened               |
+| `nodeId`   | TEXT        |     | Target node affected                        |
+| `pointId`  | TEXT        |     | Target point affected                       |
+| `delta`    | REAL        |     | Quantitative change                         |
+| `payload`  | TEXT        |     | JSON parameters specific to this event      |
+| `ts`       | TIMESTAMPTZ |     | Event timestamp                             |
 
 ---
 
-## Part B: Public DB
-
-A single centralized database powering global search, discovery, and AI queries across all tenants.
-
----
-
-### 6. Table: `publicnodes`
-
-All published listings from all tenants merged into one searchable table. Purely static — only updates when a merchant changes their title or description. Optimized for FTS5 indexing.
-
-**Schema:**
-
-| Column     | Type | Key    | Description                                   |
-| :--------- | :--- | :----- | :-------------------------------------------- |
-| `tenantid` | TEXT | PK, FK | The tenant who owns this listing              |
-| `id`       | TEXT | PK     | The original node/actor ID from the tenant DB |
-| `payload`  | TEXT |        | FTS indexable JSON (title, type, price, etc.) |
-
-**Example Data:**
-
-| tenantid   | id            | payload                                                              | Scenario              |
-| :--------- | :------------ | :------------------------------------------------------------------- | :-------------------- |
-| `store-hq` | `prod-001`    | `{"type": "product", "title": "Classic Book", "price": 12.99}`       | Product               |
-| `store-hq` | `var-ts-sm`   | `{"type": "variant", "title": "Small Blue T-Shirt", "price": 19.99}` | Flattened Variant     |
-| `uber-ind` | `Driver-Mike` | `{"type": "actor", "title": "Michael S.", "actortype": "driver"}`    | Actor as Listing      |
-| `plumb-co` | `srv-11`      | `{"type": "service", "title": "Pipe Repair", "price": 150}`          | Professional Service  |
-| `bnb-host` | `prop-09`     | `{"type": "rental", "title": "Downtown Loft", "pricepernight": 200}` | Real Estate / Booking |
-| `store-hq` | `store-hq`    | `{"type": "store", "title": "HQ Bookstore"}`                         | Store Itself          |
-
----
-
-### 7. Table: `publicpoints`
-
-All dynamic state for public listings. Location, stock, ratings, availability — everything that changes frequently lives here. `publicnodes` never gets touched by high-frequency updates.
-
-**Schema:**
-
-| Column     | Type | Key    | Description                                        |
-| :--------- | :--- | :----- | :------------------------------------------------- |
-| `tenantid` | TEXT | PK, FK | The tenant who owns this listing                   |
-| `nodeid`   | TEXT | PK, FK | Which publicnode this sub-state belongs to         |
-| `subid`    | TEXT | PK     | Sub-identifier (e.g., `loc`, `stock`, `motion`)    |
-| `lat`      | REAL |        | GPS latitude                                       |
-| `lng`      | REAL |        | GPS longitude                                      |
-| `val`      | REAL |        | Numeric value (stock, price, rating, availability) |
-
-**Example Data:**
-
-| tenantid   | nodeid        | subid    | lat     | lng     |    val | Scenario                        |
-| :--------- | :------------ | :------- | :------ | :------ | -----: | :------------------------------ |
-| `store-hq` | `prod-001`    | `loc`    | 25.1972 | 55.2744 | `null` | Store location (static)         |
-| `store-hq` | `prod-001`    | `stock`  | `null`  | `null`  |     50 | Product stock count             |
-| `store-hq` | `prod-002`    | `loc`    | 25.1972 | 55.2744 | `null` | Store location (static)         |
-| `store-hq` | `prod-002`    | `var-sm` | `null`  | `null`  |    150 | Variant stock count             |
-| `store-hq` | `prod-002`    | `var-lg` | `null`  | `null`  |     10 | Variant stock count             |
-| `uber-ind` | `Driver-Mike` | `loc`    | 25.2048 | 55.2708 | `null` | Live driver GPS (updates often) |
-| `plumb-co` | `srv-11`      | `loc`    | 25.2100 | 55.2800 | `null` | Plumber location                |
-| `plumb-co` | `srv-11`      | `rating` | `null`  | `null`  |    4.8 | Live rating                     |
-| `bnb-host` | `prop-09`     | `loc`    | 25.1900 | 55.2600 | `null` | Property location               |
-| `bnb-host` | `prop-09`     | `avail`  | `null`  | `null`  |      1 | Availability (1=open, 0=booked) |
-| `store-hq` | `store-hq`    | `loc`    | 25.1972 | 55.2744 | `null` | Store location                  |
-
----
-
-## Part C: The Universal Opcode Map
+## 5. The Universal Opcode Map
 
 Integer-based opcodes for blindingly fast `events` indexing.
 

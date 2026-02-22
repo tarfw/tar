@@ -1,244 +1,110 @@
-# Automated Commerce Tasks (Cron)
+# Tar Automation Architecture (Edge + Webhooks)
 
-*Scheduled SQL queries against isolated data — no AI agents, no polling.*
-
----
-
-> In massive multi-tenant systems, "Agent Automation" is just scheduled SQL queries
-> executed against isolated data. By utilizing the `orevents` Universal Ledger, we do **not** need
-> AI to "monitor streams" via expensive polling.
-
-Information is perfectly indexed chronologically, allowing **Bun.js** to act as the massive
-commerce orchestrator via `node-cron`.
+_Massive Multi-Tenant Task Execution via Cloudflare Edge, Turso Native Triggers, and Self-Hosted AI._
 
 ---
 
-## 1. Execution Model
+Instead of running a heavy node-cron polling system that crashes under scale, Tar Commerce AI utilizes a serverless event-driven architecture. The system relies entirely on **Cloudflare Durable Objects** for precise time-based scheduling, **Turso Native Webhooks** for instant event reactions, and an **Omnichannel Worker** to handle chat interfaces like Telegram and WhatsApp.
+
+---
+
+## 1. The Global Architecture Flow
 
 ```text
-                      +---------------+
-                      |  CRON         |
-                      |  TRIGGER      |
-                      +-------+-------+
-                              |
-                   Fires (e.g. Every Hour)
-                              |
-                              v
-                    +-------------------+
-                    |  Bun.js API       |
-                    |  Gateway          |
-                    +--+--------+--+---+
-                       |        |  |
-          +------------+        |  +------------+
-          v                     v               v
-  +-------------+     +-------------+    +-------------+
-  | store_A.db  |     | store_B.db  |    | store_C.db  |
-  +------+------+     +-------------+    +-------------+
-         |
-    Found issues?
-         | YES
-         v
-  +-------------------------+
-  | Telegram Ops Channel    |
-  | "3 orders stuck!"       |
-  +-------------------------+
-```
-
-```mermaid
-flowchart TD
-    Clock(((Cron Trigger)))
-    Bun[Bun API Gateway]
-
-    DB1[(store_A.db)]
-    DB2[(store_B.db)]
-    DB3[(store_C.db)]
-
-    Telegram[Telegram Ops Channel]
-
-    Clock -- "Fires e.g. Every Hour" --> Bun
-    Bun -- "1. SELECT low stock" --> DB1
-    Bun -- "1. SELECT low stock" --> DB2
-    Bun -- "1. SELECT low stock" --> DB3
-
-    DB1 -- "2. Found low stock" --> Bun
-    Bun -- "3. Alert Procurement" --> Telegram
+                        [ Merchant / Employee ]
+                                  |
+                      Telegram / WhatsApp / Slack
+                                  |
+                                  v
++-----------------------------------------------------------------------+
+|                       Cloudflare Worker (API Gateway)                 |
+|  - Acts as universal webhook receiver.                                |
+|  - Validates Role-Based Access Control (RBAC) via Telegram Topic IDs. |
++------+--------------------------+------------------------------+------+
+       |                          |                              |
+       v                          v                              v
++---------------+         +---------------+              +---------------+
+| Self-Hosted   |         | Turso (LibSQL)|              | Cloudflare    |
+| AI Model      |         | Database      |              | Durable       |
+| (Liquid 1.6B) |         | (Bare Metal)  |              | Objects (DO)  |
++-------+-------+         +-------+-------+              +-------+-------+
+        |                         |                              |
+        | Translates text to JSON | Native AFTER INSERT / UPDATE | Holds Alarms for delayed
+        | Does OCR, Summaries     | Trigger fires HTTP Webhook   | Scheduled Tasks
+        +------------+------------+-------+----------------------+-------+
+                     |                    |                      |
+                     v                    v                      v
+             +------------------------------------------------------+
+             |             Cloudflare Worker (Outbound)             |
+             +------------------------+-----------------------------+
+                                      |
+                                      v
+                               [ Telegram ]
+                            "Milk is out of stock!"
 ```
 
 ---
 
-## 2. Core Task Implementations
+## 2. Omnichannel Integration & Team Management
 
-### Task Overview
+Tar acts as an agnostic "brain." It treats Telegram Forums, WhatsApp Groups, and Slack Channels as the primary UI for Merchants.
 
-| # | Task | Schedule | Opcode(s) | Alert Channel |
-|:--|:-----|:---------|:----------|:--------------|
-| 1 | Stuck Order Monitor | Every hour | `500` (PROCESSING) | Telegram |
-| 2 | Low Stock Alert | Every 4 hours | reads `nodes` table | Telegram |
-| 3 | Abandoned Checkout | Every hour | `101` / `201` | WhatsApp or Telegram |
+### Topic-Based Security (No Passwords)
+
+Role-Based Access Control (RBAC) is enforced by tying database permissions to specific chat rooms (e.g., Telegram Topic IDs).
+
+1.  **Dynamic Binding:** Merchant binds a Topic ID (e.g., `Thread 45`) to `#inventory`.
+2.  **AI Intent Parsing:** When a user types _"Update milk stock to 0"_, the self-hosted AI securely translates the natural language to JSON: `{intent: "update_stock", item: "milk"}`.
+3.  **Strict Validation:** The Cloudflare Worker checks the database: _"Is Thread 45 allowed to perform `update_stock`?"_ If yes, the database updates. If no, the Worker blocks it.
+
+_(Note: If integrating WhatsApp Web via Baileys, a lightweight Node.js microservice runs alongside the Turso database to bridge the WhatsApp WebSocket to the Cloudflare HTTP Worker)._
 
 ---
 
-### Task 1: The "Stuck Order" Monitor
+## 3. The Two Types of Tasks
 
-> **Requirement:** Find order streams stuck in PROCESSING for more than 36 hours
-> and suggest next action.
+### Type A: Instant / Event-Driven (Turso Webhooks)
 
-**Pipeline:**
+**Use Case:** Send an alert the exact millisecond an order is paid.
 
-| Step | Action |
-|:-----|:-------|
-| 1 | Cron fires every hour |
-| 2 | Query each tenant.db for orders with last opcode = 500 |
-| 3 | Filter for orders with no activity in 36+ hours |
-| 4 | Send alert to Telegram Ops Group |
+1. Order is inserted into Turso.
+2. Turso native `AFTER UPDATE` trigger instantly fires an HTTP webhook to the Cloudflare Worker.
+3. Worker translates the payload and pushes the alert to Telegram/WhatsApp.
+   _Cost:_ Ultra-low ($0.03 per 100k invocations). No polling required.
 
-```typescript
-// Run every hour
-cron.schedule("0 * * * *", async () => {
-  for (const tenantDb of allTenantDatabases) {
-    // 500 = PROCESSING Opcode
-    const stuckOrders = tenantDb
-      .query(
-        `
-      SELECT nodeid FROM orevents 
-      WHERE nodeid LIKE 'ord-%'
-      GROUP BY nodeid
-      HAVING MAX(created_at) < datetime('now', '-36 hours')
-      AND (SELECT opcode FROM orevents o2 WHERE o2.nodeid = orevents.nodeid ORDER BY created_at DESC LIMIT 1) = 500
-    `,
-      )
-      .all();
-
-    if (stuckOrders.length > 0) {
-      await telegram.sendMessage(
-        tenantGroupId,
-        `${stuckOrders.length} orders stuck in preparation!`,
-      );
-    }
-  }
-});
+```sql
+-- Example Turso Native Webhook Trigger
+CREATE TRIGGER notify_paid_order
+AFTER UPDATE ON nodes
+WHEN NEW.status = 'paid' AND OLD.status != 'paid'
+BEGIN
+  SELECT lib_http_post('https://alert-worker.tar.workers.dev', json_object(
+    'merchant_id', NEW.tenant_id,
+    'order_id', NEW.id
+  ));
+END;
 ```
 
-<details>
-<summary>SQL Breakdown</summary>
+### Type B: Time-Delayed / Scheduled Tasks (Cloudflare DO Alarms)
 
-| Clause | Purpose |
-|:-------|:--------|
-| `WHERE nodeid LIKE 'ord-%'` | Only look at order-type events |
-| `GROUP BY nodeid` | Group all events per order |
-| `HAVING MAX(created_at) < datetime(...)` | No activity in 36+ hours |
-| `AND ... opcode = 500` | Last known status is still PROCESSING |
+**Use Case:** "Check for abandoned carts older than 3 hours."
 
-</details>
+1. When the cart is created, Cloudflare schedules a **Durable Object Alarm** for 3 hours in the future.
+2. Cloudflare manages the timer memory perfectly.
+3. In 3 hours, the DO wakes up, checks Turso to see if the cart is still unpaid, and triggers the "Nudge" AI generation if needed.
+   _Cost:_ Highly efficient ($1.35 per 1,000,000 alarm lifecycles). Solves the "Thundering Herd" problem instantly through global edge distribution.
 
 ---
 
-### Task 2: Supply Chain / Low Stock Alert
+## 4. Cost Scalability
 
-> **Requirement:** Every 4 hours, scan inventory. If any SKU is below safety threshold,
-> alert procurement.
+By avoiding heavy SaaS taxes and utilizing Edge + Bare Metal:
 
-**Pipeline:**
+| Component          | Architecture Choice                         | Cost (Per User / Mo) |
+| :----------------- | :------------------------------------------ | :------------------- |
+| **Logic & Timers** | Cloudflare Workers & Durable Objects        | **~$1.20 INR**       |
+| **Database**       | Self-Hosted Turso/LibSQL on NVMe            | **~$0.20 INR**       |
+| **Intelligence**   | Dedicated Rent GPU (e.g. RTX 4090) or Modal | **~$0.56 INR**       |
+| **Channels**       | Telegram Bot API / Slack / Baileys          | **~$0.00 INR**       |
 
-| Step | Action |
-|:-----|:-------|
-| 1 | Cron fires every 4 hours |
-| 2 | Query `nodes` table for products |
-| 3 | Filter where `current_stock < safety_threshold` |
-| 4 | Send alert to Procurement Channel |
-
-> Because `nodes` holds the **live state**, we only need to query the master node table — no
-> complex event aggregation needed.
-
-```typescript
-// Run every 4 hours
-cron.schedule("0 */4 * * *", async () => {
-  for (const tenantDb of allTenantDatabases) {
-    const lowStock = tenantDb
-      .query(
-        `
-      SELECT title, current_stock, safety_threshold 
-      FROM nodes 
-      WHERE type = 'product' AND current_stock < safety_threshold
-    `,
-      )
-      .all();
-
-    if (lowStock.length > 0) {
-      await telegram.sendMessage(
-        tenantProcurementId,
-        `Low Stock on ${lowStock.length} items. Please Reorder.`,
-      );
-    }
-  }
-});
-```
-
----
-
-### Task 3: Abandoned Checkout Retargeting
-
-> **Requirement:** Monitor abandoned checkout streams older than 3 hours.
-> Send personalized reminder.
-
-**Pipeline:**
-
-| Step | Action |
-|:-----|:-------|
-| 1 | Cron fires every hour |
-| 2 | Query events for opcode 101 (REQUESTED = checkout intent) |
-| 3 | Filter where no opcode 201 (PAID) exists within 3 hours |
-| 4 | Send nudge via WhatsApp or Telegram |
-
-```typescript
-// Run every hour
-cron.schedule("0 * * * *", async () => {
-  for (const tenantDb of allTenantDatabases) {
-    // 101 = REQUESTED (Checkout intent)
-    // 201 = PAID (Success)
-    const abandoned = tenantDb
-      .query(
-        `
-        SELECT nodeid, actorid FROM orevents 
-        WHERE opcode = 101 
-        GROUP BY nodeid
-        HAVING MAX(created_at) < datetime('now', '-3 hours')
-        AND NOT EXISTS (SELECT 1 FROM orevents o2 WHERE o2.nodeid = orevents.nodeid AND o2.opcode = 201)
-    `,
-      )
-      .all();
-
-    if (abandoned.length > 0) {
-      // Loop through abandoning actors, send promotional nudge
-    }
-  }
-});
-```
-
-<details>
-<summary>SQL Breakdown</summary>
-
-| Clause | Purpose |
-|:-------|:--------|
-| `WHERE opcode = 101` | Find checkout intent events |
-| `GROUP BY nodeid` | One result per unique order |
-| `HAVING MAX(created_at) < ...` | Intent expressed 3+ hours ago |
-| `AND NOT EXISTS (... opcode = 201)` | Never reached PAID status |
-
-</details>
-
----
-
-## 3. Performance
-
-> By enforcing strict **integer Opcodes** inside the `orevents` ledger, absolutely any of the
-> 30+ advanced commerce scenarios can be mapped to a **< 2ms** SQL query inside Bun.js.
-
-| Query Type | Latency |
-|:-----------|:--------|
-| Opcode Lookup | < 0.5ms |
-| Stuck Orders | < 1.5ms |
-| Low Stock Scan | < 1.0ms |
-| Abandoned Carts | < 2.0ms |
-
-All powered by SQLite with integer indexes.
+**Total estimated infrastructure cost per power user (100+ tasks/day): < ₹ 3.00 INR / month.**

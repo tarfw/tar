@@ -1,25 +1,34 @@
-import { connect, Database } from '@tursodatabase/sync-react-native';
+import { Database, getDbPath } from "@tursodatabase/sync-react-native";
 
-const TURSO_URL = process.env.EXPO_PUBLIC_TURSO_URL || '';
-const TURSO_AUTH_TOKEN = process.env.EXPO_PUBLIC_TURSO_AUTH_TOKEN || '';
+const TURSO_URL = process.env.EXPO_PUBLIC_TURSO_URL || "";
+const TURSO_AUTH_TOKEN = process.env.EXPO_PUBLIC_TURSO_AUTH_TOKEN || "";
 
 let dbInstance: Database | null = null;
 let initPromise: Promise<Database> | null = null;
 
+let localDbInstance: Database | null = null;
+let localInitPromise: Promise<Database> | null = null;
+
+/**
+ * Get the Sync Database (Turso Remote Sync)
+ */
 export async function getDb(): Promise<Database> {
-    if (dbInstance) return dbInstance;
-    if (initPromise) return initPromise;
+  if (dbInstance) return dbInstance;
+  if (initPromise) return initPromise;
 
-    initPromise = (async () => {
-        const instance = await connect({
-            path: 'tar.db',
-            url: TURSO_URL,
-            authToken: TURSO_AUTH_TOKEN,
-        });
+  initPromise = (async () => {
+    const dbPath = getDbPath("tar.db");
+    const instance = new Database({
+      path: dbPath,
+      url: TURSO_URL,
+      authToken: TURSO_AUTH_TOKEN,
+    });
 
-        // Initialize schema
-        const schema = [
-            `CREATE TABLE IF NOT EXISTS actors (
+    await instance.connect();
+
+    // Initialize Global/Sync Schema
+    const schema = [
+      `CREATE TABLE IF NOT EXISTS actors (
                 id TEXT PRIMARY KEY,
                 parentid TEXT,
                 actortype TEXT NOT NULL,
@@ -29,7 +38,7 @@ export async function getDb(): Promise<Database> {
                 vector F32_BLOB(384),
                 pushtoken TEXT
             )`,
-            `CREATE TABLE IF NOT EXISTS collab (
+      `CREATE TABLE IF NOT EXISTS collab (
                 id TEXT PRIMARY KEY,
                 actorid TEXT NOT NULL,
                 targettype TEXT NOT NULL,
@@ -39,7 +48,7 @@ export async function getDb(): Promise<Database> {
                 createdat TEXT NOT NULL,
                 expiresat TEXT
             )`,
-            `CREATE TABLE IF NOT EXISTS nodes (
+      `CREATE TABLE IF NOT EXISTS nodes (
                 id TEXT PRIMARY KEY,
                 parentid TEXT,
                 nodetype TEXT NOT NULL,
@@ -48,7 +57,7 @@ export async function getDb(): Promise<Database> {
                 payload TEXT,
                 embedding F32_BLOB(384)
             )`,
-            `CREATE TABLE IF NOT EXISTS points (
+      `CREATE TABLE IF NOT EXISTS points (
                 id TEXT PRIMARY KEY,
                 noderef TEXT NOT NULL,
                 sellerid TEXT NOT NULL,
@@ -60,20 +69,20 @@ export async function getDb(): Promise<Database> {
                 notes TEXT,
                 version INTEGER DEFAULT 0
             )`,
-            `CREATE TABLE IF NOT EXISTS streams (
+      `CREATE TABLE IF NOT EXISTS streams (
                 id TEXT PRIMARY KEY,
                 scope TEXT NOT NULL,
                 createdby TEXT NOT NULL,
                 createdat TEXT NOT NULL
             )`,
-            `CREATE TABLE IF NOT EXISTS streamcollab (
+      `CREATE TABLE IF NOT EXISTS streamcollab (
                 streamid TEXT NOT NULL,
                 actorid TEXT NOT NULL,
                 role TEXT NOT NULL,
                 joinedat TEXT,
                 PRIMARY KEY (streamid, actorid)
             )`,
-            `CREATE TABLE IF NOT EXISTS orevents (
+      `CREATE TABLE IF NOT EXISTS orevents (
                 id TEXT PRIMARY KEY,
                 streamid TEXT NOT NULL,
                 opcode INTEGER NOT NULL,
@@ -86,26 +95,67 @@ export async function getDb(): Promise<Database> {
                 status TEXT,
                 ts TEXT NOT NULL,
                 embedding F32_BLOB(384)
-            )`
-        ];
+            )`,
+    ];
 
-        for (const statement of schema) {
-            await instance.exec(statement);
-        }
+    for (const statement of schema) {
+      await instance.exec(statement);
+    }
 
-        // Migration: Add embedding column to orevents if it doesn't exist
-        try {
-            await instance.exec('ALTER TABLE orevents ADD COLUMN embedding F32_BLOB(384)');
-            console.log('[DB] Migration: Added embedding column to orevents');
-        } catch (e) {
-            // Ignore error if column already exists
-        }
+    // Migration: Add embedding column to orevents if it doesn't exist
+    try {
+      await instance.exec(
+        "ALTER TABLE orevents ADD COLUMN embedding F32_BLOB(384)",
+      );
+    } catch (e) {
+      // Ignore error if column already exists
+    }
 
-        dbInstance = instance;
-        return instance;
-    })();
+    dbInstance = instance;
+    return instance;
+  })();
 
-    return initPromise;
+  return initPromise;
+}
+
+/**
+ * Get the Local-Only Database (No Sync)
+ */
+export async function getLocalDb(): Promise<Database> {
+  if (localDbInstance) return localDbInstance;
+  if (localInitPromise) return localInitPromise;
+
+  localInitPromise = (async () => {
+    const dbPath = getDbPath("local.db");
+    const instance = new Database({
+      path: dbPath,
+    });
+
+    await instance.connect();
+
+    // Initialize Local-Only Schema (Preferences, Cache, etc.)
+    const schema = [
+      `CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )`,
+      `CREATE TABLE IF NOT EXISTS private_profile (
+                id TEXT PRIMARY KEY,
+                key_type TEXT NOT NULL,
+                encrypted_blob TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )`,
+    ];
+
+    for (const statement of schema) {
+      await instance.exec(statement);
+    }
+
+    localDbInstance = instance;
+    return instance;
+  })();
+
+  return localInitPromise;
 }
 
 /**
@@ -115,12 +165,12 @@ type DbChangeListener = () => void;
 const listeners = new Set<DbChangeListener>();
 
 export function subscribeToDbChanges(listener: DbChangeListener) {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 export function notifyDbChanges() {
-    listeners.forEach(l => l());
+  listeners.forEach((l) => l());
 }
 
 /**
@@ -128,27 +178,27 @@ export function notifyDbChanges() {
  * Pulls changes from remote and pushes local changes to remote.
  */
 export async function syncDb() {
-    const database = await getDb();
-    if (TURSO_URL && TURSO_AUTH_TOKEN) {
-        try {
-            console.log('[Sync] Starting bidirectional sync...');
-            const pullApplied = await database.pull();
-            if (pullApplied) {
-                console.log('[Sync] Remote changes pulled and applied.');
-                notifyDbChanges();
-            }
-            await database.push();
-            console.log('[Sync] Local changes pushed to remote.');
-            console.log('[Sync] Sync complete!');
-            return true;
-        } catch (error) {
-            console.error('[Sync] Sync failed:', error);
-            return false;
-        }
-    } else {
-        console.warn('[Sync] Turso URL or Auth Token missing. Running in local-only mode.');
-        return false;
+  const database = await getDb();
+  if (TURSO_URL && TURSO_AUTH_TOKEN) {
+    try {
+      console.log("[Sync] Starting bidirectional sync...");
+      await database.push();
+      const pullApplied = await database.pull();
+      if (pullApplied) {
+        notifyDbChanges();
+      }
+      console.log("[Sync] Sync complete!");
+      return true;
+    } catch (error) {
+      console.error("[Sync] Sync failed:", error);
+      return false;
     }
+  } else {
+    console.warn(
+      "[Sync] Turso URL or Auth Token missing. Running in local-only mode.",
+    );
+    return false;
+  }
 }
 
 /**
@@ -156,128 +206,218 @@ export async function syncDb() {
  */
 
 export const dbHelpers = {
-    // Actors
-    getActors: async () => {
-        const db = await getDb();
-        return await db.all('SELECT * FROM actors');
-    },
-    insertActor: async (actor: { id: string, actortype: string, globalcode: string, name: string, parentid?: string, metadata?: string }) => {
-        const db = await getDb();
-        const result = await db.run(
-            'INSERT INTO actors (id, actortype, globalcode, name, parentid, metadata) VALUES (?, ?, ?, ?, ?, ?)',
-            [actor.id, actor.actortype, actor.globalcode, actor.name, actor.parentid || null, actor.metadata || null]
-        );
-        notifyDbChanges();
-        return result;
-    },
+  // Actors
+  getActors: async () => {
+    const db = await getDb();
+    return await db.all("SELECT * FROM actors");
+  },
+  insertActor: async (actor: {
+    id: string;
+    actortype: string;
+    globalcode: string;
+    name: string;
+    parentid?: string;
+    metadata?: string;
+  }) => {
+    const db = await getDb();
+    const result = await db.run(
+      "INSERT INTO actors (id, actortype, globalcode, name, parentid, metadata) VALUES (?, ?, ?, ?, ?, ?)",
+      [
+        actor.id,
+        actor.actortype,
+        actor.globalcode,
+        actor.name,
+        actor.parentid || null,
+        actor.metadata || null,
+      ],
+    );
+    notifyDbChanges();
+    return result;
+  },
 
-    // Nodes (Catalog/Categories/Products)
-    getNodes: async (parentid?: string) => {
-        const db = await getDb();
-        if (parentid) {
-            return await db.all('SELECT * FROM nodes WHERE parentid = ?', [parentid]);
-        }
-        return await db.all('SELECT * FROM nodes');
-    },
-    insertNode: async (node: { id: string, nodetype: string, universalcode: string, title: string, parentid?: string, payload?: string }) => {
-        const db = await getDb();
-        const result = await db.run(
-            'INSERT INTO nodes (id, nodetype, universalcode, title, parentid, payload) VALUES (?, ?, ?, ?, ?, ?)',
-            [node.id, node.nodetype, node.universalcode, node.title, node.parentid || null, node.payload || null]
-        );
-        notifyDbChanges();
-        return result;
-    },
-    updateNode: async (id: string, updates: { title?: string; universalcode?: string; payload?: string }) => {
-        const db = await getDb();
-        const sets: string[] = [];
-        const vals: any[] = [];
-        if (updates.title !== undefined) { sets.push('title = ?'); vals.push(updates.title); }
-        if (updates.universalcode !== undefined) { sets.push('universalcode = ?'); vals.push(updates.universalcode); }
-        if (updates.payload !== undefined) { sets.push('payload = ?'); vals.push(updates.payload); }
-        if (sets.length === 0) return;
-        vals.push(id);
-        const result = await db.run(`UPDATE nodes SET ${sets.join(', ')} WHERE id = ?`, vals);
-        notifyDbChanges();
-        return result;
-    },
+  // Nodes (Catalog/Categories/Products)
+  getNodes: async (parentid?: string) => {
+    const db = await getDb();
+    if (parentid) {
+      return await db.all("SELECT * FROM nodes WHERE parentid = ?", [parentid]);
+    }
+    return await db.all("SELECT * FROM nodes");
+  },
+  insertNode: async (node: {
+    id: string;
+    nodetype: string;
+    universalcode: string;
+    title: string;
+    parentid?: string;
+    payload?: string;
+  }) => {
+    const db = await getDb();
+    const result = await db.run(
+      "INSERT INTO nodes (id, nodetype, universalcode, title, parentid, payload) VALUES (?, ?, ?, ?, ?, ?)",
+      [
+        node.id,
+        node.nodetype,
+        node.universalcode,
+        node.title,
+        node.parentid || null,
+        node.payload || null,
+      ],
+    );
+    notifyDbChanges();
+    return result;
+  },
+  updateNode: async (
+    id: string,
+    updates: { title?: string; universalcode?: string; payload?: string },
+  ) => {
+    const db = await getDb();
+    const sets: string[] = [];
+    const vals: any[] = [];
+    if (updates.title !== undefined) {
+      sets.push("title = ?");
+      vals.push(updates.title);
+    }
+    if (updates.universalcode !== undefined) {
+      sets.push("universalcode = ?");
+      vals.push(updates.universalcode);
+    }
+    if (updates.payload !== undefined) {
+      sets.push("payload = ?");
+      vals.push(updates.payload);
+    }
+    if (sets.length === 0) return;
+    vals.push(id);
+    const result = await db.run(
+      `UPDATE nodes SET ${sets.join(", ")} WHERE id = ?`,
+      vals,
+    );
+    notifyDbChanges();
+    return result;
+  },
 
-    // OREvents (Operational Events)
-    getEvents: async (streamid?: string) => {
-        const db = await getDb();
-        if (streamid) {
-            return await db.all('SELECT * FROM orevents WHERE streamid = ? ORDER BY ts DESC', [streamid]);
-        }
-        return await db.all('SELECT * FROM orevents ORDER BY ts DESC');
-    },
-    insertEvent: async (event: { id: string, streamid: string, opcode: number, refid: string, scope: string, status?: string, payload?: string }) => {
-        const db = await getDb();
-        const result = await db.run(
-            'INSERT INTO orevents (id, streamid, opcode, refid, scope, status, payload, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [event.id, event.streamid, event.opcode, event.refid, event.scope, event.status || 'pending', event.payload || null, new Date().toISOString()]
-        );
-        notifyDbChanges();
-        return result;
-    },
+  // OREvents (Operational Events)
+  getEvents: async (streamid?: string) => {
+    const db = await getDb();
+    if (streamid) {
+      return await db.all(
+        "SELECT * FROM orevents WHERE streamid = ? ORDER BY ts DESC",
+        [streamid],
+      );
+    }
+    return await db.all("SELECT * FROM orevents ORDER BY ts DESC");
+  },
+  insertEvent: async (event: {
+    id: string;
+    streamid: string;
+    opcode: number;
+    refid: string;
+    scope: string;
+    status?: string;
+    payload?: string;
+  }) => {
+    const db = await getDb();
+    const result = await db.run(
+      "INSERT INTO orevents (id, streamid, opcode, refid, scope, status, payload, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        event.id,
+        event.streamid,
+        event.opcode,
+        event.refid,
+        event.scope,
+        event.status || "pending",
+        event.payload || null,
+        new Date().toISOString(),
+      ],
+    );
+    notifyDbChanges();
+    return result;
+  },
 
-    // Collab
-    getCollab: async () => {
-        const db = await getDb();
-        return await db.all('SELECT * FROM collab');
-    },
+  // Collab
+  getCollab: async () => {
+    const db = await getDb();
+    return await db.all("SELECT * FROM collab");
+  },
 
-    // Points
-    getPoints: async () => {
-        const db = await getDb();
-        return await db.all('SELECT * FROM points');
-    },
+  // Points
+  getPoints: async () => {
+    const db = await getDb();
+    return await db.all("SELECT * FROM points");
+  },
 
-    // Streams
-    getStreams: async () => {
-        const db = await getDb();
-        return await db.all('SELECT * FROM streams');
-    },
+  // Streams
+  getStreams: async () => {
+    const db = await getDb();
+    return await db.all("SELECT * FROM streams");
+  },
 
-    // StreamCollab
-    getStreamCollab: async () => {
-        const db = await getDb();
-        return await db.all('SELECT * FROM streamcollab');
-    },
+  // StreamCollab
+  getStreamCollab: async () => {
+    const db = await getDb();
+    return await db.all("SELECT * FROM streamcollab");
+  },
 
-    // Semantic Search
-    semanticSearchNodes: async (queryVector: Float32Array, limit: number = 5) => {
-        const db = await getDb();
-        // Turso native vector search syntax
-        // Using vector_distance_cos for cosine similarity
-        return await db.all(
-            `SELECT *, vector_distance_cos(embedding, ?) as distance 
+  // Semantic Search
+  semanticSearchNodes: async (queryVector: Float32Array, limit: number = 5) => {
+    const db = await getDb();
+    // Turso native vector search syntax
+    // Using vector_distance_cos for cosine similarity
+    return await db.all(
+      `SELECT *, vector_distance_cos(embedding, ?) as distance 
              FROM nodes 
              WHERE embedding IS NOT NULL 
              ORDER BY distance 
              LIMIT ?`,
-            [queryVector.buffer as ArrayBuffer, limit]
-        );
-    },
-    semanticSearchActors: async (queryVector: Float32Array, limit: number = 5) => {
-        const db = await getDb();
-        return await db.all(
-            `SELECT *, vector_distance_cos(vector, ?) as distance 
+      [queryVector.buffer as ArrayBuffer, limit],
+    );
+  },
+  semanticSearchActors: async (
+    queryVector: Float32Array,
+    limit: number = 5,
+  ) => {
+    const db = await getDb();
+    return await db.all(
+      `SELECT *, vector_distance_cos(vector, ?) as distance 
              FROM actors 
              WHERE vector IS NOT NULL 
              ORDER BY distance 
              LIMIT ?`,
-            [queryVector.buffer.slice(0) as ArrayBuffer, limit]
-        );
-    },
-    semanticSearchEvents: async (queryVector: Float32Array, limit: number = 5) => {
-        const db = await getDb();
-        return await db.all(
-            `SELECT *, vector_distance_cos(embedding, ?) as distance 
+      [queryVector.buffer.slice(0) as ArrayBuffer, limit],
+    );
+  },
+  semanticSearchEvents: async (
+    queryVector: Float32Array,
+    limit: number = 5,
+  ) => {
+    const db = await getDb();
+    return await db.all(
+      `SELECT *, vector_distance_cos(embedding, ?) as distance 
              FROM orevents 
              WHERE embedding IS NOT NULL 
              ORDER BY distance 
              LIMIT ?`,
-            [queryVector.buffer.slice(0) as ArrayBuffer, limit]
-        );
-    }
+      [queryVector.buffer.slice(0) as ArrayBuffer, limit],
+    );
+  },
+};
+
+/**
+ * LOCAL-ONLY DATABASE HELPERS
+ */
+export const localDbHelpers = {
+  getSetting: async (key: string) => {
+    const db = await getLocalDb();
+    const result = await db.get(
+      "SELECT value FROM app_settings WHERE key = ?",
+      [key],
+    );
+    return result?.value as string | undefined;
+  },
+  setSetting: async (key: string, value: string) => {
+    const db = await getLocalDb();
+    return await db.run(
+      "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+      [key, value],
+    );
+  },
 };

@@ -18,15 +18,15 @@
 
 ## Architecture
 
-| What              | Who                                     |
-| :---------------- | :-------------------------------------- |
-| All CRUD          | App → local SQLite → Turso sync         |
-| Telegram commands | CF Worker → Groq → tenant DB            |
-| Identity          | Telegram login (default)                |
-| Cloud upgrade     | CF Worker → sqld namespace + scoped JWT |
-| Search            | CF Worker → Turso discovery             |
-| Alarms            | CF Worker → Durable Objects             |
-| Archive           | CF Worker → Railway S3                  |
+| What              | Who                                      |
+| :---------------- | :--------------------------------------- |
+| All CRUD          | App → local SQLite → Turso sync          |
+| Telegram commands | CF Worker → Groq → tenant DB             |
+| Identity          | Telegram login (default)                 |
+| Cloud upgrade     | CF Worker → Turso namespace + scoped JWT |
+| Search            | CF Worker → Turso discovery              |
+| Alarms            | CF Worker → Durable Objects              |
+| Archive           | CF Worker → Railway S3                   |
 
 ### CF Worker — 3 Routes
 
@@ -41,17 +41,17 @@ POST /api/streams/archive    — stream → S3
 ```
 Install → Telegram Login → Free (local + bot)
          ↓ /upgrade + ₹500
-CF Worker creates sqld namespace + JWT → app syncs
+CF Worker creates Turso namespace + JWT → app syncs
 ```
 
 ---
 
 ## Day 1 — Build Everything
 
-### sqld on Fly.io (2 hrs)
+### Turso Setup (1 hr)
 
-- [ ] Deploy `sqld` with persistent volume + JWT signing key
-- [ ] Multi-tenant namespaces, schema: `nodes`, `points`, `events`
+- [ ] Create master discovery DB
+- [ ] Configure namespace templates for tenants
 - [ ] Verify: scoped JWT isolates namespaces
 - [ ] Verify: Turso RN SDK connects + syncs
 
@@ -87,7 +87,7 @@ CF Worker creates sqld namespace + JWT → app syncs
 
 ### Streams & Collaboration (3 hrs)
 
-- [ ] Stream = shared sqld namespace
+- [ ] Stream = shared Turso namespace
 - [ ] Order → stream → participants get scoped JWT
 - [ ] Events append, Telegram notifications
 - [ ] Lifecycle: create → assign → pickup → deliver → archive
@@ -95,7 +95,7 @@ CF Worker creates sqld namespace + JWT → app syncs
 ### Driver + GPS (2 hrs)
 
 - [ ] Register via Telegram → own namespace
-- [ ] GPS → local `points` → sync to sqld
+- [ ] GPS → local `points` → sync to Turso
 - [ ] New order → nearest driver → assign → notify
 
 ### Turso Discovery (1 hr)
@@ -112,7 +112,7 @@ CF Worker creates sqld namespace + JWT → app syncs
 ### Railway S3 Archive (1 hr)
 
 - [ ] Create bucket, wire in CF Worker
-- [ ] Stream complete → archive JSON → delete from sqld
+- [ ] Stream complete → archive JSON → delete from Turso
 
 ### Razorpay Payment (2 hrs)
 
@@ -131,7 +131,7 @@ CF Worker creates sqld namespace + JWT → app syncs
 ### Day 1 Deliverable
 
 ```
-✅ sqld on Fly.io (multi-tenant, JWT isolated)
+✅ Turso (multi-tenant, JWT isolated)
 ✅ CF Worker (3 routes) + Telegram bot
 ✅ Telegram login + Cloud upgrade + sync
 ✅ Streams + drivers + GPS + discovery
@@ -162,7 +162,7 @@ CF Worker creates sqld namespace + JWT → app syncs
 
 - [ ] Fix anything broken from E2E test
 - [ ] Edge cases: offline → online, sync conflicts
-- [ ] Error handling: payment fails, Groq down, sqld offline
+- [ ] Error handling: payment fails, Groq down, Turso offline
 
 ### Build & Deploy (2 hrs)
 

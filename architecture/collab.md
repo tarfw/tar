@@ -14,7 +14,7 @@ How multiple tenants collaborate on a shared order/transaction using the Univers
 └──────────────────────────┬────────────────────────────────────────┘
                            │
 ┌──────────────────────────┼────────────────────────────────────────┐
-│                    OVH VPS 6 (Self-Hosted LibSQL)                 │
+│                    TURSO MANAGED (Multi-tenant)                   │
 │                                                                   │
 │  ┌─────────────────────────────────────────────────────────────┐  │
 │  │              STREAMS NAMESPACE (shared)                      │  │
@@ -41,12 +41,12 @@ How multiple tenants collaborate on a shared order/transaction using the Univers
 
 ## Three Layers
 
-| Layer                                      | What lives here                           | Purpose                                                                 |
-| :----------------------------------------- | :---------------------------------------- | :---------------------------------------------------------------------- |
-| **Turso Cloud** (Public Discovery DB)      | `nodes` + `points` with `workspaceId`     | Global search, filtering, nearest-driver. Discovery only.               |
-| **Self-Hosted LibSQL** — Tenant Namespaces | `nodes` + `points` (no events) per tenant | Profile, catalog, stock levels, GPS position. Local-first.              |
-| **Self-Hosted LibSQL** — Streams Namespace | `events` table only                       | Shared collaboration log. One write per event, all collaborators read.  |
-| **Railway S3**                             | Archived stream JSON                      | Cold storage. Completed streams persisted, then deleted from active DB. |
+| Layer                                 | What lives here                           | Purpose                                                                 |
+| :------------------------------------ | :---------------------------------------- | :---------------------------------------------------------------------- |
+| **Turso Cloud** (Public Discovery DB) | `nodes` + `points` with `workspaceId`     | Global search, filtering, nearest-driver. Discovery only.               |
+| **Turso Managed** — Tenant Namespaces | `nodes` + `points` (no events) per tenant | Profile, catalog, stock levels, GPS position. Local-first.              |
+| **Turso Managed** — Streams Namespace | `events` table only                       | Shared collaboration log. One write per event, all collaborators read.  |
+| **Railway S3**                        | Archived stream JSON                      | Cold storage. Completed streams persisted, then deleted from active DB. |
 
 ---
 
@@ -192,77 +192,14 @@ The same stream architecture handles all commerce verticals:
 
 ---
 
-## Why Self-Hosted LibSQL?
+## Why Turso Managed?
 
-Turso managed cloud pricing:
+Turso provides native multi-tenancy via namespaces, perfect for our architecture:
 
-- **Sync:** $0.25 per GB
-- **Writes:** $1 per 1 million rows
-- **Reads:** $1 per 1 billion reads
-
-At scale, high-frequency writes (GPS pings, stream events) would cost lakhs on Turso. Self-hosted LibSQL has zero per-row cost — only the VPS fee.
-
----
-
-## Operational Cost: Chennai Scale (10M Population)
-
-### Scale Parameters
-
-| Metric                                                    |           Value |
-| :-------------------------------------------------------- | --------------: |
-| Population                                                |      10 million |
-| Active merchants (all commerce)                           |         200,000 |
-| Active riders/drivers                                     |          20,000 |
-| Streams per day (food + taxi + grocery + ecom + services) |      ~1,000,000 |
-| **Streams per month**                                     | **~30 million** |
-| Events per stream (avg)                                   |             ~10 |
-| Total stream events/month                                 |    ~300 million |
-| GPS pings/month (20K drivers × 10hrs × 360/hr)            |   ~2.16 billion |
-
-### Streams DB Lifecycle
-
-| State                  |                   Streams |         Size | Duration         |
-| :--------------------- | ------------------------: | -----------: | :--------------- |
-| Active (in-progress)   |                 ~50K-100K |  **~100 MB** | 30 min - few hrs |
-| Archived (Railway S3)  |                 30M/month | ~60 GB/month | Permanent        |
-| Deleted from active DB | Immediately after archive |            0 | —                |
+- **Sync:** Built-in offline sync SDK.
+- **Deltas:** Only changes are synced, minimizing data.
+- **Isolation:** Each tenant gets their own scoped namespace.
 
 ### Monthly Infrastructure Cost
 
-| Component                | Service                        | What it handles                                                                      |      Monthly Cost |
-| :----------------------- | :----------------------------- | :----------------------------------------------------------------------------------- | ----------------: |
-| **Tenant DBs + Streams** | OVH VPS 6 (self-hosted LibSQL) | 220K tenant namespaces + streams namespace. Nodes, points, GPS, stream events.       |        **₹2,500** |
-| **Discovery DB**         | Turso managed cloud            | Public nodes + points. ~62M writes/month (menu edits + driver on/off + 2 per order). |        **₹5,200** |
-| **Cold Archive**         | Railway S3                     | Completed streams as JSON. ~60 GB/month, ~720 GB/year.                               |          **₹200** |
-| **API Layer**            | Cloudflare Workers             | Orchestration, routing, auth. Free tier covers 100K req/day.                         |     **₹0 - ₹400** |
-|                          |                                | **Total**                                                                            | **~₹8,300/month** |
-
-### Turso Cloud Write Breakdown
-
-| Trigger                                  |     Writes/month |
-| :--------------------------------------- | ---------------: |
-| Menu edits (200K merchants × 5/month)    |              ~1M |
-| Driver shift on/off (20K × 2/day × 30)   |            ~1.2M |
-| Driver assigned per order (1M/day × 30)  |             ~30M |
-| Driver delivered per order (1M/day × 30) |             ~30M |
-| **Total Turso writes**                   |         **~62M** |
-| **Cost** ($1 per 1M writes)              | **$62 = ₹5,200** |
-
-### Cost Per Transaction
-
-```
-₹8,300/month ÷ 30M streams/month = ₹0.00028 per order
-
-That's roughly 1 paisa per 36 orders.
-```
-
-### If Everything Was on Turso Cloud Instead
-
-| Item                     |                Cost |
-| :----------------------- | ------------------: |
-| 300M stream event writes |             ₹25,000 |
-| 2.16B GPS writes         |           ₹1,80,000 |
-| Storage (500+ GB)        |             ₹10,000 |
-| **Turso total**          | **₹2,15,000/month** |
-| **Your architecture**    |    **₹8,300/month** |
-| **Savings**              |    **~26x cheaper** |
+...

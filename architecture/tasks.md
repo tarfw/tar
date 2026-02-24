@@ -24,9 +24,9 @@ Instead of running a heavy node-cron polling system that crashes under scale, Ta
        |                          |                              |
        v                          v                              v
 +---------------+         +---------------+              +---------------+
-| Self-Hosted   |         | Turso (LibSQL)|              | Cloudflare    |
+| Self-Hosted   |         | Turso Managed |              | Cloudflare    |
 | AI Model      |         | Database      |              | Durable       |
-| (Liquid 1.6B) |         | (Bare Metal)  |              | Objects (DO)  |
+| (Liquid 1.6B) |         |               |              | Objects (DO)  |
 +-------+-------+         +-------+-------+              +-------+-------+
         |                         |                              |
         | Translates text to JSON | Native AFTER INSERT / UPDATE | Holds Alarms for delayed
@@ -103,7 +103,7 @@ By avoiding heavy SaaS taxes and utilizing Edge + Bare Metal:
 | Component          | Architecture Choice                         | Cost (Per User / Mo) |
 | :----------------- | :------------------------------------------ | :------------------- |
 | **Logic & Timers** | Cloudflare Workers & Durable Objects        | **~$1.20 INR**       |
-| **Database**       | Self-Hosted Turso/LibSQL on NVMe            | **~$0.20 INR**       |
+| **Database**       | Turso Managed Multi-tenant                  | **~$0.20 INR**       |
 | **Intelligence**   | Dedicated Rent GPU (e.g. RTX 4090) or Modal | **~$0.56 INR**       |
 | **Channels**       | Telegram Bot API / Slack / Baileys          | **~$0.00 INR**       |
 

@@ -229,16 +229,16 @@ Completed streams archived as JSON, then deleted from active LibSQL.
 
 ## 3. Total Monthly Cost — Chennai Scale
 
-|  #  | Component                           | Service                       | What it handles                                                    | Monthly Cost |
-| :-: | :---------------------------------- | :---------------------------- | :----------------------------------------------------------------- | -----------: |
-|  1  | **Discovery DB**                    | Turso Scaler                  | Public search, nearest-driver, menu browsing                       |   **₹2,400** |
-|  2  | **Tenant DBs + Streams + GPS + AI** | OVH VPS 6 (LibSQL + LFM 1.6B) | 220K namespaces, 2.16B GPS pings, 300M stream events, AI inference |   **₹3,800** |
-|  3  | **API Gateway**                     | Cloudflare Workers            | 500M API requests, webhooks, routing, auth                         |  **₹12,770** |
-|  4  | **Scheduled Tasks**                 | CF Durable Objects            | 60M alarms — cart nudges, cron jobs, timeouts                      |     **₹745** |
-|  5  | **Chat Interface**                  | Telegram Bot API              | 90M messages — alerts, commands, notifications                     |       **₹0** |
-|  6  | **AI Parse Layer**                  | Self-hosted LFM 1.6B          | 35M text-to-JSON calls — runs on same VPS                          |       **₹0** |
-|  7  | **Cold Archive**                    | Railway S3                    | 60 GB/month stream archives                                        |     **₹450** |
-|     |                                     |                               | **TOTAL**                                                          |  **₹20,165** |
+|  #  | Component                           | Service                   | What it handles                                                    | Monthly Cost |
+| :-: | :---------------------------------- | :------------------------ | :----------------------------------------------------------------- | -----------: |
+|  1  | **Discovery DB**                    | Turso Scaler              | Public search, nearest-driver, menu browsing                       |   **₹2,400** |
+|  2  | **Tenant DBs + Streams + GPS + AI** | Turso Managed + OVH (LFM) | 220K namespaces, 2.16B GPS pings, 300M stream events, AI inference |   **₹2,400** |
+|  3  | **API Gateway**                     | Cloudflare Workers        | 500M API requests, webhooks, routing, auth                         |  **₹12,770** |
+|  4  | **Scheduled Tasks**                 | CF Durable Objects        | 60M alarms — cart nudges, cron jobs, timeouts                      |     **₹745** |
+|  5  | **Chat Interface**                  | Telegram Bot API          | 90M messages — alerts, commands, notifications                     |       **₹0** |
+|  6  | **AI Parse Layer**                  | Self-hosted LFM 1.6B      | 35M text-to-JSON calls — runs on same VPS                          |       **₹0** |
+|  7  | **Cold Archive**                    | Railway S3                | 60 GB/month stream archives                                        |     **₹450** |
+|     |                                     |                           | **TOTAL**                                                          |  **₹20,165** |
 
 ---
 
@@ -269,16 +269,16 @@ That's roughly 1 paisa per 15 orders.
 
 ### Per-User Cost Breakdown
 
-| Service                       | Unit Cost        |  🟢 Light |    🟡 Mid |  🔴 Heavy |
-| :---------------------------- | :--------------- | --------: | --------: | --------: |
-| **Turso** (discovery writes)  | ₹0.000067/write  |     ₹0.13 |     ₹0.80 |     ₹1.34 |
-| **LibSQL** (flat VPS ÷ users) | ₹3,800 ÷ 220K    |     ₹0.02 |     ₹0.02 |     ₹0.02 |
-| **CF Workers**                | ₹0.025/1K req    |     ₹0.13 |     ₹0.75 |     ₹1.25 |
-| **CF DO Alarms**              | ₹0.013/1K alarms |     ₹0.01 |     ₹0.08 |     ₹0.13 |
-| **Telegram**                  | ₹0               |     ₹0.00 |     ₹0.00 |     ₹0.00 |
-| **LFM 1.6B** (on VPS)         | ₹0 (self-hosted) |     ₹0.00 |     ₹0.00 |     ₹0.00 |
-| **Railway S3**                | ₹0.000015/stream |     ₹0.02 |     ₹0.09 |     ₹0.15 |
-| **Total per user/month**      |                  | **₹0.31** | **₹1.74** | **₹2.89** |
+| Service                      | Unit Cost        |  🟢 Light |    🟡 Mid |  🔴 Heavy |
+| :--------------------------- | :--------------- | --------: | --------: | --------: |
+| **Turso** (discovery writes) | ₹0.000067/write  |     ₹0.13 |     ₹0.80 |     ₹1.34 |
+| **Turso** (Managed)          | ₹2,400 ÷ 220K    |     ₹0.01 |     ₹0.01 |     ₹0.01 |
+| **CF Workers**               | ₹0.025/1K req    |     ₹0.13 |     ₹0.75 |     ₹1.25 |
+| **CF DO Alarms**             | ₹0.013/1K alarms |     ₹0.01 |     ₹0.08 |     ₹0.13 |
+| **Telegram**                 | ₹0               |     ₹0.00 |     ₹0.00 |     ₹0.00 |
+| **LFM 1.6B** (on VPS)        | ₹0 (self-hosted) |     ₹0.00 |     ₹0.00 |     ₹0.00 |
+| **Railway S3**               | ₹0.000015/stream |     ₹0.02 |     ₹0.09 |     ₹0.15 |
+| **Total per user/month**     |                  | **₹0.31** | **₹1.74** | **₹2.89** |
 
 > 💡 A high-volume restaurant doing 333 orders/day costs us **₹2.89/month** — charge them ₹999/month and you have **99.7% margin**.
 
@@ -321,8 +321,7 @@ That's roughly 1 paisa per 15 orders.
 
 | Component        | Strategy                            |       Cost |
 | :--------------- | :---------------------------------- | ---------: |
-| Turso            | Free plan (10M writes, 500M reads)  |         ₹0 |
-| LibSQL + LFM AI  | Fly.io $15 machine                  |     ₹1,260 |
+| Turso            | Scaler plan ($29/mo)                |     ₹2,400 |
 | CF Workers       | Free tier (100K req/day = 3M/month) |         ₹0 |
 | Durable Objects  | Within free tier                    |         ₹0 |
 | Telegram         | Free                                |         ₹0 |
@@ -333,8 +332,7 @@ That's roughly 1 paisa per 15 orders.
 
 | Component        | Strategy                      |       Cost |
 | :--------------- | :---------------------------- | ---------: |
-| Turso            | Developer plan ($4.99/month)  |       ₹420 |
-| LibSQL + LFM AI  | OVH VPS 3 ($12/month)         |     ₹1,000 |
+| Turso            | Scaler plan ($29/mo)          |     ₹2,400 |
 | CF Workers       | Workers Paid + light overages |     ₹1,500 |
 | Durable Objects  | Within paid plan limits       |       ₹420 |
 | Telegram         | Free                          |         ₹0 |
@@ -355,8 +353,8 @@ Full breakdown as in Section 3 above.
 
 | Metric                 |           Traditional (AWS/GCP) |            Tar Architecture |
 | :--------------------- | ------------------------------: | --------------------------: |
-| 220K user databases    |       ₹5,00,000+ (RDS/DynamoDB) | ₹3,800 (self-hosted LibSQL) |
-| 2.16B GPS writes/month |           ₹2,00,000+ (DynamoDB) |        ₹0 (included in VPS) |
+| 220K user databases    |       ₹5,00,000+ (RDS/DynamoDB) |      ₹2,400 (Turso Managed) |
+| 2.16B GPS writes/month |           ₹2,00,000+ (DynamoDB) |               ₹0 (Included) |
 | 500M API requests      | ₹50,000+ (API Gateway + Lambda) |        ₹12,770 (CF Workers) |
 | 90M push notifications |              ₹15,000+ (FCM/SNS) |       ₹0 (Telegram Bot API) |
 | AI/NLP processing      |         ₹1,00,000+ (managed AI) | ₹0 (self-hosted LFM on VPS) |

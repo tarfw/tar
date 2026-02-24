@@ -10,12 +10,12 @@
 > We abandoned complex, bloated Agent frameworks. Instead, we use a **Custom Bun.js API Gateway**
 > that directly reads and writes to thousands of isolated SQLite databases.
 
-| # | Principle | Description |
-|:--|:----------|:------------|
-| 1 | **Local-First, Cloud-Synced** | The app works offline and syncs natively to the VPS in the background. |
-| 2 | **One Monolithic Server** | A single Bun.js process dynamically routes traffic to thousands of local `tenant_id.db` files. |
-| 3 | **Parse Once, Execute Directly** | AI is a parser. Groq turns language into JSON; Bun executes the SQL. |
-| 4 | **Scale with Activity, Not Users** | Idle tenants cost zero RAM. 3,000 active tenants on a $15 machine — no Docker per tenant. |
+| #   | Principle                          | Description                                                                                    |
+| :-- | :--------------------------------- | :--------------------------------------------------------------------------------------------- |
+| 1   | **Local-First, Cloud-Synced**      | The app works offline and syncs natively to the VPS in the background.                         |
+| 2   | **One Monolithic Server**          | A single Bun.js process dynamically routes traffic to thousands of local `tenant_id.db` files. |
+| 3   | **Parse Once, Execute Directly**   | AI is a parser. Groq turns language into JSON; Bun executes the SQL.                           |
+| 4   | **Scale with Activity, Not Users** | Idle tenants cost zero RAM. 3,000 active tenants on a $15 machine — no Docker per tenant.      |
 
 ---
 
@@ -35,10 +35,10 @@
             | Background Sync                       |
             v                                       v
 +=============================================================+
-||              THE SERVER (Fly.io / OVH)                     ||
+||              THE SERVER (Turso / Fly.io / OVH)             ||
 ||                                                            ||
 ||  +-------------------+    +---------------------+          ||
-||  | sqld Sync Server  |    | Bun.js API Gateway  |<-----+   ||
+||  | Turso Managed DB  |    | Bun.js API Gateway  |<-----+   ||
 ||  +--------+----------+    +----------+----------+      |   ||
 ||           |                          |            Extract   ||
 ||           |               +----------+----------+  JSON    ||
@@ -48,7 +48,7 @@
 ||           |                          |             | LFM-1.6B |
 ||           v                          v             +----------+
 ||  +-----------------------------------------------------+   ||
-||  |  VOLUME: Thousands of tenant.db Files                |   ||
+||  |  Turso: Thousands of isolated tenant namespaces      |   ||
 ||  +-----------------------------------------------------+   ||
 +=============================================================+
 ```
@@ -66,24 +66,22 @@ graph TD
         WhatsApp[WhatsApp]
     end
 
-    subgraph "The Server - Fly.io / OVH"
-        sqld[sqld Sync Server]
+    subgraph "The Server - Turso / Fly / OVH"
+        Turso[Turso Managed DB]
         Bun[Bun.js API Gateway]
         Cron[Node-Cron Automation]
-        Disk[(Volume: Thousands of tenant.db Files)]
     end
 
     subgraph "Intelligence"
         Groq[Groq API / LFM-1.6B]
     end
 
-    LocalDB <-->|Background Sync| sqld
-    sqld <--> Disk
+    LocalDB <-->|Background Sync| Turso
     Telegram -->|Webhook Payload| Bun
     WhatsApp -->|Webhook Payload| Bun
     Bun <-->|Extract JSON| Groq
-    Bun -->|Execute SQLite| Disk
-    Cron -->|Read & Execute| Disk
+    Bun -->|Execute SQL| Turso
+    Cron -->|Read & Execute| Turso
     Cron -->|Send Alerts| Telegram
 ```
 
@@ -91,14 +89,14 @@ graph TD
 
 ## 3. The Tech Stack
 
-| Layer | Component | Technology | Primary Role |
-|:------|:----------|:-----------|:-------------|
-| Client | Mobile App | Expo (RN) + LibSQL | Local-first data entry, offline-capable admin panel |
-| Gateway | The Brain | Bun.js (TypeScript) | Fast HTTP server: webhooks, routing, AI calls |
-| Sync | The Router | `sqld` (Turso) | Syncs local SQLite files to mobile apps effortlessly |
-| Storage | The Vault | Persistent Volume | Tiny `tenant.db` files on a cheap, massive SSD |
-| AI | The Parser | Groq / LFM-1.6B | Parses natural language into structured JSON instantly |
-| Interface | The Face | Telegram / WhatsApp | Conversational layers talking to the Bun Webhook |
+| Layer     | Component  | Technology          | Primary Role                                           |
+| :-------- | :--------- | :------------------ | :----------------------------------------------------- |
+| Client    | Mobile App | Expo (RN) + LibSQL  | Local-first data entry, offline-capable admin panel    |
+| Gateway   | The Brain  | Bun.js (TypeScript) | Fast HTTP server: webhooks, routing, AI calls          |
+| Sync      | The Router | Turso Managed       | Syncs local SQLite files to mobile apps effortlessly   |
+| Storage   | The Vault  | Turso Managed       | Thousands of isolated tenant namespaces                |
+| AI        | The Parser | Groq / LFM-1.6B     | Parses natural language into structured JSON instantly |
+| Interface | The Face   | Telegram / WhatsApp | Conversational layers talking to the Bun Webhook       |
 
 ---
 
@@ -108,7 +106,7 @@ graph TD
 > is a massive waste of resources. Instead, we use a **BYOI model** — delegate chat to
 > platforms that already perfected it.
 
-| Channel | Purpose | Users | Interface Style |
-|:--------|:--------|:------|:----------------|
-| `tar` Mobile App | Admin & Business Management | Store Owners, Managers | Structured UI, Charts, Catalog |
-| Telegram / WhatsApp | Operational Commands & Alerts | Staff, Drivers, Vendors | Natural Language, Chat-based |
+| Channel             | Purpose                       | Users                   | Interface Style                |
+| :------------------ | :---------------------------- | :---------------------- | :----------------------------- |
+| `tar` Mobile App    | Admin & Business Management   | Store Owners, Managers  | Structured UI, Charts, Catalog |
+| Telegram / WhatsApp | Operational Commands & Alerts | Staff, Drivers, Vendors | Natural Language, Chat-based   |

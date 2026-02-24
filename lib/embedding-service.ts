@@ -29,7 +29,10 @@ export function useEmbeddingService() {
     });
 
     useEffect(() => {
-        if (error) console.error('[ExecuTorch] Load error:', error);
+        if (error) {
+            // Log but don't block - the model may still work with cached data
+            console.warn('[ExecuTorch] Model load warning:', error);
+        }
         if (isReady) console.log('[ExecuTorch] Model is ready for inference!');
         if (downloadProgress > 0 && downloadProgress < 1) {
             console.log(`[ExecuTorch] Download progress: ${(downloadProgress * 100).toFixed(1)}%`);

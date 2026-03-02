@@ -14,6 +14,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { dbHelpers } from "../lib/db";
 import {
     generateProductPayload,
@@ -22,7 +23,7 @@ import {
     refineProductPayload,
 } from "../lib/groq-service";
 
-export default function AddNodeScreen() {
+export default function AddStateScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const initialType =
@@ -30,7 +31,7 @@ export default function AddNodeScreen() {
   const isTypeFixed = typeof params.type === "string";
 
   // ─── State ───
-  const [nodeType, setNodeType] = useState(initialType);
+  const [stateType, setStateType] = useState(initialType);
   const [isSaving, setIsSaving] = useState(false);
 
   // AI state
@@ -114,10 +115,10 @@ export default function AddNodeScreen() {
   }, [generatedPayload]);
 
   useEffect(() => {
-    if (nodeType !== "Products" && !generatedPayload) {
+    if (stateType !== "Products" && !generatedPayload) {
       setShowFullForm(true);
     }
-  }, [nodeType, generatedPayload]);
+  }, [stateType, generatedPayload]);
 
   // ─── Populate from payload ───
   const populateFormFromPayload = (p: ProductPayload) => {
@@ -301,7 +302,7 @@ export default function AddNodeScreen() {
     if (returnPolicy.trim()) payload.return_policy = returnPolicy.trim();
 
     // Collection-specific
-    if (nodeType === "Collections") {
+    if (stateType === "Collections") {
       if (collectionDescription.trim())
         payload.description = collectionDescription.trim();
       if (collectionTags.trim())
@@ -312,7 +313,7 @@ export default function AddNodeScreen() {
     }
 
     // Post-specific
-    if (nodeType === "Posts") {
+    if (stateType === "Posts") {
       if (postContent.trim()) payload.content = postContent.trim();
       if (postTags.trim())
         payload.tags = postTags
@@ -339,23 +340,23 @@ export default function AddNodeScreen() {
       await dbHelpers.insertState({
         id: Math.random().toString(36).substring(7),
         title: finalTitle,
-        type: nodeType,
+        type: stateType,
         ucode: finalCode,
         payload: buildPayload() !== "{}" ? buildPayload() : undefined,
       });
       router.back();
     } catch (error) {
-      console.error("Failed to save node:", error);
-      Alert.alert("Error", "Error saving node. Check console.");
+      console.error("Failed to save state:", error);
+      Alert.alert("Error", "Error saving state. Check console.");
     } finally {
       setIsSaving(false);
     }
   };
 
   // ─── Render ───
-  const singularType = nodeType.endsWith("s")
-    ? nodeType.slice(0, -1)
-    : nodeType;
+  const singularType = stateType.endsWith("s")
+    ? stateType.slice(0, -1)
+    : stateType;
 
   const renderProperty = (
     icon: string,
@@ -384,63 +385,70 @@ export default function AddNodeScreen() {
     placeholder: string,
     multiline = false,
   ) => (
-    <View style={s.formField}>
-      <Text style={s.formFieldLabel}>{label}</Text>
+    <View style={multiline ? s.fieldRowInlineMulti : s.fieldRowInline}>
+      <View
+        style={[
+          s.fieldLabelContainer,
+          multiline && { alignSelf: "flex-start", marginTop: 12 },
+        ]}
+      >
+        <Text style={s.fieldLabelText}>{label}</Text>
+      </View>
       <TextInput
-        style={[s.formFieldInput, multiline && s.formFieldMultiline]}
+        style={multiline ? s.fieldInputInlineMulti : s.fieldInputInline}
         placeholder={placeholder}
         placeholderTextColor="#CBD5E1"
         value={value}
         onChangeText={setter}
         multiline={multiline}
+        textAlignVertical={multiline ? "top" : "center"}
       />
     </View>
   );
+
+  const insets = useSafeAreaInsets();
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={s.container}
     >
-      {/* ─── Minimal Top Bar ─── */}
-      <View style={s.topBar}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <MaterialCommunityIcons name="arrow-left" size={22} color="#374151" />
-        </TouchableOpacity>
-
-        {/* Node type pills (right side) */}
-        {!isTypeFixed && (
-          <View style={s.typePills}>
-            {["Products", "Collections", "Posts"].map((type) => (
-              <TouchableOpacity
-                key={type}
-                style={[s.pill, nodeType === type && s.pillActive]}
-                onPress={() => setNodeType(type)}
-              >
-                <Text
-                  style={[s.pillText, nodeType === type && s.pillTextActive]}
-                >
-                  {type}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Save button — always visible for non-Products, or when generatedPayload exists for Products */}
-        {(generatedPayload || nodeType !== "Products") && (
-          <TouchableOpacity
-            style={[s.saveTopBtn, isSaving && { opacity: 0.5 }]}
-            onPress={handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <ActivityIndicator color="#FFF" size="small" />
-            ) : (
-              <Text style={s.saveTopBtnText}>Save</Text>
-            )}
+      <View style={{ backgroundColor: "#FFFFFF", paddingTop: insets.top }}>
+        <View style={s.topBar}>
+          <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
+            <Text style={s.cancelText}>Cancel</Text>
           </TouchableOpacity>
-        )}
+
+          {!isTypeFixed && (
+            <View style={s.typePills}>
+              {["Products", "Collections", "Posts"].map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[s.pill, stateType === type && s.pillActive]}
+                  onPress={() => setStateType(type)}
+                >
+                  <Text
+                    style={[s.pillText, stateType === type && s.pillTextActive]}
+                  >
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {(generatedPayload || stateType !== "Products") && (
+            <TouchableOpacity onPress={handleSave} disabled={isSaving}>
+              {isSaving ? (
+                <ActivityIndicator color="#007AFF" size="small" />
+              ) : (
+                <Text style={[s.saveText, isSaving && { opacity: 0.5 }]}>
+                  Save
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView
@@ -448,110 +456,25 @@ export default function AddNodeScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* ─── NOTION-STYLE TITLE ─── */}
-        <TextInput
-          style={s.notionTitle}
-          placeholder="Untitled"
-          placeholderTextColor="#D1D5DB"
-          value={editedTitle}
-          onChangeText={setEditedTitle}
-          multiline
-        />
-
-        {/* ─── Universal Code (inline) ─── */}
-        <View style={s.codeInline}>
-          <MaterialCommunityIcons
-            name="barcode-scan"
-            size={14}
-            color="#7C3AED"
-          />
-          <TextInput
-            style={s.codeInlineInput}
-            placeholder="Set code (e.g. PST-001)"
-            placeholderTextColor="#C4B5FD"
-            value={editedCode}
-            onChangeText={setEditedCode}
-          />
-        </View>
-
-        {/* ─── Divider ─── */}
-        <View style={s.divider} />
-
-        {/* ─── POSTS / COLLECTIONS: Direct Form ─── */}
-        {nodeType === "Posts" && (
-          <View style={s.directForm}>
+        {/* ─── TITLE / AI PROMPT ─── */}
+        {!generatedPayload && stateType === "Products" ? (
+          <View style={{ marginBottom: 20 }}>
             <TextInput
-              style={s.postContentInput}
-              placeholder="Write your post content here..."
-              placeholderTextColor="#CBD5E1"
-              value={postContent}
-              onChangeText={setPostContent}
-              multiline
-              textAlignVertical="top"
-            />
-            <View style={s.directFormField}>
-              <MaterialCommunityIcons
-                name="tag-multiple-outline"
-                size={16}
-                color="#9CA3AF"
-                style={{ marginRight: 8, marginTop: 2 }}
-              />
-              <TextInput
-                style={s.directFormInput}
-                placeholder="Add tags (comma separated)"
-                placeholderTextColor="#CBD5E1"
-                value={postTags}
-                onChangeText={setPostTags}
-              />
-            </View>
-          </View>
-        )}
-
-        {nodeType === "Collections" && (
-          <View style={s.directForm}>
-            <TextInput
-              style={s.postContentInput}
-              placeholder="Describe this collection..."
-              placeholderTextColor="#CBD5E1"
-              value={collectionDescription}
-              onChangeText={setCollectionDescription}
-              multiline
-              textAlignVertical="top"
-            />
-            <View style={s.directFormField}>
-              <MaterialCommunityIcons
-                name="tag-multiple-outline"
-                size={16}
-                color="#9CA3AF"
-                style={{ marginRight: 8, marginTop: 2 }}
-              />
-              <TextInput
-                style={s.directFormInput}
-                placeholder="Add tags (comma separated)"
-                placeholderTextColor="#CBD5E1"
-                value={collectionTags}
-                onChangeText={setCollectionTags}
-              />
-            </View>
-          </View>
-        )}
-
-        {/* ─── PRODUCTS: AI Input (before generation) ─── */}
-        {!generatedPayload && nodeType === "Products" && (
-          <View style={s.aiSection}>
-            <TextInput
-              style={s.aiInput}
-              placeholder={`Describe your ${singularType.toLowerCase()} and let AI fill in the details...`}
-              placeholderTextColor="#CBD5E1"
+              style={s.notionTitle}
+              placeholder="Describe your product..."
+              placeholderTextColor="#D1D5DB"
               value={aiPrompt}
               onChangeText={setAiPrompt}
               multiline
-              textAlignVertical="top"
+              autoFocus
             />
-
             {aiPrompt.trim().length > 0 && (
               <TouchableOpacity
-                style={[s.aiBtn, isGenerating && { opacity: 0.6 }]}
+                style={[
+                  s.aiBtn,
+                  isGenerating && { opacity: 0.6 },
+                  { marginTop: 12 },
+                ]}
                 onPress={handleAiGenerate}
                 disabled={isGenerating}
                 activeOpacity={0.7}
@@ -573,13 +496,6 @@ export default function AddNodeScreen() {
                 )}
               </TouchableOpacity>
             )}
-
-            {!hasApiKey && (
-              <Text style={s.apiWarning}>
-                No API key configured — go to Settings
-              </Text>
-            )}
-
             <TouchableOpacity
               style={s.manualToggle}
               onPress={() => {
@@ -590,10 +506,112 @@ export default function AddNodeScreen() {
               <Text style={s.manualToggleText}>or enter manually</Text>
             </TouchableOpacity>
           </View>
+        ) : (
+          <>
+            <TextInput
+              style={s.notionTitle}
+              placeholder="Untitled"
+              placeholderTextColor="#D1D5DB"
+              value={editedTitle}
+              onChangeText={setEditedTitle}
+              multiline
+            />
+
+            {/* ─── Universal Code (inline) ─── */}
+            <View style={s.codeInline}>
+              <MaterialCommunityIcons
+                name="barcode-scan"
+                size={14}
+                color="#7C3AED"
+              />
+              <TextInput
+                style={s.codeInlineInput}
+                placeholder="Set code (e.g. PST-001)"
+                placeholderTextColor="#C4B5FD"
+                value={editedCode}
+                onChangeText={setEditedCode}
+              />
+            </View>
+
+            {/* ─── Divider ─── */}
+            <View style={s.divider} />
+          </>
+        )}
+
+        {/* ─── POSTS / COLLECTIONS: Direct Form ─── */}
+        {stateType === "Posts" && (
+          <View style={s.directForm}>
+            <Text style={s.sectionTitle}>DETAILS</Text>
+            <View style={s.card}>
+              {renderFormField(
+                "Title",
+                editedTitle,
+                setEditedTitle,
+                "Post title",
+              )}
+              <View style={s.separator} />
+              {renderFormField(
+                "Universal Code",
+                editedCode,
+                setEditedCode,
+                "PST-XXX-001",
+              )}
+            </View>
+            <Text style={s.sectionTitle}>CONTENT</Text>
+            <View style={s.card}>
+              {renderFormField(
+                "Content",
+                postContent,
+                setPostContent,
+                "Write your post content here...",
+                true,
+              )}
+              <View style={s.separator} />
+              {renderFormField("Tags", postTags, setPostTags, "tag1, tag2")}
+            </View>
+          </View>
+        )}
+
+        {stateType === "Collections" && (
+          <View style={s.directForm}>
+            <Text style={s.sectionTitle}>DETAILS</Text>
+            <View style={s.card}>
+              {renderFormField(
+                "Title",
+                editedTitle,
+                setEditedTitle,
+                "Collection title",
+              )}
+              <View style={s.separator} />
+              {renderFormField(
+                "Universal Code",
+                editedCode,
+                setEditedCode,
+                "COL-XXX-001",
+              )}
+            </View>
+            <Text style={s.sectionTitle}>DESCRIPTION</Text>
+            <View style={s.card}>
+              {renderFormField(
+                "Description",
+                collectionDescription,
+                setCollectionDescription,
+                "Describe this collection...",
+                true,
+              )}
+              <View style={s.separator} />
+              {renderFormField(
+                "Tags",
+                collectionTags,
+                setCollectionTags,
+                "tag1, tag2",
+              )}
+            </View>
+          </View>
         )}
 
         {/* ─── Generated Data (Notion property list) — Products only ─── */}
-        {generatedPayload && nodeType === "Products" && (
+        {generatedPayload && stateType === "Products" && (
           <Animated.View
             style={[
               s.propertiesSection,
@@ -767,96 +785,117 @@ export default function AddNodeScreen() {
 
             {showFullForm && (
               <View style={s.fullForm}>
-                {renderFormField(
-                  "Title",
-                  editedTitle,
-                  setEditedTitle,
-                  "Product title",
-                )}
-                {renderFormField(
-                  "Universal Code",
-                  editedCode,
-                  setEditedCode,
-                  "PRD-XXX-001",
-                )}
-                {renderFormField("Brand", brand, setBrand, "e.g. Nike")}
-                {renderFormField(
-                  "Description",
-                  description,
-                  setDescription,
-                  "Product description...",
-                  true,
-                )}
-                <View style={s.fieldRow}>
-                  <View style={{ flex: 2 }}>
-                    {renderFormField(
-                      "Price",
-                      priceAmount,
-                      setPriceAmount,
-                      "49.99",
-                    )}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    {renderFormField(
-                      "Currency",
-                      priceCurrency,
-                      setPriceCurrency,
-                      "USD",
-                    )}
-                  </View>
+                <Text style={s.sectionTitle}>BASIC DETAILS</Text>
+                <View style={s.card}>
+                  {renderFormField(
+                    "Title",
+                    editedTitle,
+                    setEditedTitle,
+                    "Product title",
+                  )}
+                  <View style={s.separator} />
+                  {renderFormField(
+                    "Universal Code",
+                    editedCode,
+                    setEditedCode,
+                    "PRD-XXX-001",
+                  )}
+                  <View style={s.separator} />
+                  {renderFormField("Brand", brand, setBrand, "e.g. Nike")}
+                  <View style={s.separator} />
+                  {renderFormField(
+                    "Description",
+                    description,
+                    setDescription,
+                    "Product description...",
+                    true,
+                  )}
                 </View>
-                {renderFormField(
-                  "Range",
-                  priceRange,
-                  setPriceRange,
-                  "e.g. $40 - $60",
-                )}
-                {renderFormField("GTIN", gtin, setGtin, "EAN / UPC barcode")}
-                {renderFormField(
-                  "MPN",
-                  mpn,
-                  setMpn,
-                  "Manufacturer Part Number",
-                )}
-                {renderFormField(
-                  "Category",
-                  category,
-                  setCategory,
-                  "e.g. Electronics",
-                )}
-                {renderFormField(
-                  "Subcategory",
-                  subcategory,
-                  setSubcategory,
-                  "e.g. Smart Lighting",
-                )}
-                {renderFormField("Tags", tags, setTags, "tag1, tag2, tag3")}
-                {renderFormField(
-                  "Options",
-                  optionsRaw,
-                  setOptionsRaw,
-                  "Size: S, M, L | Color: Red, Blue",
-                  true,
-                )}
-                {renderFormField(
-                  "Specifications",
-                  specsRaw,
-                  setSpecsRaw,
-                  "Weight: 1.2kg, Material: Glass",
-                  true,
-                )}
-                {renderFormField(
-                  "Delivery",
-                  delivery,
-                  setDelivery,
-                  "Ships in 2-3 business days",
-                )}
-                {renderFormField(
-                  "Return Policy",
-                  returnPolicy,
-                  setReturnPolicy,
-                  "30 days easy return",
-                )}
+
+                <Text style={s.sectionTitle}>PRICING</Text>
+                <View style={s.card}>
+                  {renderFormField(
+                    "Price",
+                    priceAmount,
+                    setPriceAmount,
+                    "49.99",
+                  )}
+                  <View style={s.separator} />
+                  {renderFormField(
+                    "Currency",
+                    priceCurrency,
+                    setPriceCurrency,
+                    "USD",
+                  )}
+                  <View style={s.separator} />
+                  {renderFormField(
+                    "Range",
+                    priceRange,
+                    setPriceRange,
+                    "e.g. $40 - $60",
+                  )}
+                </View>
+
+                <Text style={s.sectionTitle}>IDENTIFIERS & CLASSIFICATION</Text>
+                <View style={s.card}>
+                  {renderFormField("GTIN", gtin, setGtin, "EAN / UPC barcode")}
+                  <View style={s.separator} />
+                  {renderFormField(
+                    "MPN",
+                    mpn,
+                    setMpn,
+                    "Manufacturer Part Number",
+                  )}
+                  <View style={s.separator} />
+                  {renderFormField(
+                    "Category",
+                    category,
+                    setCategory,
+                    "e.g. Electronics",
+                  )}
+                  <View style={s.separator} />
+                  {renderFormField(
+                    "Subcategory",
+                    subcategory,
+                    setSubcategory,
+                    "e.g. Smart Lighting",
+                  )}
+                  <View style={s.separator} />
+                  {renderFormField("Tags", tags, setTags, "tag1, tag2, tag3")}
+                </View>
+
+                <Text style={s.sectionTitle}>ADDITIONAL INFO</Text>
+                <View style={s.card}>
+                  {renderFormField(
+                    "Options",
+                    optionsRaw,
+                    setOptionsRaw,
+                    "Size: S, M, L | Color: Red, Blue",
+                    true,
+                  )}
+                  <View style={s.separator} />
+                  {renderFormField(
+                    "Specifications",
+                    specsRaw,
+                    setSpecsRaw,
+                    "Weight: 1.2kg, Material: Glass",
+                    true,
+                  )}
+                  <View style={s.separator} />
+                  {renderFormField(
+                    "Delivery",
+                    delivery,
+                    setDelivery,
+                    "Ships in 2-3 business days",
+                  )}
+                  <View style={s.separator} />
+                  {renderFormField(
+                    "Return Policy",
+                    returnPolicy,
+                    setReturnPolicy,
+                    "30 days easy return",
+                  )}
+                </View>
               </View>
             )}
           </Animated.View>
@@ -912,8 +951,9 @@ const s = StyleSheet.create({
   topBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 10,
     gap: 12,
   },
   typePills: {
@@ -950,6 +990,16 @@ const s = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
   },
+  cancelText: {
+    color: "#000000",
+    fontSize: 17,
+    fontWeight: "400",
+  },
+  saveText: {
+    color: "#007AFF",
+    fontSize: 17,
+    fontWeight: "600",
+  },
 
   scrollContent: {
     paddingHorizontal: 24,
@@ -961,10 +1011,11 @@ const s = StyleSheet.create({
     fontSize: 32,
     fontWeight: "700",
     color: "#111827",
-    letterSpacing: -0.5,
-    paddingVertical: 8,
-    marginTop: 8,
-    lineHeight: 40,
+    letterSpacing: -0.8,
+    paddingVertical: 0,
+    marginTop: 20,
+    lineHeight: 38,
+    textAlignVertical: "top",
   },
 
   // ── Code inline ──
@@ -1057,7 +1108,7 @@ const s = StyleSheet.create({
     color: "#F59E0B",
   },
   manualToggle: {
-    paddingVertical: 4,
+    paddingVertical: 12,
   },
   manualToggleText: {
     fontSize: 13,
@@ -1215,6 +1266,73 @@ const s = StyleSheet.create({
   // ── Full Form ──
   fullForm: {
     gap: 0,
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    overflow: "hidden",
+    marginBottom: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#94A3B8",
+    marginBottom: 8,
+    marginLeft: 4,
+    letterSpacing: 0.8,
+  },
+  fieldRowInline: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minHeight: 52,
+  },
+  fieldRowInlineMulti: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minHeight: 80,
+  },
+  fieldLabelContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: 110,
+    gap: 10,
+  },
+  fieldLabelText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#64748B",
+  },
+  fieldInputInline: {
+    flex: 1,
+    fontSize: 14,
+    color: "#111827",
+    fontWeight: "500",
+    textAlign: "right",
+    paddingVertical: 0,
+  },
+  fieldInputInlineMulti: {
+    flex: 1,
+    fontSize: 14,
+    color: "#111827",
+    fontWeight: "500",
+    textAlign: "right",
+    paddingTop: 10,
+    paddingBottom: 10,
+    minHeight: 80,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: "#F1F5F9",
+    marginLeft: 16,
   },
   formField: {
     marginBottom: 16,

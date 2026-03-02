@@ -323,37 +323,6 @@ export const dbHelpers = {
     return result;
   },
 
-  // Legacy compatibility helpers (to avoid breaking the whole app at once)
-  getNodes: async (parentid?: string) => {
-    // Mapping parentid to scope or a custom payload field if needed,
-    // but for now, we'll just return all states.
-    return await dbHelpers.getStates();
-  },
-  insertNode: async (node: any) => {
-    return await dbHelpers.insertState({
-      id: node.id,
-      ucode: node.universalcode,
-      type: node.nodetype,
-      title: node.title,
-      payload: node.payload,
-    });
-  },
-  getPoints: async () => {
-    return await dbHelpers.getInstances();
-  },
-  getEvents: async (streamid?: string) => {
-    return await dbHelpers.getTraces(streamid);
-  },
-  insertEvent: async (event: any) => {
-    return await dbHelpers.insertTrace({
-      id: event.id,
-      streamid: event.streamid,
-      opcode: event.opcode,
-      payload: event.payload,
-      scope: event.scope,
-    });
-  },
-
   // Semantic Search
   semanticSearchState: async (queryVector: Float32Array, limit: number = 5) => {
     const db = await getDb();

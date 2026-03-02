@@ -12,6 +12,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+// import { SafeAreaView } from "react-native-safe-area-context";
 import { useMemoryStore } from "../../hooks/use-memory-store";
 import { useThemeColors } from "../../hooks/use-theme-colors";
 import { dbHelpers, subscribeToDbChanges } from "../../lib/db";
@@ -305,6 +306,12 @@ export default function TraceScreen() {
               style={styles.thumbnail}
               contentFit="cover"
             />
+          ) : itemType === "state" ? (
+            <Image
+              source={require("../../assets/images/prod1.jpg")}
+              style={styles.thumbnail}
+              contentFit="cover"
+            />
           ) : typeIcon ? (
             <MaterialCommunityIcons
               name={typeIcon}
@@ -517,7 +524,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 20,
-    paddingBottom: 100,
+    paddingBottom: 130, // increased padding to ensure content isn't obscured by floating tab bar
   },
   sectionHeader: {
     fontSize: 13,

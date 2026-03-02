@@ -14,7 +14,10 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+    SafeAreaView,
+    useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { useMemoryStore } from "../../hooks/use-memory-store";
 import { useThemeColors } from "../../hooks/use-theme-colors";
 import { TABLES } from "../../lib/constants";
@@ -143,6 +146,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     [memory, setMemory, setIsFilterModalVisible, colors],
   );
 
+  const insets = useSafeAreaInsets();
+
   const formattedMemory = React.useMemo(() => {
     if (!memory) return "Memory";
     if (memory.includes(":")) {
@@ -153,7 +158,12 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   }, [memory]);
 
   return (
-    <View style={styles.tabBarContainer}>
+    <View
+      style={[
+        styles.tabBarContainer,
+        { bottom: Math.max(30, insets.bottom + 10) },
+      ]}
+    >
       <View style={styles.leftWrapper}>
         <BlurView
           intensity={90}
@@ -259,18 +269,32 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 const type = memory.split(":")[1];
-                router.push({ pathname: "/add-node", params: { type } });
+                router.push({ pathname: "/add-state", params: { type } });
               }}
               activeOpacity={0.7}
             >
-              <View
-                style={[
-                  styles.aiButtonBadge,
-                  { backgroundColor: colors.accent },
-                ]}
-              >
-                <Text style={styles.aiButtonText}>AI</Text>
-              </View>
+              <MaterialCommunityIcons
+                name="plus"
+                size={22}
+                color={colors.text}
+              />
+            </TouchableOpacity>
+          )}
+
+          {memory === "instance" && (
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/add-instance");
+              }}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons
+                name="plus"
+                size={22}
+                color={colors.text}
+              />
             </TouchableOpacity>
           )}
         </BlurView>
@@ -284,6 +308,7 @@ function TopBar() {
   const pathname = usePathname();
   const colors = useThemeColors();
   const { colorScheme, setColorScheme } = useColorScheme();
+  const insets = useSafeAreaInsets();
 
   const handleSync = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -305,6 +330,8 @@ function TopBar() {
         {
           backgroundColor: colors.background,
           borderBottomColor: colors.border,
+          height: 60 + insets.top,
+          paddingTop: insets.top,
         },
       ]}
     >
@@ -411,7 +438,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   topBarContainer: {
-    height: 60,
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "rgba(0,0,0,0.05)",
@@ -440,23 +466,23 @@ const styles = StyleSheet.create({
   },
   tabBarInner: {
     flexDirection: "row",
-    borderRadius: 35,
-    height: 65,
+    borderRadius: 25,
+    height: 48,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
     borderWidth: 1,
-    width: 100,
+    minWidth: 90,
   },
   rightContainer: {
     flexDirection: "row",
-    borderRadius: 35,
+    borderRadius: 25,
     paddingHorizontal: 5,
-    height: 65,
+    height: 48,
     alignItems: "center",
     overflow: "hidden",
     borderWidth: 1,
-    width: 100,
+    minWidth: 90,
     justifyContent: "center",
   },
   tabItem: {
@@ -536,15 +562,15 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   aiButtonBadge: {
-    width: 50,
-    height: 50,
+    width: 38,
+    height: 38,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 25,
+    borderRadius: 19,
   },
   aiButtonText: {
     color: "#fff",
     fontWeight: "bold",
-    fontSize: 16,
+    fontSize: 14,
   },
 });

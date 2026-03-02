@@ -117,9 +117,11 @@ export default function MemorySelectionScreen() {
 
   const handleSelect = (title: string) => {
     if (title === "States" || title === "Nodes") {
-      router.replace("/add-node");
+      router.replace("/add-state");
     } else if (title === "OREvents" || title === "Timeline") {
       router.replace("/add-event");
+    } else if (title === "Instances" || title === "Inventory Stock Levels") {
+      router.replace("/add-instance");
     }
   };
 

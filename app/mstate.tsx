@@ -16,6 +16,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { dbHelpers } from "../lib/db";
 import { ProductPayload, refineProductPayload } from "../lib/groq-service";
 
@@ -27,6 +28,7 @@ export default function MemoryDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { title, subtitle, type, ...rest } = params;
+  const insets = useSafeAreaInsets();
 
   const isProduct =
     type === "state" &&
@@ -133,11 +135,31 @@ export default function MemoryDetailScreen() {
       <StatusBar barStyle="dark-content" />
 
       {/* ── Top Bar ── */}
-      <View style={s.topBar}>
+      <View style={[s.topBar, { paddingTop: Math.max(insets.top + 10, 10) }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
           <MaterialCommunityIcons name="arrow-left" size={22} color="#374151" />
         </TouchableOpacity>
         <View style={{ flex: 1 }} />
+        {isProduct && (
+          <TouchableOpacity
+            onPress={() =>
+              router.push({
+                pathname: "/add-instance",
+                params: { stateid: rest.id, stateTitle: currentTitle },
+              })
+            }
+            style={[
+              s.typeBadge,
+              {
+                marginRight: 8,
+                backgroundColor: "#111827",
+                borderColor: "#111827",
+              },
+            ]}
+          >
+            <Text style={[s.typeBadgeText, { color: "#FFF" }]}>+ Instance</Text>
+          </TouchableOpacity>
+        )}
         {isProduct && (
           <View style={s.typeBadge}>
             <Text style={s.typeBadgeText}>

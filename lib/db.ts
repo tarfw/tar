@@ -28,87 +28,57 @@ export async function getDb(): Promise<Database> {
 
     // Initialize Global/Sync Schema
     const schema = [
-      `CREATE TABLE IF NOT EXISTS actors (
+      `CREATE TABLE IF NOT EXISTS state (
                 id TEXT PRIMARY KEY,
-                parentid TEXT,
-                actortype TEXT NOT NULL,
-                globalcode TEXT NOT NULL,
-                name TEXT NOT NULL,
-                metadata TEXT,
-                vector F32_BLOB(384),
-                pushtoken TEXT
-            )`,
-      `CREATE TABLE IF NOT EXISTS collab (
-                id TEXT PRIMARY KEY,
-                actorid TEXT NOT NULL,
-                targettype TEXT NOT NULL,
-                targetid TEXT NOT NULL,
-                role TEXT NOT NULL,
-                permissions TEXT,
-                createdat TEXT NOT NULL,
-                expiresat TEXT
-            )`,
-      `CREATE TABLE IF NOT EXISTS nodes (
-                id TEXT PRIMARY KEY,
-                parentid TEXT,
-                nodetype TEXT NOT NULL,
-                universalcode TEXT NOT NULL,
-                title TEXT NOT NULL,
+                ucode TEXT UNIQUE NOT NULL,
+                type TEXT NOT NULL,
+                title TEXT,
                 payload TEXT,
-                embedding F32_BLOB(384)
+                embedding F32_BLOB(384),
+                scope TEXT,
+                author TEXT,
+                ts TEXT DEFAULT CURRENT_TIMESTAMP
             )`,
-      `CREATE TABLE IF NOT EXISTS points (
+      `CREATE TABLE IF NOT EXISTS instance (
                 id TEXT PRIMARY KEY,
-                noderef TEXT NOT NULL,
-                sellerid TEXT NOT NULL,
-                sku TEXT NOT NULL,
-                lat REAL NOT NULL,
-                lon REAL NOT NULL,
-                stock TEXT,
-                price REAL NOT NULL,
-                notes TEXT,
-                version INTEGER DEFAULT 0
+                stateid TEXT NOT NULL,
+                scope TEXT,
+                metadata TEXT,
+                qty REAL,
+                value REAL,
+                currency TEXT,
+                available INTEGER,
+                lat REAL,
+                lng REAL,
+                h3 TEXT,
+                startts TEXT,
+                endts TEXT,
+                ts TEXT DEFAULT CURRENT_TIMESTAMP,
+                payload TEXT,
+                FOREIGN KEY (stateid) REFERENCES state(id)
             )`,
-      `CREATE TABLE IF NOT EXISTS streams (
-                id TEXT PRIMARY KEY,
-                scope TEXT NOT NULL,
-                createdby TEXT NOT NULL,
-                createdat TEXT NOT NULL
-            )`,
-      `CREATE TABLE IF NOT EXISTS streamcollab (
-                streamid TEXT NOT NULL,
-                actorid TEXT NOT NULL,
-                role TEXT NOT NULL,
-                joinedat TEXT,
-                PRIMARY KEY (streamid, actorid)
-            )`,
-      `CREATE TABLE IF NOT EXISTS orevents (
+      `CREATE TABLE IF NOT EXISTS trace (
                 id TEXT PRIMARY KEY,
                 streamid TEXT NOT NULL,
                 opcode INTEGER NOT NULL,
-                refid TEXT NOT NULL,
+                delta REAL,
                 lat REAL,
                 lng REAL,
-                delta REAL DEFAULT 0,
                 payload TEXT,
-                scope TEXT NOT NULL,
-                status TEXT,
-                ts TEXT NOT NULL,
-                embedding F32_BLOB(384)
+                ts TEXT DEFAULT CURRENT_TIMESTAMP,
+                scope TEXT
             )`,
     ];
 
-    for (const statement of schema) {
-      await instance.exec(statement);
-    }
-
-    // Migration: Add embedding column to orevents if it doesn't exist
     try {
-      await instance.exec(
-        "ALTER TABLE orevents ADD COLUMN embedding F32_BLOB(384)",
-      );
+      console.log("[DB] Initializing new schema...");
+      for (const statement of schema) {
+        await instance.exec(statement);
+      }
+      console.log("[DB] Schema initialization complete.");
     } catch (e) {
-      // Ignore error if column already exists
+      console.error("[DB] Critical: Failed to initialize schema:", e);
+      throw e;
     }
 
     dbInstance = instance;
@@ -206,69 +176,42 @@ export async function syncDb() {
  */
 
 export const dbHelpers = {
-  // Actors
-  getActors: async () => {
+  // State (Catalog/Categories/Products/Actors)
+  getStates: async (scope?: string) => {
     const db = await getDb();
-    return await db.all("SELECT * FROM actors");
-  },
-  insertActor: async (actor: {
-    id: string;
-    actortype: string;
-    globalcode: string;
-    name: string;
-    parentid?: string;
-    metadata?: string;
-  }) => {
-    const db = await getDb();
-    const result = await db.run(
-      "INSERT INTO actors (id, actortype, globalcode, name, parentid, metadata) VALUES (?, ?, ?, ?, ?, ?)",
-      [
-        actor.id,
-        actor.actortype,
-        actor.globalcode,
-        actor.name,
-        actor.parentid || null,
-        actor.metadata || null,
-      ],
-    );
-    notifyDbChanges();
-    return result;
-  },
-
-  // Nodes (Catalog/Categories/Products)
-  getNodes: async (parentid?: string) => {
-    const db = await getDb();
-    if (parentid) {
-      return await db.all("SELECT * FROM nodes WHERE parentid = ?", [parentid]);
+    if (scope) {
+      return await db.all("SELECT * FROM state WHERE scope = ?", [scope]);
     }
-    return await db.all("SELECT * FROM nodes");
+    return await db.all("SELECT * FROM state");
   },
-  insertNode: async (node: {
+  insertState: async (state: {
     id: string;
-    nodetype: string;
-    universalcode: string;
-    title: string;
-    parentid?: string;
+    ucode: string;
+    type: string;
+    title?: string;
     payload?: string;
+    scope?: string;
+    author?: string;
   }) => {
     const db = await getDb();
     const result = await db.run(
-      "INSERT INTO nodes (id, nodetype, universalcode, title, parentid, payload) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO state (id, ucode, type, title, payload, scope, author) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [
-        node.id,
-        node.nodetype,
-        node.universalcode,
-        node.title,
-        node.parentid || null,
-        node.payload || null,
+        state.id,
+        state.ucode,
+        state.type,
+        state.title || null,
+        state.payload || null,
+        state.scope || null,
+        state.author || null,
       ],
     );
     notifyDbChanges();
     return result;
   },
-  updateNode: async (
+  updateState: async (
     id: string,
-    updates: { title?: string; universalcode?: string; payload?: string },
+    updates: { title?: string; ucode?: string; payload?: string },
   ) => {
     const db = await getDb();
     const sets: string[] = [];
@@ -277,9 +220,9 @@ export const dbHelpers = {
       sets.push("title = ?");
       vals.push(updates.title);
     }
-    if (updates.universalcode !== undefined) {
-      sets.push("universalcode = ?");
-      vals.push(updates.universalcode);
+    if (updates.ucode !== undefined) {
+      sets.push("ucode = ?");
+      vals.push(updates.ucode);
     }
     if (updates.payload !== undefined) {
       sets.push("payload = ?");
@@ -288,116 +231,151 @@ export const dbHelpers = {
     if (sets.length === 0) return;
     vals.push(id);
     const result = await db.run(
-      `UPDATE nodes SET ${sets.join(", ")} WHERE id = ?`,
+      `UPDATE state SET ${sets.join(", ")} WHERE id = ?`,
       vals,
     );
     notifyDbChanges();
     return result;
   },
 
-  // OREvents (Operational Events)
-  getEvents: async (streamid?: string) => {
+  // Trace (Operational Events)
+  getTraces: async (streamid?: string) => {
     const db = await getDb();
     if (streamid) {
       return await db.all(
-        "SELECT * FROM orevents WHERE streamid = ? ORDER BY ts DESC",
+        "SELECT * FROM trace WHERE streamid = ? ORDER BY ts DESC",
         [streamid],
       );
     }
-    return await db.all("SELECT * FROM orevents ORDER BY ts DESC");
+    return await db.all("SELECT * FROM trace ORDER BY ts DESC");
   },
-  insertEvent: async (event: {
+  insertTrace: async (trace: {
     id: string;
     streamid: string;
     opcode: number;
-    refid: string;
-    scope: string;
-    status?: string;
+    delta?: number;
+    lat?: number;
+    lng?: number;
     payload?: string;
+    scope?: string;
   }) => {
     const db = await getDb();
     const result = await db.run(
-      "INSERT INTO orevents (id, streamid, opcode, refid, scope, status, payload, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO trace (id, streamid, opcode, delta, lat, lng, payload, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [
-        event.id,
-        event.streamid,
-        event.opcode,
-        event.refid,
-        event.scope,
-        event.status || "pending",
-        event.payload || null,
-        new Date().toISOString(),
+        trace.id,
+        trace.streamid,
+        trace.opcode,
+        trace.delta || 0,
+        trace.lat || null,
+        trace.lng || null,
+        trace.payload || null,
+        trace.scope || null,
       ],
     );
     notifyDbChanges();
     return result;
   },
 
-  // Collab
-  getCollab: async () => {
+  // Instances
+  getInstances: async (stateid?: string) => {
     const db = await getDb();
-    return await db.all("SELECT * FROM collab");
+    if (stateid) {
+      return await db.all("SELECT * FROM instance WHERE stateid = ?", [
+        stateid,
+      ]);
+    }
+    return await db.all("SELECT * FROM instance");
+  },
+  insertInstance: async (instance: {
+    id: string;
+    stateid: string;
+    scope?: string;
+    metadata?: string;
+    qty?: number;
+    value?: number;
+    currency?: string;
+    available?: number;
+    lat?: number;
+    lng?: number;
+    h3?: string;
+    payload?: string;
+  }) => {
+    const db = await getDb();
+    const result = await db.run(
+      "INSERT INTO instance (id, stateid, scope, metadata, qty, value, currency, available, lat, lng, h3, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        instance.id,
+        instance.stateid,
+        instance.scope || null,
+        instance.metadata || null,
+        instance.qty || 0,
+        instance.value || 0,
+        instance.currency || null,
+        instance.available || 1,
+        instance.lat || null,
+        instance.lng || null,
+        instance.h3 || null,
+        instance.payload || null,
+      ],
+    );
+    notifyDbChanges();
+    return result;
   },
 
-  // Points
+  // Legacy compatibility helpers (to avoid breaking the whole app at once)
+  getNodes: async (parentid?: string) => {
+    // Mapping parentid to scope or a custom payload field if needed,
+    // but for now, we'll just return all states.
+    return await dbHelpers.getStates();
+  },
+  insertNode: async (node: any) => {
+    return await dbHelpers.insertState({
+      id: node.id,
+      ucode: node.universalcode,
+      type: node.nodetype,
+      title: node.title,
+      payload: node.payload,
+    });
+  },
   getPoints: async () => {
-    const db = await getDb();
-    return await db.all("SELECT * FROM points");
+    return await dbHelpers.getInstances();
   },
-
-  // Streams
-  getStreams: async () => {
-    const db = await getDb();
-    return await db.all("SELECT * FROM streams");
+  getEvents: async (streamid?: string) => {
+    return await dbHelpers.getTraces(streamid);
   },
-
-  // StreamCollab
-  getStreamCollab: async () => {
-    const db = await getDb();
-    return await db.all("SELECT * FROM streamcollab");
+  insertEvent: async (event: any) => {
+    return await dbHelpers.insertTrace({
+      id: event.id,
+      streamid: event.streamid,
+      opcode: event.opcode,
+      payload: event.payload,
+      scope: event.scope,
+    });
   },
 
   // Semantic Search
-  semanticSearchNodes: async (queryVector: Float32Array, limit: number = 5) => {
+  semanticSearchState: async (queryVector: Float32Array, limit: number = 5) => {
     const db = await getDb();
-    // Turso native vector search syntax
-    // Using vector_distance_cos for cosine similarity
     return await db.all(
       `SELECT *, vector_distance_cos(embedding, ?) as distance 
-             FROM nodes 
+             FROM state 
              WHERE embedding IS NOT NULL 
              ORDER BY distance 
              LIMIT ?`,
       [queryVector.buffer as ArrayBuffer, limit],
     );
   },
-  semanticSearchActors: async (
+  semanticSearchTraces: async (
     queryVector: Float32Array,
     limit: number = 5,
   ) => {
-    const db = await getDb();
-    return await db.all(
-      `SELECT *, vector_distance_cos(vector, ?) as distance 
-             FROM actors 
-             WHERE vector IS NOT NULL 
-             ORDER BY distance 
-             LIMIT ?`,
-      [queryVector.buffer.slice(0) as ArrayBuffer, limit],
+    // Trace table currently does not have an embedding column for vector search.
+    // Returning an empty result instead of crashing.
+    console.warn(
+      "[DB] semanticSearchTraces called but trace table has no embedding column.",
     );
-  },
-  semanticSearchEvents: async (
-    queryVector: Float32Array,
-    limit: number = 5,
-  ) => {
-    const db = await getDb();
-    return await db.all(
-      `SELECT *, vector_distance_cos(embedding, ?) as distance 
-             FROM orevents 
-             WHERE embedding IS NOT NULL 
-             ORDER BY distance 
-             LIMIT ?`,
-      [queryVector.buffer.slice(0) as ArrayBuffer, limit],
-    );
+    return [];
   },
 };
 

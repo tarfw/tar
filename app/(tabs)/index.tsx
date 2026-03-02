@@ -38,25 +38,16 @@ export default function TraceScreen() {
 
   const fetchData = async () => {
     try {
-      const [actors, nodes, events, collab, points, streams, streamcollab] =
-        await Promise.all([
-          dbHelpers.getActors(),
-          dbHelpers.getNodes(),
-          dbHelpers.getEvents(),
-          dbHelpers.getCollab(),
-          dbHelpers.getPoints(),
-          dbHelpers.getStreams(),
-          dbHelpers.getStreamCollab(),
-        ]);
+      const [states, traces, instances] = await Promise.all([
+        dbHelpers.getStates(),
+        dbHelpers.getTraces(),
+        dbHelpers.getInstances(),
+      ]);
 
       setTableData({
-        actors,
-        nodes,
-        orevents: events,
-        collab,
-        points,
-        streams,
-        streamcollab,
+        state: states,
+        trace: traces,
+        instance: instances,
       });
     } catch (error) {
       console.error("[Trace] Fetch error:", error);
@@ -67,9 +58,9 @@ export default function TraceScreen() {
     fetchData();
     const unsubscribe = subscribeToDbChanges(fetchData);
 
-    // Default to orevents if memory store is empty or 'Memory'
+    // Default to trace if memory store is empty or 'Memory'
     if (activeTab === "Memory") {
-      setActiveTab("orevents");
+      setActiveTab("trace");
     }
 
     return () => {
@@ -88,46 +79,34 @@ export default function TraceScreen() {
       const vector = await generateEmbedding(searchQuery);
       if (vector) {
         // Perform multiple searches in parallel
-        const [nodeResults, actorResults, eventResults] = await Promise.all([
-          dbHelpers.semanticSearchNodes(vector, 5),
-          dbHelpers.semanticSearchActors(vector, 5),
-          dbHelpers.semanticSearchEvents(vector, 5),
+        const [stateResults, traceResults] = await Promise.all([
+          dbHelpers.semanticSearchState(vector, 10),
+          dbHelpers.semanticSearchTraces(vector, 5),
         ]);
 
         // Map to common result format
-        const formattedNodes = nodeResults.map((n: any) => ({
-          ...n,
-          id: n.id,
-          title: n.title,
-          type: "nodes",
-          subtitle: n.nodetype,
-          distance: n.distance,
+        const formattedStates = stateResults.map((s: any) => ({
+          ...s,
+          id: s.id,
+          title: s.title,
+          type: "state",
+          subtitle: s.type,
+          distance: s.distance,
         }));
 
-        const formattedActors = actorResults.map((a: any) => ({
-          ...a,
-          id: a.id,
-          title: a.name,
-          type: "actors",
-          subtitle: a.actortype,
-          distance: a.distance,
+        const formattedTraces = traceResults.map((t: any) => ({
+          ...t,
+          id: t.id,
+          title: t.scope,
+          type: "trace",
+          subtitle: t.payload ? "Event" : "Trace",
+          distance: t.distance,
         }));
 
-        const formattedEvents = eventResults.map((e: any) => ({
-          ...e,
-          id: e.id,
-          title: e.scope,
-          type: "orevents",
-          subtitle: e.status,
-          distance: e.distance,
-        }));
-
-        // Combine and sort by distance (lower is better for cosine distance in Turso)
-        const combinedResults = [
-          ...formattedNodes,
-          ...formattedActors,
-          ...formattedEvents,
-        ].sort((a, b) => a.distance - b.distance);
+        // Combine and sort by distance
+        const combinedResults = [...formattedStates, ...formattedTraces].sort(
+          (a, b) => a.distance - b.distance,
+        );
 
         setSearchResults(combinedResults);
       }
@@ -146,6 +125,16 @@ export default function TraceScreen() {
 
   const [baseTab, filter] = activeTab.split(":");
 
+  const formattedActiveTab = React.useMemo(() => {
+    if (!activeTab) return "Memory";
+    if (filter) return filter;
+    // Map internal IDs to Display Names
+    if (baseTab === "state") return "States";
+    if (baseTab === "instance") return "Instances";
+    if (baseTab === "trace") return "Timeline";
+    return baseTab.charAt(0).toUpperCase() + baseTab.slice(1);
+  }, [activeTab, baseTab, filter]);
+
   const renderItem = ({ item }: { item: any }) => {
     let title = "";
     let subtitle = "";
@@ -153,29 +142,19 @@ export default function TraceScreen() {
     const itemType = searchResults && item.type ? item.type : baseTab;
 
     switch (itemType) {
-      case "actors":
-        title = item.name || item.title;
-        subtitle = item.actortype || item.subtitle;
-        typeIcon = "account";
+      case "state":
+        title = item.title || item.ucode;
+        subtitle = item.type;
+        typeIcon = "database";
         break;
-      case "nodes":
-        title = item.title;
-        // If filtering by specific type (and not searching), hide the redundant type label
-        subtitle =
-          filter && !searchResults ? "" : item.nodetype || item.subtitle;
-        typeIcon =
-          item.nodetype === "Post" || item.nodetype === "Posts"
-            ? "file-document-outline"
-            : "";
-        break;
-      case "orevents":
+      case "trace":
         const date = new Date(item.ts);
         const timeStr = date.toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
         });
         title = item.scope || item.title;
-        subtitle = item.status || item.subtitle;
+        subtitle = `Op ${item.opcode}`;
         typeIcon = "lightning-bolt";
         return (
           <TouchableOpacity
@@ -261,44 +240,28 @@ export default function TraceScreen() {
             </View>
           </TouchableOpacity>
         );
-      case "collab":
-        title = item.role;
-        subtitle = `Actor: ${item.actorid}`;
-        typeIcon = "account-group";
-        break;
-      case "points":
-        title = `SKU: ${item.sku}`;
-        subtitle = `$${item.price} - Stock: ${item.stock}`;
+      case "instance":
+        title = `State: ${item.stateid}`;
+        subtitle = `${item.currency || ""} ${item.qty || item.value || ""}`;
         typeIcon = "map-marker";
-        break;
-      case "streams":
-        title = item.scope;
-        subtitle = `By: ${item.createdby}`;
-        typeIcon = "waves";
-        break;
-      case "streamcollab":
-        title = item.role;
-        subtitle = `Actor: ${item.actorid}`;
-        typeIcon = "link";
         break;
       default:
         title = item.id;
     }
 
-    // For nodes with payload, parse it for rich display
+    // For states with payload, parse it for rich display
     let payloadData: any = null;
-    if (itemType === "nodes" && typeof item.payload === "string") {
+    if (itemType === "state" && typeof item.payload === "string") {
       try {
         payloadData = JSON.parse(item.payload);
       } catch {}
     }
 
     const isProduct =
-      itemType === "nodes" &&
-      (item.nodetype === "Product" || item.nodetype === "Products");
+      itemType === "state" &&
+      (item.type === "Product" || item.type === "Products");
     const isPost =
-      itemType === "nodes" &&
-      (item.nodetype === "Post" || item.nodetype === "Posts");
+      itemType === "state" && (item.type === "Post" || item.type === "Posts");
 
     const priceStr =
       payloadData?.price?.amount != null
@@ -426,16 +389,12 @@ export default function TraceScreen() {
     );
   };
 
-  // Filter data based on active tab and optional filter (e.g. nodes:Product)
+  // Filter data based on active tab and optional filter (e.g. state:Product)
   const filteredData = React.useMemo(() => {
     const data = tableData[baseTab] || [];
-    if (filter && baseTab === "nodes") {
-      // Basic filtering by nodetype if available, or just subtitle match
-      // Assuming nodetype matches "Product" or "Collections" (singular/plural handling might be needed)
-      // Let's assume loose matching for now
+    if (filter && baseTab === "state") {
       return data.filter((item) => {
-        const type = item.nodetype || "";
-        // Handle "Products" vs "Product" (singular/plural)
+        const type = item.type || "";
         if (filter === "Products")
           return type === "Product" || type === "Products";
         if (filter === "Collections")
@@ -520,7 +479,7 @@ export default function TraceScreen() {
                 />
               </View>
               <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
-                No data in {activeTab}.
+                No data in {formattedActiveTab}.
               </Text>
             </View>
           }

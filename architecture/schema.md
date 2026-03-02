@@ -1,130 +1,133 @@
 # The Universal Schema
 
-Unified architecture across Public and Private instances.
+Unified architecture hosted on a single Turso database instance.
 
-- **Public DB:** `nodes`, `points`
-- **Private DB:** `nodes`, `points`, `events`
+All tables (`state`, `instance`, `trace`) reside within the same database environment, providing a consistent data layer for both public and private state management.
 
 ---
 
 ## 1. Table Relationships
 
-| From     | To       | Relationship                                    |
-| :------- | :------- | :---------------------------------------------- |
-| `nodes`  | `points` | A node has many points (stock, price, location) |
-| `nodes`  | `events` | A node undergoes many events (private DB only)  |
-| `points` | `events` | An event can reference a specific point         |
+| From       | To         | Relationship                                        |
+| :--------- | :--------- | :-------------------------------------------------- |
+| `state`    | `instance` | A state has many instances (stock, price, location) |
+| `state`    | `trace`    | A state undergoes many traces (private DB only)     |
+| `instance` | `trace`    | A trace can reference a specific instance           |
 
 ---
 
-## 2. Table: `nodes`
+## 2. Table: `state`
 
-Present in both **Public** and **Private** DB.
 Permanent entities: products, collections, services, users, actors, locations.
 
 ```sql
-CREATE TABLE nodes (
-  id TEXT PRIMARY KEY,
-  workspaceId TEXT,
-  parentId TEXT,
-  nodeType TEXT,
-  title TEXT,
-  embedding BLOB,
-  createdAt TEXT,
-  payload TEXT
+CREATE TABLE state (
+    id TEXT PRIMARY KEY,
+    ucode TEXT UNIQUE NOT NULL,
+    type TEXT NOT NULL,
+    title TEXT,
+    payload TEXT,
+    embedding BLOB,
+    scope TEXT,
+    author TEXT,
+    ts TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-| Column        | Type | Key | Description                            |
-| :------------ | :--- | :-- | :------------------------------------- |
-| `id`          | TEXT | PK  | Unique ID                              |
-| `workspaceId` | TEXT |     | Workspace (tenant) identifier          |
-| `parentId`    | TEXT |     | Hierarchical links                     |
-| `nodeType`    | TEXT |     | Categorization type                    |
-| `title`       | TEXT |     | Human-readable name                    |
-| `embedding`   | BLOB |     | Vector embedding for semantic search   |
-| `createdAt`   | TEXT |     | Creation timestamp                     |
-| `payload`     | TEXT |     | JSON for all dynamic/custom attributes |
+| Column      | Type        | Key | Description                            |
+| :---------- | :---------- | :-- | :------------------------------------- |
+| `id`        | TEXT        | PK  | Unique ID                              |
+| `ucode`     | TEXT        | UQ  | Unique code identifier                 |
+| `type`      | TEXT        |     | Categorization type                    |
+| `title`     | TEXT        |     | Human-readable name                    |
+| `payload`   | TEXT        |     | JSON for all dynamic/custom attributes |
+| `embedding` | BLOB        |     | Vector embedding for semantic search   |
+| `scope`     | TEXT        |     | Scope/Tenant identifier                |
+| `author`    | TEXT        |     | Author/Creator identifier              |
+| `ts`        | TIMESTAMPTZ |     | Creation timestamp                     |
 
 ---
 
-## 3. Table: `points`
+## 3. Table: `instance`
 
-Present in both **Public** and **Private** DB.
 Dynamic state cache. Handles stock, pricing, live GPS, availability, etc.
 
 ```sql
-CREATE TABLE points (
-  id TEXT PRIMARY KEY,
-  nodeId TEXT,
-  workspaceId TEXT,
-  qty INTEGER,
-  price REAL,
-  currency TEXT,
-  availability TEXT,
-  locationText TEXT,
-  lat REAL,
-  lng REAL,
-  openNow BOOLEAN,
-  validFrom TEXT,
-  validTo TEXT,
-  payload TEXT
+CREATE TABLE instance (
+    id TEXT PRIMARY KEY,
+    stateid TEXT NOT NULL,
+    scope TEXT,
+    metadata TEXT,
+    qty REAL,
+    value REAL,
+    currency TEXT,
+    available INTEGER,
+    lat REAL,
+    lng REAL,
+    h3 TEXT,
+    startts TIMESTAMPTZ,
+    endts TIMESTAMPTZ,
+    ts TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    payload TEXT,
+    FOREIGN KEY (stateid) REFERENCES state(id)
 );
 ```
 
-| Column         | Type    | Key | Description                   |
-| :------------- | :------ | :-- | :---------------------------- |
-| `id`           | TEXT    | PK  | Unique ID                     |
-| `nodeId`       | TEXT    |     | Associated node ID            |
-| `workspaceId`  | TEXT    |     | Workspace (tenant) identifier |
-| `qty`          | INTEGER |     | Quantity / Stock count        |
-| `price`        | REAL    |     | Price value                   |
-| `currency`     | TEXT    |     | Currency code (e.g. USD)      |
-| `availability` | TEXT    |     | Availability summary          |
-| `locationText` | TEXT    |     | Human-readable location       |
-| `lat`          | REAL    |     | Live GPS latitude             |
-| `lng`          | REAL    |     | Live GPS longitude            |
-| `openNow`      | BOOLEAN |     | True if currently open/active |
-| `validFrom`    | TEXT    |     | Validity start timestamp      |
-| `validTo`      | TEXT    |     | Validity end timestamp        |
-| `payload`      | TEXT    |     | JSON for extra attributes     |
+| Column      | Type        | Key | Description               |
+| :---------- | :---------- | :-- | :------------------------ |
+| `id`        | TEXT        | PK  | Unique ID                 |
+| `stateid`   | TEXT        | FK  | Associated state ID       |
+| `scope`     | TEXT        |     | Scope/Tenant identifier   |
+| `metadata`  | TEXT        |     | Metadata                  |
+| `qty`       | REAL        |     | Quantity / Stock count    |
+| `value`     | REAL        |     | Price value               |
+| `currency`  | TEXT        |     | Currency code (e.g. USD)  |
+| `available` | INTEGER     |     | Availability status       |
+| `lat`       | REAL        |     | Live GPS latitude         |
+| `lng`       | REAL        |     | Live GPS longitude        |
+| `h3`        | TEXT        |     | H3 spatial index          |
+| `startts`   | TIMESTAMPTZ |     | Validity start timestamp  |
+| `endts`     | TIMESTAMPTZ |     | Validity end timestamp    |
+| `ts`        | TIMESTAMPTZ |     | Update timestamp          |
+| `payload`   | TEXT        |     | JSON for extra attributes |
 
 ---
 
-## 4. Table: `events`
+## 4. Table: `trace`
 
-Present in **Private DB** only.
 The universal event-sourced ledger. Immutable, append-only.
 
 ```sql
-CREATE TABLE events (
-  id TEXT PRIMARY KEY,
-  streamId TEXT,
-  opcode INTEGER,
-  nodeId TEXT,
-  pointId TEXT,
-  delta REAL,
-  payload TEXT,
-  ts TIMESTAMPTZ
+CREATE TABLE trace (
+    id TEXT PRIMARY KEY,
+    streamid TEXT NOT NULL,
+    opcode INTEGER NOT NULL,
+    delta REAL,
+    lat REAL,
+    lng REAL,
+    payload TEXT,
+    ts TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    scope TEXT
 );
 ```
 
 | Column     | Type        | Key | Description                                 |
 | :--------- | :---------- | :-- | :------------------------------------------ |
-| `id`       | TEXT        | PK  | Unique event ID                             |
-| `streamId` | TEXT        |     | Which business stream this event belongs to |
+| `id`       | TEXT        | PK  | Unique trace ID                             |
+| `streamid` | TEXT        |     | Which business stream this trace belongs to |
 | `opcode`   | INTEGER     |     | Defines exactly what happened               |
-| `nodeId`   | TEXT        |     | Target node affected                        |
-| `pointId`  | TEXT        |     | Target point affected                       |
 | `delta`    | REAL        |     | Quantitative change                         |
-| `payload`  | TEXT        |     | JSON parameters specific to this event      |
-| `ts`       | TIMESTAMPTZ |     | Event timestamp                             |
+| `lat`      | REAL        |     | Location latitude                           |
+| `lng`      | REAL        |     | Location longitude                          |
+| `payload`  | TEXT        |     | JSON parameters specific to this trace      |
+| `ts`       | TIMESTAMPTZ |     | Trace timestamp                             |
+| `scope`    | TEXT        |     | Scope/Tenant identifier                     |
 
 ---
 
 ## 5. The Universal Opcode Map
 
-Integer-based opcodes for blindingly fast `events` indexing.
+Integer-based opcodes for blindingly fast `trace` indexing.
 
 ### Opcode Categories
 

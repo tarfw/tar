@@ -29,10 +29,10 @@ export default function MemoryDetailScreen() {
   const { title, subtitle, type, ...rest } = params;
 
   const isProduct =
-    type === "nodes" &&
+    type === "state" &&
     (subtitle === "Product" ||
-      rest.nodetype === "Product" ||
-      rest.nodetype === "Products");
+      rest.type === "Product" ||
+      rest.type === "Products");
 
   const [currentPayload, setCurrentPayload] = useState<any>(() => {
     if (typeof rest.payload === "string") {
@@ -76,11 +76,11 @@ export default function MemoryDetailScreen() {
       setCurrentPayload(newPayload);
 
       // Persist to database
-      const nodeId = String(rest.id || "");
-      if (nodeId) {
-        await dbHelpers.updateNode(nodeId, {
+      const stateId = String(rest.id || "");
+      if (stateId) {
+        await dbHelpers.updateState(stateId, {
           title: refined.title || currentTitle,
-          universalcode: refined.universal_code || currentCode,
+          ucode: refined.universal_code || currentCode,
           payload: JSON.stringify(newPayload),
         });
       }
@@ -141,7 +141,7 @@ export default function MemoryDetailScreen() {
         {isProduct && (
           <View style={s.typeBadge}>
             <Text style={s.typeBadgeText}>
-              {String(rest.nodetype || "Product")}
+              {String(rest.type || rest.nodetype || "Product")}
             </Text>
           </View>
         )}

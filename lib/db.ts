@@ -34,7 +34,7 @@ export async function getDb(): Promise<Database> {
                 type TEXT NOT NULL,
                 title TEXT,
                 payload TEXT,
-                embedding F32_BLOB(384),
+                embedding BLOB,
                 scope TEXT,
                 author TEXT,
                 ts TEXT DEFAULT CURRENT_TIMESTAMP

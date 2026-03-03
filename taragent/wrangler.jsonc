@@ -1,0 +1,52 @@
+// wrangler.jsonc — TAR Commerce AI Agent
+{
+  "name": "tar-agent",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-07",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+
+  // Durable Object binding for the TarAgent (Cloudflare Agents SDK)
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TarAgent",
+        "class_name": "TarAgent",
+      },
+    ],
+  },
+
+  // IMPORTANT: new_sqlite_classes is required for the Agent to persist state
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TarAgent"],
+    },
+  ],
+
+  // Environment variables — populate these values before deploying
+  // Use `wrangler secret put` for sensitive values (NEVER commit secrets)
+  "vars": {
+    "GROQ_BASE_URL": "https://api.groq.com/openai/v1",
+    "GROQ_MODEL": "openai/gpt-oss-120b",
+    "TURSO_URL": "libsql://tarapp-tarframework.aws-eu-west-1.turso.io",
+    "TELEGRAM_BOT_TOKEN": "",
+    "TELEGRAM_BOT_USERNAME": "TarBot",
+    "WHATSAPP_PHONE_NUMBER_ID": "",
+    "WHATSAPP_VERIFY_TOKEN": "tar_verify_token",
+    "SLACK_BOT_TOKEN": "",
+    "SLACK_SIGNING_SECRET": "",
+  },
+
+  // Secrets to set via `wrangler secret put`:
+  //   GROQ_API_KEY
+  //   TURSO_AUTH_TOKEN
+  //   TELEGRAM_BOT_TOKEN
+  //   WHATSAPP_ACCESS_TOKEN
+  //   SLACK_BOT_TOKEN
+  //   SLACK_SIGNING_SECRET
+}

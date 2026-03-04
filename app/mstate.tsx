@@ -36,6 +36,8 @@ export default function MemoryDetailScreen() {
       rest.type === "Product" ||
       rest.type === "Products");
 
+  const isInstance = type === "instance";
+
   const [currentPayload, setCurrentPayload] = useState<any>(() => {
     if (typeof rest.payload === "string") {
       try {
@@ -246,7 +248,111 @@ export default function MemoryDetailScreen() {
                 <P label="Returns" value={currentPayload.return_policy} />
               )}
             </View>
+          </>
+        ) : isInstance ? (
+          <>
+            {/* ──────── INSTANCE DETAILS ──────── */}
+            <View style={s.propTable}>
+              {rest.stateid && (
+                <P label="State ID" value={rest.stateid} />
+              )}
+              {rest.qty != null && rest.qty !== "" && (
+                <P label="Quantity" value={String(rest.qty)} />
+              )}
+              {rest.value != null && rest.value !== "" && (
+                <P
+                  label="Value"
+                  value={`${rest.currency || ""} ${rest.value}`}
+                />
+              )}
+              {rest.available != null && (
+                <View style={s.prop}>
+                  <Text style={s.propLabel}>Status</Text>
+                  <View style={s.statusPill}>
+                    <View
+                      style={[
+                        s.statusDot,
+                        {
+                          backgroundColor: rest.available == 1 ? "#22C55E" : "#EF4444",
+                        },
+                      ]}
+                    />
+                    <Text style={s.statusText}>
+                      {rest.available == 1 ? "Available" : "Unavailable"}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
 
+            {/* Location */}
+            {(rest.lat != null || rest.lng != null || rest.h3) && (
+              <View style={s.section}>
+                <Text style={s.sectionTitle}>Location</Text>
+                <View style={s.propTable}>
+                  {rest.lat != null && (
+                    <P label="Latitude" value={String(rest.lat)} />
+                  )}
+                  {rest.lng != null && (
+                    <P label="Longitude" value={String(rest.lng)} />
+                  )}
+                  {rest.h3 && (
+                    <P label="H3 Index" value={rest.h3} />
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Validity Period */}
+            {(rest.startts || rest.endts) && (
+              <View style={s.section}>
+                <Text style={s.sectionTitle}>Validity Period</Text>
+                <View style={s.propTable}>
+                  {rest.startts && (
+                    <P
+                      label="Start"
+                      value={new Date(rest.startts).toLocaleString()}
+                    />
+                  )}
+                  {rest.endts && (
+                    <P
+                      label="End"
+                      value={new Date(rest.endts).toLocaleString()}
+                    />
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Context */}
+            {(rest.scope || rest.metadata) && (
+              <View style={s.section}>
+                <Text style={s.sectionTitle}>Context</Text>
+                <View style={s.propTable}>
+                  {rest.scope && (
+                    <P label="Scope" value={rest.scope} />
+                  )}
+                  {rest.metadata && (
+                    <P label="Metadata" value={rest.metadata} />
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Instance Payload */}
+            {currentPayload && Object.keys(currentPayload).length > 0 && (
+              <View style={s.section}>
+                <Text style={s.sectionTitle}>Payload</Text>
+                <View style={s.payloadContainer}>
+                  <Text style={s.payloadText}>
+                    {JSON.stringify(currentPayload, null, 2)}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </>
+        ) : (
+          <>
             {/* ──────── TAGS ──────── */}
             {currentPayload.categorization?.tags &&
               currentPayload.categorization.tags.length > 0 && (
@@ -342,13 +448,13 @@ export default function MemoryDetailScreen() {
                 </View>
               </View>
             ) : null}
+
+            <View>
+              {Object.entries(rest).map(([key, value]) =>
+                renderDetailRow(key, value),
+              )}
+            </View>
           </>
-        ) : (
-          <View>
-            {Object.entries(rest).map(([key, value]) =>
-              renderDetailRow(key, value),
-            )}
-          </View>
         )}
 
         {/* No spacer needed when not using absolute positioning */}
@@ -596,6 +702,21 @@ const s = StyleSheet.create({
     marginBottom: 6,
   },
   detailValue: { fontSize: 17, fontWeight: "600", color: "#09090B" },
+
+  // Instance Payload
+  payloadContainer: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E4E4E7",
+    padding: 16,
+  },
+  payloadText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#3F3F46",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
 
   // ── AI Refine Bar ──
   refineBarOuter: {

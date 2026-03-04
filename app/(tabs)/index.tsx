@@ -245,6 +245,22 @@ export default function TraceScreen() {
         title = `State: ${item.stateid}`;
         subtitle = `${item.currency || ""} ${item.qty || item.value || ""}`;
         typeIcon = "map-marker";
+        // Better title if we have state title
+        if (item.stateTitle) {
+          title = item.stateTitle;
+        }
+        // Build informative subtitle
+        const parts = [];
+        if (item.qty != null && item.qty !== "") parts.push(`Qty: ${item.qty}`);
+        if (item.value != null && item.value !== "") {
+          parts.push(`${item.currency || ""}${item.value}`);
+        }
+        if (item.available === 1) {
+          parts.push("Available");
+        } else if (item.available === 0) {
+          parts.push("Unavailable");
+        }
+        subtitle = parts.join(" • ") || "Instance";
         break;
       default:
         title = item.id;

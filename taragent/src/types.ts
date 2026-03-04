@@ -1,10 +1,19 @@
-// src/types.ts — Shared TypeScript types for TAR Agent
+// src/types.ts — Shared TypeScript types for TAR Universal Commerce Agent
 
 // ─── Environment ──────────────────────────────────────────────────────────────
 
 export interface Env {
-  // Cloudflare Agents SDK namespace
-  TarAgent: any;
+  // Cloudflare Agents SDK Durable Object namespaces (10 agents)
+  UserAgent: any;
+  StoreAgent: any;
+  OrderAgent: any;
+  DriverAgent: any;
+  InventoryAgent: any;
+  CatalogAgent: any;
+  FleetAgent: any;
+  ChatAgent: any;
+  SearchAgent: any;
+  TaskAgent: any;
 
   // Groq AI (OpenAI-compatible)
   GROQ_API_KEY: string;
@@ -29,25 +38,55 @@ export interface Env {
   SLACK_SIGNING_SECRET: string;
 }
 
-// ─── Agent State ──────────────────────────────────────────────────────────────
+// ─── Agent Types ──────────────────────────────────────────────────────────────
 
-export interface AgentState {
-  /** Last known group-to-role mappings (refreshed from Turso periodically) */
-  groupRoles: Record<string, GroupRole>;
-  /** Active order IDs being tracked in-memory */
-  activeOrders: string[];
-  /** Timestamp of last state sync with Turso */
-  lastSync: number;
-}
+/** The 10 commerce domain agents */
+export type AgentType =
+  | "user"
+  | "store"
+  | "order"
+  | "driver"
+  | "inventory"
+  | "catalog"
+  | "fleet"
+  | "chat"
+  | "search"
+  | "task";
+
+/** Maps AgentType → Env binding key */
+export const AGENT_BINDING_MAP: Record<AgentType, keyof Env> = {
+  user: "UserAgent",
+  store: "StoreAgent",
+  order: "OrderAgent",
+  driver: "DriverAgent",
+  inventory: "InventoryAgent",
+  catalog: "CatalogAgent",
+  fleet: "FleetAgent",
+  chat: "ChatAgent",
+  search: "SearchAgent",
+  task: "TaskAgent",
+};
 
 // ─── RBAC ─────────────────────────────────────────────────────────────────────
 
 export type GroupRole =
   | "management"
-  | "kitchen"
-  | "front_of_house"
-  | "delivery"
+  | "staff"
+  | "customer"
+  | "driver"
+  | "readonly"
   | "default";
+
+// ─── Agent State ──────────────────────────────────────────────────────────────
+
+export interface AgentState {
+  /** Last known group-to-role mappings (refreshed from Turso periodically) */
+  groupRoles: Record<string, GroupRole>;
+  /** Timestamp of last state sync with Turso */
+  lastSync: number;
+  /** Which agent type this instance is */
+  agentType?: AgentType;
+}
 
 // ─── Chat / Webhook ───────────────────────────────────────────────────────────
 
@@ -65,6 +104,8 @@ export interface ChatContext {
   text: string;
   /** Role resolved from group mapping */
   role: GroupRole;
+  /** Which agent domain is handling this message */
+  agentType: AgentType;
 }
 
 // ─── AI Tool Calls ────────────────────────────────────────────────────────────

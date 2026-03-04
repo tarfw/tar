@@ -1,4 +1,4 @@
-// wrangler.jsonc — TAR Commerce AI Agent
+// wrangler.jsonc — TAR Universal Commerce Agent
 {
   "name": "tar-agent",
   "main": "src/index.ts",
@@ -10,31 +10,47 @@
     "head_sampling_rate": 1,
   },
 
-  // Durable Object binding for the TarAgent (Cloudflare Agents SDK)
+  // 10 Durable Object bindings — one per commerce agent
   "durable_objects": {
     "bindings": [
-      {
-        "name": "TarAgent",
-        "class_name": "TarAgent",
-      },
+      { "name": "UserAgent", "class_name": "UserAgent" },
+      { "name": "StoreAgent", "class_name": "StoreAgent" },
+      { "name": "OrderAgent", "class_name": "OrderAgent" },
+      { "name": "DriverAgent", "class_name": "DriverAgent" },
+      { "name": "InventoryAgent", "class_name": "InventoryAgent" },
+      { "name": "CatalogAgent", "class_name": "CatalogAgent" },
+      { "name": "FleetAgent", "class_name": "FleetAgent" },
+      { "name": "ChatAgent", "class_name": "ChatAgent" },
+      { "name": "SearchAgent", "class_name": "SearchAgent" },
+      { "name": "TaskAgent", "class_name": "TaskAgent" },
     ],
   },
 
-  // IMPORTANT: new_sqlite_classes is required for the Agent to persist state
+  // SQLite state is required for all 10 agent classes
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["TarAgent"],
+      "new_sqlite_classes": [
+        "UserAgent",
+        "StoreAgent",
+        "InventoryAgent",
+        "CatalogAgent",
+        "FleetAgent",
+        "ChatAgent",
+        "SearchAgent",
+        "TaskAgent",
+      ],
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["OrderAgent", "DriverAgent"],
     },
   ],
 
-  // Environment variables — populate these values before deploying
-  // Use `wrangler secret put` for sensitive values (NEVER commit secrets)
   "vars": {
     "GROQ_BASE_URL": "https://api.groq.com/openai/v1",
-    "GROQ_MODEL": "openai/gpt-oss-120b",
+    "GROQ_MODEL": "llama-3.3-70b-versatile",
     "TURSO_URL": "libsql://tarapp-tarframework.aws-eu-west-1.turso.io",
-    "TELEGRAM_BOT_TOKEN": "",
     "TELEGRAM_BOT_USERNAME": "TarBot",
     "WHATSAPP_PHONE_NUMBER_ID": "",
     "WHATSAPP_VERIFY_TOKEN": "tar_verify_token",
@@ -42,7 +58,7 @@
     "SLACK_SIGNING_SECRET": "",
   },
 
-  // Secrets to set via `wrangler secret put`:
+  // Secrets — set via `wrangler secret put`:
   //   GROQ_API_KEY
   //   TURSO_AUTH_TOKEN
   //   TELEGRAM_BOT_TOKEN

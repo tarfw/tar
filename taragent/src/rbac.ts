@@ -1,78 +1,152 @@
-// src/rbac.ts — Role-Based Access Control for TAR Agent
-// Maps a group role → the subset of tool names it may use.
-// The Worker queries the Turso DB to resolve a chatGroupId → GroupRole,
-// then only sends Groq the tools for that role — making it impossible for
-// the LLM to execute actions outside its remit.
+// src/rbac.ts — Agent-scoped Role-Based Access Control
+//
+// Each agent has its own role → allowed tools map.
+// getToolsForAgent(agentType, role, allTools) returns the filtered subset.
 
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
-import { ALL_TOOLS } from "./tools";
-import type { GroupRole } from "./types";
+import type { AgentType, GroupRole } from "./types";
 
-// ─── Role → Allowed Tool Names ────────────────────────────────────────────────
+// ─── Role → Allowed Tool Names per Agent ──────────────────────────────────────
 
-const ROLE_TOOLS: Record<GroupRole, string[]> = {
-  /** Management VIP: full access to everything */
-  management: ALL_TOOLS.map((t) => t.function.name),
-
-  /** Kitchen staff: inventory + maintenance + 86 items */
-  kitchen: [
-    "update_inventory",
-    "log_waste",
-    "86_item",
-    "create_purchase_order",
-    "create_maintenance_ticket",
-    "update_maintenance_ticket",
-    "get_task_status",
-    "query_menu",
-  ],
-
-  /** Front-of-house: reservations + menu queries */
-  front_of_house: [
-    "update_reservation_status",
-    "query_menu",
-    "get_recent_reviews",
-    "draft_review_response",
-  ],
-
-  /** Delivery operations: order management + driver status */
-  delivery: [
-    "create_delivery_order",
-    "update_delivery_status",
-    "void_order",
-    "query_menu",
-  ],
-
-  /** Default (unknown group): full access — restrict per-group via group-role API */
-  default: ALL_TOOLS.map((t) => t.function.name),
+const AGENT_ROLE_TOOLS: Record<
+  AgentType,
+  Record<GroupRole | "default", string[] | "all">
+> = {
+  user: {
+    management: "all",
+    staff: ["get_user", "update_user_profile"],
+    customer: ["get_user", "update_user_profile", "set_user_preference"],
+    driver: ["get_user"],
+    readonly: ["get_user"],
+    default: "all",
+  },
+  store: {
+    management: "all",
+    staff: ["set_store_status", "set_store_hours", "get_store_metrics"],
+    customer: ["get_store_metrics"],
+    driver: ["get_store_metrics"],
+    readonly: ["get_store_metrics"],
+    default: "all",
+  },
+  order: {
+    management: "all",
+    staff: [
+      "create_order",
+      "update_order_status",
+      "get_order",
+      "list_orders",
+      "add_order_item",
+    ],
+    customer: ["create_order", "get_order"],
+    driver: ["update_order_status", "get_order"],
+    readonly: ["get_order", "list_orders"],
+    default: "all",
+  },
+  driver: {
+    management: "all",
+    staff: [
+      "assign_order_to_driver",
+      "get_driver_stats",
+      "set_driver_status",
+      "log_driver_issue",
+    ],
+    customer: [],
+    driver: ["update_driver_location", "set_driver_status", "log_driver_issue"],
+    readonly: ["get_driver_stats"],
+    default: "all",
+  },
+  inventory: {
+    management: "all",
+    staff: [
+      "update_stock",
+      "log_waste",
+      "mark_unavailable",
+      "create_purchase_order",
+      "get_stock_levels",
+    ],
+    customer: ["get_stock_levels"],
+    driver: ["get_stock_levels"],
+    readonly: ["get_stock_levels"],
+    default: "all",
+  },
+  catalog: {
+    management: "all",
+    staff: [
+      "create_product",
+      "update_product",
+      "set_product_availability",
+      "list_catalog",
+      "import_upc",
+    ],
+    customer: ["list_catalog"],
+    driver: ["list_catalog"],
+    readonly: ["list_catalog"],
+    default: "all",
+  },
+  fleet: {
+    management: "all",
+    staff: ["dispatch_driver", "get_active_deliveries", "get_fleet_status"],
+    customer: ["get_active_deliveries"],
+    driver: ["get_active_deliveries"],
+    readonly: ["get_fleet_status", "get_active_deliveries"],
+    default: "all",
+  },
+  chat: {
+    management: "all",
+    staff: ["send_message", "broadcast_announcement", "get_messages"],
+    customer: ["send_message"],
+    driver: ["send_message", "get_messages"],
+    readonly: ["get_messages"],
+    default: "all",
+  },
+  search: {
+    management: "all",
+    staff: [
+      "search_products",
+      "search_stores",
+      "search_orders",
+      "index_entity",
+    ],
+    customer: ["search_products", "search_stores"],
+    driver: ["search_products", "search_stores", "search_orders"],
+    readonly: ["search_products", "search_stores"],
+    default: "all",
+  },
+  task: {
+    management: "all",
+    staff: ["create_task", "update_task_status", "list_pending_tasks"],
+    customer: [],
+    driver: ["update_task_status", "list_pending_tasks"],
+    readonly: ["list_pending_tasks"],
+    default: "all",
+  },
 };
 
 // ─── Public Helpers ───────────────────────────────────────────────────────────
 
 /**
- * Returns the filtered list of ChatCompletionTool objects for the given role.
- * Only tools in ROLE_TOOLS[role] are included.
+ * Returns filtered tool list for a given agent + role.
+ * Agents receive only the tools allowed for their role.
  */
-export function getToolsForRole(role: GroupRole): ChatCompletionTool[] {
-  const allowed = new Set(ROLE_TOOLS[role] ?? ROLE_TOOLS.default);
-  return ALL_TOOLS.filter((t) => allowed.has(t.function.name));
+export function getToolsForAgent(
+  agentType: AgentType,
+  role: GroupRole,
+  allTools: ChatCompletionTool[],
+): ChatCompletionTool[] {
+  const roleMap = AGENT_ROLE_TOOLS[agentType];
+  const allowed = roleMap?.[role] ?? roleMap?.default ?? "all";
+  if (allowed === "all") return allTools;
+  const set = new Set(allowed);
+  return allTools.filter((t) => set.has(t.function.name));
 }
 
-/**
- * Checks whether a tool name is allowed for a given role.
- * Used for server-side validation before executing a tool call.
- */
-export function isToolAllowed(toolName: string, role: GroupRole): boolean {
-  const allowed = ROLE_TOOLS[role] ?? ROLE_TOOLS.default;
-  return allowed.includes(toolName);
-}
-
-/**
- * Resolves a platform-specific group ID to a GroupRole.
- * Falls back to 'default' if no mapping is found.
- */
-export function resolveRole(
-  chatGroupId: string,
-  groupRoles: Record<string, GroupRole>,
-): GroupRole {
-  return groupRoles[chatGroupId] ?? "default";
+/** Server-side RBAC check before executing a tool. */
+export function isToolAllowedForAgent(
+  toolName: string,
+  agentType: AgentType,
+  role: GroupRole,
+  allTools: ChatCompletionTool[],
+): boolean {
+  const filtered = getToolsForAgent(agentType, role, allTools);
+  return filtered.some((t) => t.function.name === toolName);
 }

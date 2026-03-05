@@ -49,7 +49,7 @@
 
   "vars": {
     "GROQ_BASE_URL": "https://api.groq.com/openai/v1",
-    "GROQ_MODEL": "llama-3.3-70b-versatile",
+    "GROQ_MODEL": "openai/gpt-oss-20b",
     "TURSO_URL": "libsql://tarapp-tarframework.aws-eu-west-1.turso.io",
     "TELEGRAM_BOT_USERNAME": "TarBot",
     "WHATSAPP_PHONE_NUMBER_ID": "",

@@ -51,7 +51,7 @@ export async function sendTelegramMessage(
 ): Promise<void> {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
 
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -63,6 +63,23 @@ export async function sendTelegramMessage(
 
   if (!response.ok) {
     const err = await response.text();
-    console.error(`[Telegram] sendMessage failed: ${err}`);
+    console.warn(
+      `[Telegram] sendMessage failed with Markdown (${err}). Retrying without parse_mode...`,
+    );
+
+    // Fallback without parse_mode, in case the AI generated invalid Markdown
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+      }),
+    });
+
+    if (!response.ok) {
+      const errFallback = await response.text();
+      console.error(`[Telegram] sendMessage fallback failed: ${errFallback}`);
+    }
   }
 }

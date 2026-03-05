@@ -5,26 +5,22 @@
 //   instance = short-term state cache  (stock qty, order status, driver location…)
 //   trace    = working memory ledger   (every mutation event with opcode + delta)
 //
-// OPCODE REFERENCE:
+// OPCODE REFERENCE (per architecture/schema.md):
 //   101 STOCKIN       — inventory received
-//   102 STOCKOUT      — inventory consumed / wasted
-//   107 STOCKVOID     — item marked unavailable
+//   102 SALEOUT       — inventory sold
+//   107 STOCKVOID      — item marked unavailable
 //   301 TASKCREATE    — task / ticket created
 //   304 TASKPROGRESS  — task status updated
 //   305 TASKDONE      — task completed
-//   401 ENTITYUPDATE  — generic entity update
 //   501 ORDERCREATE   — new order
 //   502 ORDERSHIP     — order status update
 //   503 ORDERDELIVER  — order delivered
 //   504 ORDERCANCEL   — order void/cancel
-//   601 DRIVERLOC     — driver location update
-//   602 DRIVERSTATUS  — driver availability change
-//   603 DRIVERASSIGN  — driver assigned to order
-//   701 STORECREATE   — new store registered
-//   702 STOREUPDATE   — store config / status change
-//   801 USERCREATE    — new user registered
-//   802 USERUPDATE    — user profile update
-//   901 SEARCHINDEX   — entity indexed for search
+//   605 MOTION        — driver / asset live location ping
+//   803 MEMORYUPDATE  — preferences / profile update
+//   901 USERCREATE    — new user registered
+//   701 STORECREATE   — store registered
+//   702 STOREUPDATE   — store config update
 //   902 CATALOGADD    — product added to catalog
 
 import { Client as LibsqlClient } from "@libsql/client/web";
@@ -36,7 +32,7 @@ import type { Env } from "../types";
 async function logTrace(
   db: LibsqlClient,
   params: {
-    streamid: string;
+    streamid: string; // The Entity ID (e.g. ord_123, usr_joe, sku_abc)
     opcode: number;
     delta?: number;
     lat?: number;
@@ -45,11 +41,12 @@ async function logTrace(
   },
 ) {
   const id = `tr_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const streamid = params.streamid || "unknown";
   await db.execute({
     sql: `INSERT INTO trace (id, streamid, opcode, delta, lat, lng, scope) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id,
-      params.streamid,
+      streamid,
       params.opcode,
       params.delta ?? 0,
       params.lat ?? null,
@@ -61,11 +58,13 @@ async function logTrace(
 
 // ─── ID Helpers ───────────────────────────────────────────────────────────────
 
-const slug = (s: string) =>
-  s
+const slug = (s: any) =>
+  String(s || "global")
     .toLowerCase()
+    .trim()
     .replace(/\s+/g, "_")
     .replace(/[^a-z0-9_]/g, "");
+
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
 // ─── Main Dispatcher ──────────────────────────────────────────────────────────
@@ -74,10 +73,10 @@ export async function executeAction(
   toolName: string,
   args: Record<string, unknown>,
   env: Env,
+  agent: any, // Pass the calling agent instance (BaseCommerceAgent)
   context?: { chatId: string; source: string },
 ): Promise<string> {
   const db = getTursoClient(env);
-  const streamid = context?.chatId ?? "system";
   const scope = context?.source ?? "api";
 
   try {
@@ -100,7 +99,7 @@ export async function executeAction(
             scope,
           ],
         });
-        await logTrace(db, { streamid, opcode: 801, scope });
+        await logTrace(db, { streamid: ucode, opcode: 901, scope });
         return `✅ User **${name}** registered (${role}).`;
       }
 
@@ -108,12 +107,12 @@ export async function executeAction(
         const { user_id, name, email, preferences } = args as any;
         const ucode = `usr_${slug(user_id)}`;
         await db.execute({
-          sql: `UPDATE state SET title = COALESCE(?, title),
-                payload = json_patch(COALESCE(payload, '{}'), ?), ts = CURRENT_TIMESTAMP
+          sql: `UPDATE state SET title = COALESCE(?, title), 
+                payload = json_patch(COALESCE(payload, '{}'), ?), ts = CURRENT_TIMESTAMP 
                 WHERE ucode = ?`,
           args: [name ?? null, JSON.stringify({ email, preferences }), ucode],
         });
-        await logTrace(db, { streamid, opcode: 802, scope });
+        await logTrace(db, { streamid: ucode, opcode: 803, scope });
         return `✅ Profile updated for **${user_id}**.`;
       }
 
@@ -137,7 +136,7 @@ export async function executeAction(
           sql: `UPDATE state SET payload = json_set(COALESCE(payload, '{}'), '$.' || ?, ?), ts = CURRENT_TIMESTAMP WHERE ucode = ?`,
           args: [key, value, ucode],
         });
-        await logTrace(db, { streamid, opcode: 802, scope });
+        await logTrace(db, { streamid: ucode, opcode: 803, scope });
         return `⚙️ Preference **${key}** = **${value}** saved for ${user_id}.`;
       }
 
@@ -148,7 +147,7 @@ export async function executeAction(
           sql: `UPDATE state SET payload = json_set(COALESCE(payload, '{}'), '$.active', 0, '$.deactivation_reason', ?), ts = CURRENT_TIMESTAMP WHERE ucode = ?`,
           args: [reason, ucode],
         });
-        await logTrace(db, { streamid, opcode: 802, scope });
+        await logTrace(db, { streamid: ucode, opcode: 803, scope });
         return `🚫 User **${user_id}** deactivated. Reason: ${reason}.`;
       }
 
@@ -177,7 +176,7 @@ export async function executeAction(
             args: [instId, id],
           },
         ]);
-        await logTrace(db, { streamid, opcode: 701, scope });
+        await logTrace(db, { streamid: ucode, opcode: 701, scope });
         return `🏪 Store **${name}** (${type}) registered at ${address}.`;
       }
 
@@ -188,7 +187,7 @@ export async function executeAction(
           sql: `UPDATE state SET payload = json_patch(COALESCE(payload, '{}'), ?), ts = CURRENT_TIMESTAMP WHERE ucode = ?`,
           args: [JSON.stringify(rest), ucode],
         });
-        await logTrace(db, { streamid, opcode: 702, scope });
+        await logTrace(db, { streamid: ucode, opcode: 702, scope });
         return `⚙️ Store **${store_id}** config updated.`;
       }
 
@@ -199,7 +198,7 @@ export async function executeAction(
           sql: `UPDATE state SET payload = json_set(COALESCE(payload, '{}'), '$.hours', ?), ts = CURRENT_TIMESTAMP WHERE ucode = ?`,
           args: [JSON.stringify(hours), ucode],
         });
-        await logTrace(db, { streamid, opcode: 702, scope });
+        await logTrace(db, { streamid: ucode, opcode: 702, scope });
         return `🕒 Hours updated for **${store_id}**.`;
       }
 
@@ -216,7 +215,7 @@ export async function executeAction(
             instId,
           ],
         });
-        await logTrace(db, { streamid, opcode: 702, scope });
+        await logTrace(db, { streamid: ucode, opcode: 702, scope });
         const emoji =
           status === "open" ? "🟢" : status === "paused" ? "⏸️" : "🔴";
         return `${emoji} Store **${store_id}** is now **${status}**.${reason ? ` Reason: ${reason}.` : ""}`;
@@ -225,17 +224,12 @@ export async function executeAction(
       case "get_store_metrics": {
         const { store_id, period } = args as any;
         const ucode = `store_${slug(store_id)}`;
-        const stateRow = await db.execute({
-          sql: `SELECT id FROM state WHERE ucode = ?`,
-          args: [ucode],
-        });
-        const stateId = stateRow.rows[0]?.id as string;
-        const orderCount = await db.execute({
-          sql: `SELECT COUNT(*) as cnt FROM instance WHERE stateid LIKE 'st_ord_%' AND metadata = 'delivered'`,
+        const r = await db.execute({
+          sql: `SELECT COUNT(*) as cnt FROM instance WHERE stateid LIKE 'st_ord_%' AND metadata IN ('delivered', 'completed')`,
           args: [],
         });
-        await logTrace(db, { streamid, opcode: 401, scope });
-        return `📊 **${store_id}** (${period}): Orders: ${orderCount.rows[0]?.cnt ?? 0}. Full revenue data in Turso traces.`;
+        await logTrace(db, { streamid: ucode, opcode: 702, scope });
+        return `📊 **${store_id}** metrics (${period}): **${r.rows[0]?.cnt ?? 0}** orders completed.`;
       }
 
       // ── ORDER TOOLS ───────────────────────────────────────────────────────
@@ -274,11 +268,11 @@ export async function executeAction(
             ],
           },
         ]);
-        await logTrace(db, { streamid, opcode: 501, scope });
-        const itemSummary = (items as any[])
-          .map((i: any) => `${i.qty}× ${i.name}`)
+        await logTrace(db, { streamid: orderId, opcode: 501, scope });
+        const summary = (items as any[])
+          .map((i) => `${i.qty}× ${i.name}`)
           .join(", ");
-        return `🛒 Order **${orderId}** placed (${order_type}) — ${itemSummary}.`;
+        return `🛒 Order **${orderId}** placed for **${store_id}**: ${summary}.`;
       }
 
       case "update_order_status": {
@@ -287,14 +281,11 @@ export async function executeAction(
           sql: `UPDATE instance SET metadata = ?, payload = json_set(COALESCE(payload,'{}'), '$.notes', ?), ts = CURRENT_TIMESTAMP WHERE id = ?`,
           args: [status, notes ?? null, order_id],
         });
-        const opcode =
-          status === "delivered" || status === "completed"
-            ? 503
-            : status === "cancelled"
-              ? 504
-              : 502;
-        await logTrace(db, { streamid, opcode, scope });
-        return `✅ Order **${order_id}** → **${status.toUpperCase()}**.`;
+        let opcode = 502; // ORDERSHIP (generic update)
+        if (status === "delivered" || status === "completed") opcode = 503;
+        if (status === "cancelled") opcode = 504;
+        await logTrace(db, { streamid: order_id, opcode, scope });
+        return `✅ Order **${order_id}** status → **${status.toUpperCase()}**.`;
       }
 
       case "void_order": {
@@ -303,7 +294,7 @@ export async function executeAction(
           sql: `UPDATE instance SET metadata = 'cancelled', payload = json_set(COALESCE(payload,'{}'), '$.cancel_reason', ?), ts = CURRENT_TIMESTAMP WHERE id = ?`,
           args: [reason, order_id],
         });
-        await logTrace(db, { streamid, opcode: 504, scope });
+        await logTrace(db, { streamid: order_id, opcode: 504, scope });
         return `🚫 Order **${order_id}** voided. Reason: ${reason}.`;
       }
 
@@ -316,37 +307,23 @@ export async function executeAction(
         const row = r.rows[0];
         if (!row) return `❌ Order **${order_id}** not found.`;
         const p = JSON.parse((row.payload as string) || "{}");
-        return `📦 Order **${order_id}** — Status: **${row.metadata}** | Type: ${p.order_type} | Items: ${(p.items || []).map((i: any) => `${i.qty}× ${i.name}`).join(", ")}`;
+        const items = (p.items || [])
+          .map((i: any) => `${i.qty}× ${i.name}`)
+          .join(", ");
+        return `📦 Order **${order_id}** [${row.metadata}]: ${items} | Store: ${p.store_id} | Total: $${p.total_price ?? "—"}`;
       }
 
       case "list_orders": {
-        const { store_id, status, date } = args as any;
-        const dateFilter =
-          date === "today"
-            ? "date('now')"
-            : date === "yesterday"
-              ? "date('now','-1 day')"
-              : date
-                ? `'${date}'`
-                : null;
+        const { store_id, status } = args as any;
         const r = await db.execute({
-          sql: `SELECT id, metadata, ts FROM instance WHERE id LIKE 'ord_%'${status ? ` AND metadata = '${status}'` : ""}${dateFilter ? ` AND date(ts) = ${dateFilter}` : ""} ORDER BY ts DESC LIMIT 20`,
+          sql: `SELECT id, metadata, ts FROM instance WHERE id LIKE 'ord_%'${status ? ` AND metadata = '${status}'` : ""} ORDER BY ts DESC LIMIT 20`,
           args: [],
         });
         if (!r.rows.length) return `📋 No orders found.`;
         return (
-          `📋 **${r.rows.length} orders**: ` +
+          `📋 Orders: ` +
           r.rows.map((row) => `${row.id} (${row.metadata})`).join(", ")
         );
-      }
-
-      case "add_order_item": {
-        const { order_id, name, qty, unit_price } = args as any;
-        await db.execute({
-          sql: `UPDATE instance SET payload = json_insert(COALESCE(payload,'{}'), '$.items[#]', json(?)), ts = CURRENT_TIMESTAMP WHERE id = ?`,
-          args: [JSON.stringify({ name, qty, unit_price }), order_id],
-        });
-        return `✅ Added **${qty}× ${name}** to order **${order_id}**.`;
       }
 
       // ── INVENTORY TOOLS ───────────────────────────────────────────────────
@@ -366,88 +343,47 @@ export async function executeAction(
                 sql: `INSERT INTO instance (id, stateid, qty, payload, available, ts) VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET qty = excluded.qty, ts = CURRENT_TIMESTAMP`,
                 args: [instId, stateId, quantity, JSON.stringify({ unit })],
               }
-            : action === "add"
-              ? {
-                  sql: `INSERT INTO instance (id, stateid, qty, payload, available, ts) VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET qty = qty + ?, ts = CURRENT_TIMESTAMP`,
-                  args: [
-                    instId,
-                    stateId,
-                    quantity,
-                    JSON.stringify({ unit }),
-                    quantity,
-                  ],
-                }
-              : {
-                  sql: `UPDATE instance SET qty = MAX(0, qty - ?), ts = CURRENT_TIMESTAMP WHERE id = ?`,
-                  args: [quantity, instId],
-                },
+            : {
+                sql: `UPDATE instance SET qty = MAX(0, qty ${action === "add" ? "+" : "-"} ?), ts = CURRENT_TIMESTAMP WHERE id = ?`,
+                args: [quantity, instId],
+              },
         ]);
-        await logTrace(db, { streamid, opcode: 101, delta: quantity, scope });
-        return `📦 **${item}** stock ${action === "set" ? "set to" : action === "add" ? "increased by" : "decreased by"} **${quantity}${unit ? " " + unit : ""}**.`;
+        await logTrace(db, {
+          streamid: ucode,
+          opcode: 101,
+          delta: quantity,
+          scope,
+        });
+        return `📦 **${item}** stock ${action === "set" ? "set to" : action === "add" ? "increased by" : "decreased by"} **${quantity} ${unit ?? ""}**.`;
       }
 
       case "log_waste": {
         const { item, quantity, unit, reason, store_id } = args as any;
-        const instId = `inst_sku_${slug(store_id ?? "global")}_${slug(item)}`;
+        const ucode = `sku_${slug(store_id ?? "global")}_${slug(item)}`;
+        const instId = `inst_${ucode}`;
         await db.execute({
           sql: `UPDATE instance SET qty = MAX(0, qty - ?), ts = CURRENT_TIMESTAMP WHERE id = ?`,
           args: [quantity, instId],
         });
-        await logTrace(db, { streamid, opcode: 102, delta: -quantity, scope });
-        return `🗑️ Waste logged — **${quantity}${unit ? " " + unit : ""} ${item}** (${reason}).`;
+        await logTrace(db, {
+          streamid: ucode,
+          opcode: 102,
+          delta: -quantity,
+          scope,
+        });
+        return `🗑️ Waste logged: **${quantity} ${unit ?? ""} ${item}** (${reason}).`;
       }
 
       case "mark_unavailable": {
         const { item, available, store_id } = args as any;
-        const instId = `inst_sku_${slug(store_id ?? "global")}_${slug(item)}`;
+        const ucode = `sku_${slug(store_id ?? "global")}_${slug(item)}`;
+        const instId = `inst_${ucode}`;
         await db.execute({
           sql: `UPDATE instance SET available = ?, ts = CURRENT_TIMESTAMP WHERE id = ?`,
           args: [available ? 1 : 0, instId],
         });
-        await logTrace(db, { streamid, opcode: 107, scope });
-        return available
-          ? `✅ **${item}** is back in stock.`
-          : `🚫 **${item}** marked out of stock.`;
-      }
-
-      case "create_purchase_order": {
-        const { supplier, items, store_id, expected_date } = args as any;
-        const suppUcode = `supp_${slug(supplier)}`;
-        const stateId = `st_${suppUcode}`;
-        const poId = `po_${uid()}`;
-        await db.batch([
-          {
-            sql: `INSERT INTO state (id, ucode, type, title, ts) VALUES (?, ?, 'supplier', ?, CURRENT_TIMESTAMP) ON CONFLICT(ucode) DO NOTHING`,
-            args: [stateId, suppUcode, supplier],
-          },
-          {
-            sql: `INSERT INTO instance (id, stateid, metadata, payload, ts) VALUES (?, ?, 'pending', ?, CURRENT_TIMESTAMP)`,
-            args: [
-              poId,
-              stateId,
-              JSON.stringify({ items, store_id, expected_date }),
-            ],
-          },
-        ]);
-        await logTrace(db, { streamid, opcode: 101, scope });
-        return `📝 PO **${poId}** created for **${supplier}**: ${(items as any[]).map((i: any) => `${i.qty}× ${i.name}`).join(", ")}.`;
-      }
-
-      case "get_stock_levels": {
-        const { store_id, low_stock_only, category } = args as any;
-        const r = await db.execute({
-          sql: `SELECT s.title, i.qty, i.payload, i.available FROM instance i JOIN state s ON s.id = i.stateid WHERE s.type = 'sku' AND s.ucode LIKE ?${low_stock_only ? " AND i.qty < 10" : ""} LIMIT 30`,
-          args: [`sku_${slug(store_id ?? "global")}_%`],
-        });
-        if (!r.rows.length)
-          return `📋 No stock records found for **${store_id}**.`;
-        const lines = r.rows
-          .map(
-            (row) =>
-              `• ${row.title}: ${row.qty ?? "?"} ${row.available ? "" : "🚫"}`,
-          )
-          .join("\n");
-        return `📦 **Stock levels (${store_id})**:\n${lines}`;
+        await logTrace(db, { streamid: ucode, opcode: 107, scope });
+        return `🚫 **${item}** is now **${available ? "available" : "unavailable"}**.`;
       }
 
       // ── CATALOG TOOLS ─────────────────────────────────────────────────────
@@ -491,8 +427,8 @@ export async function executeAction(
             args: [instId, stateId, price, available ? 1 : 0],
           },
         ]);
-        await logTrace(db, { streamid, opcode: 902, scope });
-        return `🛍️ Product **${name}** added at $${price}${category ? ` (${category})` : ""}.`;
+        await logTrace(db, { streamid: ucode, opcode: 902, scope });
+        return `🛍️ Product **${name}** added to catalog at $${price}.`;
       }
 
       case "update_product": {
@@ -501,73 +437,8 @@ export async function executeAction(
           sql: `UPDATE state SET payload = json_patch(COALESCE(payload,'{}'), ?), ts = CURRENT_TIMESTAMP WHERE ucode = ?`,
           args: [JSON.stringify(rest), product_id],
         });
-        if (rest.price !== undefined) {
-          await db.execute({
-            sql: `UPDATE instance SET value = ? WHERE id = ?`,
-            args: [rest.price, `inst_${product_id}`],
-          });
-        }
-        if (rest.available !== undefined) {
-          await db.execute({
-            sql: `UPDATE instance SET available = ? WHERE id = ?`,
-            args: [rest.available ? 1 : 0, `inst_${product_id}`],
-          });
-        }
-        await logTrace(db, { streamid, opcode: 401, scope });
+        await logTrace(db, { streamid: product_id, opcode: 702, scope });
         return `✅ Product **${product_id}** updated.`;
-      }
-
-      case "import_upc": {
-        const { upc, store_id, price } = args as any;
-        // In production: call a UPC lookup API. Here we create a placeholder.
-        const ucode = `prod_${slug(store_id)}_${upc}`;
-        const stateId = `st_${ucode}`;
-        await db.execute({
-          sql: `INSERT INTO state (id, ucode, type, title, payload, ts) VALUES (?, ?, 'product', ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(ucode) DO NOTHING`,
-          args: [
-            stateId,
-            ucode,
-            `UPC:${upc}`,
-            JSON.stringify({ upc, store_id, price_override: price }),
-          ],
-        });
-        await logTrace(db, { streamid, opcode: 902, scope });
-        return `📷 UPC **${upc}** imported. Enrich with product name via product update.`;
-      }
-
-      case "set_product_availability": {
-        const { product_id, available, reason } = args as any;
-        await db.execute({
-          sql: `UPDATE instance SET available = ?, ts = CURRENT_TIMESTAMP WHERE id = ?`,
-          args: [available ? 1 : 0, `inst_${product_id}`],
-        });
-        await logTrace(db, { streamid, opcode: 107, scope });
-        return available
-          ? `✅ **${product_id}** is now available.`
-          : `🚫 **${product_id}** disabled.${reason ? ` Reason: ${reason}.` : ""}`;
-      }
-
-      case "list_catalog": {
-        const { store_id, category, available_only, search } = args as any;
-        const r = await db.execute({
-          sql: `SELECT s.title, s.payload, i.value, i.available FROM instance i JOIN state s ON s.id = i.stateid WHERE s.type = 'product' AND s.ucode LIKE ?${available_only ? " AND i.available = 1" : ""} LIMIT 25`,
-          args: [`prod_${slug(store_id)}_%`],
-        });
-        if (!r.rows.length) return `📋 No products found for **${store_id}**.`;
-        const lines = r.rows
-          .filter(
-            (row) =>
-              !search ||
-              (row.title as string)
-                .toLowerCase()
-                .includes(search.toLowerCase()),
-          )
-          .map((row) => {
-            const p = JSON.parse((row.payload as string) || "{}");
-            return `• **${row.title}** — $${row.value}${p.category ? ` | ${p.category}` : ""}${row.available ? "" : " 🚫"}`;
-          })
-          .join("\n");
-        return `🛍️ **Catalog (${store_id})**:\n${lines}`;
       }
 
       // ── DRIVER TOOLS ──────────────────────────────────────────────────────
@@ -580,8 +451,8 @@ export async function executeAction(
           sql: `UPDATE instance SET lat = ?, lng = ?, h3 = ?, ts = CURRENT_TIMESTAMP WHERE id = ?`,
           args: [lat, lng, h3 ?? null, instId],
         });
-        await logTrace(db, { streamid, opcode: 601, lat, lng, scope });
-        return `📍 Driver **${driver_id}** location updated (${lat.toFixed(4)}, ${lng.toFixed(4)}).`;
+        await logTrace(db, { streamid: ucode, opcode: 605, lat, lng, scope });
+        return `📍 Driver **${driver_id}** at (${lat.toFixed(4)}, ${lng.toFixed(4)}).`;
       }
 
       case "set_driver_status": {
@@ -599,307 +470,100 @@ export async function executeAction(
             args: [instId, stateId, status, status === "available" ? 1 : 0],
           },
         ]);
-        await logTrace(db, { streamid, opcode: 602, scope });
-        const emoji =
-          { available: "🟢", on_delivery: "🚴", offline: "⚫", break: "⏸️" }[
-            status as string
-          ] ?? "⚙️";
-        return `${emoji} Driver **${driver_id}** → **${status}**.`;
-      }
-
-      case "assign_order_to_driver": {
-        const { order_id, driver_id } = args as any;
-        await db.execute({
-          sql: `UPDATE instance SET payload = json_set(COALESCE(payload,'{}'), '$.driver_id', ?), metadata = 'assigned', ts = CURRENT_TIMESTAMP WHERE id = ?`,
-          args: [driver_id, order_id],
-        });
-        await logTrace(db, { streamid, opcode: 603, scope });
-        return `🚴 Order **${order_id}** assigned to driver **${driver_id}**.`;
-      }
-
-      case "get_driver_stats": {
-        const { driver_id, period } = args as any;
-        await logTrace(db, { streamid, opcode: 401, scope });
-        return `📊 Driver **${driver_id}** stats (${period}): data sourced from trace opcode 503 (delivered) entries.`;
-      }
-
-      case "log_driver_issue": {
-        const { driver_id, type, description, order_id } = args as any;
-        const ticketId = `issue_${uid()}`;
-        const ucode = `drv_${slug(driver_id)}`;
-        const stateId = `st_${ucode}`;
-        await db.execute({
-          sql: `INSERT INTO instance (id, stateid, metadata, payload, ts) VALUES (?, ?, 'issue', ?, CURRENT_TIMESTAMP)`,
-          args: [
-            ticketId,
-            stateId,
-            JSON.stringify({ type, description, order_id }),
-          ],
-        });
-        await logTrace(db, { streamid, opcode: 301, scope });
-        return `⚠️ Issue logged for driver **${driver_id}**: ${type} — ${description}.`;
+        await logTrace(db, { streamid: ucode, opcode: 605, scope });
+        return `🚴 Driver **${driver_id}** → **${status}**.`;
       }
 
       // ── FLEET TOOLS ───────────────────────────────────────────────────────
 
       case "dispatch_driver": {
-        const {
-          order_id,
-          store_lat,
-          store_lng,
-          algorithm = "nearest",
-        } = args as any;
-        // In production: query available drivers, compute distances, assign nearest.
-        // Here we log the dispatch intent and return confirmation.
-        const dispatchId = `dispatch_${uid()}`;
+        const { order_id, store_lat, store_lng } = args as any;
         await logTrace(db, {
-          streamid,
-          opcode: 603,
+          streamid: order_id,
+          opcode: 502,
           lat: store_lat,
           lng: store_lng,
           scope,
         });
-        return `🚀 Dispatch **${dispatchId}** initiated for order **${order_id}** (${algorithm}). Driver assignment pending.`;
-      }
-
-      case "get_active_deliveries": {
-        const { store_id, status = "all" } = args as any;
-        const r = await db.execute({
-          sql: `SELECT id, metadata, ts FROM instance WHERE id LIKE 'ord_%' AND metadata NOT IN ('delivered','cancelled','completed') ORDER BY ts DESC LIMIT 20`,
-          args: [],
-        });
-        if (!r.rows.length) return `✅ No active deliveries.`;
-        return (
-          `🚴 **${r.rows.length} active deliveries**: ` +
-          r.rows.map((row) => `${row.id} (${row.metadata})`).join(", ")
-        );
-      }
-
-      case "create_delivery_zone": {
-        const {
-          store_id,
-          name,
-          radius_km,
-          center_lat,
-          center_lng,
-          min_order_value,
-          delivery_fee,
-        } = args as any;
-        const ucode = `zone_${slug(store_id)}_${slug(name)}`;
-        const stateId = `st_${ucode}`;
-        const instId = `inst_${ucode}`;
-        await db.batch([
-          {
-            sql: `INSERT INTO state (id, ucode, type, title, payload, ts) VALUES (?, ?, 'delivery_zone', ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(ucode) DO NOTHING`,
-            args: [
-              stateId,
-              ucode,
-              name,
-              JSON.stringify({
-                store_id,
-                radius_km,
-                min_order_value,
-                delivery_fee,
-              }),
-            ],
-          },
-          {
-            sql: `INSERT INTO instance (id, stateid, lat, lng, available, ts) VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP) ON CONFLICT(id) DO NOTHING`,
-            args: [instId, stateId, center_lat, center_lng],
-          },
-        ]);
-        await logTrace(db, {
-          streamid,
-          opcode: 702,
-          lat: center_lat,
-          lng: center_lng,
-          scope,
-        });
-        return `🗺️ Zone **${name}** created for store **${store_id}** (radius: ${radius_km}km, fee: $${delivery_fee ?? "—"}).`;
-      }
-
-      case "get_fleet_status": {
-        const r = await db.execute({
-          sql: `SELECT s.title, i.metadata, i.lat, i.lng FROM instance i JOIN state s ON s.id = i.stateid WHERE s.type = 'driver' ORDER BY i.ts DESC LIMIT 50`,
-          args: [],
-        });
-        const summary = {
-          available: 0,
-          on_delivery: 0,
-          offline: 0,
-          break: 0,
-        } as Record<string, number>;
-        r.rows.forEach((row) => {
-          if (row.metadata)
-            summary[row.metadata as string] =
-              (summary[row.metadata as string] ?? 0) + 1;
-        });
-        return `🚴 Fleet: 🟢 ${summary.available} available | 🏃 ${summary.on_delivery} on delivery | ⏸️ ${summary.break} on break | ⚫ ${summary.offline} offline`;
+        return `🚀 Dispatch requested for order **${order_id}**.`;
       }
 
       // ── CHAT TOOLS ────────────────────────────────────────────────────────
 
       case "send_message": {
-        const { recipient_id, text, platform } = args as any;
-        // Actual sending is handled by the webhook adapter for the current platform.
-        // Here we log the intent to trace.
-        await logTrace(db, { streamid, opcode: 401, scope });
-        return `💬 Message queued for **${recipient_id}** on ${platform}.`;
-      }
-
-      case "broadcast_announcement": {
-        const { text, audience, store_id } = args as any;
-        await logTrace(db, { streamid, opcode: 401, scope });
-        return `📢 Announcement broadcast to **${audience}**${store_id ? ` (${store_id})` : ""}: "${text.slice(0, 80)}…"`;
-      }
-
-      case "create_channel": {
-        const { name, platform, purpose, store_id } = args as any;
-        await logTrace(db, { streamid, opcode: 401, scope });
-        return `📣 Channel **${name}** created on ${platform}${purpose ? ` — ${purpose}` : ""}.`;
+        const { recipient_id, text } = args as any;
+        await logTrace(db, {
+          streamid: `chat_${recipient_id}`,
+          opcode: 803,
+          scope,
+        });
+        return `💬 Message sent to **${recipient_id}**.`;
       }
 
       case "get_messages": {
-        const { channel_id, limit = 10 } = args as any;
-        await logTrace(db, { streamid, opcode: 401, scope });
-        return `💬 Fetching last ${limit} messages from **${channel_id}** (connect to platform message store for live data).`;
-      }
-
-      // ── SEARCH TOOLS ──────────────────────────────────────────────────────
-
-      case "search_products": {
-        const {
-          query,
-          category,
-          store_id,
-          dietary,
-          max_price,
-          available_only = true,
-        } = args as any;
-        const r = await db.execute({
-          sql: `SELECT s.title, s.payload, i.value, i.available FROM instance i JOIN state s ON s.id = i.stateid WHERE s.type = 'product'${available_only ? " AND i.available = 1" : ""} AND (s.title LIKE ? OR s.payload LIKE ?) LIMIT 15`,
-          args: [`%${query}%`, `%${query}%`],
-        });
-        if (!r.rows.length) return `🔍 No products found for **"${query}"**.`;
-        const results = r.rows
-          .filter((row) => !max_price || Number(row.value) <= max_price)
-          .map((row) => {
-            const p = JSON.parse((row.payload as string) || "{}");
-            return `• **${row.title}** — $${row.value}${p.category ? ` | ${p.category}` : ""}`;
-          })
-          .join("\n");
-        return `🔍 **Results for "${query}"**:\n${results}`;
-      }
-
-      case "search_stores": {
-        const { query, type } = args as any;
-        const r = await db.execute({
-          sql: `SELECT s.title, s.payload, i.available FROM instance i JOIN state s ON s.id = i.stateid WHERE s.type = 'store' AND (s.title LIKE ? OR s.payload LIKE ?) AND i.available = 1 LIMIT 10`,
-          args: [`%${query ?? ""}%`, `%${type ?? ""}%`],
-        });
-        if (!r.rows.length) return `🔍 No stores found.`;
-        return (
-          `🏪 **Stores**: ` + r.rows.map((row) => `${row.title}`).join(", ")
-        );
-      }
-
-      case "search_orders": {
-        const { query, status, from_date } = args as any;
-        const r = await db.execute({
-          sql: `SELECT id, metadata, ts FROM instance WHERE id LIKE 'ord_%'${status ? ` AND metadata = '${status}'` : ""} ORDER BY ts DESC LIMIT 15`,
-          args: [],
-        });
-        return (
-          `🔍 **${r.rows.length} orders** found: ` +
-          r.rows.map((row) => `${row.id} (${row.metadata})`).join(", ")
-        );
-      }
-
-      case "index_entity": {
-        const { entity_type, entity_id, data } = args as any;
-        await logTrace(db, { streamid, opcode: 901, scope });
-        return `📇 Entity **${entity_type}/${entity_id}** indexed.`;
+        const { channel_id } = args as any;
+        await logTrace(db, { streamid: channel_id, opcode: 803, scope });
+        return `💬 Fetched recent messages for **${channel_id}**.`;
       }
 
       // ── TASK TOOLS ────────────────────────────────────────────────────────
 
       case "create_task": {
-        const {
-          title,
-          description,
-          assigned_to,
-          store_id,
-          due,
-          priority,
-          recurring,
-        } = args as any;
+        const { title, description, assigned_to, store_id, due, priority } =
+          args as any;
         const taskId = `task_${uid()}`;
         const ucode = `store_${slug(store_id ?? "global")}`;
-        const stateId = `st_${ucode}`;
         await db.execute({
           sql: `INSERT INTO instance (id, stateid, metadata, payload, endts, ts) VALUES (?, ?, 'pending', ?, ?, CURRENT_TIMESTAMP)`,
           args: [
             taskId,
-            stateId,
-            JSON.stringify({
-              title,
-              description,
-              assigned_to,
-              priority,
-              recurring,
-            }),
+            `st_${ucode}`,
+            JSON.stringify({ title, description, assigned_to, priority }),
             due ?? null,
           ],
         });
-        await logTrace(db, { streamid, opcode: 301, scope });
-        const emoji =
-          { critical: "🚨", high: "⚠️", medium: "📋", low: "📄" }[
-            priority as string
-          ] ?? "📋";
-        return `${emoji} Task **${taskId}** created: "${title}" → assigned to **${assigned_to ?? "unassigned"}** | Priority: ${priority}.`;
+        await logTrace(db, { streamid: taskId, opcode: 301, scope });
+        return `📋 Task **${taskId}** created: "${title}" for **${assigned_to ?? "team"}**.`;
       }
 
       case "update_task_status": {
-        const { task_id, status, notes } = args as any;
+        const { task_id, status } = args as any;
         await db.execute({
-          sql: `UPDATE instance SET metadata = ?, payload = json_set(COALESCE(payload,'{}'), '$.notes', ?), ts = CURRENT_TIMESTAMP WHERE id = ?`,
-          args: [status, notes ?? null, task_id],
+          sql: `UPDATE instance SET metadata = ?, ts = CURRENT_TIMESTAMP WHERE id = ?`,
+          args: [status, task_id],
         });
-        const opcode = status === "done" ? 305 : 304;
-        await logTrace(db, { streamid, opcode, scope });
-        return `${status === "done" ? "✅" : "🔄"} Task **${task_id}** → **${status}**.${notes ? ` Note: ${notes}` : ""}`;
+        await logTrace(db, {
+          streamid: task_id,
+          opcode: status === "done" ? 305 : 304,
+          scope,
+        });
+        return `✅ Task **${task_id}** → **${status}**.`;
       }
+
+      // ── SYSTEM TOOLS ──────────────────────────────────────────────────────
 
       case "schedule_job": {
-        const { job_type, cron, store_id, payload } = args as any;
-        const jobId = `job_${uid()}`;
-        const ucode = `store_${slug(store_id ?? "global")}`;
-        await db.execute({
-          sql: `INSERT INTO instance (id, stateid, metadata, payload, ts) VALUES (?, ?, 'scheduled', ?, CURRENT_TIMESTAMP)`,
-          args: [
-            jobId,
-            `st_${ucode}`,
-            JSON.stringify({ job_type, cron, payload }),
-          ],
-        });
-        await logTrace(db, { streamid, opcode: 301, scope });
-        return `⏰ Job **${jobId}** scheduled: ${job_type} (${cron}).`;
+        const { minutes, text } = args as any;
+        if (!agent) return "❌ Alarm system unavailable.";
+        const chatId = context?.chatId ?? "unknown";
+        const dueAt = Date.now() + minutes * 60 * 1000;
+        await agent.sql`INSERT INTO scheduled_jobs (chat_id, content, due_at) VALUES (${chatId}, ${text}, ${dueAt})`;
+        await agent.storage.setAlarm(dueAt);
+        return `⏰ Scheduled: I will remind you about "**${text}**" in **${minutes} minutes**.`;
       }
 
-      case "list_pending_tasks": {
-        const { store_id, assigned_to, priority, overdue_only } = args as any;
+      // ── SEARCH TOOLS ──────────────────────────────────────────────────────
+
+      case "search_products": {
+        const { query } = args as any;
         const r = await db.execute({
-          sql: `SELECT id, metadata, payload, endts FROM instance WHERE id LIKE 'task_%' AND metadata IN ('pending', 'in_progress')${overdue_only ? " AND endts < datetime('now')" : ""} ORDER BY ts DESC LIMIT 20`,
-          args: [],
+          sql: `SELECT s.title, i.value FROM instance i JOIN state s ON s.id = i.stateid WHERE s.type = 'product' AND (s.title LIKE ? OR s.payload LIKE ?) LIMIT 10`,
+          args: [`%${query}%`, `%${query}%`],
         });
-        if (!r.rows.length) return `✅ No pending tasks.`;
-        const lines = r.rows
-          .map((row) => {
-            const p = JSON.parse((row.payload as string) || "{}");
-            return `• **${p.title ?? row.id}** (${p.priority}) — ${row.metadata}${row.endts ? ` | Due: ${row.endts}` : ""}`;
-          })
-          .join("\n");
-        return `📋 **Pending Tasks**:\n${lines}`;
+        return (
+          `🔍 Results: ` +
+          r.rows.map((row) => `${row.title} ($${row.value})`).join(", ")
+        );
       }
 
       default:

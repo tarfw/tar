@@ -59,23 +59,26 @@ export const TASK_TOOLS: ChatCompletionTool[] = [
     function: {
       name: "schedule_job",
       description:
-        "Schedule an automated background job (e.g. daily stock report, auto-pause at closing time).",
+        "Schedule an automated background job or a reminder (e.g. 'Remind the driver in 10 mins', 'auto-pause at closing').",
       parameters: {
         type: "object",
         properties: {
+          text: {
+            type: "string",
+            description: "The reminder text or job description.",
+          },
+          minutes: {
+            type: "number",
+            description: "Minutes from now to trigger the job.",
+          },
           job_type: {
             type: "string",
             description:
-              "e.g. 'daily_report', 'auto_close_store', 'low_stock_alert'",
+              "Optional: 'reminder', 'auto_close', 'low_stock_alert'",
           },
-          cron: {
-            type: "string",
-            description: "Cron expression or natural language schedule",
-          },
-          store_id: { type: "string" },
           payload: { type: "object", description: "Job-specific parameters" },
         },
-        required: ["job_type", "cron"],
+        required: ["text", "minutes"],
       },
     },
   },

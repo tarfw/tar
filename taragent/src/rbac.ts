@@ -114,7 +114,12 @@ const AGENT_ROLE_TOOLS: Record<
   },
   task: {
     management: "all",
-    staff: ["create_task", "update_task_status", "list_pending_tasks"],
+    staff: [
+      "create_task",
+      "update_task_status",
+      "list_pending_tasks",
+      "schedule_job",
+    ],
     customer: [],
     driver: ["update_task_status", "list_pending_tasks"],
     readonly: ["list_pending_tasks"],

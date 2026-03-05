@@ -89,6 +89,61 @@ export abstract class BaseCommerceAgent extends Agent<Env, AgentState> {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
+  // ── Alarms (Scheduled Jobs) ────────────────────────────────────────────────
+
+  async onAlarm(): Promise<void> {
+    const alarmTime = Date.now();
+    console.log(
+      `[${this.getAgentType()}] Alarm fired at ${new Date(alarmTime).toISOString()}`,
+    );
+
+    try {
+      // 1. Fetch pending scheduled jobs/reminders from embedded SQLite
+      const pending = this.sql<{
+        id: number;
+        chat_id: string;
+        content: string;
+      }>`
+        SELECT id, chat_id, content FROM scheduled_jobs 
+        WHERE due_at <= ${alarmTime} AND status = 'pending'
+      `;
+
+      for await (const job of pending) {
+        console.log(
+          `[${this.getAgentType()}] Executing job ${job.id} for chat ${job.chat_id}`,
+        );
+
+        // 2. Format a system-initiated message for the AI to "announce" the reminder
+        const context: ChatContext = {
+          source: "system",
+          chatId: job.chat_id,
+          userId: "system",
+          userName: "System",
+          text: `⏰ SCHEDULED REMINDER: ${job.content}`,
+          role: "readonly",
+          agentType: this.getAgentType(),
+        };
+
+        const reply = await this.handleWebhook(context);
+
+        // 3. Mark job as completed
+        await this
+          .sql`UPDATE scheduled_jobs SET status = 'completed' WHERE id = ${job.id}`;
+      }
+
+      // 4. Set next alarm if there are more pending jobs
+      const nextJob = this.sql<{ due_at: number }>`
+        SELECT due_at FROM scheduled_jobs WHERE status = 'pending' ORDER BY due_at ASC LIMIT 1
+      `;
+      const next = await nextJob.next();
+      if (!next.done) {
+        await this.storage.setAlarm(next.value.due_at);
+      }
+    } catch (err) {
+      console.error(`[${this.getAgentType()}] onAlarm failed:`, err);
+    }
+  }
+
   // ── Core Pipeline ──────────────────────────────────────────────────────────
 
   async handleWebhook(ctx: ChatContext): Promise<string> {
@@ -175,10 +230,16 @@ export abstract class BaseCommerceAgent extends Agent<Env, AgentState> {
             continue;
           }
 
-          const result = await executeAction(toolName, toolArgs, this.env, {
-            chatId,
-            source,
-          });
+          const result = await executeAction(
+            toolName,
+            toolArgs,
+            this.env,
+            this,
+            {
+              chatId,
+              source,
+            },
+          );
           messages.push({
             role: "tool",
             tool_call_id: toolCall.id,
@@ -187,9 +248,17 @@ export abstract class BaseCommerceAgent extends Agent<Env, AgentState> {
         }
 
         // Step 6: Final summary call (no tools, cheaper)
+        // We inject the system instruction to be very clear about the actions taken.
         const finalCompletion = await groq.chat.completions.create({
           model: this.env.GROQ_MODEL || "llama3-70b-8192",
-          messages,
+          messages: [
+            ...messages,
+            {
+              role: "system",
+              content:
+                "Provide a concise, friendly confirmation to the user about the actions you just performed. Mention IDs or values updated.",
+            },
+          ],
           temperature: 0.3,
           max_tokens: 400,
         });
@@ -250,7 +319,18 @@ export abstract class BaseCommerceAgent extends Agent<Env, AgentState> {
           role TEXT NOT NULL,
           content TEXT NOT NULL,
           created_at TEXT DEFAULT (datetime('now'))
-        )
+        );
+        CREATE INDEX IF NOT EXISTS idx_history_chat ON conversation_history(chat_id);
+
+        CREATE TABLE IF NOT EXISTS scheduled_jobs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          chat_id TEXT NOT NULL,
+          content TEXT NOT NULL,
+          due_at INTEGER NOT NULL,
+          status TEXT DEFAULT 'pending',
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_jobs_status ON scheduled_jobs(status, due_at);
       `;
       const rows = this.sql<{ role: string; content: string }>`
         SELECT role, content FROM conversation_history

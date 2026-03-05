@@ -310,32 +310,34 @@ export default function TraceScreen() {
         }}
         activeOpacity={0.7}
       >
-        <View
-          style={[
-            styles.iconContainer,
-            { backgroundColor: colorScheme === "dark" ? "#27272A" : "#F4F4F5" },
-          ]}
-        >
-          {isProduct && (payloadData?.image || payloadData?.images?.[0]) ? (
-            <Image
-              source={{ uri: payloadData.image || payloadData.images[0] }}
-              style={styles.thumbnail}
-              contentFit="cover"
-            />
-          ) : itemType === "state" ? (
-            <Image
-              source={require("../../assets/images/prod1.jpg")}
-              style={styles.thumbnail}
-              contentFit="cover"
-            />
-          ) : typeIcon ? (
-            <MaterialCommunityIcons
-              name={typeIcon}
-              size={20}
-              color={colorScheme === "dark" ? "#A1A1AA" : "#3F3F46"}
-            />
-          ) : null}
-        </View>
+        {itemType !== "instance" && (
+          <View
+            style={[
+              styles.iconContainer,
+              { backgroundColor: colorScheme === "dark" ? "#27272A" : "#F4F4F5" },
+            ]}
+          >
+            {isProduct && (payloadData?.image || payloadData?.images?.[0]) ? (
+              <Image
+                source={{ uri: payloadData.image || payloadData.images[0] }}
+                style={styles.thumbnail}
+                contentFit="cover"
+              />
+            ) : itemType === "state" ? (
+              <Image
+                source={require("../../assets/images/prod1.jpg")}
+                style={styles.thumbnail}
+                contentFit="cover"
+              />
+            ) : typeIcon ? (
+              <MaterialCommunityIcons
+                name={typeIcon}
+                size={20}
+                color={colorScheme === "dark" ? "#A1A1AA" : "#3F3F46"}
+              />
+            ) : null}
+          </View>
+        )}
         <View style={styles.textContainer}>
           <Text
             style={[styles.itemTitle, { color: colors.text }]}

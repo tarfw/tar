@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useCallback } from "react";
 import { 
   StyleSheet, 
   View, 
@@ -13,26 +13,37 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
+import { getDbClient } from "../lib/db";
 
 export default function HomePage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const items = [
-    { id: "1", icon: "heart", iconColor: "#ff4d4d", title: "35", type: "ion" },
-    { id: "2", icon: "heart", iconColor: "#ff4d4d", title: "Raven", type: "ion" },
-    { id: "divider1", isHeader: true, title: "Private" },
-    { id: "3", icon: "planet", iconColor: "#ff9f43", title: "par db", type: "ion" },
-    { id: "4", icon: "file-document-outline", iconColor: "#8395a7", title: "PC SETUP", type: "material" },
-    { id: "5", icon: "file-document-outline", iconColor: "#8395a7", title: "This week", type: "material" },
-    { id: "6", icon: "file-document-outline", iconColor: "#8395a7", title: "Creator", type: "material" },
-    { id: "7", icon: "file-document-outline", iconColor: "#8395a7", title: "Creator", type: "material" },
-    { id: "8", icon: "file-document-outline", iconColor: "#8395a7", title: "Creator", type: "material" },
-    { id: "9", icon: "table", iconColor: "#1dd1a1", title: "TIME LINE", type: "material" },
-    { id: "10", icon: "file-document-outline", iconColor: "#8395a7", title: "caste", type: "material" },
-    { id: "11", icon: "twitter", iconColor: "#1da1f2", title: "Twitter Slides", type: "material" },
-    { id: "12", icon: "file-document-outline", iconColor: "#8395a7", title: "Blog", type: "material" },
-  ];
+  const [motions, setMotions] = useState<any[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      async function loadMotions() {
+        try {
+          const db = getDbClient();
+          const rows = await db.all("SELECT * FROM motion ORDER BY time DESC LIMIT 50");
+          if (Array.isArray(rows)) {
+            setMotions(rows);
+          }
+        } catch (e) {
+          console.error("Failed to load motions:", e);
+        }
+      }
+      
+      // Load immediately on focus
+      loadMotions();
+      
+      // Poll the local database every 3 seconds to pick up any changes pulled by the background sync
+      const intervalId = setInterval(loadMotions, 3000);
+      
+      return () => clearInterval(intervalId);
+    }, [])
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -68,36 +79,24 @@ export default function HomePage() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {items.map((item) => {
-            if (item.isHeader) {
-              return (
-                <Text key={item.id} style={styles.sectionHeader}>
-                  {item.title}
-                </Text>
-              );
-            }
-            return (
-              <TouchableOpacity key={item.id} style={styles.listItem}>
-                <View style={styles.listItemLeft}>
-                  {item.type === "ion" ? (
-                    <Ionicons name={item.icon as any} size={20} color={item.iconColor} style={styles.itemIcon} />
-                  ) : (
-                    <MaterialCommunityIcons name={item.icon as any} size={20} color={item.iconColor} style={styles.itemIcon} />
-                  )}
-                  <Text style={styles.itemTitle}>{item.title}</Text>
+          {motions.length === 0 ? (
+            <Text style={{ textAlign: 'center', marginTop: 50, color: '#999' }}>No motion data found.</Text>
+          ) : motions.map((motion) => (
+            <TouchableOpacity key={motion.id} style={styles.listItem}>
+              <View style={styles.listItemLeft}>
+                <Ionicons name="flash-outline" size={20} color="#1dd1a1" style={styles.itemIcon} />
+                <View>
+                  <Text style={styles.itemTitle}>{motion.stream || 'Unknown Stream'} (Seq: {motion.seq})</Text>
+                  <Text style={{ fontSize: 12, color: '#666' }}>Action: {motion.action} • Status: {motion.status || 'N/A'}</Text>
                 </View>
-                <View style={styles.listItemRight}>
-                  <Ionicons name="ellipsis-horizontal" size={16} color="#ccc" style={styles.moreIcon} />
-                  <Ionicons name="add" size={20} color="#ccc" />
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+              </View>
+              <View style={styles.listItemRight}>
+                <Ionicons name="add" size={20} color="#ccc" />
+              </View>
+            </TouchableOpacity>
+          ))}
           
-          <TouchableOpacity style={styles.viewMore}>
-            <Ionicons name="ellipsis-horizontal" size={16} color="#999" />
-            <Text style={styles.viewMoreText}>View more</Text>
-          </TouchableOpacity>
+
           
           <View style={{ height: 20 }} />
         </ScrollView>

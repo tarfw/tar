@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAR Architecture: The 5 Tables of Physics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #09090b;
+            --fg: #fafafa;
+            --fg-muted: #a1a1aa;
+            --border: #27272a;
+            --border-hover: #52525b;
+            --accent: #3b82f6; 
+            --node-bg: #18181b;
+            
+            /* The 5 Colors */
+            --matter-color: #3b82f6;  /* Blue */
+            --mass-color: #8b5cf6;    /* Purple */
+            --relation-color: #06b6d4;/* Cyan */
+            --motion-color: #f43f5e;  /* Rose */
+            --memory-color: #64748b;  /* Slate */
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--fg);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 60px 0;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        .grid-bg {
+            position: fixed;
+            inset: 0;
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        header {
+            width: 1100px;
+            margin-bottom: 40px;
+            z-index: 10;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
+        }
+
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin-bottom: 8px;
+            border-top: 1px solid var(--border);
+            padding-top: 40px;
+        }
+
+        .subtitle {
+            color: var(--fg-muted);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* ----- NODE CANVAS ----- */
+        .canvas {
+            position: relative;
+            width: 1100px;
+            height: 600px;
+            z-index: 10;
+            margin-bottom: 40px;
+        }
+
+        .lines {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .line-path {
+            fill: none;
+            stroke: var(--border);
+            stroke-width: 1.5;
+            transition: stroke 0.3s ease;
+        }
+
+        .node {
+            position: absolute;
+            background: var(--node-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            width: 300px;
+            z-index: 2;
+            transition: border-color 0.2s ease, transform 0.2s ease;
+        }
+
+        .node:hover {
+            border-color: var(--border-hover);
+        }
+
+        .canvas:hover .line-path {
+            stroke: rgba(255, 255, 255, 0.05); 
+        }
+        .canvas .node:hover ~ .lines .line-path {
+            stroke: rgba(255, 255, 255, 0.05);
+        }
+
+        .node-header {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 10px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .node-header svg {
+            opacity: 0.8;
+        }
+
+        .node-id {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--accent);
+            letter-spacing: 0.05em;
+        }
+
+        .node-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .node-desc {
+            font-size: 0.9rem;
+            color: var(--fg-muted);
+            line-height: 1.6;
+        }
+
+        .metadata {
+            margin-top: 16px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: var(--fg-muted);
+        }
+
+        /* Positions */
+        .node-matter { top: 210px; left: 400px; width: 300px; border-color: rgba(255, 255, 255, 0.2); }
+        .node-mass { top: 40px; left: 40px; }
+        .node-relation { top: 40px; left: 760px; }
+        .node-motion { top: 400px; left: 40px; }
+        .node-memory { top: 400px; left: 760px; }
+
+        /* ----- EXAMPLES SECTION ----- */
+        .section-container {
+            width: 1100px;
+            z-index: 10;
+            margin-bottom: 60px;
+        }
+
+        .example-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-top: 24px;
+        }
+
+        .example-card {
+            background: var(--node-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+        }
+
+        .example-card h3 {
+            font-size: 1rem;
+            font-weight: 500;
+            color: #fff;
+            margin-bottom: 16px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .data-row {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 12px;
+            font-size: 0.9rem;
+            color: var(--fg-muted);
+            line-height: 1.5;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .data-row:last-child { margin-bottom: 0; }
+
+        .table-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-right: 12px;
+            width: 90px;
+            text-align: left;
+            flex-shrink: 0;
+            background: rgba(255,255,255,0.05);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .table-badge svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        .badge-matter { color: var(--matter-color); border: 1px solid rgba(59, 130, 246, 0.3); }
+        .badge-mass { color: var(--mass-color); border: 1px solid rgba(139, 92, 246, 0.3); }
+        .badge-relation { color: var(--relation-color); border: 1px solid rgba(6, 182, 212, 0.3); }
+        .badge-motion { color: var(--motion-color); border: 1px solid rgba(244, 63, 94, 0.3); }
+        .badge-memory { color: var(--memory-color); border: 1px solid rgba(100, 116, 139, 0.3); }
+        
+        .data-val { color: #fff; }
+
+        /* ----- DB TABLES SECTION ----- */
+        .db-tables-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-top: 24px;
+        }
+
+        .db-table-card {
+            background: var(--node-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .db-table-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .db-table-body {
+            padding: 12px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .col-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            padding: 4px 0;
+            border-bottom: 1px dashed rgba(255,255,255,0.05);
+        }
+
+        .col-row:last-child {
+            border-bottom: none;
+        }
+
+        .col-name { color: #e4e4e7; }
+        .col-type { color: var(--accent); font-size: 0.75rem; }
+        .col-pk { color: #fbbf24; font-size: 0.75rem; } 
+        
+        .header-matter { border-top: 3px solid var(--matter-color); color: var(--matter-color); }
+        .header-mass { border-top: 3px solid var(--mass-color); color: var(--mass-color); }
+        .header-relation { border-top: 3px solid var(--relation-color); color: var(--relation-color); }
+        .header-motion { border-top: 3px solid var(--motion-color); color: var(--motion-color); }
+        .header-memory { border-top: 3px solid var(--memory-color); color: var(--memory-color); }
+
+        /* Image Wrapper */
+        .image-wrapper {
+            background: var(--node-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            margin-top: 24px;
+            display: flex;
+            justify-content: center;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="grid-bg"></div>
+
+    <header>
+        <h1>System Architecture Schema</h1>
+        <div class="subtitle">v4.0.0 // The Physics Paradigm (Clean Col Edition)</div>
+    </header>
+
+    <div class="canvas">
+        
+        <!-- Nodes -->
+        <div class="node node-matter">
+            <div class="node-header">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--matter-color)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                <div class="node-title">MATTER</div>
+                <div class="node-id" style="margin-left: auto;">TBL_01</div>
+            </div>
+            <div class="node-desc">The fundamental substance and global catalog. Defines the intrinsic nature of an entity.</div>
+            <div class="metadata">
+                <span class="tag">Global/Read</span>
+            </div>
+        </div>
+
+        <div class="node node-mass">
+            <div class="node-header">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mass-color)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>
+                <div class="node-title">MASS</div>
+                <div class="node-id" style="margin-left: auto;">TBL_02</div>
+            </div>
+            <div class="node-desc">Physical realization. Defines quantity, price, and exact spatial location.</div>
+            <div class="metadata">
+                <span class="tag">Tenant/Write</span>
+            </div>
+        </div>
+
+        <div class="node node-relation">
+            <div class="node-header">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--relation-color)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <div class="node-title">RELATION</div>
+                <div class="node-id" style="margin-left: auto;">TBL_03</div>
+            </div>
+            <div class="node-desc">The structural network. Defines the scientific and logical links between Matter.</div>
+            <div class="metadata">
+                <span class="tag">Global/Write</span>
+            </div>
+        </div>
+
+        <div class="node node-motion">
+            <div class="node-header">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--motion-color)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+                <div class="node-title">MOTION</div>
+                <div class="node-id" style="margin-left: auto;">TBL_04</div>
+            </div>
+            <div class="node-desc">Kinetic ledger. Append-only chronological record of all matter transitions and actions.</div>
+            <div class="metadata">
+                <span class="tag">Tenant/Append</span>
+            </div>
+        </div>
+
+        <div class="node node-memory">
+            <div class="node-header">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--memory-color)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/><circle cx="5" cy="19" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="19" cy="5" r="1"/><circle cx="5" cy="5" r="1"/></svg>
+                <div class="node-title">MEMORY</div>
+                <div class="node-id" style="margin-left: auto;">TBL_05</div>
+            </div>
+            <div class="node-desc">Semantic memory. High-dimensional vector space for AI reasoning and embeddings.</div>
+            <div class="metadata">
+                <span class="tag">AI/Vector</span>
+            </div>
+        </div>
+
+        <!-- Orthogonal SVG Connecting Lines -->
+        <svg class="lines">
+            <path class="line-path" d="M 400 300 L 190 300 L 190 216" />
+            <path class="line-path" d="M 700 300 L 910 300 L 910 216" />
+            <path class="line-path" d="M 400 300 L 190 300 L 190 400" />
+            <path class="line-path" d="M 700 300 L 910 300 L 910 400" />
+        </svg>
+    </div>
+
+    <!-- DATA FLOW ILLUSTRATIONS (REAL IMAGES) -->
+    <div class="section-container">
+        <h2>Commerce Lifecycle Illustration</h2>
+        <div class="subtitle">A visual representation of a retail/commerce item moving through the 5 tables.</div>
+        <div class="image-wrapper">
+            <img src="file:///C:/Users/tarfr/.gemini/antigravity/brain/99d0235f-333e-434d-8b63-781a95744fe1/lifecycle_real_illustration_1777789285684.png" alt="Real World Lifecycle Illustration" style="width: 100%; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
+        </div>
+
+        <h2 style="margin-top: 60px;">Logistics & Fleet Illustration</h2>
+        <div class="subtitle">A visual representation of a taxi or food delivery fleet mapping to the 5 tables.</div>
+        <div class="image-wrapper">
+            <img src="file:///C:/Users/tarfr/.gemini/antigravity/brain/99d0235f-333e-434d-8b63-781a95744fe1/logistics_real_illustration_1777791879826.png" alt="Logistics Lifecycle Illustration" style="width: 100%; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
+        </div>
+    </div>
+
+    <!-- DB TABLES VISUALIZATION -->
+    <div class="section-container">
+        <h2>SQL Database Schema</h2>
+        <div class="subtitle">The structural definition of the 5 tables with perfect, single-word columns.</div>
+        
+        <div class="db-tables-grid" style="position: relative;">
+            
+            <!-- SVG RELATIONSHIP ARROWS -->
+            <svg style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;">
+                <defs>
+                    <marker id="arrow-matter" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                        <polygon points="0 0, 8 4, 0 8" fill="var(--matter-color)" />
+                    </marker>
+                    <marker id="arrow-mass" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                        <polygon points="0 0, 8 4, 0 8" fill="var(--mass-color)" />
+                    </marker>
+                </defs>
+
+                <!-- MASS -> MATTER (mass.matter to matter.id) -->
+                <!-- Draws horizontally from Col 2 left edge to Col 1 right edge -->
+                <path d="M 374 95 L 350 95" stroke="var(--matter-color)" stroke-width="2" fill="none" marker-end="url(#arrow-matter)" stroke-dasharray="4 4" opacity="0.7"/>
+                
+                <!-- RELATION -> MATTER (relation.src/tgt to matter.id) -->
+                <!-- Draws vertically from Col 1 Row 2 top edge to Col 1 Row 1 bottom edge -->
+                <path d="M 175 350 L 175 320" stroke="var(--matter-color)" stroke-width="2" fill="none" marker-end="url(#arrow-matter)" stroke-dasharray="4 4" opacity="0.7"/>
+
+                <!-- MEMORY -> MATTER (memory.matter to matter.id) -->
+                <!-- Draws curved line from Col 2 Row 2 left edge to Col 1 Row 1 right edge -->
+                <path d="M 374 385 C 360 385, 360 300, 350 300" stroke="var(--matter-color)" stroke-width="2" fill="none" marker-end="url(#arrow-matter)" stroke-dasharray="4 4" opacity="0.7"/>
+
+                <!-- MOTION -> MASS (motion.stream to mass.id) -->
+                <!-- Draws horizontally from Col 3 left edge to Col 2 right edge -->
+                <path d="M 749 95 L 725 95" stroke="var(--mass-color)" stroke-width="2" fill="none" marker-end="url(#arrow-mass)" stroke-dasharray="4 4" opacity="0.7"/>
+            </svg>
+            
+            <div class="db-table-card">
+                <div class="db-table-header header-matter">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                    matter
+                </div>
+                <div class="db-table-body">
+                    <div class="col-row"><span class="col-name">id</span> <span class="col-pk">PK</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">code</span> <span class="col-type">TEXT UNIQUE</span></div>
+                    <div class="col-row"><span class="col-name">type</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">scope</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">owner</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">title</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">public</span> <span class="col-type">INTEGER</span></div>
+                    <div class="col-row"><span class="col-name">data</span> <span class="col-type">TEXT (JSON)</span></div>
+                    <div class="col-row"><span class="col-name">time</span> <span class="col-type">TIMESTAMPTZ</span></div>
+                </div>
+            </div>
+
+            <div class="db-table-card" style="position: relative; z-index: 2;">
+                <div class="db-table-header header-mass">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>
+                    mass
+                </div>
+                <div class="db-table-body">
+                    <div class="col-row"><span class="col-name">id</span> <span class="col-pk">PK</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">matter</span> <span class="col-type" style="color: var(--matter-color);">TEXT (FK)</span></div>
+                    <div class="col-row"><span class="col-name">type</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">scope</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">qty</span> <span class="col-type">REAL</span></div>
+                    <div class="col-row"><span class="col-name">value</span> <span class="col-type">REAL</span></div>
+                    <div class="col-row"><span class="col-name">active</span> <span class="col-type">INTEGER</span></div>
+                    <div class="col-row"><span class="col-name">geo</span> <span class="col-type">TEXT (H3)</span></div>
+                    <div class="col-row"><span class="col-name">start</span> <span class="col-type">TIMESTAMPTZ</span></div>
+                    <div class="col-row"><span class="col-name">end</span> <span class="col-type">TIMESTAMPTZ</span></div>
+                    <div class="col-row"><span class="col-name">data</span> <span class="col-type">TEXT (JSON)</span></div>
+                    <div class="col-row"><span class="col-name">time</span> <span class="col-type">TIMESTAMPTZ</span></div>
+                </div>
+            </div>
+
+            <div class="db-table-card">
+                <div class="db-table-header header-motion">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+                    motion
+                </div>
+                <div class="db-table-body">
+                    <div class="col-row"><span class="col-name">id</span> <span class="col-pk">PK</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">stream</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">seq</span> <span class="col-type">INTEGER</span></div>
+                    <div class="col-row"><span class="col-name">action</span> <span class="col-type">INTEGER</span></div>
+                    <div class="col-row"><span class="col-name">status</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">delta</span> <span class="col-type">REAL</span></div>
+                    <div class="col-row"><span class="col-name">scope</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">data</span> <span class="col-type">TEXT (JSON)</span></div>
+                    <div class="col-row"><span class="col-name">time</span> <span class="col-type">TIMESTAMPTZ</span></div>
+                </div>
+            </div>
+
+            <div class="db-table-card">
+                <div class="db-table-header header-relation">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    relation
+                </div>
+                <div class="db-table-body">
+                    <div class="col-row"><span class="col-name">src</span> <span class="col-pk">PK</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">tgt</span> <span class="col-pk">PK</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">type</span> <span class="col-pk">PK</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">weight</span> <span class="col-type">REAL</span></div>
+                    <div class="col-row"><span class="col-name">time</span> <span class="col-type">TIMESTAMPTZ</span></div>
+                </div>
+            </div>
+
+            <div class="db-table-card" style="position: relative; z-index: 2;">
+                <div class="db-table-header header-memory">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/><circle cx="5" cy="19" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="19" cy="5" r="1"/><circle cx="5" cy="5" r="1"/></svg>
+                    memory
+                </div>
+                <div class="db-table-body">
+                    <div class="col-row"><span class="col-name">matter</span> <span class="col-pk" style="color: var(--matter-color);">PK (FK)</span> <span class="col-type">TEXT</span></div>
+                    <div class="col-row"><span class="col-name">vector</span> <span class="col-type">F32_BLOB(384)</span></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- EXAMPLES SECTION -->
+    <div class="section-container">
+        <h2>Real-World Mapping Examples</h2>
+        <div class="subtitle">How 5 entirely different use-cases perfectly collapse into the exact same 5 tables.</div>
+        
+        <div class="example-grid">
+            
+            <div class="example-card">
+                <h3>01. Commerce: Product Sale</h3>
+                <div class="data-row"><span class="table-badge badge-matter"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>MATTER</span> <span class="data-val">"Chettinad Chicken Biryani"</span></div>
+                <div class="data-row"><span class="table-badge badge-mass"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>MASS</span> <span class="data-val">50 units @ Adyar Store, ₹180</span></div>
+                <div class="data-row"><span class="table-badge badge-relation"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>RELATION</span> <span class="data-val">Upsell link: "Coke" (weight: 0.8)</span></div>
+                <div class="data-row"><span class="table-badge badge-motion"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>MOTION</span> <span class="data-val">SOLD (delta: -1) @ 12:30 PM</span></div>
+                <div class="data-row"><span class="table-badge badge-memory"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/><circle cx="5" cy="19" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="19" cy="5" r="1"/><circle cx="5" cy="5" r="1"/></svg>MEMORY</span> <span class="data-val">[0.12, 0.88...] (Spicy profile vector)</span></div>
+            </div>
+
+            <div class="example-card">
+                <h3>02. CRM: Loyalty & Customer</h3>
+                <div class="data-row"><span class="table-badge badge-matter"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>MATTER</span> <span class="data-val">Customer Profile: "John Doe"</span></div>
+                <div class="data-row"><span class="table-badge badge-mass"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>MASS</span> <span class="data-val">1,200 Loyalty Points balance</span></div>
+                <div class="data-row"><span class="table-badge badge-relation"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>RELATION</span> <span class="data-val">Belongs to "VIP Segment A"</span></div>
+                <div class="data-row"><span class="table-badge badge-motion"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>MOTION</span> <span class="data-val">VISITED_STORE @ 10:00 AM</span></div>
+                <div class="data-row"><span class="table-badge badge-memory"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/><circle cx="5" cy="19" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="19" cy="5" r="1"/><circle cx="5" cy="5" r="1"/></svg>MEMORY</span> <span class="data-val">[-0.4, 0.9...] (Sentiment from reviews)</span></div>
+            </div>
+
+            <div class="example-card">
+                <h3>03. Logistics: Live Delivery</h3>
+                <div class="data-row"><span class="table-badge badge-matter"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>MATTER</span> <span class="data-val">Order Task: "#992 Delivery"</span></div>
+                <div class="data-row"><span class="table-badge badge-mass"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>MASS</span> <span class="data-val">Assigned to Driver ID:44</span></div>
+                <div class="data-row"><span class="table-badge badge-relation"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>RELATION</span> <span class="data-val">Linked to Customer "John Doe"</span></div>
+                <div class="data-row"><span class="table-badge badge-motion"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>MOTION</span> <span class="data-val">PING (lat:13.0, lng:80.2) IN_TRANSIT</span></div>
+                <div class="data-row"><span class="table-badge badge-memory"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/><circle cx="5" cy="19" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="19" cy="5" r="1"/><circle cx="5" cy="5" r="1"/></svg>MEMORY</span> <span class="data-val">[0.5, 0.1...] (Predicted ETA vector)</span></div>
+            </div>
+
+            <div class="example-card">
+                <h3>04. POS / HR: Shift Management</h3>
+                <div class="data-row"><span class="table-badge badge-matter"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>MATTER</span> <span class="data-val">Employee Role: "Chef Kumar"</span></div>
+                <div class="data-row"><span class="table-badge badge-mass"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>MASS</span> <span class="data-val">Shift active @ T.Nagar Kitchen</span></div>
+                <div class="data-row"><span class="table-badge badge-relation"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>RELATION</span> <span class="data-val">Manages "Prep Staff" group</span></div>
+                <div class="data-row"><span class="table-badge badge-motion"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>MOTION</span> <span class="data-val">CLOCKED_IN @ 08:00 AM</span></div>
+                <div class="data-row"><span class="table-badge badge-memory"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/><circle cx="5" cy="19" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="19" cy="5" r="1"/><circle cx="5" cy="5" r="1"/></svg>MEMORY</span> <span class="data-val">[0.7, 0.6...] (Skill & performance summary)</span></div>
+            </div>
+
+            <div class="example-card">
+                <h3>05. Services: Appointments</h3>
+                <div class="data-row"><span class="table-badge badge-matter"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>MATTER</span> <span class="data-val">Service: "Pipe Repair Booking"</span></div>
+                <div class="data-row"><span class="table-badge badge-mass"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>MASS</span> <span class="data-val">Slot available 10:00-11:00 AM</span></div>
+                <div class="data-row"><span class="table-badge badge-relation"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>RELATION</span> <span class="data-val">Requires "Plumbing Toolkit A"</span></div>
+                <div class="data-row"><span class="table-badge badge-motion"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>MOTION</span> <span class="data-val">BOOKING_CONFIRMED @ 09:15 AM</span></div>
+                <div class="data-row"><span class="table-badge badge-memory"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/><circle cx="5" cy="19" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="19" cy="5" r="1"/><circle cx="5" cy="5" r="1"/></svg>MEMORY</span> <span class="data-val">[0.2, 0.9...] (Matching criteria vector)</span></div>
+            </div>
+
+            <div class="example-card">
+                <h3>06. Marketing: Promo Campaigns</h3>
+                <div class="data-row"><span class="table-badge badge-matter"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>MATTER</span> <span class="data-val">Campaign: "DIWALI50" (₹50 Off)</span></div>
+                <div class="data-row"><span class="table-badge badge-mass"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>MASS</span> <span class="data-val">10,000 global uses remaining</span></div>
+                <div class="data-row"><span class="table-badge badge-relation"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>RELATION</span> <span class="data-val">Restricted to "VIP Users" segment</span></div>
+                <div class="data-row"><span class="table-badge badge-motion"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>MOTION</span> <span class="data-val">COUPON_APPLIED (delta: -1) @ 10:45 AM</span></div>
+                <div class="data-row"><span class="table-badge badge-memory"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/><circle cx="5" cy="19" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="19" cy="5" r="1"/><circle cx="5" cy="5" r="1"/></svg>MEMORY</span> <span class="data-val">[0.8, 0.1...] (Audience targeting vector)</span></div>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+</html>

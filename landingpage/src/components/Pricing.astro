@@ -1,0 +1,204 @@
+---
+const plans = [
+  {
+    name: "Starter",
+    tag: "For one shop",
+    price: "Free",
+    priceSub: "forever",
+    cta: "Start free",
+    features: [
+      "Up to 100 products",
+      "2 AI agents",
+      "Pricing & restock",
+      "Email support",
+    ],
+    highlight: false,
+  },
+  {
+    name: "Growth",
+    tag: "For multi-store",
+    price: "₹2,499",
+    priceSub: "per store / mo",
+    cta: "Start 30-day trial",
+    features: [
+      "Unlimited products",
+      "All 6 AI agents",
+      "WhatsApp & Instagram",
+      "Loyalty & campaigns",
+      "Priority support",
+    ],
+    highlight: true,
+    badge: "Most popular",
+  },
+  {
+    name: "Scale",
+    tag: "For chains",
+    price: "Custom",
+    priceSub: "talk to us",
+    cta: "Contact sales",
+    features: [
+      "Everything in Growth",
+      "Unlimited stores",
+      "Custom AI training",
+      "Dedicated success manager",
+      "SLA & API access",
+    ],
+    highlight: false,
+  },
+];
+---
+
+<section id="pricing" class="section">
+  <div class="container">
+    <div class="head">
+      <span class="eyebrow">Pricing</span>
+      <h2>Honest pricing.<br/><span class="serif italic">No surprises.</span></h2>
+      <p class="sub">Start free. Pay only when an agent has earned its keep.</p>
+    </div>
+
+    <div class="grid">
+      {plans.map((p) => (
+        <article class={`plan ${p.highlight ? "is-featured" : ""}`}>
+          {p.badge && <span class="badge">{p.badge}</span>}
+          <div class="plan-top">
+            <h3>{p.name}</h3>
+            <span class="tag">{p.tag}</span>
+          </div>
+          <div class="price-row">
+            <span class="price">{p.price}</span>
+            <span class="price-sub">{p.priceSub}</span>
+          </div>
+          <a href="#start" class={`btn ${p.highlight ? "btn-primary" : "btn-secondary"}`}>
+            {p.cta}
+          </a>
+          <ul class="feats">
+            {p.features.map((f) => (
+              <li>
+                <span class="check">✓</span>
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .head {
+    margin-bottom: 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 720px;
+  }
+  @media (max-width: 720px) { .head { margin-bottom: 40px; } }
+  .sub {
+    color: var(--ink-2);
+    font-size: 1.05rem;
+    line-height: 1.55;
+    max-width: 50ch;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    align-items: stretch;
+  }
+  .plan {
+    position: relative;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .plan.is-featured {
+    border-color: var(--ink);
+    border-width: 2px;
+    padding: 31px 27px;
+    box-shadow: 0 24px 40px -24px rgba(20, 18, 12, 0.18);
+  }
+
+  .badge {
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+
+  .plan-top { display: flex; flex-direction: column; gap: 4px; }
+  .plan h3 {
+    font-size: 1.35rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .tag {
+    font-size: 0.86rem;
+    color: var(--ink-3);
+  }
+  .price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .price {
+    font-size: 2.2rem;
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .price-sub {
+    font-size: 0.84rem;
+    color: var(--ink-3);
+  }
+
+  .feats {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    margin-top: 4px;
+  }
+  .feats li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 0.92rem;
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+  .check {
+    color: var(--good);
+    font-weight: 700;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 980px) {
+    .grid { grid-template-columns: 1fr; gap: 24px; max-width: 480px; margin: 0 auto; }
+    .plan.is-featured { order: -1; }
+  }
+  @media (max-width: 520px) {
+    .plan { padding: 28px 24px; }
+    .plan.is-featured { padding: 27px 23px; }
+    .price { font-size: 1.95rem; }
+  }
+</style>

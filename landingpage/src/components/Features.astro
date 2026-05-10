@@ -1,0 +1,230 @@
+---
+const features = [
+  {
+    num: "01",
+    name: "Smart Pricing",
+    headline: "Sell more, without discounting.",
+    body: "Bumps prices during the rush, eases off when it's quiet. Every minute, every product — automatically.",
+    points: ["Hourly demand model", "Per-product floor & ceiling", "Festival-aware boosts"],
+  },
+  {
+    num: "02",
+    name: "Auto-Restock",
+    headline: "Never run out. Never overstock.",
+    body: "Reorders and balances inventory across stores so cash isn't tied up on the shelf.",
+    points: ["Vendor-aware reorders", "Multi-store balancing", "Wastage forecasting"],
+  },
+  {
+    num: "03",
+    name: "Customer Replies",
+    headline: "Answers in your tone, in seconds.",
+    body: "WhatsApp, Instagram, store chats — replied to instantly, in your voice. You stay in the loop, not the inbox.",
+    points: ["Trained on your shop", "Tamil + English fluency", "Escalates on edge cases"],
+  },
+  {
+    num: "04",
+    name: "Reviews & Loyalty",
+    headline: "Turn first-timers into regulars.",
+    body: "Asks happy customers for reviews. Sends birthday treats. Builds points without a single spreadsheet.",
+    points: ["Review nudges", "Birthday & milestone gifts", "Auto-points, no setup"],
+  },
+  {
+    num: "05",
+    name: "Smart Roster",
+    headline: "Schedule staff, no spreadsheets.",
+    body: "Predicts busy hours, drafts weekly rosters, and tracks attendance — so Sundays are yours again.",
+    points: ["Demand-based shifts", "Leave + swap tracking", "Attendance + payroll log"],
+  },
+  {
+    num: "06",
+    name: "Daily Brief",
+    headline: "One-screen morning report.",
+    body: "Yesterday's sales and anything weird. Plain English, no charts, no jargon.",
+    points: ["8 am every day", "Plain language summary", "Anomalies flagged inline"],
+  },
+];
+---
+
+<section id="features" class="section dark">
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="container">
+    <div class="head">
+      <span class="eyebrow-dark mono">
+        <span class="eyebrow-dot"></span>
+        Features
+      </span>
+      <h2>Six AI workers,<br/><span class="serif italic">one shop running itself.</span></h2>
+      <p class="sub">Toggle them on as you grow. Each one earns its keep.</p>
+    </div>
+
+    <div class="grid">
+      {features.map((f) => (
+        <article class="card">
+          <div class="card-head">
+            <span class="num mono">{f.num}</span>
+            <span class="name mono">{f.name}</span>
+          </div>
+          <h3 class="headline">{f.headline}</h3>
+          <p class="body">{f.body}</p>
+          <ul class="points">
+            {f.points.map((p) => (
+              <li>
+                <span class="tick" aria-hidden="true">
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                    <path d="M2.5 6.2l2.4 2.3L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </span>
+                <span>{p}</span>
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .dark {
+    position: relative;
+    color: #fff;
+    overflow: hidden;
+    background:
+      radial-gradient(900px 480px at 85% 0%, rgba(132, 204, 22, 0.12), transparent 60%),
+      radial-gradient(700px 400px at 0% 100%, rgba(132, 204, 22, 0.1), transparent 60%),
+      linear-gradient(180deg, #0a2418 0%, #0d2e1f 50%, #103826 100%);
+  }
+  .bg-grid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black 30%, transparent 80%);
+  }
+  .container { position: relative; z-index: 1; }
+
+  .head {
+    margin-bottom: 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-width: 720px;
+  }
+  @media (max-width: 720px) { .head { margin-bottom: 40px; } }
+
+  .eyebrow-dark {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.85);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    align-self: flex-start;
+  }
+  .eyebrow-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #84cc16;
+    box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.25);
+  }
+  .head h2 { color: #fff; font-size: clamp(1.8rem, 3.6vw, 3rem); }
+  .head h2 .italic { color: #d9f99d; font-style: italic; font-weight: 400; }
+  .sub {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1.05rem;
+    line-height: 1.55;
+    max-width: 50ch;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 18px;
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .num {
+    font-size: 0.7rem;
+    color: #84cc16;
+    letter-spacing: 0.16em;
+    font-weight: 600;
+  }
+  .name {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.95);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 500;
+  }
+  .headline {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+  }
+  .body {
+    font-size: 0.94rem;
+    color: rgba(255, 255, 255, 0.7);
+    line-height: 1.6;
+  }
+  .points {
+    list-style: none;
+    margin-top: auto;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .points li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.88rem;
+    color: rgba(255, 255, 255, 0.85);
+    line-height: 1.4;
+  }
+  .tick {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(132, 204, 22, 0.18);
+    color: #84cc16;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 980px) {
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: 1fr; }
+    .card { padding: 28px 24px; }
+  }
+</style>

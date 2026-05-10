@@ -1,0 +1,169 @@
+---
+const links = [
+  { href: "#how", label: "How it works" },
+  { href: "#features", label: "Features" },
+  { href: "#stories", label: "Stories" },
+  { href: "#pricing", label: "Pricing" },
+];
+---
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a href="/" class="brand" aria-label="TAR home">
+      <span class="brand-name">tar</span>
+    </a>
+
+    <div class="links">
+      {links.map((l) => <a href={l.href}>{l.label}</a>)}
+    </div>
+
+    <div class="cta">
+      <a href="#" class="signin">Sign in</a>
+      <a href="#start" class="btn btn-primary btn-sm pill">Get the app</a>
+      <button class="hamburger" aria-label="Menu" aria-expanded="false" id="menuToggle">
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="mobile-menu" id="mobileMenu" data-open="false">
+    <div class="mobile-menu-inner">
+      {links.map((l) => <a href={l.href}>{l.label}</a>)}
+      <a href="#" class="m-signin">Sign in</a>
+    </div>
+  </div>
+</nav>
+
+<script>
+  const toggle = document.getElementById("menuToggle");
+  const menu = document.getElementById("mobileMenu");
+
+  function setOpen(open: boolean) {
+    if (!toggle || !menu) return;
+    menu.setAttribute("data-open", String(open));
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.classList.toggle("is-open", open);
+  }
+
+  toggle?.addEventListener("click", () => {
+    const next = menu?.getAttribute("data-open") !== "true";
+    setOpen(next);
+  });
+
+  menu?.querySelectorAll("a").forEach((a) => {
+    a.addEventListener("click", () => setOpen(false));
+  });
+</script>
+
+<style>
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: saturate(180%) blur(12px);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    height: 60px;
+    gap: 24px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    flex-shrink: 0;
+    color: var(--ink);
+  }
+  .brand-name { line-height: 1; }
+
+  .links {
+    display: flex;
+    gap: 28px;
+    font-size: 0.9rem;
+    color: var(--ink-2);
+    margin: 0 auto;
+  }
+  .links a {
+    font-weight: 500;
+    color: var(--ink-2);
+  }
+
+  .cta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .signin {
+    font-size: 0.9rem;
+    color: var(--ink-2);
+    font-weight: 500;
+  }
+  .btn-sm { height: 36px; padding: 0 16px; font-size: 0.86rem; }
+  .pill { border-radius: 999px; }
+
+  .hamburger {
+    display: none;
+    width: 38px;
+    height: 38px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 5px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+  .hamburger span {
+    display: block;
+    width: 16px;
+    height: 1.5px;
+    background: var(--ink);
+    transition: transform 200ms var(--ease);
+  }
+  .hamburger.is-open span:first-child { transform: translateY(3.25px) rotate(45deg); }
+  .hamburger.is-open span:last-child { transform: translateY(-3.25px) rotate(-45deg); }
+
+  .mobile-menu {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 280ms var(--ease);
+    background: var(--bg);
+    border-bottom: 1px solid transparent;
+  }
+  .mobile-menu[data-open="true"] {
+    grid-template-rows: 1fr;
+    border-bottom-color: var(--line);
+  }
+  .mobile-menu-inner {
+    overflow: hidden;
+    min-height: 0;
+  }
+  .mobile-menu a {
+    display: block;
+    padding: 14px 22px;
+    font-size: 0.98rem;
+    font-weight: 500;
+    color: var(--ink);
+    border-top: 1px solid var(--line);
+  }
+  .mobile-menu a:first-child { border-top: 0; }
+  .m-signin { color: var(--ink-2); }
+
+  @media (max-width: 880px) {
+    .links { display: none; }
+    .signin { display: none; }
+    .hamburger { display: flex; }
+    .nav-inner { gap: 12px; height: 58px; }
+  }
+  @media (max-width: 420px) {
+    .cta .btn { display: none; }
+  }
+</style>

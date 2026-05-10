@@ -1,0 +1,168 @@
+---
+
+---
+
+<section id="start" class="cta-section">
+  <div class="container">
+    <div class="card">
+      <span class="cta-eyebrow mono">
+        <span class="cta-dot"></span>
+        Start in 4 minutes
+      </span>
+      <h2>
+        Your business,<br/>
+        <span class="serif italic">running itself.</span>
+      </h2>
+      <p>30 days free. No card. Cancel any time.</p>
+      <div class="actions">
+        <a href="#" class="cta-btn cta-btn-primary">
+          Get the app
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+        <a href="#" class="cta-btn cta-btn-ghost">Book a 15-min demo</a>
+      </div>
+      <ul class="cta-checks">
+        <li><span class="cta-tick">✓</span> iOS &amp; Android</li>
+        <li><span class="cta-tick">✓</span> No credit card</li>
+        <li><span class="cta-tick">✓</span> Cancel anytime</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<style>
+  .cta-section {
+    padding: 80px 0 0;
+    background: var(--bg);
+  }
+  @media (max-width: 880px) { .cta-section { padding: 56px 0 0; } }
+
+  .card {
+    position: relative;
+    border-radius: 28px;
+    padding: 88px 48px 96px;
+    text-align: center;
+    color: #fff;
+    overflow: hidden;
+    background:
+      radial-gradient(900px 480px at 50% 0%, rgba(255, 255, 255, 0.06), transparent 70%),
+      radial-gradient(600px 320px at 100% 100%, rgba(132, 204, 22, 0.18), transparent 60%),
+      radial-gradient(500px 260px at 0% 100%, rgba(132, 204, 22, 0.1), transparent 60%),
+      linear-gradient(180deg, #0a2418 0%, #0d2e1f 60%, #103826 100%);
+  }
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black 30%, transparent 80%);
+    pointer-events: none;
+  }
+  .card > * { position: relative; z-index: 1; }
+
+  .cta-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.85);
+    margin: 0 auto;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .cta-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #84cc16;
+    box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.25);
+  }
+
+  .card h2 {
+    color: #fff;
+    margin-top: 22px;
+    font-size: clamp(2rem, 4.5vw, 3.2rem);
+    line-height: 1.05;
+  }
+  .card h2 .italic {
+    font-style: italic;
+    font-weight: 400;
+    color: #d9f99d;
+  }
+  .card p {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 1.05rem;
+    margin-top: 16px;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 32px;
+  }
+  .cta-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 48px;
+    padding: 0 22px;
+    border-radius: 999px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .cta-btn-primary {
+    background: #fff;
+    color: #0a2418;
+  }
+  .cta-btn-ghost {
+    background: transparent;
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+
+  .cta-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px;
+    justify-content: center;
+    list-style: none;
+    margin-top: 32px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.86rem;
+  }
+  .cta-checks li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .cta-tick {
+    color: #84cc16;
+    font-weight: 700;
+    font-size: 0.78rem;
+  }
+
+  @media (max-width: 720px) {
+    .card { padding: 56px 24px 64px; border-radius: 24px; }
+    .actions { flex-direction: column; gap: 12px; width: 100%; max-width: 320px; margin-left: auto; margin-right: auto; }
+    .cta-btn { width: 100%; }
+    .cta-checks { gap: 14px; font-size: 0.82rem; margin-top: 28px; }
+    .card p { font-size: 0.98rem; }
+  }
+  @media (max-width: 420px) {
+    .card { padding: 48px 20px 56px; }
+  }
+</style>

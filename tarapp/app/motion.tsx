@@ -16,12 +16,16 @@ export default function MotionScreen() {
   const [delta, setDelta] = useState("");
   const [scope, setScope] = useState("");
   const [data, setData] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
     if (!id || !stream || !seq || !action) {
       Alert.alert("Error", "ID, Stream, Seq, and Action are required");
       return;
     }
+
+    if (isSaving) return;
+    setIsSaving(true);
 
     try {
       const db = getDbClient();
@@ -32,6 +36,7 @@ export default function MotionScreen() {
 
       if (isNaN(parsedSeq) || isNaN(parsedAction)) {
         Alert.alert("Error", "Seq and Action must be valid integers");
+        setIsSaving(false);
         return;
       }
 
@@ -45,14 +50,16 @@ export default function MotionScreen() {
         ]
       );
 
-      // Sync changes to remote
-      await db.push();
-
-      Alert.alert("Success", "Motion created successfully!");
       router.back();
+
+      // Sync changes to remote in the background AFTER navigation transition
+      setTimeout(() => {
+        db.push().catch(err => console.error("Background sync failed:", err));
+      }, 500);
     } catch (error) {
       console.error("Failed to create motion:", error);
       Alert.alert("Error", "Failed to create motion. Check console for details.");
+      setIsSaving(false);
     }
   };
 
@@ -150,8 +157,12 @@ export default function MotionScreen() {
             multiline={true}
           />
 
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveBtnText}>Save Motion</Text>
+          <TouchableOpacity 
+            style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]} 
+            onPress={handleSave}
+            disabled={isSaving}
+          >
+            <Text style={styles.saveBtnText}>{isSaving ? "Saving..." : "Save Motion"}</Text>
           </TouchableOpacity>
           
           <View style={{ height: 40 }} />
@@ -181,7 +192,8 @@ const styles = StyleSheet.create({
     color: "#000",
   },
   closeBtn: {
-    padding: 5,
+    padding: 10,
+    marginRight: -10,
   },
   keyboardView: {
     flex: 1,
@@ -222,5 +234,8 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  saveBtnDisabled: {
+    backgroundColor: "#666",
   }
 });

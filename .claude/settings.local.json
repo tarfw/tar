@@ -3,7 +3,32 @@
     "allow": [
       "Bash(npm create *)",
       "Bash(npm install *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(npx tsx *)",
+      "Bash(npx wrangler *)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://127.0.0.1:8787/_health)",
+      "Bash(curl -sS -o /dev/null -w \"health: HTTP %{http_code}\\\\n\" http://127.0.0.1:8787/_health)",
+      "Bash(curl -sS -o /dev/null -w \"home:   HTTP %{http_code}\\\\n\" http://127.0.0.1:8787/t/demo)",
+      "Bash(curl -sS -o /dev/null -w \"admin:  HTTP %{http_code}\\\\n\" \"http://127.0.0.1:8787/admin?tenant=demo\")",
+      "Bash(curl -sS -o /dev/null -w \"pdp:    HTTP %{http_code}\\\\n\" http://127.0.0.1:8787/t/demo/product/espresso)",
+      "Bash(curl -sS http://127.0.0.1:8787/t/demo)",
+      "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(24\\).toString\\('base64url'\\)\\)\")",
+      "Bash(curl -sS -w \"\\\\nHTTP %{http_code}\\\\n\" https://tar-sitebuilder.tar-54d.workers.dev/_health)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\nLocation: %{redirect_url}\\\\n\" https://tar-sitebuilder.tar-54d.workers.dev/admin)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST -H \"content-type: application/json\" -d '{\"tenant\":\"hack\",\"messages\":[]}' https://tar-sitebuilder.tar-54d.workers.dev/api/chat)",
+      "Bash(curl -sS -X POST -H \"content-type: application/json\" -H \"x-admin-token: 1O8W1PPuEWRUUVd-gF43zJG3nD_PnsD5\" -d '{\"tenant\":\"prod1\",\"messages\":[{\"role\":\"user\",\"content\":\"Just say hello.\"}]}' https://tar-sitebuilder.tar-54d.workers.dev/api/chat)",
+      "Bash(curl -sS https://tar-sitebuilder.tar-54d.workers.dev/t/testsections)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('assistant:', d['assistant']\\); print\\('tools:', [\\(t['name'], t['result']\\) for t in d['tool_results']]\\)\")",
+      "Bash(curl -sS https://tar-sitebuilder.tar-54d.workers.dev/t/testsections2)",
+      "Bash(curl *)",
+      "Bash(git fetch *)",
+      "Bash(git push *)",
+      "Bash(npx astro *)",
+      "WebFetch(domain:linear.app)",
+      "WebFetch(domain:stripe.com)",
+      "WebFetch(domain:vercel.com)",
+      "WebFetch(domain:www.apple.com)",
+      "WebFetch(domain:www.notion.so)"
     ]
   }
 }

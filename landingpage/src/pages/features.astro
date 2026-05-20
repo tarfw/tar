@@ -1,0 +1,985 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+import CTA from "../components/CTA.astro";
+
+const agents = [
+  {
+    num: "01",
+    emoji: "🛍️",
+    name: "Commerce AI",
+    role: "Sales & Catalog",
+    tagline: "Everything a customer buys, and how products are presented.",
+    useCases: [
+      "Product catalog",
+      "Inventory tracking",
+      "Multi-store pricing",
+      "Flash sale / time window",
+      "Variant management",
+      "Bundle / combo",
+      "Cart",
+      "Order lifecycle",
+      "Refund / return",
+      "Subscription / recurring",
+      "Wishlist",
+      "Cash register sale",
+      "KDS (kitchen display)",
+    ],
+  },
+  {
+    num: "02",
+    emoji: "🚚",
+    name: "Operations AI",
+    role: "Logistics & Routing",
+    tagline: "Moves things around. Manages physical space and time.",
+    useCases: [
+      "Delivery tracking",
+      "Driver assignment",
+      "Route / ETA",
+      "Warehouse / hub",
+      "Transfer between stores",
+      "Return pickup",
+      "Last-mile status",
+      "Table management",
+      "Queue / token system",
+      "Store hours",
+    ],
+  },
+  {
+    num: "03",
+    emoji: "📢",
+    name: "Growth AI",
+    role: "Marketing & CRM",
+    tagline: "Customer relationships, retention, and outbound messaging.",
+    useCases: [
+      "Customer profile",
+      "Loyalty points",
+      "Visit tracking",
+      "Feedback / review",
+      "Customer segment",
+      "Lead / prospect",
+      "Birthday / anniversary offers",
+      "Campaign",
+      "Push notification",
+      "SMS blast",
+      "A/B test variant",
+      "Referral tracking",
+      "Promo code",
+      "Coupon / discount",
+    ],
+  },
+  {
+    num: "04",
+    emoji: "💼",
+    name: "Manager AI",
+    role: "HR & Services",
+    tagline: "Internal team management and service bookings.",
+    useCases: [
+      "Employee record",
+      "Attendance",
+      "Task assignment",
+      "Performance note",
+      "Leave request",
+      "Shift management",
+      "Support ticket",
+      "Appointment slot",
+      "Booking",
+      "Class / motion registration",
+      "Recurring schedule",
+      "Cancellation",
+      "Plumber listing",
+      "Tutor booking",
+      "Cab / auto ride",
+      "Tiffin service",
+      "Home cleaning",
+    ],
+  },
+  {
+    num: "05",
+    emoji: "💰",
+    name: "Finance AI",
+    role: "Payments & Analytics",
+    tagline: "Money movement, billing, and reporting.",
+    useCases: [
+      "Invoice / billing",
+      "Daily cash close",
+      "Payroll entry",
+      "Sales dashboard",
+      "Top products",
+      "Peak hours",
+      "Customer LTV",
+      "Conversion funnel",
+      "Geo heatmap",
+      "Card payment",
+      "Partial payment",
+      "Split bill",
+      "Payout to seller",
+      "Payment failure",
+    ],
+  },
+  {
+    num: "06",
+    emoji: "🌐",
+    name: "Site AI",
+    role: "Storefront CMS",
+    tagline: "Generates UI layout data and SEO for your storefront.",
+    useCases: [
+      "Store page",
+      "Section / category",
+      "Page / landing page",
+      "Banner / hero",
+      "Menu / navigation",
+      "SEO metadata",
+      "Multi-store chain",
+    ],
+  },
+];
+
+const totalUseCases = agents.reduce((n, a) => n + a.useCases.length, 0);
+---
+
+<Layout
+  title="TAR — Features: 70+ jobs across six AIs"
+  description="Every use case TAR handles, organized under six specialized AIs that run the working parts of your business."
+>
+  <Nav />
+  <main>
+    <section class="hero">
+      <div class="bg-grid" aria-hidden="true"></div>
+      <div class="container">
+        <span class="eyebrow-dark mono">
+          <span class="eyebrow-dot"></span>
+          Features
+        </span>
+        <h1>
+          {totalUseCases}+ jobs.<br/>
+          <span class="serif italic">Six AIs.</span><br/>
+          One business running itself.
+        </h1>
+        <p class="lede">
+          Every TAR AI works off the same live view of your business, so what one
+          learns, the others act on. Turn them on as you grow.
+        </p>
+
+        <nav class="anchors" aria-label="Jump to section">
+          {agents.map((a) => (
+            <a href={`#${a.name.toLowerCase().replace(/\s+/g, "-")}`} class="anchor">
+              <span class="anchor-emoji">{a.emoji}</span>
+              <span class="anchor-name">{a.name}</span>
+              <span class="anchor-count mono">{a.useCases.length}</span>
+            </a>
+          ))}
+        </nav>
+      </div>
+    </section>
+
+    <section class="agents">
+      <div class="container">
+        {agents.map((a, i) => (
+          <article id={a.name.toLowerCase().replace(/\s+/g, "-")} class="agent">
+            <div class="agent-rule" aria-hidden="true">
+              <span class="rule-num mono">{a.num}</span>
+              <span class="rule-line"></span>
+              <span class="rule-tag mono">
+                <span class="rule-dot"></span>
+                {a.role}
+              </span>
+            </div>
+
+            <div class="agent-body">
+              <div class="agent-intro">
+                <div class="agent-glyph" aria-hidden="true">
+                  <span class="glyph-emoji">{a.emoji}</span>
+                  <span class="glyph-ring"></span>
+                </div>
+                <h2 class="agent-name">
+                  {a.name.split(" ").slice(0, -1).join(" ")}{" "}
+                  <span class="serif italic">{a.name.split(" ").slice(-1)[0]}</span>
+                </h2>
+                <p class="agent-tagline">{a.tagline}</p>
+                <div class="agent-stat">
+                  <span class="stat-num">{a.useCases.length}</span>
+                  <span class="stat-label">jobs handled</span>
+                </div>
+              </div>
+
+              <ul class="agent-cases">
+                {a.useCases.map((c, j) => (
+                  <li class="case" style={`--d:${j * 12}ms`}>
+                    <span class="case-idx mono">{String(j + 1).padStart(2, "0")}</span>
+                    <span class="case-label">{c}</span>
+                    <span class="case-arrow" aria-hidden="true">
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                        <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="example">
+      <div class="container">
+        <div class="example-rule" aria-hidden="true">
+          <span class="rule-num mono">07</span>
+          <span class="rule-line"></span>
+          <span class="rule-tag mono">
+            <span class="rule-dot"></span>
+            Orchestration
+          </span>
+        </div>
+
+        <div class="example-grid">
+          <div class="example-intro">
+            <h2 class="example-title">
+              Type once.<br/>
+              <span class="serif italic">The team moves.</span>
+            </h2>
+            <p class="example-lede">
+              One message routes through every AI it touches. Each one picks up its
+              part, hands off the rest, and finishes in a single thread.
+            </p>
+            <dl class="meta">
+              <div>
+                <dt class="mono">Channel</dt>
+                <dd>WhatsApp</dd>
+              </div>
+              <div>
+                <dt class="mono">Resolved in</dt>
+                <dd>2.1s</dd>
+              </div>
+              <div>
+                <dt class="mono">AIs engaged</dt>
+                <dd>3 of 6</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="terminal" aria-label="Example conversation">
+            <div class="term-head">
+              <div class="dots" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <span class="term-title mono">customer · 9:42 PM</span>
+              <span class="term-status">
+                <span class="status-dot"></span>
+                live
+              </span>
+            </div>
+
+            <div class="message">
+              <span class="avatar" aria-hidden="true">R</span>
+              <div class="bubble">
+                Book a tutor for tomorrow and use my loyalty points.
+              </div>
+            </div>
+
+            <div class="timeline" role="list">
+              <div class="t-row" role="listitem" style="--d:0ms">
+                <div class="t-left">
+                  <span class="t-emoji" aria-hidden="true">💼</span>
+                  <span class="t-line" aria-hidden="true"></span>
+                </div>
+                <div class="t-card">
+                  <div class="t-head">
+                    <span class="t-agent">Manager AI</span>
+                    <span class="t-pill done">
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                        <path d="M2.5 6.2l2.4 2.3L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      Booked
+                    </span>
+                  </div>
+                  <p class="t-body">
+                    Found an open slot tomorrow 5–6 PM with Priya · Math.
+                    Confirmed the tutor, locked the booking.
+                  </p>
+                  <div class="t-foot mono">tutor · 5:00 PM · $24</div>
+                </div>
+              </div>
+
+              <div class="t-row" role="listitem" style="--d:120ms">
+                <div class="t-left">
+                  <span class="t-emoji" aria-hidden="true">📢</span>
+                  <span class="t-line" aria-hidden="true"></span>
+                </div>
+                <div class="t-card">
+                  <div class="t-head">
+                    <span class="t-agent">Growth AI</span>
+                    <span class="t-pill done">
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                        <path d="M2.5 6.2l2.4 2.3L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      Applied
+                    </span>
+                  </div>
+                  <p class="t-body">
+                    Found 120 loyalty points on Ravi's profile. Redeemed $7.20
+                    against this booking.
+                  </p>
+                  <div class="t-foot mono">−120 pts · balance 380</div>
+                </div>
+              </div>
+
+              <div class="t-row" role="listitem" style="--d:240ms">
+                <div class="t-left">
+                  <span class="t-emoji" aria-hidden="true">💰</span>
+                </div>
+                <div class="t-card">
+                  <div class="t-head">
+                    <span class="t-agent">Finance AI</span>
+                    <span class="t-pill done">
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                        <path d="M2.5 6.2l2.4 2.3L9.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      Paid
+                    </span>
+                  </div>
+                  <p class="t-body">
+                    Billed the remaining $16.80, sent a payment link, and posted
+                    the payment as received.
+                  </p>
+                  <div class="t-foot mono">card · $16.80 · settled</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="message bot">
+              <span class="avatar bot-avatar" aria-hidden="true">
+                <span class="bot-dot"></span>
+              </span>
+              <div class="bubble bot-bubble">
+                Done — Priya, 5 PM tomorrow. $7.20 paid in points, $16.80 by card. Receipt sent.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <CTA />
+  </main>
+  <Footer />
+</Layout>
+
+<style>
+  /* Shared dark surface ------------------------------------------------- */
+  .hero, .agents, .example {
+    position: relative;
+    color: #fff;
+    overflow: hidden;
+  }
+  .hero {
+    background:
+      radial-gradient(900px 480px at 85% 0%, rgba(132, 204, 22, 0.14), transparent 60%),
+      radial-gradient(700px 400px at 0% 100%, rgba(132, 204, 22, 0.1), transparent 60%),
+      linear-gradient(180deg, #0a2418 0%, #0d2e1f 100%);
+    padding: 96px 0 72px;
+  }
+  .agents {
+    background: linear-gradient(180deg, #0d2e1f 0%, #103826 100%);
+    padding: 80px 0 96px;
+  }
+  .example {
+    background: linear-gradient(180deg, #103826 0%, #0a2418 100%);
+    padding: 96px 0 112px;
+  }
+  @media (max-width: 720px) {
+    .hero { padding: 72px 0 56px; }
+    .agents { padding: 64px 0 80px; }
+    .example { padding: 72px 0 88px; }
+  }
+
+  .bg-grid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black 30%, transparent 80%);
+  }
+  .container { position: relative; z-index: 1; }
+
+  /* Hero --------------------------------------------------------------- */
+  .eyebrow-dark {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.85);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 28px;
+  }
+  .eyebrow-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #84cc16;
+    box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.25);
+  }
+  .hero h1 {
+    color: #fff;
+    max-width: 14ch;
+    margin-bottom: 24px;
+  }
+  .hero h1 .italic {
+    color: #d9f99d;
+    font-style: italic;
+    font-weight: 400;
+  }
+  .lede {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 1.1rem;
+    line-height: 1.6;
+    max-width: 58ch;
+    margin-bottom: 44px;
+  }
+  .lede .mono {
+    color: #d9f99d;
+    font-size: 0.9em;
+    padding: 1px 6px;
+    background: rgba(132, 204, 22, 0.12);
+    border-radius: 4px;
+  }
+
+  .anchors {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    max-width: 760px;
+  }
+  .anchor {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    transition: background 200ms var(--ease), border-color 200ms var(--ease);
+  }
+  .anchor:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(132, 204, 22, 0.4);
+  }
+  .anchor-emoji { font-size: 1.1rem; }
+  .anchor-name { font-size: 0.88rem; font-weight: 500; flex: 1; }
+  .anchor-count {
+    font-size: 0.72rem;
+    color: #84cc16;
+    background: rgba(132, 204, 22, 0.14);
+    padding: 2px 8px;
+    border-radius: 999px;
+    letter-spacing: 0.06em;
+  }
+  @media (max-width: 880px) { .anchors { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .anchors { grid-template-columns: 1fr; } }
+
+  /* Agent sections — editorial layout ---------------------------------- */
+  .agent {
+    padding: 72px 0 80px;
+    position: relative;
+  }
+  .agent:first-of-type { padding-top: 40px; }
+  .agent + .agent { border-top: 1px solid rgba(255, 255, 255, 0.08); }
+
+  /* Top horizontal rule: 03 ──────────── ● ROLE NAME */
+  .agent-rule {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 40px;
+  }
+  .rule-num {
+    font-size: 0.78rem;
+    color: #84cc16;
+    letter-spacing: 0.22em;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .rule-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg,
+      rgba(132, 204, 22, 0.4) 0%,
+      rgba(255, 255, 255, 0.12) 30%,
+      rgba(255, 255, 255, 0.08) 100%);
+  }
+  .rule-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.68rem;
+    color: rgba(255, 255, 255, 0.78);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    flex-shrink: 0;
+  }
+  .rule-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: #84cc16;
+    box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.2);
+  }
+
+  /* Two-column body */
+  .agent-body {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) 1fr;
+    gap: 64px;
+    align-items: start;
+  }
+
+  /* Left column: glyph, name, tagline, stat */
+  .agent-intro {
+    position: sticky;
+    top: 88px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .agent-glyph {
+    position: relative;
+    width: 76px;
+    height: 76px;
+    display: grid;
+    place-items: center;
+    border-radius: 20px;
+    background: linear-gradient(140deg,
+      rgba(132, 204, 22, 0.16) 0%,
+      rgba(132, 204, 22, 0.04) 60%,
+      rgba(255, 255, 255, 0.02) 100%);
+    border: 1px solid rgba(132, 204, 22, 0.22);
+  }
+  .glyph-emoji {
+    font-size: 2rem;
+    line-height: 1;
+    position: relative;
+    z-index: 1;
+  }
+  .glyph-ring {
+    position: absolute;
+    inset: -6px;
+    border-radius: 24px;
+    border: 1px solid rgba(132, 204, 22, 0.15);
+    pointer-events: none;
+  }
+  .agent-name {
+    color: #fff;
+    font-size: clamp(1.8rem, 3vw, 2.4rem);
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin: 0;
+  }
+  .agent-name .italic {
+    color: #d9f99d;
+    font-style: italic;
+    font-weight: 400;
+  }
+  .agent-tagline {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1rem;
+    line-height: 1.55;
+    max-width: 34ch;
+  }
+  .agent-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding-top: 18px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.12);
+  }
+  .stat-num {
+    font-family: "Instrument Serif", Georgia, serif;
+    font-size: 2.6rem;
+    line-height: 1;
+    color: #fff;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+  }
+  .stat-label {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.55);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+
+  /* Right column: numbered list of cases */
+  .agent-cases {
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .case {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 0.94rem;
+    line-height: 1.3;
+    position: relative;
+    background: transparent;
+    transition: background 220ms var(--ease), color 220ms var(--ease);
+  }
+  .case::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0;
+    width: 2px; height: 100%;
+    background: #84cc16;
+    transform: scaleY(0);
+    transform-origin: top;
+    transition: transform 240ms var(--ease);
+  }
+  .case:hover {
+    background: rgba(132, 204, 22, 0.06);
+    color: #fff;
+  }
+  .case:hover::before { transform: scaleY(1); }
+  .case:hover .case-arrow { color: #84cc16; transform: translateX(2px); }
+
+  .case-idx {
+    font-size: 0.68rem;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.14em;
+    flex-shrink: 0;
+    width: 22px;
+  }
+  .case-label { flex: 1; }
+  .case-arrow {
+    color: rgba(255, 255, 255, 0.25);
+    transition: color 220ms var(--ease), transform 220ms var(--ease);
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 1040px) {
+    .agent-body {
+      grid-template-columns: 1fr;
+      gap: 36px;
+    }
+    .agent-intro { position: static; }
+  }
+  @media (max-width: 720px) {
+    .agent { padding: 56px 0 64px; }
+    .agent-rule { gap: 12px; margin-bottom: 28px; }
+    .agent-cases { grid-template-columns: 1fr; }
+    .agent-glyph { width: 64px; height: 64px; border-radius: 16px; }
+    .glyph-emoji { font-size: 1.7rem; }
+  }
+  @media (max-width: 420px) {
+    .rule-tag { display: none; }
+  }
+
+  /* Orchestration example --------------------------------------------- */
+  .example-rule {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 56px;
+  }
+
+  .example-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 380px) 1fr;
+    gap: 72px;
+    align-items: start;
+  }
+
+  .example-intro {
+    position: sticky;
+    top: 88px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .example-title {
+    color: #fff;
+    font-size: clamp(2rem, 3.4vw, 2.8rem);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    margin: 0;
+  }
+  .example-title .italic {
+    color: #d9f99d;
+    font-style: italic;
+    font-weight: 400;
+  }
+  .example-lede {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1rem;
+    line-height: 1.6;
+    max-width: 38ch;
+  }
+  .meta {
+    margin: 0;
+    padding-top: 22px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.12);
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .meta > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+  }
+  .meta dt {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    margin: 0;
+  }
+  .meta dd {
+    color: #fff;
+    font-size: 0.94rem;
+    font-weight: 500;
+    margin: 0;
+  }
+
+  /* Terminal / chat card */
+  .terminal {
+    background:
+      radial-gradient(600px 300px at 90% -10%, rgba(132, 204, 22, 0.08), transparent 60%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    overflow: hidden;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow:
+      0 30px 60px -30px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  .term-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .dots { display: flex; gap: 6px; }
+  .dots span {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+  }
+  .term-title {
+    flex: 1;
+    font-size: 0.74rem;
+    color: rgba(255, 255, 255, 0.55);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .term-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(132, 204, 22, 0.12);
+    border: 1px solid rgba(132, 204, 22, 0.28);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.66rem;
+    color: #d9f99d;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #84cc16;
+    box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.25);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.5; }
+  }
+
+  /* Chat bubbles */
+  .message {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    padding: 22px 22px 18px;
+  }
+  .message.bot {
+    padding: 18px 22px 26px;
+    background:
+      linear-gradient(180deg, transparent 0%, rgba(132, 204, 22, 0.04) 100%);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.82rem;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .bot-avatar {
+    background: rgba(132, 204, 22, 0.2);
+    border: 1px solid rgba(132, 204, 22, 0.35);
+    position: relative;
+  }
+  .bot-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #84cc16;
+    box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.3);
+  }
+  .bubble {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    padding: 12px 16px;
+    border-radius: 14px 14px 14px 4px;
+    font-size: 0.96rem;
+    line-height: 1.5;
+    max-width: 60ch;
+  }
+  .bot-bubble {
+    background: linear-gradient(140deg, rgba(132, 204, 22, 0.14), rgba(132, 204, 22, 0.06));
+    border-color: rgba(132, 204, 22, 0.32);
+    border-radius: 14px 14px 4px 14px;
+  }
+
+  /* Agent timeline */
+  .timeline {
+    padding: 10px 22px 14px;
+    display: flex;
+    flex-direction: column;
+  }
+  .t-row {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    gap: 14px;
+    padding-bottom: 14px;
+    opacity: 0;
+    transform: translateY(6px);
+    animation: rise 520ms var(--ease) forwards;
+    animation-delay: var(--d, 0ms);
+  }
+  @keyframes rise {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .t-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .t-emoji {
+    width: 32px; height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: rgba(132, 204, 22, 0.12);
+    border: 1px solid rgba(132, 204, 22, 0.25);
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+  .t-line {
+    width: 1px;
+    flex: 1;
+    background: linear-gradient(180deg, rgba(132, 204, 22, 0.35), rgba(255, 255, 255, 0.06));
+    min-height: 24px;
+  }
+  .t-card {
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 14px 16px;
+    transition: border-color 220ms var(--ease), background 220ms var(--ease);
+  }
+  .t-card:hover {
+    border-color: rgba(132, 204, 22, 0.35);
+    background: rgba(132, 204, 22, 0.05);
+  }
+  .t-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .t-agent {
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+  .t-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px 3px 7px;
+    border-radius: 999px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.64rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+  .t-pill.done {
+    background: rgba(132, 204, 22, 0.14);
+    border: 1px solid rgba(132, 204, 22, 0.32);
+    color: #d9f99d;
+  }
+  .t-body {
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin: 0 0 8px;
+  }
+  .t-foot {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.45);
+    letter-spacing: 0.06em;
+  }
+
+  @media (max-width: 1040px) {
+    .example-grid {
+      grid-template-columns: 1fr;
+      gap: 40px;
+    }
+    .example-intro { position: static; }
+    .meta { grid-template-columns: repeat(3, 1fr); }
+    .meta > div { flex-direction: column; align-items: flex-start; gap: 4px; }
+  }
+  @media (max-width: 600px) {
+    .example-rule { gap: 12px; margin-bottom: 32px; }
+    .meta { grid-template-columns: 1fr; }
+    .meta > div { flex-direction: row; align-items: baseline; }
+    .timeline { padding: 6px 14px 10px; }
+    .message { padding: 18px 14px 14px; }
+    .message.bot { padding: 14px 14px 20px; }
+    .bubble { font-size: 0.92rem; }
+    .t-row { grid-template-columns: 30px 1fr; gap: 10px; }
+    .t-emoji { width: 28px; height: 28px; font-size: 0.92rem; }
+  }
+</style>

@@ -6,44 +6,71 @@ const steps = [
     headline: "Connect what you have.",
     body: "Snap photos, import a CSV, or scan barcodes. TAR builds your catalog in minutes.",
     points: ["Photo + barcode import", "CSV from any POS", "No data team needed"],
+    outcome: "182 products imported in 4 minutes",
   },
   {
     n: "02",
     name: "Activate",
-    headline: "Pick your agents.",
+    headline: "Pick your AIs.",
     body: "Choose the AI workers you want — pricing, restock, support, marketing. Toggle any time.",
-    points: ["Six agents to choose from", "Turn on or off in a tap", "Approval rules you set"],
+    points: ["Six AIs to choose from", "Turn on or off in a tap", "Approval rules you set"],
+    outcome: "5 AIs running across your shop",
   },
   {
     n: "03",
     name: "Run",
     headline: "Watch them run your shop.",
-    body: "Agents work 24/7. You approve big moves; they handle everything else.",
+    body: "Your AIs work 24/7. You approve big moves; they handle everything else.",
     points: ["24/7 autonomous run", "You approve big moves", "Daily brief at 8 am"],
+    outcome: "+$24 lift in the first hour",
   },
 ];
 ---
 
-<section id="how" class="section dark">
+<section id="how" class="section light">
   <div class="bg-grid" aria-hidden="true"></div>
   <div class="container">
-    <div class="head">
-      <span class="eyebrow-dark mono">
-        <span class="eyebrow-dot"></span>
+    <div class="rule" aria-hidden="true">
+      <span class="rule-num mono">01</span>
+      <span class="rule-line"></span>
+      <span class="rule-tag mono">
+        <span class="rule-dot"></span>
         How it works
       </span>
-      <h2>From your phone to a working business<br/><span class="serif italic">in under 5 minutes.</span></h2>
     </div>
 
-    <div class="grid">
+    <header class="head">
+      <div class="head-text">
+        <h2>
+          From your phone<br/>
+          to a working business<br/>
+          <span class="serif italic">in under 5 minutes.</span>
+        </h2>
+        <p class="sub">
+          Three steps. No tech team, no migration weekend, no surprise bills.
+          Most owners are running before their morning coffee goes cold.
+        </p>
+      </div>
+      <a href="#start" class="head-link">
+        Start free
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+    </header>
+
+    <ol class="steps">
       {steps.map((s, i) => (
-        <article class="card">
-          <div class="card-head">
-            <span class="num mono">{s.n}</span>
-            <span class="name mono">{s.name}</span>
+        <li class="step" style={`--d:${i * 80}ms`}>
+          <div class="step-rule" aria-hidden="true">
+            <span class="step-num mono">{s.n}</span>
+            <span class="step-line"></span>
+            <span class="step-name mono">{s.name}</span>
           </div>
-          <h3 class="headline">{s.headline}</h3>
+
+          <h3>{s.headline}</h3>
           <p class="body">{s.body}</p>
+
           <ul class="points">
             {s.points.map((p) => (
               <li>
@@ -56,212 +83,232 @@ const steps = [
               </li>
             ))}
           </ul>
-          {i < steps.length - 1 && <span class="connector" aria-hidden="true"></span>}
-        </article>
-      ))}
-    </div>
 
-    <div class="callout">
-      <div class="callout-body">
-        <h3>No tech team. No migration. No surprise bills.</h3>
-        <p>If you can use WhatsApp, you can run TAR.</p>
-      </div>
-      <a href="#start" class="callout-btn">
-        Start free
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-          <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </a>
-    </div>
+          <p class="outcome">{s.outcome}</p>
+        </li>
+      ))}
+    </ol>
   </div>
 </section>
 
 <style>
-  .dark {
+  .light {
     position: relative;
-    color: #fff;
+    color: #1a1a1a;
     overflow: hidden;
     background:
-      radial-gradient(900px 480px at 15% 0%, rgba(132, 204, 22, 0.12), transparent 60%),
-      radial-gradient(700px 400px at 100% 100%, rgba(132, 204, 22, 0.1), transparent 60%),
-      linear-gradient(180deg, #0a2418 0%, #0d2e1f 50%, #103826 100%);
+      radial-gradient(900px 480px at 15% 0%, rgba(132, 204, 22, 0.08), transparent 60%),
+      radial-gradient(700px 400px at 100% 100%, rgba(132, 204, 22, 0.06), transparent 60%),
+      linear-gradient(180deg, #ffffff 0%, #fbfaf7 100%);
   }
   .bg-grid {
     position: absolute;
     inset: 0;
     pointer-events: none;
     background-image:
-      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      linear-gradient(rgba(26, 26, 26, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(26, 26, 26, 0.04) 1px, transparent 1px);
     background-size: 56px 56px;
     mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black 30%, transparent 80%);
     -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black 30%, transparent 80%);
   }
   .container { position: relative; z-index: 1; }
 
-  .head {
-    margin-bottom: 56px;
+  /* Section rule strip */
+  .rule {
     display: flex;
-    flex-direction: column;
+    align-items: center;
     gap: 18px;
-    max-width: 720px;
+    margin-bottom: 56px;
   }
-  @media (max-width: 720px) { .head { margin-bottom: 40px; } }
-
-  .eyebrow-dark {
+  .rule-num {
+    font-size: 0.78rem;
+    color: #4d7c0f;
+    letter-spacing: 0.22em;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .rule-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg,
+      rgba(132, 204, 22, 0.5) 0%,
+      rgba(26, 26, 26, 0.14) 30%,
+      rgba(26, 26, 26, 0.08) 100%);
+  }
+  .rule-tag {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 14px;
+    padding: 6px 12px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    font-size: 0.7rem;
-    color: rgba(255, 255, 255, 0.85);
+    background: rgba(132, 204, 22, 0.08);
+    border: 1px solid rgba(132, 204, 22, 0.25);
+    font-size: 0.68rem;
+    color: #4d7c0f;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
-    align-self: flex-start;
+    letter-spacing: 0.14em;
+    flex-shrink: 0;
   }
-  .eyebrow-dot {
-    width: 6px; height: 6px; border-radius: 50%;
+  .rule-dot {
+    width: 5px; height: 5px; border-radius: 50%;
     background: #84cc16;
-    box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.25);
+    box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.2);
   }
-  .head h2 { color: #fff; font-size: clamp(1.8rem, 3.6vw, 3rem); }
-  .head h2 .italic { color: #d9f99d; font-style: italic; font-weight: 400; }
 
-  .grid {
+  /* Header */
+  .head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 48px;
+    flex-wrap: wrap;
+    margin-bottom: 72px;
+  }
+  .head-text { max-width: 720px; }
+  .head h2 {
+    color: #1a1a1a;
+    font-size: clamp(2rem, 4.2vw, 3.2rem);
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    margin: 0 0 18px;
+  }
+  .head h2 .italic {
+    color: #4d7c0f;
+    font-style: italic;
+    font-weight: 400;
+  }
+  .head .sub {
+    color: #555555;
+    font-size: 1rem;
+    line-height: 1.6;
+    max-width: 56ch;
+    margin: 0;
+  }
+  .head-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #4d7c0f;
+    font-size: 0.92rem;
+    font-weight: 500;
+    border-bottom: 1px solid rgba(77, 124, 15, 0.4);
+    padding-bottom: 4px;
+    transition: color 200ms var(--ease), border-color 200ms var(--ease);
+    flex-shrink: 0;
+  }
+  .head-link:hover {
+    color: #1a1a1a;
+    border-color: #1a1a1a;
+  }
+
+  /* Three flat columns */
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
+    gap: 48px;
   }
-  .card {
-    position: relative;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 18px;
-    padding: 32px 28px;
+  .step {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    opacity: 0;
+    transform: translateY(10px);
+    animation: rise 540ms var(--ease) forwards;
+    animation-delay: var(--d, 0ms);
   }
-  .connector {
-    position: absolute;
-    top: 50px;
-    right: -10px;
-    width: 20px;
-    height: 1px;
-    background: linear-gradient(90deg, rgba(132, 204, 22, 0.5), rgba(132, 204, 22, 0.1));
-    z-index: 2;
-  }
-  .card-head {
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* Top rule per step — mirrors the section rule */
+  .step-rule {
     display: flex;
     align-items: center;
     gap: 12px;
     padding-bottom: 18px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(26, 26, 26, 0.1);
   }
-  .num {
-    font-size: 0.7rem;
-    color: #84cc16;
+  .step-num {
+    font-size: 0.78rem;
+    color: #4d7c0f;
+    letter-spacing: 0.2em;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .step-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(132, 204, 22, 0.35), rgba(26, 26, 26, 0.08));
+  }
+  .step-name {
+    font-size: 0.68rem;
+    color: #555555;
     letter-spacing: 0.16em;
-    font-weight: 600;
-  }
-  .name {
-    font-size: 0.7rem;
-    color: rgba(255, 255, 255, 0.95);
     text-transform: uppercase;
-    letter-spacing: 0.14em;
     font-weight: 500;
-  }
-  .headline {
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: #fff;
-    letter-spacing: -0.02em;
-    line-height: 1.25;
-  }
-  .body {
-    font-size: 0.94rem;
-    color: rgba(255, 255, 255, 0.7);
-    line-height: 1.6;
-  }
-  .points {
-    list-style: none;
-    margin-top: auto;
-    padding-top: 20px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .points li {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 0.88rem;
-    color: rgba(255, 255, 255, 0.85);
-    line-height: 1.4;
-  }
-  .tick {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    background: rgba(132, 204, 22, 0.18);
-    color: #84cc16;
     flex-shrink: 0;
   }
 
-  .callout {
-    margin-top: 32px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.04);
-    padding: 28px 36px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-    flex-wrap: wrap;
+  .step h3 {
+    color: #1a1a1a;
+    font-size: 1.35rem;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+    margin: 0;
   }
-  .callout-body h3 {
-    font-size: 1.2rem;
-    font-weight: 600;
-    margin-bottom: 4px;
-    letter-spacing: -0.02em;
-    color: #fff;
-  }
-  .callout-body p {
-    color: rgba(255, 255, 255, 0.65);
+  .step .body {
+    color: #555555;
     font-size: 0.95rem;
-  }
-  .callout-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    height: 44px;
-    padding: 0 22px;
-    border-radius: 999px;
-    background: #fff;
-    color: #0a2418;
-    font-size: 0.92rem;
-    font-weight: 500;
-    white-space: nowrap;
+    line-height: 1.55;
+    margin: 0;
   }
 
-  @media (max-width: 980px) {
-    .grid { grid-template-columns: 1fr; gap: 14px; }
-    .connector { display: none; }
+  .points {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .points li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 0.88rem;
+    color: #1a1a1a;
+    line-height: 1.45;
+  }
+  .tick {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(132, 204, 22, 0.16);
+    color: #4d7c0f;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .outcome {
+    margin: 8px 0 0;
+    padding-top: 16px;
+    border-top: 1px solid rgba(26, 26, 26, 0.08);
+    color: #4d7c0f;
+    font-size: 0.88rem;
+    line-height: 1.45;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+
+  @media (max-width: 880px) {
+    .head { margin-bottom: 48px; }
+    .steps { grid-template-columns: 1fr; gap: 40px; }
   }
   @media (max-width: 600px) {
-    .card { padding: 28px 24px; }
-    .callout { padding: 24px; flex-direction: column; align-items: flex-start; gap: 18px; }
-    .callout-btn { width: 100%; }
-    .callout-body h3 { font-size: 1.1rem; }
+    .rule { gap: 12px; margin-bottom: 36px; }
   }
 </style>

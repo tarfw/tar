@@ -6,9 +6,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { getDbClient } from "../lib/db";
 
+const genMassId = () => `mas_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
 export default function MassScreen() {
   const router = useRouter();
-  const [id, setId] = useState("");
+  const [id, setId] = useState(genMassId);
   const [matter, setMatter] = useState("");
   const [type, setType] = useState("");
   const [scope, setScope] = useState("");
@@ -18,12 +20,16 @@ export default function MassScreen() {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [data, setData] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
-    if (!id || !matter) {
-      Alert.alert("Error", "ID and Matter (reference) are required");
+    if (!matter) {
+      Alert.alert("Error", "Matter (reference) is required");
       return;
     }
+
+    if (isSaving) return;
+    setIsSaving(true);
 
     try {
       const db = getDbClient();
@@ -42,14 +48,16 @@ export default function MassScreen() {
         ]
       );
 
-      // Sync changes to remote
-      await db.push();
-
-      Alert.alert("Success", "Mass created successfully!");
       router.back();
+
+      // Sync changes to remote in the background AFTER navigation transition
+      setTimeout(() => {
+        db.push().catch(err => console.error("Background sync failed:", err));
+      }, 500);
     } catch (error) {
       console.error("Failed to create mass:", error);
       Alert.alert("Error", "Failed to create mass. Check console for details.");
+      setIsSaving(false);
     }
   };
 
@@ -71,15 +79,6 @@ export default function MassScreen() {
       >
         <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
           
-          <Text style={styles.label}>ID</Text>
-          <TextInput 
-            style={styles.input} 
-            placeholder="Unique Mass ID" 
-            placeholderTextColor="#999"
-            value={id}
-            onChangeText={setId}
-          />
-
           <Text style={styles.label}>Matter (Reference ID)</Text>
           <TextInput 
             style={styles.input} 
@@ -164,8 +163,12 @@ export default function MassScreen() {
             multiline={true}
           />
 
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveBtnText}>Save Mass</Text>
+          <TouchableOpacity 
+            style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]} 
+            onPress={handleSave}
+            disabled={isSaving}
+          >
+            <Text style={styles.saveBtnText}>{isSaving ? "Saving..." : "Save Mass"}</Text>
           </TouchableOpacity>
           
           <View style={{ height: 40 }} />
@@ -195,7 +198,8 @@ const styles = StyleSheet.create({
     color: "#000",
   },
   closeBtn: {
-    padding: 5,
+    padding: 10,
+    marginRight: -10,
   },
   keyboardView: {
     flex: 1,
@@ -236,5 +240,8 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  saveBtnDisabled: {
+    backgroundColor: "#666",
   }
 });

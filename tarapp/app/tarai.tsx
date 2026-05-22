@@ -86,6 +86,12 @@ OPCODES for motion.action:
 - 200: TASK (Actionable To-Do item)
 - 100: SYSTEM/UPDATE (Generic inventory or system change)
 
+MODELING RULES:
+- Note (pure idea): Create only a 'matter' entry with type="note".
+- Task (to-do): Create a 'matter' with type="task" and a corresponding 'motion' (stream=matter.id, action=200, status="OPEN").
+- Reminder: Create a 'matter' with type="task" and a corresponding 'mass' entry (matter=matter.id, type="slot", scope="reminder", start="YYYY-MM-DD HH:MM:SS" when it should trigger).
+- Scheduled Task (Deadline): Create a 'matter' with type="task", a 'mass' entry (matter=matter.id, type="slot", scope="deadline", start="YYYY-MM-DD" due date), and a 'motion' (stream=matter.id, action=200, status="OPEN").
+
 IMPORTANT: motion.delta MUST be a number (e.g. 250 or -5), NOT a JSON string or object.
 
 ${activeMassId ? `CONTEXT: The user is currently focused on an ACTIVE MASS record with ID: "${activeMassId}". If the user asks to update "this", "the stock", or "the price", you MUST use this ID for the 'mass' entry and relevant 'motions'.` : ""}
@@ -216,7 +222,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
           headerStyle: { backgroundColor: '#fff' },
           animation: 'fade',
           presentation: 'transparentModal'
-        }} 
+        } as any} 
       />
       <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['bottom', 'left', 'right']}>
 

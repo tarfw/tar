@@ -11,7 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { getDbClient } from "../lib/db";
+import { getDbClient, getGlobalDb } from "../lib/db";
 
 interface CatalogItem {
   mass_id: string;
@@ -37,7 +37,7 @@ export default function SpaceScreen() {
     useCallback(() => {
       async function loadCatalog() {
         try {
-          const db = getDbClient();
+          const db = getGlobalDb();
           // Join mass and matter to get physical limits (price/stock) and abstract concepts (title)
           const rows = await db.all(`
             SELECT m.id as mass_id, m.qty as stock, m.value as price, t.title as title, t.code as code 
@@ -46,7 +46,7 @@ export default function SpaceScreen() {
             WHERE m.active = 1 OR m.active IS NULL
           `);
           if (Array.isArray(rows)) {
-            setCatalog(rows);
+            setCatalog(rows as unknown as CatalogItem[]);
           }
         } catch (e) {
           console.error("Failed to load catalog:", e);
@@ -81,23 +81,31 @@ export default function SpaceScreen() {
     try {
       const db = getDbClient();
       const streamId = `ord_${Date.now()}`; // Unique order stream
+      const totalAmount = cartItems.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0);
 
-      let seq = 1;
-      for (const item of cartItems) {
-        const motionId = `mot_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-        await db.run(
-          "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [
-            motionId, 
-            streamId, 
-            seq++, 
-            1, // Opcode 1 for SALE
-            "COMPLETED", 
-            (item.price || 0) * item.qty, // Total value delta
-            JSON.stringify({ mass_id: item.mass_id, qty: item.qty, title: item.title })
-          ]
-        );
-      }
+      const motionId = `mot_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [streamId]);
+      const seq = seqRow[0]?.next_seq || 1;
+
+      await db.run(
+        "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+          motionId,
+          streamId,
+          seq,
+          201, // Opcode 201 for SALE from opcodes.md
+          "COMPLETED",
+          totalAmount,
+          JSON.stringify({
+            items: cartItems.map(item => ({
+              mass_id: item.mass_id,
+              qty: item.qty,
+              title: item.title,
+              price: item.price
+            }))
+          })
+        ]
+      );
       
       await db.push(); // Sync order to Turso instantly
       setCart({});
@@ -120,29 +128,18 @@ export default function SpaceScreen() {
       
       {/* Top Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Space POS</Text>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
-          <Ionicons name="close" size={24} color="#333" />
-        </TouchableOpacity>
+        <Text style={styles.title}>Space</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => router.push('/matter')} style={styles.headerActionBtn}>
+            <Ionicons name="cube-outline" size={22} color="#1a1a1a" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/motion')} style={styles.headerActionBtn}>
+            <Ionicons name="flash-outline" size={22} color="#1a1a1a" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.content}>
-        {/* Fast Action / Setup Block */}
-        <View style={styles.tileRow}>
-          <TouchableOpacity style={styles.entityTile} onPress={() => router.push('/matter')}>
-            <Ionicons name="cube-outline" size={24} color="#333" />
-            <Text style={styles.entityTileText}>New Matter</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.entityTile} onPress={() => router.push('/mass')}>
-            <Ionicons name="scale-outline" size={24} color="#333" />
-            <Text style={styles.entityTileText}>New Mass</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.entityTile} onPress={() => router.push('/motion')}>
-            <Ionicons name="flash-outline" size={24} color="#333" />
-            <Text style={styles.entityTileText}>New Motion</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* POS Grid Block */}
         <View style={styles.posBlock}>
           <Text style={styles.sectionHeader}>Catalog Items</Text>
@@ -229,35 +226,18 @@ const styles = StyleSheet.create({
     color: "#000",
     letterSpacing: -0.5,
   },
-  closeBtn: {
-    padding: 10,
-    marginRight: -10,
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  headerActionBtn: {
+    padding: 8,
   },
   content: {
     flex: 1,
     padding: 20,
     backgroundColor: "#fff",
-  },
-  tileRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 25,
-  },
-  entityTile: {
-    width: '31%',
-    paddingVertical: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  entityTileText: {
-    color: '#333',
-    marginTop: 6,
-    fontWeight: '600',
-    fontSize: 12,
   },
   posBlock: {
     flex: 1,

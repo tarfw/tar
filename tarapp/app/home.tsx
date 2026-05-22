@@ -5,48 +5,157 @@ import {
   Text, 
   ScrollView, 
   TouchableOpacity, 
-  TextInput,
   Image,
   KeyboardAvoidingView,
-  Platform,
-  Dimensions
+  Platform
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
-import Animated, { FadeIn, FadeInDown, Layout } from "react-native-reanimated";
-import { getDbClient } from "../lib/db";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import { getUserDb, getTenantDb } from "../lib/db";
 import { setActiveMassId } from "../lib/state";
 
 export default function HomePage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { massId } = useLocalSearchParams<{ massId: string }>();
-  const [motions, setMotions] = useState<any[]>([]);
+  
+  const [futureItems, setFutureItems] = useState<any[]>([]);
+  const [nowItems, setNowItems] = useState<any[]>([]);
+  const [pastItems, setPastItems] = useState<any[]>([]);
   const [selectedMass, setSelectedMass] = useState<any>(null);
 
   useFocusEffect(
     useCallback(() => {
       async function loadData() {
         try {
-          const db = getDbClient();
+          const uDb = getUserDb();
+          const tDb = getTenantDb();
           
-          // Load motions
-          const rows = await db.all("SELECT * FROM motion ORDER BY time DESC LIMIT 50");
-          if (Array.isArray(rows)) {
-            setMotions(rows);
-          }
+          const nowStr = new Date().toISOString();
+          
+          // 1. Load Future Items (active slots in mass starting in the future)
+          const futureQuery = `
+            SELECT m.*, t.title, 'user' as originDb 
+            FROM mass m 
+            LEFT JOIN matter t ON m.matter = t.id 
+            WHERE m.active = 1 AND m.type = 'slot' AND (m.scope = 'reminder' OR m.scope = 'deadline') AND m.start > ?
+          `;
+          const futureTenantQuery = `
+            SELECT m.*, t.title, 'tenant' as originDb 
+            FROM mass m 
+            LEFT JOIN matter t ON m.matter = t.id 
+            WHERE m.active = 1 AND m.type = 'slot' AND (m.scope = 'reminder' OR m.scope = 'deadline') AND m.start > ?
+          `;
+          
+          let uFuture = await uDb.all(futureQuery, [nowStr]);
+          let tFuture = await tDb.all(futureTenantQuery, [nowStr]);
+          
+          const combinedFuture = [...(Array.isArray(uFuture) ? uFuture : []), ...(Array.isArray(tFuture) ? tFuture : [])]
+            .sort((a, b) => String(a.start || "").localeCompare(String(b.start || "")));
+            
+          setFutureItems(combinedFuture);
 
-          // Load selected mass if any
+          // 2. Load Now Items (current slots occurring now OR active pending motions)
+          const nowSlotsQuery = `
+            SELECT m.*, t.title, 'user' as originDb
+            FROM mass m 
+            LEFT JOIN matter t ON m.matter = t.id 
+            WHERE m.active = 1 AND m.type = 'slot' AND m.start <= ? AND (m.end IS NULL OR m.end >= ?)
+          `;
+          const nowSlotsTenantQuery = `
+            SELECT m.*, t.title, 'tenant' as originDb
+            FROM mass m 
+            LEFT JOIN matter t ON m.matter = t.id 
+            WHERE m.active = 1 AND m.type = 'slot' AND m.start <= ? AND (m.end IS NULL OR m.end >= ?)
+          `;
+          
+          let uNowSlots = await uDb.all(nowSlotsQuery, [nowStr, nowStr]);
+          let tNowSlots = await tDb.all(nowSlotsTenantQuery, [nowStr, nowStr]);
+          
+          const activeSlots = [...(Array.isArray(uNowSlots) ? uNowSlots : []), ...(Array.isArray(tNowSlots) ? tNowSlots : [])]
+            .map(s => ({
+              id: s.id,
+              isMass: true,
+              originDb: s.originDb,
+              title: s.scope === "reminder" ? "Reminder Active" : "Active Slot",
+              subtitle: s.title || "Active Item",
+              time: s.start,
+              action: s.scope === "reminder" ? 105 : 100,
+              status: "ACTIVE",
+              raw: s
+            }));
+
+          const uPendingMotions = await uDb.all("SELECT *, 'user' as originDb FROM motion WHERE status != 'COMPLETED' AND action != 1 ORDER BY time DESC LIMIT 20");
+          const tPendingMotions = await tDb.all("SELECT *, 'tenant' as originDb FROM motion WHERE status != 'COMPLETED' AND action != 1 ORDER BY time DESC LIMIT 20");
+          
+          const pendingMotions = [...(Array.isArray(uPendingMotions) ? uPendingMotions : []), ...(Array.isArray(tPendingMotions) ? tPendingMotions : [])];
+
+          // Load pending tasks (matter records of type 'task' that do not have a COMPLETED motion log)
+          const pendingTasksQuery = `
+            SELECT m.*, 'user' as originDb
+            FROM matter m
+            WHERE m.type = 'task'
+              AND NOT EXISTS (
+                SELECT 1 FROM motion mot
+                WHERE mot.stream = m.id AND (mot.status = 'COMPLETED' OR mot.action = 200)
+              )
+          `;
+          const pendingTasksTenantQuery = `
+            SELECT m.*, 'tenant' as originDb
+            FROM matter m
+            WHERE m.type = 'task'
+              AND NOT EXISTS (
+                SELECT 1 FROM motion mot
+                WHERE mot.stream = m.id AND (mot.status = 'COMPLETED' OR mot.action = 200)
+              )
+          `;
+
+          const uTasks = await uDb.all(pendingTasksQuery).catch(() => []);
+          const tTasks = await tDb.all(pendingTasksTenantQuery).catch(() => []);
+
+          const taskItems = [...(Array.isArray(uTasks) ? uTasks : []), ...(Array.isArray(tTasks) ? tTasks : [])]
+            .map(t => ({
+              id: t.id,
+              isTaskMatter: true,
+              originDb: t.originDb,
+              title: "Task Pending",
+              subtitle: t.title || "Untitled Task",
+              time: t.time || nowStr,
+              action: 200,
+              status: "PENDING",
+              raw: t
+            }));
+
+          const combinedNow = [...activeSlots, ...pendingMotions, ...taskItems]
+            .sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
+            
+          setNowItems(combinedNow);
+
+          // 3. Load Past Items (completed motions, receipts, logs)
+          const uPastMotions = await uDb.all("SELECT *, 'user' as originDb FROM motion WHERE status = 'COMPLETED' OR action = 1 ORDER BY time DESC LIMIT 30");
+          const tPastMotions = await tDb.all("SELECT *, 'tenant' as originDb FROM motion WHERE status = 'COMPLETED' OR action = 1 ORDER BY time DESC LIMIT 30");
+          
+          const combinedPast = [...(Array.isArray(uPastMotions) ? uPastMotions : []), ...(Array.isArray(tPastMotions) ? tPastMotions : [])]
+            .sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")))
+            .slice(0, 40);
+            
+          setPastItems(combinedPast);
+
+          // Load selected mass overlay if any
           if (massId) {
-            const massRow = await db.all(
-              `SELECT m.*, t.title 
-               FROM mass m 
-               LEFT JOIN matter t ON m.matter = t.id 
-               WHERE m.id = ?`, 
+            let massRow = await uDb.all(
+              `SELECT m.*, t.title FROM mass m LEFT JOIN matter t ON m.matter = t.id WHERE m.id = ?`, 
               [massId]
             );
+            if (!Array.isArray(massRow) || massRow.length === 0) {
+              massRow = await tDb.all(
+                `SELECT m.*, t.title FROM mass m LEFT JOIN matter t ON m.matter = t.id WHERE m.id = ?`, 
+                [massId]
+              );
+            }
             if (Array.isArray(massRow) && massRow.length > 0) {
               setSelectedMass(massRow[0]);
             }
@@ -65,15 +174,120 @@ export default function HomePage() {
     }, [massId])
   );
 
-  const handleMarkDone = async (id: string) => {
+  const handleMarkDone = async (item: any) => {
     try {
-      const db = getDbClient();
-      await db.run("UPDATE motion SET status = 'COMPLETED' WHERE id = ?", [id]);
-      setMotions(prev => prev.map(m => m.id === id ? { ...m, status: 'COMPLETED' } : m));
+      const uDb = getUserDb();
+      const tDb = getTenantDb();
+      const db = item.originDb === 'user' ? uDb : tDb;
+      
+      if (item.isMass) {
+        // Deactivate the mass scheduled reminder/slot
+        await db.run("UPDATE mass SET active = 0 WHERE id = ?", [item.id]);
+        
+        // Log a completed motion log
+        const motionId = `mot_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [item.raw.matter]);
+        const seq = seqRow[0]?.next_seq || 1;
+        
+        await db.run(
+          "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [
+            motionId,
+            item.raw.matter,
+            seq,
+            item.raw.scope === "reminder" ? 105 : 200,
+            "COMPLETED",
+            null,
+            JSON.stringify({ task: item.subtitle, completed_at: new Date().toISOString() })
+          ]
+        );
+      } else if (item.isTaskMatter) {
+        // Mark task done by inserting a completed motion log for this matter stream
+        const motionId = `mot_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [item.id]);
+        const seq = seqRow[0]?.next_seq || 1;
+        
+        await db.run(
+          "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [
+            motionId,
+            item.id,
+            seq,
+            200, // Action 200 for Task Completion
+            "COMPLETED",
+            null,
+            JSON.stringify({ task: item.subtitle, completed_at: new Date().toISOString() })
+          ]
+        );
+      } else {
+        // Complete the motion task
+        await db.run("UPDATE motion SET status = 'COMPLETED' WHERE id = ?", [item.id]);
+      }
+      
       await db.push();
     } catch (e) {
       console.error("Failed to mark done:", e);
     }
+  };
+
+  const renderMassCard = (item: any) => {
+    const isReminder = item.scope === 'reminder';
+    const displayTime = new Date(item.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const displayDate = new Date(item.start).toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+    return (
+      <View key={`${item.originDb}_${item.id}`} style={styles.motionItem}>
+        <View style={styles.motionItemLeft}>
+          <TouchableOpacity 
+            style={styles.statusWrapper}
+            onPress={() => handleMarkDone({ id: item.id, isMass: true, originDb: item.originDb, subtitle: item.title || "Reminder", raw: item })}
+          >
+            <Ionicons 
+              name="ellipse-outline" 
+              size={22} 
+              color="#cbd5e1" 
+            />
+          </TouchableOpacity>
+          <View style={styles.motionTextContainer}>
+            <Text style={styles.motionTitle}>{isReminder ? "🔔 Reminder" : "🗓️ Deadline"}</Text>
+            <Text style={styles.motionSubtitle} numberOfLines={1}>
+              {item.title || "Scheduled slot"}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.motionItemRight}>
+          <Text style={styles.futureTimeText}>{displayDate} {displayTime}</Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderTaskMatterCard = (item: any) => {
+    return (
+      <View key={`${item.originDb}_${item.id}`} style={styles.motionItem}>
+        <View style={styles.motionItemLeft}>
+          <TouchableOpacity 
+            style={styles.statusWrapper}
+            onPress={() => handleMarkDone(item)}
+          >
+            <Ionicons 
+              name="ellipse-outline" 
+              size={22} 
+              color="#cbd5e1" 
+            />
+          </TouchableOpacity>
+          <View style={styles.motionTextContainer}>
+            <Text style={styles.motionTitle}>📋 Task Pending</Text>
+            <Text style={styles.motionSubtitle} numberOfLines={1}>
+              {item.subtitle}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.motionItemRight}>
+          <Text style={[styles.futureTimeText, { backgroundColor: '#fae8ff', color: '#c026d3' }]}>PENDING</Text>
+        </View>
+      </View>
+    );
   };
 
   const renderCard = (motion: any) => {
@@ -85,7 +299,6 @@ export default function HomePage() {
     const action = motion.action || 100;
     const isCompleted = motion.status === 'COMPLETED';
 
-    // Sanitize delta: if it's a JSON string (bug in AI output), try to extract the total
     let displayDelta = motion.delta;
     if (typeof displayDelta === 'string' && displayDelta.startsWith('{')) {
       try {
@@ -96,7 +309,6 @@ export default function HomePage() {
       }
     }
 
-    // Default system log (Gray)
     let config = {
       icon: "flash" as any,
       color: "#64748b",
@@ -105,18 +317,26 @@ export default function HomePage() {
       amount: displayDelta ? `${displayDelta > 0 ? '+' : ''}${displayDelta}` : null
     };
 
-    if (action >= 1 && action <= 20) {
+    if ((action >= 1 && action <= 20) || action === 201) {
+      let subtitleText = "Direct Checkout";
+      if (parsedData.items && Array.isArray(parsedData.items)) {
+        subtitleText = parsedData.items.map((it: any) => `${it.qty || 1}x ${it.title || "Item"}`).join(", ");
+      } else if (parsedData.title) {
+        subtitleText = `${parsedData.qty || 1}x ${parsedData.title}`;
+      } else if (motion.stream) {
+        subtitleText = motion.stream;
+      }
       config = {
         icon: "receipt",
-        color: "#16a34a", // Restored Green
+        color: "#16a34a",
         title: "Sale Logged",
-        subtitle: (parsedData.title ? `${parsedData.qty || 1}x ${parsedData.title}` : (motion.stream || 'Direct Checkout')).trim(),
+        subtitle: subtitleText.trim(),
         amount: `+₹${displayDelta || 0}`
       };
     } else if (action >= 51 && action <= 100) {
       config = {
         icon: "cube",
-        color: "#ea580c", // Restored Amber
+        color: "#ea580c",
         title: "Inventory",
         subtitle: (parsedData.title || motion.stream || "").trim(),
         amount: displayDelta !== null ? (displayDelta > 0 ? `+${displayDelta}` : displayDelta.toString()) : null
@@ -124,7 +344,7 @@ export default function HomePage() {
     } else if (action >= 101 && action <= 150) {
       config = {
         icon: "notifications",
-        color: "#2563eb", // Restored Blue
+        color: "#2563eb",
         title: "Reminder",
         subtitle: (parsedData.task || parsedData.text || motion.stream || "").trim(),
         amount: null
@@ -140,7 +360,7 @@ export default function HomePage() {
     } else if (action >= 251 && action <= 300) {
       config = {
         icon: "gift",
-        color: "#e11d48", // Restored Pink
+        color: "#e11d48",
         title: "Growth",
         subtitle: (parsedData.title || motion.stream || "").trim(),
         amount: null
@@ -148,15 +368,19 @@ export default function HomePage() {
     }
 
     return (
-      <View key={motion.id} style={styles.motionItem}>
+      <View key={`${motion.originDb || 'motion'}_${motion.id}`} style={styles.motionItem}>
         <View style={styles.motionItemLeft}>
-          <View style={styles.statusWrapper}>
+          <TouchableOpacity 
+            style={styles.statusWrapper}
+            onPress={() => !isCompleted && handleMarkDone(motion)}
+            disabled={isCompleted}
+          >
             <Ionicons 
               name={isCompleted ? "checkmark-circle" : "ellipse-outline"} 
               size={22} 
               color={isCompleted ? config.color : "#cbd5e1"} 
             />
-          </View>
+          </TouchableOpacity>
           <View style={styles.motionTextContainer}>
             <Text style={styles.motionTitle}>{config.title}</Text>
             <Text style={styles.motionSubtitle} numberOfLines={1}>{config.subtitle}</Text>
@@ -177,7 +401,6 @@ export default function HomePage() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
-        
         {/* Header */}
         <View style={styles.header}>
           <Animated.View entering={FadeIn.delay(200)} style={styles.userInfo}>
@@ -200,26 +423,60 @@ export default function HomePage() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: 100 }}
         >
-          {motions.length === 0 ? (
+          {/* Future Section */}
+          {futureItems.length > 0 && (
+            <View>
+              <Text style={styles.sectionHeader}>[ FUTURE ]</Text>
+              <View style={styles.motionList}>
+                {futureItems.map((item, index) => (
+                  <React.Fragment key={`${item.originDb}_${item.id}`}>
+                    {renderMassCard(item)}
+                    {index < futureItems.length - 1 && <View style={styles.separator} />}
+                  </React.Fragment>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Now Section */}
+          {nowItems.length > 0 && (
+            <View>
+              <Text style={styles.sectionHeader}>[ NOW ]</Text>
+              <View style={styles.motionList}>
+                {nowItems.map((item, index) => (
+                  <React.Fragment key={`${item.originDb}_${item.id}`}>
+                    {item.isMass ? renderMassCard(item) : item.isTaskMatter ? renderTaskMatterCard(item) : renderCard(item)}
+                    {index < nowItems.length - 1 && <View style={styles.separator} />}
+                  </React.Fragment>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Past Section */}
+          {pastItems.length > 0 && (
+            <View>
+              <Text style={styles.sectionHeader}>[ PAST ]</Text>
+              <View style={styles.motionList}>
+                {pastItems.map((item, index) => (
+                  <React.Fragment key={`${item.originDb || 'past'}_${item.id}`}>
+                    {renderCard(item)}
+                    {index < pastItems.length - 1 && <View style={styles.separator} />}
+                  </React.Fragment>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {futureItems.length === 0 && nowItems.length === 0 && pastItems.length === 0 && (
             <Animated.View 
               entering={FadeInDown.delay(400).duration(800)}
               style={styles.emptyState}
             >
               <Ionicons name="layers-outline" size={48} color="#e2e8f0" />
-              <Text style={styles.emptyText}>No motion data found.</Text>
+              <Text style={styles.emptyText}>No motion data or scheduled slots found.</Text>
             </Animated.View>
-          ) : (
-            <View style={styles.motionList}>
-              {motions.map((motion, index) => (
-                <React.Fragment key={motion.id}>
-                  {renderCard(motion)}
-                  {index < motions.length - 1 && <View style={styles.separator} />}
-                </React.Fragment>
-              ))}
-            </View>
           )}
-          
-          <View style={{ height: 20 }} />
         </ScrollView>
 
         {/* Bottom Search Bar */}
@@ -339,51 +596,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionHeader: {
-    fontSize: 14,
-    color: "#999",
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: 1,
     paddingHorizontal: 20,
     marginTop: 25,
     marginBottom: 10,
-  },
-  listItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-  },
-  listItemLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  arrow: {
-    marginRight: 10,
-  },
-  itemIcon: {
-    marginRight: 12,
-  },
-  itemTitle: {
-    fontSize: 16,
-    color: "#333",
-    fontWeight: "500",
-  },
-  listItemRight: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  moreIcon: {
-    marginRight: 15,
-  },
-  viewMore: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-  },
-  viewMoreText: {
-    color: "#999",
-    marginLeft: 10,
-    fontSize: 16,
   },
   footer: {
     width: "100%",
@@ -444,7 +664,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   motionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: "#1e293b",
     marginBottom: 2,
@@ -464,6 +684,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: "#475569",
+  },
+  futureTimeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6366f1",
+    backgroundColor: "#e0e7ff",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    overflow: "hidden",
   },
   separator: {
     height: 1,

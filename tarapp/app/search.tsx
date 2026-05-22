@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { getDbClient } from "../lib/db";
+import { getDbClient, getUserDb, getTenantDb, getGlobalDb } from "../lib/db";
 import { setActiveMassId } from "../lib/state";
 
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
@@ -82,7 +82,9 @@ export default function SearchScreen() {
   const performSearch = useCallback(async (text: string) => {
     setLoading(true);
     try {
-      const db = getDbClient();
+      const uDb = getUserDb();
+      const tDb = getTenantDb();
+      const gDb = getGlobalDb();
 
       const hasQuery = text.trim().length > 0;
       const searchTerm = `%${text}%`;
@@ -98,10 +100,11 @@ export default function SearchScreen() {
         : [];
       if (selectedType) matterParams.push(selectedType);
 
-      const matterResults = await db.all(
-        `SELECT * FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 10`,
-        matterParams
-      );
+      const [uMatter, tMatter, gMatter] = await Promise.all([
+        uDb.all(`SELECT *, 'user' as originDb FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 10`, matterParams).catch(() => []),
+        tDb.all(`SELECT *, 'tenant' as originDb FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 10`, matterParams).catch(() => []),
+        gDb.all(`SELECT *, 'global' as originDb FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 10`, matterParams).catch(() => [])
+      ]);
 
       const massTypeClause = selectedType ? "AND m.type = ?" : "";
       const massWhereClause = hasQuery
@@ -113,29 +116,55 @@ export default function SearchScreen() {
         : [];
       if (selectedType) massParams.push(selectedType);
 
-      const massResults = await db.all(
-        `SELECT m.*, t.title as matter_title
-         FROM mass m
-         LEFT JOIN matter t ON m.matter = t.id
-         ${massWhereClause} ${massTypeClause}
-         LIMIT 10`,
-        massParams
-      );
+      const [uMass, tMass, gMass] = await Promise.all([
+        uDb.all(`
+          SELECT m.*, t.title as matter_title, 'user' as originDb
+          FROM mass m
+          LEFT JOIN matter t ON m.matter = t.id
+          ${massWhereClause} ${massTypeClause}
+          LIMIT 10
+        `, massParams).catch(() => []),
+        tDb.all(`
+          SELECT m.*, t.title as matter_title, 'tenant' as originDb
+          FROM mass m
+          LEFT JOIN matter t ON m.matter = t.id
+          ${massWhereClause} ${massTypeClause}
+          LIMIT 10
+        `, massParams).catch(() => []),
+        gDb.all(`
+          SELECT m.*, t.title as matter_title, 'global' as originDb
+          FROM mass m
+          LEFT JOIN matter t ON m.matter = t.id
+          ${massWhereClause} ${massTypeClause}
+          LIMIT 10
+        `, massParams).catch(() => [])
+      ]);
 
       const motionWhereClause = hasQuery
         ? "WHERE data LIKE ? OR stream LIKE ?"
         : "WHERE 1=1";
       const motionParams = hasQuery ? [searchTerm, searchTerm] : [];
 
-      const motionResults = await db.all(
-        `SELECT * FROM motion ${motionWhereClause} LIMIT 10`,
-        motionParams
-      );
+      const [uMotion, tMotion, gMotion] = await Promise.all([
+        uDb.all(`SELECT *, 'user' as originDb FROM motion ${motionWhereClause} LIMIT 10`, motionParams).catch(() => []),
+        tDb.all(`SELECT *, 'tenant' as originDb FROM motion ${motionWhereClause} LIMIT 10`, motionParams).catch(() => []),
+        gDb.all(`SELECT *, 'global' as originDb FROM motion ${motionWhereClause} LIMIT 10`, motionParams).catch(() => [])
+      ]);
+
+      const deduplicateById = (arr: any[]) => {
+        const seen = new Set();
+        return arr.filter((item) => {
+          if (!item.id) return true;
+          if (seen.has(item.id)) return false;
+          seen.add(item.id);
+          return true;
+        });
+      };
 
       setResults({
-        matter: Array.isArray(matterResults) ? matterResults : [],
-        mass: Array.isArray(massResults) ? massResults : [],
-        motion: Array.isArray(motionResults) ? motionResults : [],
+        matter: deduplicateById([...(uMatter || []), ...(tMatter || []), ...(gMatter || [])]).slice(0, 15),
+        mass: deduplicateById([...(uMass || []), ...(tMass || []), ...(gMass || [])]).slice(0, 15),
+        motion: deduplicateById([...(uMotion || []), ...(tMotion || []), ...(gMotion || [])]).slice(0, 15),
       });
     } catch (e) {
       console.error("Search failed:", e);
@@ -147,16 +176,30 @@ export default function SearchScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const db = getDbClient();
-        const matterTypes = await db.all(
-          "SELECT DISTINCT type FROM matter WHERE type IS NOT NULL AND type != ''"
-        );
-        const massTypes = await db.all(
-          "SELECT DISTINCT type FROM mass WHERE type IS NOT NULL AND type != ''"
-        );
+        const uDb = getUserDb();
+        const tDb = getTenantDb();
+        const gDb = getGlobalDb();
+
+        const [uMatterTypes, tMatterTypes, gMatterTypes, uMassTypes, tMassTypes, gMassTypes] = await Promise.all([
+          uDb.all("SELECT DISTINCT type FROM matter WHERE type IS NOT NULL AND type != ''").catch(() => []),
+          tDb.all("SELECT DISTINCT type FROM matter WHERE type IS NOT NULL AND type != ''").catch(() => []),
+          gDb.all("SELECT DISTINCT type FROM matter WHERE type IS NOT NULL AND type != ''").catch(() => []),
+          uDb.all("SELECT DISTINCT type FROM mass WHERE type IS NOT NULL AND type != ''").catch(() => []),
+          tDb.all("SELECT DISTINCT type FROM mass WHERE type IS NOT NULL AND type != ''").catch(() => []),
+          gDb.all("SELECT DISTINCT type FROM mass WHERE type IS NOT NULL AND type != ''").catch(() => []),
+        ]);
+
         const all = new Set<string>();
-        for (const row of [...(matterTypes || []), ...(massTypes || [])]) {
-          if (row.type) all.add(row.type);
+        const rows = [
+          ...(uMatterTypes || []),
+          ...(tMatterTypes || []),
+          ...(gMatterTypes || []),
+          ...(uMassTypes || []),
+          ...(tMassTypes || []),
+          ...(gMassTypes || [])
+        ];
+        for (const row of rows) {
+          if (row.type) all.add(String(row.type));
         }
         setTypes(Array.from(all).sort());
       } catch (e) {
@@ -272,8 +315,9 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
     setSaving(true);
 
     try {
-      const db = getDbClient();
       const { type, data, editFields } = selectedItem;
+      const originDb = data.originDb || "tenant";
+      const db = originDb === "user" ? getUserDb() : originDb === "global" ? getGlobalDb() : getTenantDb();
 
       const changedFields: Record<string, string> = {};
       for (const [key, value] of Object.entries(editFields)) {
@@ -351,7 +395,8 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
         style: "destructive",
         onPress: async () => {
           try {
-            const db = getDbClient();
+            const originDb = item.originDb || "tenant";
+            const db = originDb === "user" ? getUserDb() : originDb === "global" ? getGlobalDb() : getTenantDb();
             if (type === "mass") {
               await db.run("DELETE FROM mass WHERE id = ?", [item.id]);
             } else {
@@ -484,7 +529,7 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
         <Text style={styles.sectionTitle}>{title}</Text>
         {data.map((item, index) => (
           <TouchableOpacity
-            key={item.id || `${type}-${index}`}
+            key={item.id ? `${item.originDb || type}_${item.id}` : `${type}_${index}`}
             style={styles.resultItem}
             activeOpacity={0.7}
             onPress={() => {

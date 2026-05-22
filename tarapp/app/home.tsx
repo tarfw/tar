@@ -17,6 +17,42 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { getUserDb, getTenantDb } from "../lib/db";
 import { setActiveMassId } from "../lib/state";
 
+const groupOrderItems = (items: any[]) => {
+  const groupedMap: { [streamId: string]: { header: any; items: any[] } } = {};
+  const ungrouped: any[] = [];
+
+  for (const item of items) {
+    if (item.stream && item.stream.startsWith("ord_")) {
+      const streamId = item.stream;
+      if (!groupedMap[streamId]) {
+        groupedMap[streamId] = { header: null, items: [] };
+      }
+      if (item.action === 201) {
+        groupedMap[streamId].header = item;
+      } else {
+        groupedMap[streamId].items.push(item);
+      }
+    } else {
+      ungrouped.push(item);
+    }
+  }
+
+  const groupedOrders = Object.entries(groupedMap).map(([streamId, group]) => {
+    const header = group.header || group.items[0];
+    const otherItems = group.header ? group.items : group.items.slice(1);
+    const sortedItems = otherItems.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+    return {
+      id: streamId,
+      isOrderGroup: true,
+      header: header,
+      items: sortedItems,
+      time: header?.time || new Date().toISOString()
+    };
+  });
+
+  return [...ungrouped, ...groupedOrders];
+};
+
 export default function HomePage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -129,20 +165,22 @@ export default function HomePage() {
               raw: t
             }));
 
-          const combinedNow = [...activeSlots, ...pendingMotions, ...taskItems]
+          const combinedNow = [...activeSlots, ...pendingMotions, ...taskItems];
+          const groupedNow = groupOrderItems(combinedNow)
             .sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
             
-          setNowItems(combinedNow);
+          setNowItems(groupedNow);
 
           // 3. Load Past Items (completed motions, receipts, logs)
           const uPastMotions = await uDb.all("SELECT *, 'user' as originDb FROM motion WHERE status = 'COMPLETED' OR action = 1 ORDER BY time DESC LIMIT 30");
           const tPastMotions = await tDb.all("SELECT *, 'tenant' as originDb FROM motion WHERE status = 'COMPLETED' OR action = 1 ORDER BY time DESC LIMIT 30");
           
-          const combinedPast = [...(Array.isArray(uPastMotions) ? uPastMotions : []), ...(Array.isArray(tPastMotions) ? tPastMotions : [])]
+          const combinedPast = [...(Array.isArray(uPastMotions) ? uPastMotions : []), ...(Array.isArray(tPastMotions) ? tPastMotions : [])];
+          const groupedPast = groupOrderItems(combinedPast)
             .sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")))
             .slice(0, 40);
             
-          setPastItems(combinedPast);
+          setPastItems(groupedPast);
 
           // Load selected mass overlay if any
           if (massId) {
@@ -223,8 +261,8 @@ export default function HomePage() {
         // Complete the motion task
         await db.run("UPDATE motion SET status = 'COMPLETED' WHERE id = ?", [item.id]);
       }
-      
-      await db.push();
+      // Sync to Turso in the background
+      db.push().catch(e => console.error("Background sync failed:", e));
     } catch (e) {
       console.error("Failed to mark done:", e);
     }
@@ -245,12 +283,11 @@ export default function HomePage() {
             <Ionicons 
               name="ellipse-outline" 
               size={22} 
-              color="#cbd5e1" 
+              color={isReminder ? "#2563eb" : "#ea580c"} 
             />
           </TouchableOpacity>
           <View style={styles.motionTextContainer}>
-            <Text style={styles.motionTitle}>{isReminder ? "🔔 Reminder" : "🗓️ Deadline"}</Text>
-            <Text style={styles.motionSubtitle} numberOfLines={1}>
+            <Text style={styles.motionTitle} numberOfLines={1}>
               {item.title || "Scheduled slot"}
             </Text>
           </View>
@@ -273,12 +310,11 @@ export default function HomePage() {
             <Ionicons 
               name="ellipse-outline" 
               size={22} 
-              color="#cbd5e1" 
+              color="#c026d3" 
             />
           </TouchableOpacity>
           <View style={styles.motionTextContainer}>
-            <Text style={styles.motionTitle}>📋 Task Pending</Text>
-            <Text style={styles.motionSubtitle} numberOfLines={1}>
+            <Text style={styles.motionTitle} numberOfLines={1}>
               {item.subtitle}
             </Text>
           </View>
@@ -382,12 +418,111 @@ export default function HomePage() {
             />
           </TouchableOpacity>
           <View style={styles.motionTextContainer}>
-            <Text style={styles.motionTitle}>{config.title}</Text>
-            <Text style={styles.motionSubtitle} numberOfLines={1}>{config.subtitle}</Text>
+            <Text style={styles.motionTitle} numberOfLines={1}>
+              {config.subtitle}
+            </Text>
           </View>
         </View>
         <View style={styles.motionItemRight}>
           {config.amount && <Text style={styles.itemAmount} numberOfLines={1}>{config.amount}</Text>}
+        </View>
+      </View>
+    );
+  };
+
+  const renderOrderGroupCard = (group: any, index: number, total: number) => {
+    const header = group.header;
+    const items = group.items;
+    
+    let parsedHeaderData: any = {};
+    try {
+      if (header.data) parsedHeaderData = JSON.parse(header.data);
+    } catch (e) {}
+
+    const isCompleted = header.status === 'COMPLETED';
+    const totalAmount = header.delta;
+
+    return (
+      <View 
+        key={group.id} 
+        style={[
+          styles.orderGroupContainer,
+          {
+            borderTopWidth: index === 0 ? 0 : 1,
+            borderBottomWidth: index === total - 1 ? 0 : 1,
+            borderColor: '#f1f5f9'
+          }
+        ]}
+      >
+        {/* Order Header Row */}
+        <View style={styles.orderGroupHeader}>
+          <View style={styles.motionItemLeft}>
+            <TouchableOpacity 
+              style={styles.statusWrapper}
+              onPress={() => !isCompleted && handleMarkDone(header)}
+              disabled={isCompleted}
+            >
+              <Ionicons 
+                name={isCompleted ? "checkmark-circle" : "ellipse-outline"} 
+                size={22} 
+                color={isCompleted ? "#16a34a" : "#2563eb"} 
+              />
+            </TouchableOpacity>
+            <View style={styles.motionTextContainer}>
+              <Text style={styles.orderGroupTitle}>
+                Order #{group.id.replace('ord_', '')}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.motionItemRight}>
+            <Text style={styles.itemAmount}>+₹{totalAmount}</Text>
+          </View>
+        </View>
+
+        {/* Order Items List */}
+        <View style={styles.orderItemsList}>
+          {items.map((item: any, idx: number) => {
+            let parsedItemData: any = {};
+            try {
+              if (item.data) parsedItemData = JSON.parse(item.data);
+            } catch (e) {}
+
+            const itemTitle = parsedItemData.title || item.stream || "Item";
+            const itemStatus = item.status || "PENDING";
+            
+            // Nice badge styling based on item status
+            let badgeColor = "#64748b";
+            let badgeBg = "#f1f5f9";
+            if (itemStatus === "READY") {
+              badgeColor = "#16a34a";
+              badgeBg = "#dcfce7";
+            } else if (itemStatus === "DELIVERED" || itemStatus === "COMPLETED") {
+              badgeColor = "#2563eb";
+              badgeBg = "#dbeafe";
+            } else if (itemStatus === "PENDING") {
+              badgeColor = "#c026d3";
+              badgeBg = "#fae8ff";
+            }
+
+            return (
+              <View key={item.id} style={[styles.orderItemRow, idx > 0 && styles.orderItemBorder]}>
+                <View style={styles.orderItemLeft}>
+                  <Ionicons 
+                    name={itemStatus === "DELIVERED" || itemStatus === "COMPLETED" ? "checkmark-circle-outline" : "ellipse-outline"} 
+                    size={16} 
+                    color={badgeColor} 
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={styles.orderItemText}>
+                    {itemTitle} <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: 'normal' }}>x{Math.abs(item.delta || 1)}</Text>
+                  </Text>
+                </View>
+                <View style={[styles.statusBadge, { backgroundColor: badgeBg }]}>
+                  <Text style={[styles.statusBadgeText, { color: badgeColor }]}>{itemStatus}</Text>
+                </View>
+              </View>
+            );
+          })}
         </View>
       </View>
     );
@@ -403,15 +538,21 @@ export default function HomePage() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Animated.View entering={FadeIn.delay(200)} style={styles.userInfo}>
-            <Image 
-              source={{ uri: "https://api.dicebear.com/7.x/avataaars/svg?seed=prabha" }} 
-              style={styles.avatar} 
-            />
-            <Text style={styles.userName}>prabha</Text>
-          </Animated.View>
+          <TouchableOpacity 
+            activeOpacity={0.8} 
+            onPress={() => router.push("/profile")}
+            style={{ flexDirection: "row", alignItems: "center" }}
+          >
+            <Animated.View entering={FadeIn.delay(200)} style={styles.userInfo}>
+              <Image 
+                source={{ uri: "https://api.dicebear.com/7.x/avataaars/svg?seed=prabha" }} 
+                style={styles.avatar} 
+              />
+              <Text style={styles.userName}>prabha</Text>
+            </Animated.View>
+          </TouchableOpacity>
           <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconBtn}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push("/profile")}>
               <Ionicons name="ellipsis-horizontal" size={24} color="#333" />
             </TouchableOpacity>
           </View>
@@ -444,9 +585,15 @@ export default function HomePage() {
               <Text style={styles.sectionHeader}>[ NOW ]</Text>
               <View style={styles.motionList}>
                 {nowItems.map((item, index) => (
-                  <React.Fragment key={`${item.originDb}_${item.id}`}>
-                    {item.isMass ? renderMassCard(item) : item.isTaskMatter ? renderTaskMatterCard(item) : renderCard(item)}
-                    {index < nowItems.length - 1 && <View style={styles.separator} />}
+                  <React.Fragment key={`${item.originDb || 'now'}_${item.id}`}>
+                    {item.isOrderGroup ? (
+                      renderOrderGroupCard(item, index, nowItems.length)
+                    ) : (
+                      <View>
+                        {item.isMass ? renderMassCard(item) : item.isTaskMatter ? renderTaskMatterCard(item) : renderCard(item)}
+                        {index < nowItems.length - 1 && !nowItems[index + 1].isOrderGroup && <View style={styles.separator} />}
+                      </View>
+                    )}
                   </React.Fragment>
                 ))}
               </View>
@@ -460,8 +607,14 @@ export default function HomePage() {
               <View style={styles.motionList}>
                 {pastItems.map((item, index) => (
                   <React.Fragment key={`${item.originDb || 'past'}_${item.id}`}>
-                    {renderCard(item)}
-                    {index < pastItems.length - 1 && <View style={styles.separator} />}
+                    {item.isOrderGroup ? (
+                      renderOrderGroupCard(item, index, pastItems.length)
+                    ) : (
+                      <View>
+                        {renderCard(item)}
+                        {index < pastItems.length - 1 && !pastItems[index + 1].isOrderGroup && <View style={styles.separator} />}
+                      </View>
+                    )}
                   </React.Fragment>
                 ))}
               </View>
@@ -665,9 +818,8 @@ const styles = StyleSheet.create({
   },
   motionTitle: {
     fontSize: 15,
-    fontWeight: "700",
+    fontWeight: "500",
     color: "#1e293b",
-    marginBottom: 2,
   },
   motionSubtitle: {
     fontSize: 14,
@@ -778,5 +930,65 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#94a3b8',
     textAlign: 'center',
+  },
+  orderGroupContainer: {
+    marginHorizontal: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    borderRadius: 0,
+    borderTopWidth: 1.5,
+    borderBottomWidth: 1.5,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#ffffff",
+    overflow: "hidden",
+  },
+  orderGroupHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#f8fafc",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+  },
+  orderGroupTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#475569",
+    letterSpacing: 0.5,
+  },
+  orderItemsList: {
+    paddingTop: 4,
+    paddingBottom: 0,
+    paddingHorizontal: 16,
+  },
+  orderItemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  orderItemLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  orderItemBorder: {
+    borderTopWidth: 0.5,
+    borderTopColor: "#f1f5f9",
+  },
+  orderItemText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#334155",
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
   }
 });

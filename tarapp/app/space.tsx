@@ -15,6 +15,7 @@ import { getDbClient, getGlobalDb } from "../lib/db";
 
 interface CatalogItem {
   mass_id: string;
+  matter_id: string;
   stock: number;
   price: number;
   title: string;
@@ -40,7 +41,7 @@ export default function SpaceScreen() {
           const db = getGlobalDb();
           // Join mass and matter to get physical limits (price/stock) and abstract concepts (title)
           const rows = await db.all(`
-            SELECT m.id as mass_id, m.qty as stock, m.value as price, t.title as title, t.code as code 
+            SELECT m.id as mass_id, m.matter as matter_id, m.qty as stock, m.value as price, t.title as title, t.code as code 
             FROM mass m 
             INNER JOIN matter t ON m.matter = t.id 
             WHERE m.active = 1 OR m.active IS NULL
@@ -80,36 +81,62 @@ export default function SpaceScreen() {
     setIsCheckingOut(true);
     try {
       const db = getDbClient();
+      const globalDb = getGlobalDb();
       const streamId = `ord_${Date.now()}`; // Unique order stream
       const totalAmount = cartItems.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0);
 
       const motionId = `mot_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [streamId]);
-      const seq = seqRow[0]?.next_seq || 1;
 
+      // 1. Insert order Sale header motion (Opcode 201) in Tenant DB with status 'PENDING'
       await db.run(
         "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [
           motionId,
           streamId,
-          seq,
-          201, // Opcode 201 for SALE from opcodes.md
-          "COMPLETED",
+          1, // Sequence 1 for the Sale header
+          201, // Opcode 201 for SALE
+          "PENDING",
           totalAmount,
-          JSON.stringify({
-            items: cartItems.map(item => ({
-              mass_id: item.mass_id,
-              qty: item.qty,
-              title: item.title,
-              price: item.price
-            }))
-          })
+          JSON.stringify({ items_count: totalItems })
         ]
       );
       
-      await db.push(); // Sync order to Turso instantly
+      // 2. Insert each item sold as an individual motion record (Opcode 101) under the same stream.
+      // This represents the movement of the specific items and tracks their lifecycle (status).
+      let index = 0;
+      for (const item of cartItems) {
+        const itemMotionId = `mot_item_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        await db.run(
+          "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [
+            itemMotionId,
+            streamId,
+            2 + index, // Sequence starting from 2
+            101, // Opcode 101 for SOLD (inventory movement)
+            "PENDING",
+            -item.qty, // Negative delta representing movement out of stock
+            JSON.stringify({ mass_id: item.mass_id, matter_id: item.matter_id, title: item.title, price: item.price })
+          ]
+        );
+        index++;
+      }
+
+      // 3. Deduct physical presence (stock) from the mass table in Global DB
+      for (const item of cartItems) {
+        if (item.mass_id) {
+          await globalDb.run(
+            "UPDATE mass SET qty = COALESCE(qty, 0) - ? WHERE id = ?",
+            [item.qty, item.mass_id]
+          );
+        }
+      }
+
+      // Sync both databases to Turso in the background (local-first, instant UI transition)
+      db.push().catch(e => console.error("Background tenant sync failed:", e));
+      globalDb.push().catch(e => console.error("Background global sync failed:", e));
+
       setCart({});
-      router.back(); // Return to home timeline
+      router.back(); // Return to home timeline immediately
     } catch (e) {
       console.error("Checkout failed:", e);
     } finally {
@@ -184,10 +211,6 @@ export default function SpaceScreen() {
           </View>
           
           <View style={styles.checkoutActions}>
-            <TouchableOpacity style={styles.clearBtn} onPress={handleClearCart}>
-              <Ionicons name="trash-outline" size={20} color="#666" />
-            </TouchableOpacity>
-            
             <TouchableOpacity 
               style={styles.checkoutBtn} 
               onPress={handleCheckout}
@@ -284,16 +307,14 @@ const styles = StyleSheet.create({
   },
   cartBadge: {
     position: 'absolute',
-    top: -8,
-    right: -8,
+    top: 8,
+    right: 8,
     backgroundColor: '#000',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
   },
   cartBadgeText: {
     color: '#fff',

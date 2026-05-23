@@ -1,0 +1,10 @@
+name = "s3storage"
+main = "src/index.ts"
+compatibility_date = "2024-04-03"
+
+[vars]
+AWS_ACCESS_KEY_ID = "tid_oYWulzjfLo_yGGspVeMilsGZSBSxQPKAuJzMEIcjKbrYphHkdR"
+AWS_SECRET_ACCESS_KEY = "tsec_Fgkpi92OX_Ru2I9Z1RL8vWNRh2z_to3QNkuwhW5vMp5wjCCU95UNzCBkdkkSBggkhEwFig"
+AWS_DEFAULT_REGION = "auto"
+RAILWAY_STORAGE_ENDPOINT = "https://t3.storageapi.dev"
+RAILWAY_STORAGE_BUCKET_NAME = "durable-wardrobe-8osafzz8"

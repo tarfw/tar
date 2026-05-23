@@ -157,6 +157,9 @@ export default function SpaceScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Space</Text>
         <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => router.push('/upload')} style={styles.headerActionBtn}>
+            <Ionicons name="cloud-upload-outline" size={22} color="#1a1a1a" />
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/matter')} style={styles.headerActionBtn}>
             <Ionicons name="cube-outline" size={22} color="#1a1a1a" />
           </TouchableOpacity>

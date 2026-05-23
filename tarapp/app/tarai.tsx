@@ -14,6 +14,7 @@ import { Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { getDbClient } from "../lib/db";
+import { upsertMatterVector } from "../lib/vectorStore";
 import { activeMassId } from "../lib/state";
 
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
@@ -142,10 +143,24 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
       if (parsed.matters && parsed.matters.length > 0) {
         for (const m of parsed.matters) {
+           const remappedId = mapId(m.id, 'mat');
            await db.run(
              "INSERT OR REPLACE INTO matter (id, code, type, title, data) VALUES (?, ?, ?, ?, ?)",
-             [mapId(m.id, 'mat'), m.code || null, m.type || null, m.title || null, m.data || null]
+             [remappedId, m.code || null, m.type || null, m.title || null, m.data || null]
            );
+
+           // Sync local vector representation
+           try {
+             await upsertMatterVector(remappedId, {
+               title: m.title || "",
+               type: m.type || null,
+               scope: m.scope || null,
+               code: m.code || null,
+               data: m.data || null
+             });
+           } catch (vectorErr) {
+             console.error("Vector sync failed in TarAi parsed.matters:", vectorErr);
+           }
         }
         hasChanges = true;
       }

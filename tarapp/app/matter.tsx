@@ -19,6 +19,7 @@ import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { getDbClient, routeDbForEntity, getUserDb, getTenantDb, getGlobalDb } from "../lib/db";
+import { upsertMatterVector } from "../lib/vectorStore";
 
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
 const MODEL = "openai/gpt-oss-120b";
@@ -568,6 +569,19 @@ export default function MatterScreen() {
             [mass.id]
           );
         }
+      }
+
+      // Sync local vector representation
+      try {
+        await upsertMatterVector(recordId, {
+          title,
+          type: type || null,
+          scope: scope || null,
+          code: code || null,
+          data: mergedDataString || null
+        });
+      } catch (vectorErr) {
+        console.error("Vector sync failed during save:", vectorErr);
       }
 
       router.back();

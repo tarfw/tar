@@ -16,6 +16,7 @@ import { useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { getDbClient, getUserDb, getTenantDb, getGlobalDb } from "../lib/db";
+import { upsertMatterVector, deleteMatterVector, searchMatterVectors } from "../lib/vectorStore";
 import { setActiveMassId } from "../lib/state";
 
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
@@ -100,11 +101,82 @@ export default function SearchScreen() {
         : [];
       if (selectedType) matterParams.push(selectedType);
 
+      // Perform SQL matter search
       const [uMatter, tMatter, gMatter] = await Promise.all([
         uDb.all(`SELECT *, 'user' as originDb FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 10`, matterParams).catch(() => []),
         tDb.all(`SELECT *, 'tenant' as originDb FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 10`, matterParams).catch(() => []),
         gDb.all(`SELECT *, 'global' as originDb FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 10`, matterParams).catch(() => [])
       ]);
+
+      const deduplicateById = (arr: any[]) => {
+        const seen = new Set();
+        return arr.filter((item) => {
+          if (!item.id) return true;
+          if (seen.has(item.id)) return false;
+          seen.add(item.id);
+          return true;
+        });
+      };
+
+      let finalMatterResults: any[] = [];
+
+      if (hasQuery) {
+        // Run vector search in parallel
+        const vectorResults = await searchMatterVectors(text, 25).catch((err) => {
+          console.error("Vector search failed:", err);
+          return [];
+        });
+
+        // Fetch matters matching vector results
+        const vectorIds = vectorResults.map((vr) => vr.matterId);
+        const getMattersByIds = async (ids: string[]) => {
+          if (ids.length === 0) return [];
+          const placeholders = ids.map(() => "?").join(",");
+          const [uRows, tRows, gRows] = await Promise.all([
+            uDb.all(`SELECT *, 'user' as originDb FROM matter WHERE id IN (${placeholders})`, ids).catch(() => []),
+            tDb.all(`SELECT *, 'tenant' as originDb FROM matter WHERE id IN (${placeholders})`, ids).catch(() => []),
+            gDb.all(`SELECT *, 'global' as originDb FROM matter WHERE id IN (${placeholders})`, ids).catch(() => [])
+          ]);
+          return [...(uRows || []), ...(tRows || []), ...(gRows || [])];
+        };
+
+        const vectorMatters = await getMattersByIds(vectorIds);
+
+        // Map similarity ratings
+        const similarityMap = new Map<string, number>();
+        for (const vr of vectorResults) {
+          similarityMap.set(vr.matterId, vr.similarity);
+        }
+
+        // Combine SQL and Vector matter rows
+        const combinedMatters = [
+          ...(uMatter || []),
+          ...(tMatter || []),
+          ...(gMatter || []),
+          ...vectorMatters
+        ];
+
+        const uniqueMatters = deduplicateById(combinedMatters);
+        const ratedMatters = uniqueMatters.map((m) => {
+          const sim = similarityMap.get(m.id);
+          return {
+            ...m,
+            similarity: sim !== undefined ? sim : 0.90 // Default fallback similarity score for exact keyword hit
+          };
+        });
+
+        // Filter by selectedType
+        const filteredMatters = selectedType
+          ? ratedMatters.filter((m) => m.type === selectedType)
+          : ratedMatters;
+
+        // Sort descending by similarity
+        filteredMatters.sort((a, b) => b.similarity - a.similarity);
+        finalMatterResults = filteredMatters.slice(0, 15);
+      } else {
+        // No query - just return regular items
+        finalMatterResults = deduplicateById([...(uMatter || []), ...(tMatter || []), ...(gMatter || [])]).slice(0, 15);
+      }
 
       const massTypeClause = selectedType ? "AND m.type = ?" : "";
       const massWhereClause = hasQuery
@@ -151,18 +223,8 @@ export default function SearchScreen() {
         gDb.all(`SELECT *, 'global' as originDb FROM motion ${motionWhereClause} LIMIT 10`, motionParams).catch(() => [])
       ]);
 
-      const deduplicateById = (arr: any[]) => {
-        const seen = new Set();
-        return arr.filter((item) => {
-          if (!item.id) return true;
-          if (seen.has(item.id)) return false;
-          seen.add(item.id);
-          return true;
-        });
-      };
-
       setResults({
-        matter: deduplicateById([...(uMatter || []), ...(tMatter || []), ...(gMatter || [])]).slice(0, 15),
+        matter: finalMatterResults,
         mass: deduplicateById([...(uMass || []), ...(tMass || []), ...(gMass || [])]).slice(0, 15),
         motion: deduplicateById([...(uMotion || []), ...(tMotion || []), ...(gMotion || [])]).slice(0, 15),
       });
@@ -171,7 +233,7 @@ export default function SearchScreen() {
     } finally {
       setLoading(false);
     }
-  }, [selectedType]);
+  }, [selectedType, searchMatterVectors]);
 
   useEffect(() => {
     (async () => {
@@ -352,6 +414,23 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
         data.id,
       ]);
 
+      if (type === "matter") {
+        try {
+          const updatedRow = await db.get("SELECT * FROM matter WHERE id = ?", [data.id]);
+          if (updatedRow) {
+            await upsertMatterVector(String(data.id), {
+              title: updatedRow.title ? String(updatedRow.title) : "",
+              type: updatedRow.type ? String(updatedRow.type) : null,
+              scope: updatedRow.scope ? String(updatedRow.scope) : null,
+              code: updatedRow.code ? String(updatedRow.code) : null,
+              data: updatedRow.data ? String(updatedRow.data) : null
+            });
+          }
+        } catch (vectorErr) {
+          console.error("Vector sync failed during search detail save:", vectorErr);
+        }
+      }
+
       if (type === "mass") {
         const motionId = `mot_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         const seqRow = await db.all(
@@ -402,6 +481,13 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
             } else {
               await db.run("DELETE FROM mass WHERE matter = ?", [item.id]);
               await db.run("DELETE FROM matter WHERE id = ?", [item.id]);
+
+              // De-index local vector representation
+              try {
+                await deleteMatterVector(String(item.id), item.type ? String(item.type) : null, item.scope ? String(item.scope) : null);
+              } catch (vectorErr) {
+                console.error("Vector deletion failed during search detail delete:", vectorErr);
+              }
             }
             if (type === "mass") {
               const seqRow = await db.all(
@@ -553,9 +639,19 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
               />
             </View>
             <View style={styles.resultText}>
-              <Text style={styles.resultTitle}>
-                {type === "matter" ? item.title : type === "mass" ? (item.matter_title || "Stock Item") : `Action ${item.action}`}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text style={[styles.resultTitle, { flex: 1, marginRight: 8 }]} numberOfLines={1}>
+                  {type === "matter" ? item.title : type === "mass" ? (item.matter_title || "Stock Item") : `Action ${item.action}`}
+                </Text>
+                {type === "matter" && item.similarity !== undefined && (
+                  <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#e0e7ff", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                    <Ionicons name="sparkles" size={10} color="#4f46e5" style={{ marginRight: 2 }} />
+                    <Text style={{ fontSize: 10, color: "#4f46e5", fontWeight: "600" }}>
+                      {Math.round(item.similarity * 100)}% match
+                    </Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.resultSubtitle} numberOfLines={1}>
                 {type === "matter" ? (item.code || item.type || "No code") : type === "mass" ? `${item.qty || 0} units` : (item.stream || "No stream")}
               </Text>

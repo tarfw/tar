@@ -5,6 +5,8 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useRef, useState } from "react";
 import { AppState, Alert } from "react-native";
 import { initDb, getUserDb, getTenantDb, getDbClient } from "../lib/db";
+import { getEmbeddings } from "../lib/embeddings";
+import { checkAndSyncExistingMatters } from "../lib/vectorStore";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -17,11 +19,18 @@ export default function RootLayout() {
     let syncInterval: any;
     let reminderInterval: any;
 
-    // Initialize Database and Schema
-    initDb()
+    // Initialize Database, Schema, and Embedding Model
+    Promise.all([
+      initDb(),
+      getEmbeddings().catch((e) => console.error("Failed to load model:", e))
+    ])
       .then(() => {
         setIsReady(true);
         SplashScreen.hideAsync();
+
+        // Run background indexing check for any legacy/unindexed matters
+        checkAndSyncExistingMatters().catch((e) => console.error("Initial sync check failed:", e));
+
 
         // Slow periodic backup sync fallback
         syncInterval = setInterval(async () => {

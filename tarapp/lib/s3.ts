@@ -1,4 +1,5 @@
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
+import { FileSystemUploadType } from "expo-file-system/legacy";
 
 // Hardcoded deployed worker fallback for easy testing
 const CLOUDFLARE_WORKER_URL = "https://s3storage.tamilframework.workers.dev";
@@ -51,7 +52,7 @@ export async function uploadFileToS3(
         "Content-Type": contentType,
       },
       httpMethod: "PUT",
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      uploadType: FileSystemUploadType.BINARY_CONTENT,
     },
     (data) => {
       if (onProgress) {

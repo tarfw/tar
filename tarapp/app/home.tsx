@@ -53,6 +53,29 @@ const groupOrderItems = (items: any[]) => {
   return [...ungrouped, ...groupedOrders];
 };
 
+const formatRelativeTime = (timeStr: string) => {
+  try {
+    const date = new Date(timeStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (isNaN(date.getTime())) return "";
+    
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  } catch (e) {
+    return "";
+  }
+};
+
 export default function HomePage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -62,6 +85,7 @@ export default function HomePage() {
   const [nowItems, setNowItems] = useState<any[]>([]);
   const [pastItems, setPastItems] = useState<any[]>([]);
   const [selectedMass, setSelectedMass] = useState<any>(null);
+  const [activeJob, setActiveJob] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -110,8 +134,21 @@ export default function HomePage() {
           
           let uNowSlots = await uDb.all(nowSlotsQuery, [nowStr, nowStr]);
           let tNowSlots = await tDb.all(nowSlotsTenantQuery, [nowStr, nowStr]);
+
+          // Determine the active job status from active slots occurring now
+          const allNowSlots = [...(Array.isArray(uNowSlots) ? uNowSlots : []), ...(Array.isArray(tNowSlots) ? tNowSlots : [])];
+          const activeSlotWithScope = allNowSlots.find(s => s.scope);
+          if (activeSlotWithScope) {
+            setActiveJob(activeSlotWithScope.scope ? String(activeSlotWithScope.scope) : null);
+          } else if (allNowSlots.length > 0) {
+            const firstSlot = allNowSlots[0];
+            const fallbackTitle = firstSlot.title || firstSlot.scope;
+            setActiveJob(fallbackTitle ? String(fallbackTitle) : "shift");
+          } else {
+            setActiveJob(null);
+          }
           
-          const activeSlots = [...(Array.isArray(uNowSlots) ? uNowSlots : []), ...(Array.isArray(tNowSlots) ? tNowSlots : [])]
+          const activeSlots = allNowSlots
             .map(s => ({
               id: s.id,
               isMass: true,
@@ -310,7 +347,7 @@ export default function HomePage() {
             <Ionicons 
               name="ellipse-outline" 
               size={22} 
-              color="#c026d3" 
+              color="#cbd5e1" 
             />
           </TouchableOpacity>
           <View style={styles.motionTextContainer}>
@@ -320,7 +357,9 @@ export default function HomePage() {
           </View>
         </View>
         <View style={styles.motionItemRight}>
-          <Text style={[styles.futureTimeText, { backgroundColor: '#fae8ff', color: '#c026d3' }]}>PENDING</Text>
+          <Text style={styles.taskTimeText}>
+            {formatRelativeTime(item.time)}
+          </Text>
         </View>
       </View>
     );
@@ -448,8 +487,8 @@ export default function HomePage() {
         style={[
           styles.orderGroupContainer,
           {
-            borderTopWidth: index === 0 ? 0 : 1,
-            borderBottomWidth: index === total - 1 ? 0 : 1,
+            borderTopWidth: index === 0 ? 0 : 0.5,
+            borderBottomWidth: index === total - 1 ? 0 : 0.5,
             borderColor: '#f1f5f9'
           }
         ]}
@@ -457,17 +496,6 @@ export default function HomePage() {
         {/* Order Header Row */}
         <View style={styles.orderGroupHeader}>
           <View style={styles.motionItemLeft}>
-            <TouchableOpacity 
-              style={styles.statusWrapper}
-              onPress={() => !isCompleted && handleMarkDone(header)}
-              disabled={isCompleted}
-            >
-              <Ionicons 
-                name={isCompleted ? "checkmark-circle" : "ellipse-outline"} 
-                size={22} 
-                color={isCompleted ? "#16a34a" : "#2563eb"} 
-              />
-            </TouchableOpacity>
             <View style={styles.motionTextContainer}>
               <Text style={styles.orderGroupTitle}>
                 Order #{group.id.replace('ord_', '')}
@@ -490,36 +518,31 @@ export default function HomePage() {
             const itemTitle = parsedItemData.title || item.stream || "Item";
             const itemStatus = item.status || "PENDING";
             
-            // Nice badge styling based on item status
-            let badgeColor = "#64748b";
-            let badgeBg = "#f1f5f9";
+            // Nice text styling based on item status
+            let statusColor = "#64748b";
             if (itemStatus === "READY") {
-              badgeColor = "#16a34a";
-              badgeBg = "#dcfce7";
+              statusColor = "#16a34a";
             } else if (itemStatus === "DELIVERED" || itemStatus === "COMPLETED") {
-              badgeColor = "#2563eb";
-              badgeBg = "#dbeafe";
+              statusColor = "#2563eb";
             } else if (itemStatus === "PENDING") {
-              badgeColor = "#c026d3";
-              badgeBg = "#fae8ff";
+              statusColor = "#94a3b8"; // Neutral slate-grey, no purple
             }
 
             return (
               <View key={item.id} style={[styles.orderItemRow, idx > 0 && styles.orderItemBorder]}>
                 <View style={styles.orderItemLeft}>
-                  <Ionicons 
-                    name={itemStatus === "DELIVERED" || itemStatus === "COMPLETED" ? "checkmark-circle-outline" : "ellipse-outline"} 
-                    size={16} 
-                    color={badgeColor} 
-                    style={{ marginRight: 8 }}
-                  />
+                  <View style={styles.statusWrapper}>
+                    <Ionicons 
+                      name={itemStatus === "DELIVERED" || itemStatus === "COMPLETED" ? "checkmark-circle" : "ellipse-outline"} 
+                      size={22} 
+                      color={statusColor} 
+                    />
+                  </View>
                   <Text style={styles.orderItemText}>
                     {itemTitle} <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: 'normal' }}>x{Math.abs(item.delta || 1)}</Text>
                   </Text>
                 </View>
-                <View style={[styles.statusBadge, { backgroundColor: badgeBg }]}>
-                  <Text style={[styles.statusBadgeText, { color: badgeColor }]}>{itemStatus}</Text>
-                </View>
+                <Text style={[styles.orderItemStatusText, { color: statusColor }]}>{itemStatus}</Text>
               </View>
             );
           })}
@@ -527,6 +550,64 @@ export default function HomePage() {
       </View>
     );
   };
+
+  const getJobBadgeStyles = (job: string | null) => {
+    if (!job) {
+      return {
+        text: "idle",
+        color: "#64748b",
+        bg: "#f1f5f9",
+      };
+    }
+    
+    const normalized = job.toLowerCase();
+    if (normalized.includes("restaurant")) {
+      return {
+        text: "work",
+        color: "#ea580c",
+        bg: "#ffedd5",
+      };
+    } else if (normalized.includes("retail") || normalized.includes("store")) {
+      return {
+        text: "work",
+        color: "#16a34a",
+        bg: "#dcfce7",
+      };
+    } else if (normalized.includes("delivery")) {
+      return {
+        text: "work",
+        color: "#2563eb",
+        bg: "#dbeafe",
+      };
+    } else if (normalized.includes("salon")) {
+      return {
+        text: "work",
+        color: "#c026d3",
+        bg: "#fae8ff",
+      };
+    } else if (normalized.includes("warehouse")) {
+      return {
+        text: "work",
+        color: "#4f46e5",
+        bg: "#e0e7ff",
+      };
+    } else if (normalized.includes("shift")) {
+      return {
+        text: "work",
+        color: "#4f46e5",
+        bg: "#e0e7ff",
+      };
+    }
+    
+    // Default fallback
+    return {
+      text: "work",
+      color: "#4f46e5",
+      bg: "#e0e7ff",
+    };
+  };
+
+  const badgeStyles = getJobBadgeStyles(activeJob);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -551,11 +632,17 @@ export default function HomePage() {
               <Text style={styles.userName}>prabha</Text>
             </Animated.View>
           </TouchableOpacity>
-          <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push("/profile")}>
-              <Ionicons name="ellipsis-horizontal" size={24} color="#333" />
+          <Animated.View key={activeJob || "idle"} entering={FadeIn.duration(300)}>
+            <TouchableOpacity 
+              style={[styles.headerStatusBadge, { backgroundColor: badgeStyles.bg }]} 
+              onPress={() => router.push("/profile")}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.headerStatusBadgeText, { color: badgeStyles.color }]}>
+                {badgeStyles.text}
+              </Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </View>
 
         <ScrollView 
@@ -847,6 +934,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: "hidden",
   },
+  taskTimeText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#94a3b8",
+  },
   separator: {
     height: 1,
     backgroundColor: "#f1f5f9",
@@ -936,9 +1028,9 @@ const styles = StyleSheet.create({
     marginTop: 0,
     marginBottom: 0,
     borderRadius: 0,
-    borderTopWidth: 1.5,
-    borderBottomWidth: 1.5,
-    borderColor: "#e2e8f0",
+    borderTopWidth: 0.5,
+    borderBottomWidth: 0.5,
+    borderColor: "#f1f5f9",
     backgroundColor: "#ffffff",
     overflow: "hidden",
   },
@@ -947,10 +1039,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     backgroundColor: "#f8fafc",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#f1f5f9",
   },
   orderGroupTitle: {
     fontSize: 14,
@@ -961,7 +1053,7 @@ const styles = StyleSheet.create({
   orderItemsList: {
     paddingTop: 4,
     paddingBottom: 0,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
   orderItemRow: {
     flexDirection: "row",
@@ -990,5 +1082,23 @@ const styles = StyleSheet.create({
   statusBadgeText: {
     fontSize: 10,
     fontWeight: "700",
+  },
+  headerStatusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "transparent",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerStatusBadgeText: {
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: -0.2,
+  },
+  orderItemStatusText: {
+    fontSize: 12,
+    fontWeight: "600",
   }
 });

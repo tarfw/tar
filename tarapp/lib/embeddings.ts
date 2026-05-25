@@ -22,6 +22,12 @@ export async function getEmbeddings() {
 let inferenceLock = Promise.resolve();
 
 export async function generateEmbedding(text: string): Promise<number[]> {
+  const trimmed = (text || "").trim();
+  if (!trimmed) {
+    console.warn(`[embeddings] generateEmbedding received empty/whitespace text. Returning 384-dimension zero vector.`);
+    return new Array(384).fill(0);
+  }
+
   const engine = await getEmbeddings();
   
   // Use a simple promise chain as a lock to ensure sequential execution
@@ -31,19 +37,23 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   
   try {
     await currentLock;
-    const vector = await engine.forward(text);
+    console.log(`[embeddings] Running forward pass for text: "${trimmed.substring(0, 100)}${trimmed.length > 100 ? '...' : ''}" (length: ${trimmed.length})`);
+    const vector = await engine.forward(trimmed);
+    console.log(`[embeddings] Forward pass succeeded. Vector length: ${vector.length}`);
     return Array.from(vector);
+  } catch (err) {
+    console.error(`[embeddings] Error during forward pass for text "${trimmed.substring(0, 100)}":`, err);
+    throw err;
   } finally {
     release!();
   }
 }
 
 export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
-  const engine = await getEmbeddings();
   const results: number[][] = [];
   for (const text of texts) {
-    const vector = await engine.forward(text);
-    results.push(Array.from(vector));
+    const vector = await generateEmbedding(text);
+    results.push(vector);
   }
   return results;
 }

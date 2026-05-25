@@ -7,15 +7,38 @@ import {
   TouchableOpacity, 
   KeyboardAvoidingView, 
   Platform,
-  ScrollView
+  ScrollView,
+  Alert,
+  ActivityIndicator
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
+import * as Haptics from "expo-haptics";
 import { getDbClient } from "../lib/db";
 import { upsertMatterVector } from "../lib/vectorStore";
 import { activeMassId } from "../lib/state";
+
+import { ResourceFetcher, WHISPER_TINY_EN, useSpeechToText } from "react-native-executorch";
+import { AudioRecorder, AudioManager } from "react-native-audio-api";
+
+const getFilenameFromUri = (uri: string) => {
+  let cleanUri = uri.replace(/^https?:\/\//, '');
+  cleanUri = cleanUri.split('#')?.[0] ?? cleanUri;
+  return cleanUri.replace(/[^a-zA-Z0-9._-]/g, '_');
+};
+
+const checkWhisperDownloaded = async () => {
+  try {
+    const files = await ResourceFetcher.listDownloadedFiles();
+    const encoderFilename = getFilenameFromUri(WHISPER_TINY_EN.encoderSource);
+    const decoderFilename = getFilenameFromUri(WHISPER_TINY_EN.decoderSource);
+    return files.some(f => f.endsWith(encoderFilename)) && files.some(f => f.endsWith(decoderFilename));
+  } catch {
+    return false;
+  }
+};
 
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
 const MODEL = "openai/gpt-oss-120b";
@@ -32,6 +55,133 @@ export default function TarAiScreen() {
   const insets = useSafeAreaInsets();
   const [inputText, setInputText] = useState("");
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Whisper speech to text integration
+  const [shouldLoadWhisper, setShouldLoadWhisper] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [sttError, setSttError] = useState<string | null>(null);
+  const audioRecorderRef = useRef<AudioRecorder | null>(null);
+
+  useEffect(() => {
+    async function checkStatus() {
+      const downloaded = await checkWhisperDownloaded();
+      if (downloaded) {
+        setShouldLoadWhisper(true);
+      }
+    }
+    checkStatus();
+  }, []);
+
+  const stt = useSpeechToText({
+    model: WHISPER_TINY_EN,
+    preventLoad: !shouldLoadWhisper,
+  });
+
+  const startRecording = async () => {
+    try {
+      const permission = await AudioManager.requestRecordingPermissions();
+      if (permission !== "Granted") {
+        Alert.alert("Permission Denied", "Microphone permission is required for voice dictation.");
+        return;
+      }
+
+      if (!stt.isReady) {
+        Alert.alert("Loading Model", "Voice model is still loading. Please wait a moment.");
+        return;
+      }
+
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setIsRecording(true);
+      setSttError(null);
+
+      if (!audioRecorderRef.current) {
+        audioRecorderRef.current = new AudioRecorder();
+
+        audioRecorderRef.current.onAudioReady(
+          {
+            sampleRate: 16000,
+            bufferLength: 1600,
+            channelCount: 1,
+          },
+          (event: any) => {
+            const buffer = event.buffer.getChannelData(0);
+            stt.streamInsert(buffer);
+
+            // Calculate volume level (RMS)
+            let sum = 0;
+            for (let i = 0; i < buffer.length; i++) {
+              sum += buffer[i] * buffer[i];
+            }
+            const rms = Math.sqrt(sum / buffer.length);
+            setAudioLevel(Math.min(1, rms * 10));
+          }
+        );
+      }
+
+      stt.stream().then((finalTranscription) => {
+        if (finalTranscription) {
+          setInputText((prev) => prev + (prev ? " " : "") + finalTranscription);
+        }
+      }).catch((err) => {
+        console.error("Transcription stream error:", err);
+        setSttError("Error transcribing audio.");
+      });
+
+      audioRecorderRef.current.start();
+    } catch (err) {
+      console.error("Failed to start recording:", err);
+      setIsRecording(false);
+      Alert.alert("Error", "Could not start microphone recording.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (!isRecording) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    try {
+      if (audioRecorderRef.current) {
+        audioRecorderRef.current.stop();
+      }
+      stt.streamStop();
+    } catch (err) {
+      console.error("Failed to stop recording:", err);
+    } finally {
+      setIsRecording(false);
+      setAudioLevel(0);
+    }
+  };
+
+  const handleMicPress = async () => {
+    const downloaded = await checkWhisperDownloaded();
+    if (!downloaded) {
+      Alert.alert(
+        "Voice Model Required",
+        "To use offline dictation, please go to your Profile settings and download the Offline Voice Dictation model.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Go to Profile", onPress: () => router.push("/profile") }
+        ]
+      );
+      return;
+    }
+
+    if (!shouldLoadWhisper) {
+      setShouldLoadWhisper(true);
+      return;
+    }
+
+    if (!stt.isReady) {
+      return;
+    }
+
+    if (isRecording) {
+      stopRecording();
+    } else {
+      await startRecording();
+    }
+  };
   
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -271,9 +421,48 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
           ))}
         </ScrollView>
 
+        {/* Live Transcription Preview Overlay */}
+        {isRecording && (
+          <View style={styles.transcriptionOverlay}>
+            <View style={styles.recordingIndicatorContainer}>
+              <View style={[
+                styles.recordingDot, 
+                { transform: [{ scale: 1 + audioLevel * 0.5 }] }
+              ]} />
+              <Text style={styles.recordingText}>Listening...</Text>
+            </View>
+            <ScrollView style={styles.transcriptionScroll} contentContainerStyle={styles.transcriptionTextContainer}>
+              <Text style={styles.transcriptionText}>
+                {stt.committedTranscription || "..."}
+                <Text style={styles.nonCommittedText}>
+                  {stt.nonCommittedTranscription}
+                </Text>
+              </Text>
+            </ScrollView>
+          </View>
+        )}
+
         {/* Input Area */}
         <View style={[styles.inputOuterContainer, { paddingBottom: insets.bottom + 16 }]}>
           <View style={styles.inputContainer}>
+            <TouchableOpacity 
+              style={[
+                styles.micBtn, 
+                isRecording && styles.micBtnRecording
+              ]} 
+              onPress={handleMicPress}
+            >
+              {shouldLoadWhisper && !stt.isReady ? (
+                <ActivityIndicator size="small" color="#000" />
+              ) : (
+                <Ionicons 
+                  name={isRecording ? "stop" : "mic"} 
+                  size={20} 
+                  color={isRecording ? "#fff" : "#000"} 
+                />
+              )}
+            </TouchableOpacity>
+
             <TextInput
               style={styles.input}
               placeholder="Type a command..."
@@ -376,5 +565,57 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     backgroundColor: '#ccc',
+  },
+  micBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  micBtnRecording: {
+    backgroundColor: '#ff3b30',
+  },
+  transcriptionOverlay: {
+    backgroundColor: '#fcfcfc',
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    padding: 16,
+    maxHeight: 120,
+  },
+  recordingIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ff3b30',
+    marginRight: 8,
+  },
+  recordingText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  transcriptionScroll: {
+    flex: 1,
+  },
+  transcriptionTextContainer: {
+    paddingVertical: 4,
+  },
+  transcriptionText: {
+    fontSize: 15,
+    color: '#000',
+    lineHeight: 20,
+  },
+  nonCommittedText: {
+    color: '#888',
   }
 });

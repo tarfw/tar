@@ -9,13 +9,13 @@ import {
   Platform
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, Stack } from "expo-router";
+import { ResourceFetcher, WHISPER_TINY_EN, SSDLITE_320_MOBILENET_V3_LARGE, CLIP_VIT_BASE_PATCH32_IMAGE } from "react-native-executorch";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
 import * as Haptics from "expo-haptics";
 import { getUserDb } from "../lib/db";
-import * as FileSystem from "expo-file-system/legacy";
 
 
 export default function ProfileScreen() {
@@ -32,23 +32,31 @@ export default function ProfileScreen() {
   const [clipStatus, setClipStatus] = useState<"not_downloaded" | "downloading" | "ready">("not_downloaded");
   const [clipProgress, setClipProgress] = useState(0);
 
-  const modelsDir = `${FileSystem.documentDirectory}models/`;
-  const whisperUrl = "https://pub-db115456f9664f3fb02096f42fb6435a.r2.dev/whisper_tiny_en.pte";
-  const yoloUrl = "https://pub-db115456f9664f3fb02096f42fb6435a.r2.dev/yolo26n.pte";
-  const clipUrl = "https://pub-db115456f9664f3fb02096f42fb6435a.r2.dev/clip_image_int8.pte";
+  const getFilenameFromUri = (uri: string) => {
+    let cleanUri = uri.replace(/^https?:\/\//, '');
+    cleanUri = cleanUri.split('#')?.[0] ?? cleanUri;
+    return cleanUri.replace(/[^a-zA-Z0-9._-]/g, '_');
+  };
 
   // Check downloaded model files status
   useEffect(() => {
     async function checkFiles() {
       try {
-        const whisperInfo = await FileSystem.getInfoAsync(modelsDir + "whisper_tiny_en.pte");
-        if (whisperInfo.exists) {
+        const files = await ResourceFetcher.listDownloadedFiles();
+        const encoderFilename = getFilenameFromUri(WHISPER_TINY_EN.encoderSource);
+        const decoderFilename = getFilenameFromUri(WHISPER_TINY_EN.decoderSource);
+        const hasEncoder = files.some(f => f.endsWith(encoderFilename));
+        const hasDecoder = files.some(f => f.endsWith(decoderFilename));
+
+        if (hasEncoder && hasDecoder) {
           setWhisperStatus("ready");
         }
         
-        const yoloInfo = await FileSystem.getInfoAsync(modelsDir + "yolo26n.pte");
-        const clipInfo = await FileSystem.getInfoAsync(modelsDir + "clip_image_int8.pte");
-        if (yoloInfo.exists && clipInfo.exists) {
+        const yoloFilename = getFilenameFromUri(SSDLITE_320_MOBILENET_V3_LARGE.modelSource);
+        const clipFilename = getFilenameFromUri(CLIP_VIT_BASE_PATCH32_IMAGE.modelSource);
+        const hasYolo = files.some(f => f.endsWith(yoloFilename));
+        const hasClip = files.some(f => f.endsWith(clipFilename));
+        if (hasYolo && hasClip) {
           setClipStatus("ready");
         }
       } catch (e) {
@@ -59,20 +67,13 @@ export default function ProfileScreen() {
   }, []);
 
 
-  const ensureDirectoryExists = async () => {
-    const dirInfo = await FileSystem.getInfoAsync(modelsDir);
-    if (!dirInfo.exists) {
-      await FileSystem.makeDirectoryAsync(modelsDir, { intermediates: true });
-    }
-  };
-
   const handleWhisperAction = async () => {
     if (whisperStatus === "ready") return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     Alert.alert(
       "Download Voice Model",
-      "Do you want to download the Offline Voice Dictation model? This file is 151 MB.",
+      "Do you want to download the Offline Voice Dictation model? This file is ~150 MB.",
       [
         { text: "Cancel", style: "cancel" },
         { 
@@ -81,20 +82,20 @@ export default function ProfileScreen() {
             try {
               setWhisperStatus("downloading");
               setWhisperProgress(0);
-              await ensureDirectoryExists();
 
-              const localUri = modelsDir + "whisper_tiny_en.pte";
-              const downloadResumable = FileSystem.createDownloadResumable(
-                whisperUrl,
-                localUri,
-                {},
-                (downloadProgress) => {
-                  const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-                  setWhisperProgress(Math.round(progress * 100));
-                }
+              await ResourceFetcher.fetch(
+                undefined,
+                WHISPER_TINY_EN.tokenizerSource
               );
 
-              await downloadResumable.downloadAsync();
+              await ResourceFetcher.fetch(
+                (progress) => {
+                  setWhisperProgress(Math.round(progress * 100));
+                },
+                WHISPER_TINY_EN.encoderSource,
+                WHISPER_TINY_EN.decoderSource
+              );
+
               setWhisperStatus("ready");
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               Alert.alert("Success", "Offline Voice Dictation model downloaded and ready.");
@@ -116,7 +117,7 @@ export default function ProfileScreen() {
 
     Alert.alert(
       "Download Photo Model Pack",
-      "Do you want to download the Photo Product Matching models? This includes the YOLO26N detector and CLIP matcher (total size: ~107 MB).",
+      "Do you want to download the Photo Product Matching models? This includes the Object detector and CLIP matcher (total size: ~107 MB).",
       [
         { text: "Cancel", style: "cancel" },
         { 
@@ -125,35 +126,14 @@ export default function ProfileScreen() {
             try {
               setClipStatus("downloading");
               setClipProgress(0);
-              await ensureDirectoryExists();
 
-              // Step 1: Download YOLO26N (10.3 MB)
-              const yoloLocalUri = modelsDir + "yolo26n.pte";
-              const yoloDownloader = FileSystem.createDownloadResumable(
-                yoloUrl,
-                yoloLocalUri,
-                {},
-                (downloadProgress) => {
-                  const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-                  // Map YOLO to 0% - 10% of total visual feedback progress
-                  setClipProgress(Math.round(progress * 10));
-                }
+              await ResourceFetcher.fetch(
+                (progress) => {
+                  setClipProgress(Math.round(progress * 100));
+                },
+                SSDLITE_320_MOBILENET_V3_LARGE.modelSource,
+                CLIP_VIT_BASE_PATCH32_IMAGE.modelSource
               );
-              await yoloDownloader.downloadAsync();
-
-              // Step 2: Download CLIP (96.4 MB)
-              const clipLocalUri = modelsDir + "clip_image_int8.pte";
-              const clipDownloader = FileSystem.createDownloadResumable(
-                clipUrl,
-                clipLocalUri,
-                {},
-                (downloadProgress) => {
-                  const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-                  // Map CLIP to 10% - 100% of progress
-                  setClipProgress(10 + Math.round(progress * 90));
-                }
-              );
-              await clipDownloader.downloadAsync();
 
               setClipStatus("ready");
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -185,11 +165,17 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               if (modelType === "whisper") {
-                await FileSystem.deleteAsync(modelsDir + "whisper_tiny_en.pte", { idempotent: true });
+                await ResourceFetcher.deleteResources(
+                  WHISPER_TINY_EN.tokenizerSource,
+                  WHISPER_TINY_EN.encoderSource,
+                  WHISPER_TINY_EN.decoderSource
+                );
                 setWhisperStatus("not_downloaded");
               } else {
-                await FileSystem.deleteAsync(modelsDir + "yolo26n.pte", { idempotent: true });
-                await FileSystem.deleteAsync(modelsDir + "clip_image_int8.pte", { idempotent: true });
+                await ResourceFetcher.deleteResources(
+                  SSDLITE_320_MOBILENET_V3_LARGE.modelSource,
+                  CLIP_VIT_BASE_PATCH32_IMAGE.modelSource
+                );
                 setClipStatus("not_downloaded");
               }
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -281,6 +267,7 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ presentation: "modal" }} />
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
         

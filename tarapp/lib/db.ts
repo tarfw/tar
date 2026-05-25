@@ -21,6 +21,10 @@ export function getGlobalDb(): Database {
       config.authToken = authToken;
     }
     globalDb = new Database(config);
+    if (!url) {
+      (globalDb as any).push = async () => {};
+      (globalDb as any).pull = async () => {};
+    }
   }
   return globalDb;
 }
@@ -38,6 +42,10 @@ export function getTenantDb(): Database {
       config.authToken = authToken;
     }
     tenantDb = new Database(config);
+    if (!url) {
+      (tenantDb as any).push = async () => {};
+      (tenantDb as any).pull = async () => {};
+    }
   }
   return tenantDb;
 }
@@ -55,6 +63,9 @@ export function getUserDb(): Database {
       config.authToken = authToken;
     }
     userDb = new Database(config);
+    // User DB is strictly local-only and must never sync to the cloud
+    (userDb as any).push = async () => {};
+    (userDb as any).pull = async () => {};
   }
   return userDb;
 }
@@ -94,7 +105,7 @@ export async function initDb() {
   const dbs = [
     { name: "Global", db: getGlobalDb(), url: process.env.EXPO_PUBLIC_GLOBAL_SYNC_URL || TURSO_SYNC_URL },
     { name: "Tenant", db: getTenantDb(), url: process.env.EXPO_PUBLIC_TENANT_SYNC_URL || TURSO_SYNC_URL },
-    { name: "User", db: getUserDb(), url: process.env.EXPO_PUBLIC_USER_SYNC_URL || "" }
+    { name: "User", db: getUserDb(), url: "" }
   ];
 
   for (const item of dbs) {

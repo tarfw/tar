@@ -4,33 +4,24 @@ import * as SecureStore from "expo-secure-store";
 
 const SYNC_FLAG_KEY = "tar_vector_store_initial_sync_done";
 
-export function float32ArrayToBlob(vector: number[]): Uint8Array {
+export function float32ArrayToBlob(vector: number[]): ArrayBuffer {
   const floatArray = new Float32Array(vector);
-  return new Uint8Array(floatArray.buffer, floatArray.byteOffset, floatArray.byteLength);
+  return floatArray.buffer;
 }
 
 export function blobToFloat32Array(blob: any): Float32Array {
-  let arrayBuffer: ArrayBufferLike;
-  let byteOffset = 0;
-  let byteLength = 0;
-
-  if (blob instanceof Uint8Array) {
-    arrayBuffer = blob.buffer;
-    byteOffset = blob.byteOffset;
-    byteLength = blob.byteLength;
-  } else if (blob && blob.buffer instanceof ArrayBuffer) {
-    arrayBuffer = blob.buffer;
-    byteOffset = blob.byteOffset || 0;
-    byteLength = blob.byteLength || blob.length || 0;
-  } else {
-    // Fallback/Convert standard array or other buffer shapes
-    const uint8 = new Uint8Array(blob);
-    arrayBuffer = uint8.buffer;
-    byteOffset = uint8.byteOffset;
-    byteLength = uint8.byteLength;
+  if (blob instanceof ArrayBuffer) {
+    return new Float32Array(blob);
   }
-  
-  return new Float32Array(arrayBuffer, byteOffset, byteLength / 4);
+  if (blob instanceof Uint8Array) {
+    return new Float32Array(blob.buffer, blob.byteOffset, blob.byteLength / 4);
+  }
+  if (blob && blob.buffer instanceof ArrayBuffer) {
+    return new Float32Array(blob.buffer, blob.byteOffset || 0, (blob.byteLength || blob.length || 0) / 4);
+  }
+  // Fallback/Convert standard array or other buffer shapes
+  const uint8 = new Uint8Array(blob);
+  return new Float32Array(uint8.buffer, uint8.byteOffset, uint8.byteLength / 4);
 }
 
 export function dotProduct(a: Float32Array, b: Float32Array): number {

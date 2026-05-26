@@ -730,7 +730,14 @@ export default function HomePage() {
             </TouchableOpacity>
 
             <View style={styles.rightGroup}>
-              <TouchableOpacity style={styles.circleBtn}>
+              <TouchableOpacity 
+                style={styles.circleBtn}
+                onPress={() => router.push('/joins' as any)}
+              >
+                <Ionicons name="git-merge" size={22} color="#1a1a1a" />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.circleBtn, { marginLeft: 12 }]}>
                 <Ionicons name="mic-outline" size={22} color="#1a1a1a" />
               </TouchableOpacity>
               
@@ -751,6 +758,7 @@ export default function HomePage() {
             </View>
           </View>
         </View>
+
 
         {/* Mass View Overlay */}
         {selectedMass && (

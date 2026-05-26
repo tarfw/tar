@@ -241,6 +241,8 @@ export default function MatterScreen() {
   const [original, setOriginal] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isDraft, setIsDraft] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   // Mass (Realization) states
   const [massRecords, setMassRecords] = useState<MassRecord[]>([]);
@@ -332,6 +334,7 @@ export default function MatterScreen() {
           setCode(String(rec.code ?? ""));
           setScope(String(rec.scope ?? ""));
           setData(String(rec.data ?? "{}"));
+          setIsDraft(rec.public === 0 && (rec.type === "product" || rec.type === "food"));
 
           let parsedData: any = {};
           try { parsedData = JSON.parse(rec.data || "{}"); } catch {}
@@ -376,6 +379,97 @@ export default function MatterScreen() {
       }
     })();
   }, [editId]);
+
+  const handlePublish = async () => {
+    if (publishing) return;
+    setPublishing(true);
+    try {
+      let finalDataObj = {};
+      try { finalDataObj = JSON.parse(data || "{}"); } catch {}
+      if (type === "product" || type === "food") {
+        finalDataObj = { ...finalDataObj, price: prodPrice, stock: prodStock };
+      }
+      
+      const matterPayload = {
+        id: recordId,
+        title,
+        type,
+        scope,
+        code,
+        data: JSON.stringify(finalDataObj),
+        time: new Date().toISOString()
+      };
+
+      const massPayload: any[] = [];
+      const parsedPrice = prodPrice.trim() !== "" ? parseFloat(prodPrice) : null;
+      const parsedStock = prodStock.trim() !== "" ? parseFloat(prodStock) : null;
+      
+      if (parsedPrice !== null) {
+        massPayload.push({
+          id: `mas_price_${recordId}`,
+          matter: recordId,
+          type: "price",
+          scope: "global",
+          qty: null,
+          value: parsedPrice,
+          active: 1
+        });
+      }
+      if (parsedStock !== null) {
+        massPayload.push({
+          id: `mas_stock_${recordId}`,
+          matter: recordId,
+          type: "stock",
+          scope: "warehouse",
+          qty: parsedStock,
+          value: null,
+          active: 1
+        });
+      }
+
+      for (const m of massRecords) {
+        if (m.type !== "price" && m.type !== "stock" && m._status !== "deleted") {
+          massPayload.push({
+            id: m.id,
+            matter: m.matter,
+            type: m.type,
+            scope: m.scope,
+            qty: m.qty,
+            value: m.value,
+            active: m.active
+          });
+        }
+      }
+
+      const response = await fetch("https://s3storage.tamilframework.workers.dev/api/publish", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          matter: matterPayload,
+          massRecords: massPayload
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || "Publishing endpoint returned error");
+      }
+
+      const userDb = getUserDb();
+      await userDb.run("UPDATE matter SET public = 1 WHERE id = ?", [recordId]);
+
+      setIsDraft(false);
+      Alert.alert("Success", "Catalog product published successfully to Global database!");
+      router.back();
+    } catch (e: any) {
+      console.error("[Publish] Failed to publish:", e);
+      Alert.alert("Publish Failed", e.message || "Failed to publish product.");
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!title) {
@@ -1472,9 +1566,16 @@ MODELING RULES:
                 </View>
               ) : null}
             </View>
-            <TouchableOpacity onPress={handleSave} disabled={saving} style={styles.detailSaveBtn}>
-              {saving ? <ActivityIndicator size="small" color="#6366f1" /> : <Text style={styles.detailSaveText}>Save</Text>}
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              {isDraft && (
+                <TouchableOpacity onPress={handlePublish} disabled={publishing} style={[styles.detailSaveBtn, { marginRight: 8 }]}>
+                  {publishing ? <ActivityIndicator size="small" color="#16a34a" /> : <Text style={[styles.detailSaveText, { color: "#16a34a" }]}>Publish</Text>}
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={handleSave} disabled={saving} style={styles.detailSaveBtn}>
+                {saving ? <ActivityIndicator size="small" color="#6366f1" /> : <Text style={styles.detailSaveText}>Save</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ScrollView style={styles.detailScroll} contentContainerStyle={styles.detailContent} keyboardShouldPersistTaps="handled">

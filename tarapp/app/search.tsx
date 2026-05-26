@@ -88,6 +88,35 @@ export default function SearchScreen() {
       const gDb = getGlobalDb();
 
       const hasQuery = text.trim().length > 0;
+
+      // Fetch global catalog search from worker API and cache it locally
+      if (hasQuery) {
+        try {
+          const wRes = await fetch(`https://s3storage.tamilframework.workers.dev/api/global/search?q=${encodeURIComponent(text)}&type=${encodeURIComponent(selectedType || "")}`);
+          if (wRes.ok) {
+            const wData = await wRes.json() as any;
+            if (wData && wData.matters) {
+              for (const m of wData.matters) {
+                await gDb.run(
+                  "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                  [m.id, m.code || null, m.type || null, m.scope || null, m.owner || null, m.title, m.public || 1, m.data || null, m.time || null]
+                ).catch(() => {});
+              }
+            }
+            if (wData && wData.mass) {
+              for (const ms of wData.mass) {
+                await gDb.run(
+                  "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, geo, start, end, data, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                  [ms.id, ms.matter, ms.type || null, ms.scope || null, ms.qty !== undefined && ms.qty !== null ? parseFloat(ms.qty) : null, ms.value !== undefined && ms.value !== null ? parseFloat(ms.value) : null, ms.active !== undefined ? ms.active : 1, ms.geo || null, ms.start || null, ms.end || null, ms.data || null, ms.time || null]
+                ).catch(() => {});
+              }
+            }
+          }
+        } catch (apiErr) {
+          console.log("[Search] Global DB API search fallback offline:", apiErr);
+        }
+      }
+
       const searchTerm = `%${text}%`;
       const fuzzyTerm = text.length > 1 ? `%${text.split("").join("%")}%` : searchTerm;
 

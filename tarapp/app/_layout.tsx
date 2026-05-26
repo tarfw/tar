@@ -4,7 +4,7 @@ import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-c
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useRef, useState } from "react";
 import { AppState, Alert } from "react-native";
-import { initDb, getUserDb, getTenantDb, getDbClient } from "../lib/db";
+import { initDb, getUserDb, getCollabDb, getDbClient } from "../lib/db";
 import { getEmbeddings } from "../lib/embeddings";
 import { checkAndSyncExistingMatters } from "../lib/vectorStore";
 
@@ -47,7 +47,7 @@ export default function RootLayout() {
         reminderInterval = setInterval(async () => {
           try {
             const uDb = getUserDb();
-            const tDb = getTenantDb();
+            const tDb = getCollabDb();
             const nowStr = new Date().toISOString();
             
             const findRemindersQuery = `

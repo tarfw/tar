@@ -132,7 +132,7 @@ export default function SpaceScreen() {
       }
 
       // Sync both databases to Turso in the background (local-first, instant UI transition)
-      db.push().catch(e => console.error("Background tenant sync failed:", e));
+      db.push().catch(e => console.error("Background collab sync failed:", e));
       globalDb.push().catch(e => console.error("Background global sync failed:", e));
 
       setCart({});

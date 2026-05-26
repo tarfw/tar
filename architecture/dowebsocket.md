@@ -7,7 +7,7 @@ Workers act as our ultra-fast, serverless API layer deployed globally close to t
 
 * **Auth & Turso Token Bridge:** The React Native app authenticates with Firebase natively. It then passes the Firebase token to a Worker, which verifies it and mints a **scoped Turso JWT**. This allows the client to securely perform offline-first sync.
 * **AI Embedding Hooks:** When a new `matter` (product/service) is inserted, a Turso webhook triggers a Worker. The Worker calls an LLM to generate the vector embedding and instantly saves it to the `memory` table.
-* **Payment & Logistics Webhooks:** Workers act as the ingestion point for third-party webhooks (e.g., Stripe/UPI success, Dunzo delivery updates). The Worker validates the payload and writes the corresponding `motion` motion (e.g., `PAYMENT_SUCCESS`) into the correct tenant's Turso DB.
+* **Payment & Logistics Webhooks:** Workers act as the ingestion point for third-party webhooks (e.g., Stripe/UPI success, Dunzo delivery updates). The Worker validates the payload and writes the corresponding `motion` motion (e.g., `PAYMENT_SUCCESS`) into the correct collab group's Turso DB.
 
 ## 2. Durable Objects (Stateful Coordinators & Locks)
 Durable Objects (DO) guarantee strict, single-threaded execution for a specific ID globally. In a highly distributed database architecture like Turso, they prmotion race conditions.

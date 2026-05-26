@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_relation_type ON relation(type);
 
 
 -- ==========================================
--- TENANT / LOCAL DB (Write-heavy / Edge)
+-- COLLAB / LOCAL DB (Write-heavy / Edge)
 -- ==========================================
 
 -- 2. MASS
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS motion (
     UNIQUE(stream, seq)
 );
 
--- Tenant Indexes
+-- Collab Indexes
 CREATE INDEX IF NOT EXISTS idx_mass_matter ON mass(matter);
 CREATE INDEX IF NOT EXISTS idx_mass_geo ON mass(geo);
 CREATE INDEX IF NOT EXISTS idx_mass_scope_type ON mass(scope, type);

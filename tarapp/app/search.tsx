@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { getDbClient, getUserDb, getTenantDb, getGlobalDb } from "../lib/db";
+import { getDbClient, getUserDb, getCollabDb, getGlobalDb } from "../lib/db";
 import { upsertMatterVector, deleteMatterVector, searchMatterVectors } from "../lib/vectorStore";
 import { setActiveMassId } from "../lib/state";
 
@@ -84,7 +84,7 @@ export default function SearchScreen() {
     setLoading(true);
     try {
       const uDb = getUserDb();
-      const tDb = getTenantDb();
+      const tDb = getCollabDb();
       const gDb = getGlobalDb();
 
       const hasQuery = text.trim().length > 0;
@@ -239,7 +239,7 @@ export default function SearchScreen() {
     (async () => {
       try {
         const uDb = getUserDb();
-        const tDb = getTenantDb();
+        const tDb = getCollabDb();
         const gDb = getGlobalDb();
 
         const [uMatterTypes, tMatterTypes, gMatterTypes, uMassTypes, tMassTypes, gMassTypes] = await Promise.all([
@@ -379,7 +379,7 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
     try {
       const { type, data, editFields } = selectedItem;
       const originDb = data.originDb || "tenant";
-      const db = originDb === "user" ? getUserDb() : originDb === "global" ? getGlobalDb() : getTenantDb();
+      const db = originDb === "user" ? getUserDb() : originDb === "global" ? getGlobalDb() : getCollabDb();
 
       const changedFields: Record<string, string> = {};
       for (const [key, value] of Object.entries(editFields)) {
@@ -475,7 +475,7 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
         onPress: async () => {
           try {
             const originDb = item.originDb || "tenant";
-            const db = originDb === "user" ? getUserDb() : originDb === "global" ? getGlobalDb() : getTenantDb();
+            const db = originDb === "user" ? getUserDb() : originDb === "global" ? getGlobalDb() : getCollabDb();
             if (type === "mass") {
               await db.run("DELETE FROM mass WHERE id = ?", [item.id]);
             } else {

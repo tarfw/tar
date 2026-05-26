@@ -18,7 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { getDbClient, routeDbForEntity, getUserDb, getTenantDb, getGlobalDb } from "../lib/db";
+import { getDbClient, routeDbForEntity, getUserDb, getCollabDb, getGlobalDb } from "../lib/db";
 import { upsertMatterVector } from "../lib/vectorStore";
 
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
@@ -289,7 +289,7 @@ export default function MatterScreen() {
     (async () => {
       try {
         // Search across all three databases using search-fallthrough logic
-        let db = getTenantDb();
+        let db = getCollabDb();
         let rows: any[] = [];
         
         try {
@@ -303,11 +303,11 @@ export default function MatterScreen() {
         
         if (rows.length === 0) {
           try {
-            const tenantDb = getTenantDb();
-            const r = await tenantDb.all("SELECT * FROM matter WHERE id = ?", [editId]);
+            const collabDb = getCollabDb();
+            const r = await collabDb.all("SELECT * FROM matter WHERE id = ?", [editId]);
             if (r && r.length > 0) {
               rows = r;
-              db = tenantDb;
+              db = collabDb;
             }
           } catch (_) {}
         }

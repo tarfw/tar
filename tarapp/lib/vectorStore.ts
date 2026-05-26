@@ -1,4 +1,4 @@
-import { routeDbForEntity, getGlobalDb, getTenantDb, getUserDb } from "./db";
+import { routeDbForEntity, getGlobalDb, getCollabDb, getUserDb } from "./db";
 import { generateEmbedding } from "./embeddings";
 import * as SecureStore from "expo-secure-store";
 
@@ -131,7 +131,7 @@ export async function searchMatterVectors(
     const queryFloat32 = new Float32Array(queryVector);
 
     const gDb = getGlobalDb();
-    const tDb = getTenantDb();
+    const tDb = getCollabDb();
     const uDb = getUserDb();
 
     const [gRows, tRows, uRows] = await Promise.all([
@@ -170,7 +170,7 @@ export async function checkAndSyncExistingMatters() {
     if (!isSynced) {
       console.log("[VectorStore] Initial sync flag not found. Re-indexing all existing matters...");
       const gDb = getGlobalDb();
-      const tDb = getTenantDb();
+      const tDb = getCollabDb();
       const uDb = getUserDb();
 
       const [gMatters, tMatters, uMatters] = await Promise.all([

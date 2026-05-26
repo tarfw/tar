@@ -10,7 +10,7 @@ The database architecture is split into two distinct layers to maximize speed, e
 
 ### 1. The Remote-Only Layer (`matter`, `memory`)
 These massive datasets remain exclusively in the cloud. The client apps interact with them purely via APIs (Cloudflare Workers).
-*   **`matter` (Global Catalog):** Products, universal users, and tenant definitions. Queried when online to cache locally into `relation`.
+*   **`matter` (Global Catalog):** Products, universal users, and collab group definitions. Queried when online to cache locally into `relation`.
 *   **`memory` (AI Embeddings):** Heavy vector data for semantic search and AI agents.
 
 ### 2. The Local-First Replicas (`motion`, `mass`, `relation`)

@@ -5,7 +5,7 @@ const TURSO_SYNC_URL = process.env.EXPO_PUBLIC_TURSO_SYNC_URL || "";
 const TURSO_AUTH_TOKEN = process.env.EXPO_PUBLIC_TURSO_AUTH_TOKEN || "";
 
 let globalDb: Database | null = null;
-let tenantDb: Database | null = null;
+let collabDb: Database | null = null;
 let userDb: Database | null = null;
 
 /**
@@ -30,25 +30,30 @@ export function getGlobalDb(): Database {
 }
 
 /**
- * Tenant DB (Shared business operations, stock, sales, shift schedules)
+ * Collab DB (Shared business/group operations, stock, sales, shift schedules)
  */
-export function getTenantDb(): Database {
-  if (!tenantDb) {
-    const url = process.env.EXPO_PUBLIC_TENANT_SYNC_URL || TURSO_SYNC_URL;
-    const authToken = process.env.EXPO_PUBLIC_TENANT_AUTH_TOKEN || TURSO_AUTH_TOKEN;
-    const config: any = { path: getDbPath("tenant.db") };
+export function getCollabDb(): Database {
+  if (!collabDb) {
+    const url = process.env.EXPO_PUBLIC_COLLAB_SYNC_URL || process.env.EXPO_PUBLIC_TENANT_SYNC_URL || TURSO_SYNC_URL;
+    const authToken = process.env.EXPO_PUBLIC_COLLAB_AUTH_TOKEN || process.env.EXPO_PUBLIC_TENANT_AUTH_TOKEN || TURSO_AUTH_TOKEN;
+    const config: any = { path: getDbPath("collab.db") };
     if (url) {
       config.url = url;
       config.authToken = authToken;
     }
-    tenantDb = new Database(config);
+    collabDb = new Database(config);
     if (!url) {
-      (tenantDb as any).push = async () => {};
-      (tenantDb as any).pull = async () => {};
+      (collabDb as any).push = async () => {};
+      (collabDb as any).pull = async () => {};
     }
   }
-  return tenantDb;
+  return collabDb;
 }
+
+/**
+ * Backward compatibility alias for getCollabDb
+ */
+export const getTenantDb = getCollabDb;
 
 /**
  * User Private DB (Personal tasks, private feed, notes, reminders)
@@ -74,7 +79,7 @@ export function getUserDb(): Database {
  * Default DB client for backward compatibility
  */
 export function getDbClient(): Database {
-  return getTenantDb();
+  return getCollabDb();
 }
 
 /**
@@ -94,8 +99,8 @@ export function routeDbForEntity(type: string | null, scope: string | null): Dat
     return getUserDb();
   }
 
-  // Default to Tenant DB for business activities (stock, sales, shift schedules, retail, delivery, dine-in)
-  return getTenantDb();
+  // Default to Collab DB for business/collaborative activities (stock, sales, shift schedules, retail, delivery, dine-in)
+  return getCollabDb();
 }
 
 /**
@@ -104,7 +109,7 @@ export function routeDbForEntity(type: string | null, scope: string | null): Dat
 export async function initDb() {
   const dbs = [
     { name: "Global", db: getGlobalDb(), url: process.env.EXPO_PUBLIC_GLOBAL_SYNC_URL || TURSO_SYNC_URL },
-    { name: "Tenant", db: getTenantDb(), url: process.env.EXPO_PUBLIC_TENANT_SYNC_URL || TURSO_SYNC_URL },
+    { name: "Collab", db: getCollabDb(), url: process.env.EXPO_PUBLIC_COLLAB_SYNC_URL || process.env.EXPO_PUBLIC_TENANT_SYNC_URL || TURSO_SYNC_URL },
     { name: "User", db: getUserDb(), url: "" }
   ];
 

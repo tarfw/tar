@@ -14,7 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
-import { getUserDb, getTenantDb } from "../lib/db";
+import { getUserDb, getCollabDb } from "../lib/db";
 import { setActiveMassId } from "../lib/state";
 
 const groupOrderItems = (items: any[]) => {
@@ -92,7 +92,7 @@ export default function HomePage() {
       async function loadData() {
         try {
           const uDb = getUserDb();
-          const tDb = getTenantDb();
+          const tDb = getCollabDb();
           
           const nowStr = new Date().toISOString();
           
@@ -252,7 +252,7 @@ export default function HomePage() {
   const handleMarkDone = async (item: any) => {
     try {
       const uDb = getUserDb();
-      const tDb = getTenantDb();
+      const tDb = getCollabDb();
       const db = item.originDb === 'user' ? uDb : tDb;
       
       if (item.isMass) {

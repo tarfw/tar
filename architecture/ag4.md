@@ -189,16 +189,16 @@ You **never need a separate reminders table or notes table**. The `type` field o
 One query, one feed, everything unified.
 
 1 Global DB → matter + memory (public)
-1 DB per business → their mass + motion + relation
+1 DB per collab group → their mass + motion + relation
 1 DB per user → their mass + motion
 
-Tenant DB = shared private space (for a team / business)
+Collab DB = shared private space (for a team / business / group)
 User DB = personal private space (for one person)
 
 "Just their phone" — what it means
 With Turso embedded replica, data syncs to devices you authorise.
 
-Tenant DB → synced to multiple devices (all staff phones, POS terminals)
+Collab DB → synced to multiple devices (all staff phones, POS terminals)
 User DB → synced to only 1 device (that person's phone)
 
 an example for restaurant
@@ -231,7 +231,7 @@ _Everyone (customers, AI agents, other apps) can search this._
 
 ---
 
-## DB 2 — Tenant DB: Adyar Biryani House
+## DB 2 — Collab DB: Adyar Biryani House
 
 _One database. Only the 10 staff access it. Describes what the business HAS and DOES._
 
@@ -273,7 +273,7 @@ _One database. Only the 10 staff access it. Describes what the business HAS and 
 | mat_kum | mat_bry | COOKS        | 1.0    |
 | mat_rav | mat_abh | DELIVERS_FOR | 1.0    |
 
-_All 10 staff devices sync to this one Tenant DB. Rajesh sees everything. Kumar sees only kitchen motions. Ravi sees only delivery motions — access filtered by the app, same DB._
+_All 10 staff devices sync to this one Collab DB. Rajesh sees everything. Kumar sees only kitchen motions. Ravi sees only delivery motions — access filtered by the app, same DB._
 
 ---
 
@@ -312,11 +312,11 @@ _Each person's private life — tasks, notes, reminders, personal feed._
 
 ```
 Global DB    →  customers, AI agents, any app  (read only, no secrets)
-Tenant DB    →  all 10 staff                   (business secrets, shared)
+Collab DB    →  all 10 staff                   (business secrets, shared)
 User DB      →  only that one person           (personal, fully private)
 ```
 
 The TAR app on Ravi's phone talks to **two DBs at once**:
 
-- Tenant DB → to receive delivery orders
+- Collab DB → to receive delivery orders
 - His own User DB → for his personal tasks and reminders

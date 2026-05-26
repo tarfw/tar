@@ -395,7 +395,7 @@ const prompt = `Items: ${JSON.stringify(relevantItems)}\nParse: "2 idli"`;
 ## Key Rules
 
 1. **Personal DB = device-only SQLite.** No Turso, no sync cost.
-2. **`syncInterval: 300`** — sync tenant DB every 5 min, not on every write.
+2. **`syncInterval: 300`** — sync collab DB every 5 min, not on every write.
 3. **Batch all writes** — one transaction = one 4KB frame, not one per row.
 4. **Cloudflare KV** — cache global matter lookups, avoid repeated Turso reads.
 5. **Default to Groq 8B** — upgrade model only when complexity demands it.
@@ -408,19 +408,19 @@ const prompt = `Items: ${JSON.stringify(relevantItems)}\nParse: "2 idli"`;
 | Component | Strategy | Standard User (₹) | **Power User — Top TN Restaurant (₹)** |
 |---|---|---|---|
 | Personal DB (tasks, notes, reminders) | Device-only SQLite / R2 nightly backup | ₹0 | ₹0.02 (R2 backup of larger DB) |
-| Tenant DB sync (business data) | Turso, 5-min interval, batched writes | ~₹1 | **~₹8** (300MB/mo sync) |
+| Collab DB sync (shared data) | Turso, 5-min interval, batched writes | ~₹1 | **~₹8** (300MB/mo sync) |
 | Global catalog search | Cloudflare KV + Turso | ~₹0.05 | ~₹0.10 (more catalog queries) |
 | Cloudflare Workers (API layer) | $0.30/1M req + $0.02/1M CPU ms | ~₹0.05 | **~₹9** (150K req/mo) |
 | Durable Objects (real-time KDS) | `ctx.acceptWebSocket()` hibernation — billed per wake-up only | ~₹0.55 | **~₹70** (960 GB-s active, not 576K) |
 | AI (tokens, Groq 8B + efficiency rules) | Funnel: regex→cache→8B→70B · batched analytics · menu-aware prompts | ~₹3 avg | **~₹10** (255K tokens after optimisation, vs 8.3M unoptimised) |
-| **Total actual cost (typical)** | | **~₹5/user** | **~₹98/tenant** |
-| **Total actual cost (unoptimised AI)** | | **~₹62/user** | **~₹337/tenant** |
-| **Recommended charge** | | **₹100/user** | **₹500–₹700/tenant/mo** |
+| **Total actual cost (typical)** | | **~₹5/user** | **~₹98/collab group** |
+| **Total actual cost (unoptimised AI)** | | **~₹62/user** | **~₹337/collab group** |
+| **Recommended charge** | | **₹100/user** | **₹500–₹700/collab group/mo** |
 | **Net margin (optimised, typical)** | | **~₹95 (95%)** | **~₹400–₹600 (80%)** |
 
 > **Pricing tiers implied:**
 > - 🟢 **Starter** ₹100/user/mo — individuals, freelancers, small kiosks
-> - 🟡 **Business** ₹500/tenant/mo — mid-size restaurants (100–200 orders/day)
-> - 🔴 **Scale / TN Power** ₹500–₹700/tenant/mo — top-volume restaurants (500+ orders/day), full KDS + AI analytics
+> - 🟡 **Business** ₹500/collab group/mo — mid-size restaurants (100–200 orders/day)
+> - 🔴 **Scale / TN Power** ₹500–₹700/collab group/mo — top-volume restaurants (500+ orders/day), full KDS + AI analytics
 >
 > 💡 **Key insight:** With all 8 token-efficiency techniques applied, a 500-orders/day TN restaurant costs **~₹98/month** to serve — not ₹337. The order-parsing cost drops 98% via regex funnel + menu-aware prompts. Analytics drops 98% via nightly batching. Margin becomes 80%+ even at power-user scale.

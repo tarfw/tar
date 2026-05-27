@@ -730,14 +730,7 @@ export default function HomePage() {
             </TouchableOpacity>
 
             <View style={styles.rightGroup}>
-              <TouchableOpacity 
-                style={styles.circleBtn}
-                onPress={() => router.push('/joins' as any)}
-              >
-                <Ionicons name="git-merge" size={22} color="#1a1a1a" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.circleBtn, { marginLeft: 12 }]}>
+              <TouchableOpacity style={styles.circleBtn}>
                 <Ionicons name="mic-outline" size={22} color="#1a1a1a" />
               </TouchableOpacity>
               
@@ -747,6 +740,13 @@ export default function HomePage() {
                 onPress={() => router.push('/tarai')}
               >
                 <Text style={styles.aiText}>AI</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.circleBtn, { marginLeft: 12 }]} 
+                onPress={() => router.push('/aichat')}
+              >
+                <Ionicons name="chatbubbles-outline" size={22} color="#1a1a1a" />
               </TouchableOpacity>
 
               <TouchableOpacity 

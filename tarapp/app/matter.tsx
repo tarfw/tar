@@ -464,7 +464,7 @@ export default function MatterScreen() {
       Alert.alert("Success", "Catalog product published successfully to Global database!");
       router.back();
     } catch (e: any) {
-      console.error("[Publish] Failed to publish:", e);
+      console.error("[Publish] Failed to publish to remote Global DB:", e);
       Alert.alert("Publish Failed", e.message || "Failed to publish product.");
     } finally {
       setPublishing(false);
@@ -681,7 +681,7 @@ export default function MatterScreen() {
       router.back();
       
       try {
-        if (db.isSync) {
+        if (db === getCollabDb()) {
           db.push().catch((err: any) => console.error("Background sync failed:", err));
         }
       } catch(e) {}

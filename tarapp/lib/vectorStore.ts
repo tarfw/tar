@@ -93,13 +93,16 @@ export async function upsertMatterVector(
     const blob = float32ArrayToBlob(vector);
     
     const db = routeDbForEntity(matter.type || null, matter.scope || null);
+    const dbName = db === getGlobalDb() ? "Global" : db === getUserDb() ? "User" : "Collab";
     await db.run("INSERT OR REPLACE INTO memory (matter, vector) VALUES (?, ?)", [id, blob as any]);
-    console.log(`[VectorStore] Indexed vector for matter ${id} in respective DB`);
+    console.log(`[VectorStore] Indexed vector for matter ${id} in Local ${dbName} DB`);
     
-    try {
-      await db.push();
-    } catch {
-      // Sync fail is acceptable
+    if (db === getCollabDb()) {
+      try {
+        await db.push();
+      } catch {
+        // Sync fail is acceptable
+      }
     }
   } catch (e) {
     console.error(`[VectorStore] Failed to upsert vector for matter ${id}:`, e);
@@ -109,13 +112,16 @@ export async function upsertMatterVector(
 export async function deleteMatterVector(id: string, type: string | null, scope: string | null) {
   try {
     const db = routeDbForEntity(type, scope);
+    const dbName = db === getGlobalDb() ? "Global" : db === getUserDb() ? "User" : "Collab";
     await db.run("DELETE FROM memory WHERE matter = ?", [id]);
-    console.log(`[VectorStore] Deleted vector for matter ${id}`);
+    console.log(`[VectorStore] Deleted vector for matter ${id} from Local ${dbName} DB`);
     
-    try {
-      await db.push();
-    } catch {
-      // Sync fail is acceptable
+    if (db === getCollabDb()) {
+      try {
+        await db.push();
+      } catch {
+        // Sync fail is acceptable
+      }
     }
   } catch (e) {
     console.error(`[VectorStore] Failed to delete vector for matter ${id}:`, e);

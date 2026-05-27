@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet,
   View,
@@ -7,10 +7,11 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  ScrollView
+  ScrollView,
+  Modal
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter, Stack } from "expo-router";
+import { useRouter, Stack, useFocusEffect } from "expo-router";
 import { ResourceFetcher, WHISPER_TINY_EN, SSDLITE_320_MOBILENET_V3_LARGE, CLIP_VIT_BASE_PATCH32_IMAGE } from "react-native-executorch";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
@@ -19,24 +20,66 @@ import * as Haptics from "expo-haptics";
 import { getUserDb, getCollabDb, setCustomCollabCredentials } from "../lib/db";
 import { uploadFileToS3 } from "../lib/s3";
 import * as FileSystemStore from "expo-file-system/legacy";
+import { signOutGoogle, getCurrentUser, UserProfile } from "../lib/auth";
+
+const LFM2_5_350M_QUANTIZED = {
+  modelSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/xnnpack/lfm2_5_350m_xnnpack_8w4da.pte",
+  tokenizerSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/tokenizer.json",
+  tokenizerConfigSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/tokenizer_config.json"
+};
 
 
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [backupFreq, setBackupFreq] = useState<"daily" | "weekly">("daily");
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [lastBackupTime, setLastBackupTime] = useState<string>("Never");
-  const [pricingPlan, setPricingPlan] = useState<string>("Paid");
+  const [pricingPlan, setPricingPlan] = useState<string>("Free");
+  const [tokens, setTokens] = useState<number>(0);
   const [groupCode, setGroupCode] = useState<string | null>(null);
   const [isProvisioning, setIsProvisioning] = useState(false);
+  const [showAddTokensDrawer, setShowAddTokensDrawer] = useState(false);
+
+  const handlePurchaseTokens = async () => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const addedTokens = 3000000;
+      const finalTokens = tokens + addedTokens;
+      
+      setTokens(finalTokens);
+      setPricingPlan("Paid");
+      setShowAddTokensDrawer(false);
+
+      await SecureStore.setItemAsync("user_tokens", finalTokens.toString());
+      await SecureStore.setItemAsync("user_pricing_plan", "Paid");
+
+      // Sync database
+      const collabDb = getCollabDb();
+      collabDb.push().catch(e => console.error("[Plan Sync] Push failed:", e));
+      collabDb.pull().catch(e => console.error("[Plan Sync] Pull failed:", e));
+
+      Alert.alert(
+        "Tokens Added",
+        `Successfully added ${addedTokens.toLocaleString()} tokens.\nYour collaborative database is now synced.`,
+        [{ text: "OK" }]
+      );
+    } catch (e) {
+      console.error(e);
+      Alert.alert("Error", "Could not complete the purchase.");
+    }
+  };
 
   const [whisperStatus, setWhisperStatus] = useState<"not_downloaded" | "downloading" | "ready">("not_downloaded");
   const [whisperProgress, setWhisperProgress] = useState(0);
 
   const [clipStatus, setClipStatus] = useState<"not_downloaded" | "downloading" | "ready">("not_downloaded");
   const [clipProgress, setClipProgress] = useState(0);
+
+  const [lfmStatus, setLfmStatus] = useState<"not_downloaded" | "downloading" | "ready">("not_downloaded");
+  const [lfmProgress, setLfmProgress] = useState(0);
 
   const getFilenameFromUri = (uri: string) => {
     let cleanUri = uri.replace(/^https?:\/\//, '');
@@ -64,6 +107,14 @@ export default function ProfileScreen() {
         const hasClip = files.some(f => f.endsWith(clipFilename));
         if (hasYolo && hasClip) {
           setClipStatus("ready");
+        }
+
+        const lfmFilename = getFilenameFromUri(LFM2_5_350M_QUANTIZED.modelSource);
+        const lfmTokenizerFilename = getFilenameFromUri(LFM2_5_350M_QUANTIZED.tokenizerSource);
+        const hasLfm = files.some(f => f.endsWith(lfmFilename));
+        const hasLfmTokenizer = files.some(f => f.endsWith(lfmTokenizerFilename));
+        if (hasLfm && hasLfmTokenizer) {
+          setLfmStatus("ready");
         }
       } catch (e) {
         console.error("Error checking model files:", e);
@@ -156,9 +207,54 @@ export default function ProfileScreen() {
     );
   };
 
-  const confirmDeleteModel = (modelType: "whisper" | "clip") => {
+  const handleLfmAction = async () => {
+    if (lfmStatus === "ready") return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    Alert.alert(
+      "Download AI Assistant Model",
+      "Do you want to download the Offline AI Assistant model (LFM 2.5 350M)? This file is ~160 MB.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Download", 
+          onPress: async () => {
+            try {
+              setLfmStatus("downloading");
+              setLfmProgress(0);
+
+              await ResourceFetcher.fetch(
+                (progress) => {
+                  setLfmProgress(Math.round(progress * 100));
+                },
+                LFM2_5_350M_QUANTIZED.modelSource,
+                LFM2_5_350M_QUANTIZED.tokenizerSource,
+                LFM2_5_350M_QUANTIZED.tokenizerConfigSource
+              );
+
+              setLfmStatus("ready");
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert("Success", "Offline AI Assistant model downloaded and ready.");
+            } catch (err) {
+              console.error("LFM download failed:", err);
+              setLfmStatus("not_downloaded");
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              Alert.alert("Error", "Failed to download model files.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const confirmDeleteModel = (modelType: "whisper" | "clip" | "lfm") => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const modelName = modelType === "whisper" ? "Offline Voice Dictation" : "Photo Product Matching";
+    const modelName = 
+      modelType === "whisper" 
+        ? "Offline Voice Dictation" 
+        : modelType === "clip" 
+          ? "Photo Product Matching" 
+          : "Offline AI Assistant";
 
     Alert.alert(
       "Remove Model",
@@ -177,12 +273,19 @@ export default function ProfileScreen() {
                   WHISPER_TINY_EN.decoderSource
                 );
                 setWhisperStatus("not_downloaded");
-              } else {
+              } else if (modelType === "clip") {
                 await ResourceFetcher.deleteResources(
                   SSDLITE_320_MOBILENET_V3_LARGE.modelSource,
                   CLIP_VIT_BASE_PATCH32_IMAGE.modelSource
                 );
                 setClipStatus("not_downloaded");
+              } else {
+                await ResourceFetcher.deleteResources(
+                  LFM2_5_350M_QUANTIZED.modelSource,
+                  LFM2_5_350M_QUANTIZED.tokenizerSource,
+                  LFM2_5_350M_QUANTIZED.tokenizerConfigSource
+                );
+                setLfmStatus("not_downloaded");
               }
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               Alert.alert("Removed", "Model file(s) deleted to free up space.");
@@ -198,38 +301,51 @@ export default function ProfileScreen() {
 
 
 
-   // Load preferences
-  useEffect(() => {
-    async function loadPreferences() {
-      try {
-        const storedFreq = await SecureStore.getItemAsync("private_db_backup_frequency");
-        if (storedFreq === "weekly" || storedFreq === "daily") {
-          setBackupFreq(storedFreq);
-        }
+  // Reload preferences and tokens when the screen gets focus
+  useFocusEffect(
+    useCallback(() => {
+      async function loadPreferences() {
+        try {
+          const user = await getCurrentUser();
+          setUserProfile(user);
 
-        const storedTime = await SecureStore.getItemAsync("private_db_last_backup_time");
-        if (storedTime) {
-          setLastBackupTime(storedTime);
-        }
+          const storedFreq = await SecureStore.getItemAsync("private_db_backup_frequency");
+          if (storedFreq === "weekly" || storedFreq === "daily") {
+            setBackupFreq(storedFreq);
+          }
 
-        const plan = await SecureStore.getItemAsync("user_pricing_plan");
-        if (plan) {
-          setPricingPlan(plan);
-        } else {
-          setPricingPlan("Paid");
-          await SecureStore.setItemAsync("user_pricing_plan", "Paid");
-        }
+          const storedTime = await SecureStore.getItemAsync("private_db_last_backup_time");
+          if (storedTime) {
+            setLastBackupTime(storedTime);
+          }
 
-        const code = await SecureStore.getItemAsync("collab_group_code");
-        if (code) {
-          setGroupCode(code);
+          const plan = await SecureStore.getItemAsync("user_pricing_plan");
+          if (plan) {
+            setPricingPlan(plan);
+          } else {
+            setPricingPlan("Free");
+            await SecureStore.setItemAsync("user_pricing_plan", "Free");
+          }
+
+          const storedTokens = await SecureStore.getItemAsync("user_tokens");
+          if (storedTokens !== null) {
+            setTokens(parseInt(storedTokens, 10));
+          } else {
+            setTokens(0);
+            await SecureStore.setItemAsync("user_tokens", "0");
+          }
+
+          const code = await SecureStore.getItemAsync("collab_group_code");
+          if (code) {
+            setGroupCode(code);
+          }
+        } catch (e) {
+          console.error("Failed to load secure settings:", e);
         }
-      } catch (e) {
-        console.error("Failed to load secure settings:", e);
       }
-    }
-    loadPreferences();
-  }, []);
+      loadPreferences();
+    }, [])
+  );
 
   const toggleBackupFreq = async () => {
     try {
@@ -239,26 +355,6 @@ export default function ProfileScreen() {
       await SecureStore.setItemAsync("private_db_backup_frequency", newFreq);
     } catch (e) {
       console.error(e);
-    }
-  };
-
-  const selectPricingPlan = async (plan: string) => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setPricingPlan(plan);
-      await SecureStore.setItemAsync("user_pricing_plan", plan);
-      
-      if (plan === "Free") {
-        Alert.alert("Pricing Plan Updated", "You are now on the Free Plan. Real-time collaboration sync is disabled.");
-      } else {
-        Alert.alert("Pricing Plan Updated", `You are now on the ${plan} Plan. Real-time collaboration sync is active.`);
-        // Re-sync Collab db
-        const collabDb = getCollabDb();
-        collabDb.push().catch(e => console.error("[Plan Sync] Push failed:", e));
-        collabDb.pull().catch(e => console.error("[Plan Sync] Pull failed:", e));
-      }
-    } catch (e) {
-      console.error("Failed to update pricing plan:", e);
     }
   };
 
@@ -437,8 +533,13 @@ export default function ProfileScreen() {
         { 
           text: "Sign Out", 
           style: "destructive",
-          onPress: () => {
+          onPress: async () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            try {
+              await signOutGoogle();
+            } catch (err) {
+              console.error("Error signing out:", err);
+            }
             router.replace("/");
           }
         }
@@ -452,46 +553,35 @@ export default function ProfileScreen() {
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
         
-        {/* User Card - Tapping acts as a back gesture */}
-        <TouchableOpacity 
-          activeOpacity={0.9} 
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.back();
-          }}
-          style={styles.profileHeader}
-        >
-          <Text style={styles.profileName}>prabha</Text>
-          <Text style={styles.profileUsername}>@prabha</Text>
-          <Text style={styles.tokensValue}>1,000,000 Tokens</Text>
-        </TouchableOpacity>
+        {/* User Card */}
+        <View style={styles.profileHeader}>
+          <TouchableOpacity 
+            activeOpacity={0.8} 
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+          >
+            <Text style={styles.profileName}>{userProfile?.name || "Guest User"}</Text>
+            <Text style={styles.profileUsername}>{userProfile?.email || "@guest"}</Text>
+          </TouchableOpacity>
+          <Text style={styles.tokensValue}>
+            {tokens.toLocaleString()} Tokens
+          </Text>
+          <TouchableOpacity 
+            activeOpacity={0.7} 
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowAddTokensDrawer(true);
+            }}
+          >
+            <Text style={styles.manageTokensText}>Add Tokens →</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Settings List */}
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <View style={styles.settingsList}>
-            
-            {/* PRICING PLAN SECTION */}
-            <View style={styles.sectionHeaderContainer}>
-              <Text style={styles.sectionHeader}>Pricing Tier</Text>
-            </View>
-            <View style={styles.planSelectorRow}>
-              {(["Free", "Paid", "Free Community"]).map((plan) => {
-                const active = pricingPlan === plan;
-                return (
-                  <TouchableOpacity
-                    key={plan}
-                    onPress={() => selectPricingPlan(plan)}
-                    style={[styles.planButton, active && styles.activePlanButton]}
-                  >
-                    <Text style={[styles.planButtonText, active && styles.activePlanButtonText]}>
-                      {plan}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <View style={styles.separator} />
 
             {/* COLLABORATION GROUP SECTION */}
             <View style={styles.sectionHeaderContainer}>
@@ -626,6 +716,36 @@ export default function ProfileScreen() {
 
             <View style={styles.separator} />
 
+            {/* Offline AI Assistant Downloader */}
+            <TouchableOpacity 
+              style={styles.row} 
+              onPress={handleLfmAction} 
+              disabled={lfmStatus === "downloading"}
+              activeOpacity={0.7}
+            >
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={styles.rowLabel}>Offline AI Assistant</Text>
+                <Text style={styles.rowSublabel}>
+                  {lfmStatus === "ready" 
+                    ? "Model is downloaded and ready (160 MB)" 
+                    : lfmStatus === "downloading" 
+                      ? `Downloading model... ${lfmProgress}%` 
+                      : "Tap to download offline AI Assistant (~160 MB)"}
+                </Text>
+              </View>
+              {lfmStatus === "downloading" ? (
+                <ActivityIndicator size="small" color="#000000" />
+              ) : lfmStatus === "ready" ? (
+                <TouchableOpacity onPress={() => confirmDeleteModel("lfm")}>
+                  <Text style={[styles.rowActionText, { color: "#ef4444" }]}>Remove</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.rowActionText}>Download</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.separator} />
+
             {/* Sign Out */}
             <TouchableOpacity style={styles.row} onPress={handleSignOut} activeOpacity={0.7}>
               <Text style={[styles.rowLabel, { color: "#ef4444" }]}>Sign Out</Text>
@@ -635,6 +755,45 @@ export default function ProfileScreen() {
         </ScrollView>
 
       </SafeAreaView>
+
+      {/* Add Tokens Drawer */}
+      <Modal
+        visible={showAddTokensDrawer}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowAddTokensDrawer(false)}
+      >
+        <TouchableOpacity 
+          style={styles.drawerBackdrop} 
+          activeOpacity={1} 
+          onPress={() => setShowAddTokensDrawer(false)}
+        >
+          <View style={[styles.drawerContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 16 : 24 }]}>
+            <TouchableOpacity activeOpacity={1} style={styles.drawerContent}>
+              <Text style={styles.drawerTitle}>Add Tokens</Text>
+              <Text style={styles.drawerSubtitle}>
+                Get 3,000,000 tokens for ₹500 to activate team collaboration, real-time database sync, and AI features.
+              </Text>
+
+              <TouchableOpacity 
+                style={styles.drawerPurchaseBtn} 
+                onPress={handlePurchaseTokens}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.drawerPurchaseBtnText}>Add 3M Tokens (₹500)</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.drawerCancelBtn} 
+                onPress={() => setShowAddTokensDrawer(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.drawerCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -715,31 +874,11 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
-  planSelectorRow: {
-    flexDirection: "row",
-    paddingVertical: 12,
-  },
-  planButton: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: "center",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    marginHorizontal: 4,
-    backgroundColor: "#fff",
-  },
-  activePlanButton: {
-    backgroundColor: "#1a1a1a",
-    borderColor: "#1a1a1a",
-  },
-  planButtonText: {
-    fontSize: 13,
+  manageTokensText: {
+    fontSize: 14,
     fontWeight: "700",
-    color: "#475569",
-  },
-  activePlanButtonText: {
-    color: "#fff",
+    color: "#0f172a",
+    marginTop: 8,
   },
   groupContainer: {
     flexDirection: "row",
@@ -787,5 +926,61 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#fff",
+  },
+  drawerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  drawerContainer: {
+    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+  },
+  drawerContent: {
+    alignItems: "center",
+    width: "100%",
+  },
+  drawerTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0f172a",
+    marginBottom: 10,
+  },
+  drawerSubtitle: {
+    fontSize: 14,
+    color: "#64748b",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  drawerPurchaseBtn: {
+    width: "100%",
+    backgroundColor: "#0f172a",
+    paddingVertical: 16,
+    borderRadius: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  drawerPurchaseBtnText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  drawerCancelBtn: {
+    width: "100%",
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  drawerCancelBtnText: {
+    color: "#64748b",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

@@ -113,12 +113,13 @@ export default function RootLayout() {
     // AppState Listener: Sync immediately when user returns to app
     const subscription = AppState.addEventListener("change", async (nextAppState) => {
       if (appState.current.match(/inactive|background/) && nextAppState === "active") {
-        console.log("App came to foreground, pulling from remote...");
         try {
+          console.log("[DB:Sync:Collab] Foreground pull starting");
           const db = getDbClient();
           await db.pull();
+          console.log("[DB:Sync:Collab] Foreground pull completed");
         } catch (e) {
-          console.error("Foreground pull failed:", e);
+          console.error("[DB:Sync:Collab] Foreground pull failed:", e);
         }
       }
       appState.current = nextAppState;

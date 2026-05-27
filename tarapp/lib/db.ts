@@ -122,35 +122,45 @@ export function routeDbForEntity(type: string | null, scope: string | null): Dat
  * Initialize all three databases with the 5-table schema
  */
 export async function initDb() {
+  // Load custom collab credentials from secure storage if present
+  try {
+    const savedUrl = await SecureStore.getItemAsync("collab_sync_url");
+    const savedToken = await SecureStore.getItemAsync("collab_sync_token");
+    if (savedUrl && savedToken) {
+      customCollabUrl = savedUrl;
+      customCollabToken = savedToken;
+    }
+  } catch (e) {
+    console.error("[DB:Local] Failed to load custom credentials:", e);
+  }
+
   const dbs = [
     { name: "Global", db: getGlobalDb(), url: "" },
-    { name: "Collab", db: getCollabDb(), url: process.env.EXPO_PUBLIC_COLLAB_SYNC_URL || process.env.EXPO_PUBLIC_TENANT_SYNC_URL || TURSO_SYNC_URL },
+    { name: "Collab", db: getCollabDb(), url: customCollabUrl || process.env.EXPO_PUBLIC_COLLAB_SYNC_URL || process.env.EXPO_PUBLIC_TENANT_SYNC_URL || TURSO_SYNC_URL },
     { name: "User", db: getUserDb(), url: "" }
   ];
 
   for (const item of dbs) {
     try {
       await item.db.connect();
-      console.log(`[DB] Connected to ${item.name} DB`);
-
       for (const sql of SCHEMA_STATEMENTS) {
         await item.db.exec(sql);
       }
-      console.log(`[DB] Local database verified for ${item.name}`);
+      console.log(`[DB:Local:${item.name}] Connected & Verified`);
 
       if (item.url) {
         const syncEnabled = item.name !== "Collab" || await isCollabSyncEnabled();
         if (syncEnabled) {
-          console.log(`[DB] Syncing ${item.name} DB...`);
+          console.log(`[DB:Sync:${item.name}] Starting (${item.url})`);
           await item.db.push();
           await item.db.pull();
-          console.log(`[DB] Sync completed for ${item.name}`);
+          console.log(`[DB:Sync:${item.name}] Completed`);
         } else {
-          console.log(`[DB] Sync skipped for ${item.name} (Sync disabled on Free Plan)`);
+          console.log(`[DB:Sync:${item.name}] Skipped (Free Plan)`);
         }
       }
     } catch (e) {
-      console.error(`[DB] Failed to initialize ${item.name} DB:`, e);
+      console.error(`[DB:Local:${item.name}] Initialization failed:`, e);
       throw e;
     }
   }
@@ -159,7 +169,7 @@ export async function initDb() {
   try {
     await seedMockDataForJoins(getUserDb(), getCollabDb());
   } catch (err) {
-    console.error("[DB] Mock seeding failed:", err);
+    console.error("[DB:Local] Mock seeding failed:", err);
   }
 }
 
@@ -167,11 +177,11 @@ export async function seedMockDataForJoins(userDb: Database, collabDb: Database)
   try {
     const userMatters = await userDb.all("SELECT COUNT(*) as count FROM matter");
     if (userMatters && userMatters[0] && (userMatters[0] as any).count > 0) {
-      console.log("[DB] Seeding skipped: database already populated");
+      console.log("[DB:Local] Seeding skipped (already populated)");
       return;
     }
 
-    console.log("[DB] Seeding mock data for Cross-DB Joins...");
+    console.log("[DB:Local] Seeding mock data...");
     const nowStr = new Date().toISOString();
 
     // --- USE CASE 1: Restaurant / Delivery Routing ---

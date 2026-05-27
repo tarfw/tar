@@ -1,18 +1,56 @@
-import React from "react";
-import { StyleSheet, View, Text, TouchableOpacity } from "react-native";
+import React, { useEffect, useState } from "react";
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import { signInWithGoogle, getCurrentUser } from "../lib/auth";
 
 export default function LoginScreen() {
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [signingIn, setSigningIn] = useState(false);
 
-  const handleGoogleLogin = () => {
-    // Navigate to home after pseudo-login
-    router.push("/home");
+  useEffect(() => {
+    // Check if user is already signed in on startup
+    async function checkSession() {
+      try {
+        const user = await getCurrentUser();
+        if (user) {
+          router.replace("/home");
+        }
+      } catch (e) {
+        console.error("Session restoration failed:", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    checkSession();
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    setSigningIn(true);
+    try {
+      const user = await signInWithGoogle();
+      if (user) {
+        router.replace("/home");
+      }
+    } catch (error: any) {
+      console.error(error);
+      Alert.alert("Authentication Failed", error.message || "Could not sign in with Google.");
+    } finally {
+      setSigningIn(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color="#333" />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -27,12 +65,19 @@ export default function LoginScreen() {
         {/* Login Button Area */}
         <Animated.View entering={FadeInDown.delay(500).duration(800)} style={styles.buttonContainer}>
           <TouchableOpacity 
-            style={styles.googleButton} 
+            style={[styles.googleButton, signingIn && { opacity: 0.7 }]} 
             onPress={handleGoogleLogin}
+            disabled={signingIn}
             activeOpacity={0.8}
           >
-            <Ionicons name="logo-google" size={24} color="#333" style={styles.googleIcon} />
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
+            {signingIn ? (
+              <ActivityIndicator size="small" color="#333" />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={24} color="#333" style={styles.googleIcon} />
+                <Text style={styles.googleButtonText}>Continue with Google</Text>
+              </>
+            )}
           </TouchableOpacity>
         </Animated.View>
       </View>
@@ -44,6 +89,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#ffffff",
+  },
+  center: {
+    justifyContent: "center",
+    alignItems: "center",
   },
   inner: {
     flex: 1,

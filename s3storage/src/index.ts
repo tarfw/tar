@@ -195,8 +195,8 @@ export default {
           });
         }
 
-        const tursoUrl = env.TURSO_URL || "https://tarfw-tarframework.aws-eu-west-1.turso.io";
-        const tursoToken = env.TURSO_AUTH_TOKEN || "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzg0MTg5MzAsImlkIjoiMDE5ZTEyMDUtNWUwMS03M2U1LThiZjMtODRjZTUzOWUzZGQ0IiwicmlkIjoiYjQwYzgwYTctNGRlZS00YTE2LTlmM2UtNDAzMmZhYzA3MWU2In0.nuS2C8rqr0WTgWX1DQyysuTbbP0wH_jVOoXDv-zPrXAZ-dKzbMJLmsp7plPjhNFWk57Nhn6ykSuW1KHNFej-DQ";
+        const tursoUrl = env.TURSO_URL || "libsql://global-tarframework.aws-eu-west-1.turso.io";
+        const tursoToken = env.TURSO_AUTH_TOKEN || "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3ODg4MzcsImlkIjoiMDE5ZTYzYWUtNWIwMS03ZGU2LWI5Y2UtYmRhNDViMzE0ZWY5IiwicmlkIjoiZmYxMzI2OGEtYzAwMy00OGY2LTg4MTItMjBkNGIyNzJjMTc4In0.psIsvB51C4HKwdwTNOEICDiFo2nAREWRscIqlt8BaPxSPb8nKxmTCY3938PeUa273PWORT1UBMBPmhxn3UdYAQ";
 
         const statements: any[] = [];
         

@@ -113,7 +113,7 @@ export default function SearchScreen() {
             }
           }
         } catch (apiErr) {
-          console.log("[Search] Global DB API search fallback offline:", apiErr);
+          console.log("[Search] Global remote DB API search failed, falling back to local cached global DB queries:", apiErr);
         }
       }
 
@@ -485,7 +485,9 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
 
       if (query.trim()) performSearch(query);
 
-      db.push().catch((err) => console.error("Background sync failed:", err));
+      if (originDb === "tenant") {
+        db.push().catch((err) => console.error("Background sync failed:", err));
+      }
     } catch (error) {
       console.error("Save failed:", error);
       Alert.alert("Error", "Failed to save changes.");
@@ -530,7 +532,9 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
                 [motionId, item.id, seq, 100, "COMPLETED", null, JSON.stringify({ action: "DELETE", type })]
               );
             }
-            db.push().catch((err) => console.error("Background sync failed:", err));
+            if (originDb === "tenant") {
+              db.push().catch((err) => console.error("Background sync failed:", err));
+            }
             if (query.trim()) performSearch(query);
           } catch (error) {
             console.error("Delete failed:", error);
@@ -834,7 +838,7 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
               {loading && <ActivityIndicator style={styles.loader} color="#6366f1" />}
 
               {!loading && query.length > 0 && results.matter.length === 0 && results.mass.length === 0 && results.motion.length === 0 && (
-                <Text style={styles.emptyText}>No results found for "{query}"</Text>
+                <Text style={styles.emptyText}>No results found for &quot;{query}&quot;</Text>
               )}
 
               {renderSection("Entities", results.matter, "matter")}

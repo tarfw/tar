@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { 
   StyleSheet, 
   View, 
@@ -12,7 +12,7 @@ import {
   ActivityIndicator
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
@@ -20,7 +20,7 @@ import { getDbClient } from "../lib/db";
 import { upsertMatterVector } from "../lib/vectorStore";
 import { activeMassId } from "../lib/state";
 
-import { ResourceFetcher, WHISPER_TINY_EN, useSpeechToText } from "react-native-executorch";
+import { ResourceFetcher, WHISPER_TINY, useSpeechToText } from "react-native-executorch";
 import { AudioRecorder, AudioManager } from "react-native-audio-api";
 
 const getFilenameFromUri = (uri: string) => {
@@ -32,8 +32,8 @@ const getFilenameFromUri = (uri: string) => {
 const checkWhisperDownloaded = async () => {
   try {
     const files = await ResourceFetcher.listDownloadedFiles();
-    const encoderFilename = getFilenameFromUri(WHISPER_TINY_EN.encoderSource);
-    const decoderFilename = getFilenameFromUri(WHISPER_TINY_EN.decoderSource);
+    const encoderFilename = getFilenameFromUri(WHISPER_TINY.encoderSource);
+    const decoderFilename = getFilenameFromUri(WHISPER_TINY.decoderSource);
     return files.some(f => f.endsWith(encoderFilename)) && files.some(f => f.endsWith(decoderFilename));
   } catch {
     return false;
@@ -62,6 +62,15 @@ export default function TarAiScreen() {
   const [audioLevel, setAudioLevel] = useState(0);
   const [sttError, setSttError] = useState<string | null>(null);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
+  const audioChunksRef = useRef<Float32Array[]>([]);
+
+  const [isFocused, setIsFocused] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setIsFocused(true);
+      return () => setIsFocused(false);
+    }, [])
+  );
 
   useEffect(() => {
     async function checkStatus() {
@@ -74,9 +83,14 @@ export default function TarAiScreen() {
   }, []);
 
   const stt = useSpeechToText({
-    model: WHISPER_TINY_EN,
-    preventLoad: !shouldLoadWhisper,
+    model: WHISPER_TINY,
+    preventLoad: !shouldLoadWhisper || !isFocused,
   });
+
+  const sttRef = useRef(stt);
+  useEffect(() => {
+    sttRef.current = stt;
+  }, [stt]);
 
   const startRecording = async () => {
     try {
@@ -86,7 +100,7 @@ export default function TarAiScreen() {
         return;
       }
 
-      if (!stt.isReady) {
+      if (!sttRef.current.isReady) {
         Alert.alert("Loading Model", "Voice model is still loading. Please wait a moment.");
         return;
       }
@@ -94,39 +108,31 @@ export default function TarAiScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setIsRecording(true);
       setSttError(null);
+      audioChunksRef.current = [];
 
       if (!audioRecorderRef.current) {
         audioRecorderRef.current = new AudioRecorder();
-
-        audioRecorderRef.current.onAudioReady(
-          {
-            sampleRate: 16000,
-            bufferLength: 1600,
-            channelCount: 1,
-          },
-          (event: any) => {
-            const buffer = event.buffer.getChannelData(0);
-            stt.streamInsert(buffer);
-
-            // Calculate volume level (RMS)
-            let sum = 0;
-            for (let i = 0; i < buffer.length; i++) {
-              sum += buffer[i] * buffer[i];
-            }
-            const rms = Math.sqrt(sum / buffer.length);
-            setAudioLevel(Math.min(1, rms * 10));
-          }
-        );
       }
 
-      stt.stream().then((finalTranscription) => {
-        if (finalTranscription) {
-          setInputText((prev) => prev + (prev ? " " : "") + finalTranscription);
+      audioRecorderRef.current.onAudioReady(
+        {
+          sampleRate: 16000,
+          bufferLength: 1600,
+          channelCount: 1,
+        },
+        (event: any) => {
+          const buffer = event.buffer.getChannelData(0);
+          audioChunksRef.current.push(new Float32Array(buffer));
+
+          // Calculate volume level (RMS)
+          let sum = 0;
+          for (let i = 0; i < buffer.length; i++) {
+            sum += buffer[i] * buffer[i];
+          }
+          const rms = Math.sqrt(sum / buffer.length);
+          setAudioLevel(Math.min(1, rms * 10));
         }
-      }).catch((err) => {
-        console.error("Transcription stream error:", err);
-        setSttError("Error transcribing audio.");
-      });
+      );
 
       audioRecorderRef.current.start();
     } catch (err) {
@@ -136,20 +142,51 @@ export default function TarAiScreen() {
     }
   };
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
     if (!isRecording) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
+    setIsRecording(false);
+    setAudioLevel(0);
+
     try {
       if (audioRecorderRef.current) {
         audioRecorderRef.current.stop();
+        audioRecorderRef.current.clearOnAudioReady();
       }
-      stt.streamStop();
+
+      const chunks = audioChunksRef.current;
+      if (chunks.length > 0) {
+        // Combine chunks into a single Float32Array
+        const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+        const combined = new Float32Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          combined.set(chunk, offset);
+          offset += chunk.length;
+        }
+
+        console.log(`[Whisper STT] Starting transcription on ${totalLength} samples...`);
+        const result = await sttRef.current.transcribe(combined, { language: 'en' });
+        if (result && result.trim()) {
+          const cleanText = result
+            .replace(/\[[^\]]*\]/g, "")
+            .replace(/\([^)]*\)/g, "")
+            .replace(/\[BLANK_AUDIO\]/gi, "")
+            .trim();
+          if (cleanText) {
+            console.log(`[Whisper STT] Transcription completed: "${cleanText}"`);
+            setInputText((prev) => prev + (prev ? " " : "") + cleanText);
+          } else {
+            console.log(`[Whisper STT] Transcription completed but contained only blank audio tokens.`);
+          }
+        } else {
+          console.log(`[Whisper STT] Transcription completed but output was empty.`);
+        }
+      }
     } catch (err) {
-      console.error("Failed to stop recording:", err);
-    } finally {
-      setIsRecording(false);
-      setAudioLevel(0);
+      console.error("Failed to stop recording or transcribe:", err);
+      setSttError("Error transcribing audio.");
     }
   };
 
@@ -177,7 +214,7 @@ export default function TarAiScreen() {
     }
 
     if (isRecording) {
-      stopRecording();
+      await stopRecording();
     } else {
       await startRecording();
     }
@@ -439,6 +476,16 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
                 </Text>
               </Text>
             </ScrollView>
+          </View>
+        )}
+
+        {/* Transcribing Loader */}
+        {stt.isGenerating && (
+          <View style={styles.transcriptionOverlay}>
+            <View style={styles.recordingIndicatorContainer}>
+              <ActivityIndicator size="small" color="#f59e0b" style={{ marginRight: 8 }} />
+              <Text style={[styles.recordingText, { color: '#f59e0b' }]}>Transcribing audio...</Text>
+            </View>
           </View>
         )}
 

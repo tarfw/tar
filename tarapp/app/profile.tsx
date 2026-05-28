@@ -8,11 +8,12 @@ import {
   Alert,
   Platform,
   ScrollView,
-  Modal
+  Modal,
+  Image
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, Stack, useFocusEffect } from "expo-router";
-import { ResourceFetcher, WHISPER_TINY_EN, SSDLITE_320_MOBILENET_V3_LARGE, CLIP_VIT_BASE_PATCH32_IMAGE } from "react-native-executorch";
+import { ResourceFetcher, SSDLITE_320_MOBILENET_V3_LARGE, CLIP_VIT_BASE_PATCH32_IMAGE } from "react-native-executorch";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
@@ -22,10 +23,55 @@ import { uploadFileToS3 } from "../lib/s3";
 import * as FileSystemStore from "expo-file-system/legacy";
 import { signOutGoogle, getCurrentUser, UserProfile } from "../lib/auth";
 
-const LFM2_5_350M_QUANTIZED = {
-  modelSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/xnnpack/lfm2_5_350m_xnnpack_8w4da.pte",
-  tokenizerSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/tokenizer.json",
-  tokenizerConfigSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/tokenizer_config.json"
+export const LFM_MODELS = {
+  LFM2_5_350M_QUANTIZED: {
+    id: "LFM2_5_350M_QUANTIZED",
+    name: "LFM 2.5 350M (Quantized)",
+    size: "454 MB",
+    modelSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/xnnpack/lfm2_5_350m_xnnpack_8w4da.pte",
+    tokenizerSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/tokenizer.json",
+    tokenizerConfigSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/tokenizer_config.json"
+  },
+  LFM2_5_350M_FP16: {
+    id: "LFM2_5_350M_FP16",
+    name: "LFM 2.5 350M (FP16)",
+    size: "845 MB",
+    modelSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/xnnpack/lfm2_5_350m_xnnpack_fp16.pte",
+    tokenizerSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/tokenizer.json",
+    tokenizerConfigSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/tokenizer_config.json"
+  },
+  LFM2_5_1_2B_INSTRUCT_QUANTIZED: {
+    id: "LFM2_5_1_2B_INSTRUCT_QUANTIZED",
+    name: "LFM 2.5 1.2B Instruct (Quantized)",
+    size: "796 MB",
+    modelSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm2.5-1.2B-instruct/resolve/v0.8.0/quantized/lfm2_5_1_2b_8da4w.pte",
+    tokenizerSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm2.5-1.2B-instruct/resolve/v0.8.0/tokenizer.json",
+    tokenizerConfigSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm2.5-1.2B-instruct/resolve/v0.8.0/tokenizer_config.json"
+  }
+};
+
+export const UTILITY_MODELS = {
+  SSDLITE_DETECTOR: {
+    id: "SSDLITE_DETECTOR",
+    name: "Object Detector (SSDLite MobileNetV3)",
+    size: "20 MB",
+    modelSource: SSDLITE_320_MOBILENET_V3_LARGE.modelSource,
+    description: "Locates candidate product objects in photos for matching."
+  },
+  YOLO26S_DETECTOR: {
+    id: "YOLO26S_DETECTOR",
+    name: "Object Detector (YOLO26 Small)",
+    size: "16 MB",
+    modelSource: "https://huggingface.co/software-mansion/react-native-executorch-yolo26/resolve/v0.7.0/yolo26s/xnnpack/yolo26s.pte",
+    description: "Real-time object detector model optimized with XNNPACK."
+  },
+  CLIP_MATCHER: {
+    id: "CLIP_MATCHER",
+    name: "Photo Feature Matcher (CLIP ViT-B/32)",
+    size: "87 MB",
+    modelSource: CLIP_VIT_BASE_PATCH32_IMAGE.modelSource,
+    description: "Extracts visual feature embeddings to match products."
+  }
 };
 
 
@@ -72,14 +118,10 @@ export default function ProfileScreen() {
     }
   };
 
-  const [whisperStatus, setWhisperStatus] = useState<"not_downloaded" | "downloading" | "ready">("not_downloaded");
-  const [whisperProgress, setWhisperProgress] = useState(0);
-
-  const [clipStatus, setClipStatus] = useState<"not_downloaded" | "downloading" | "ready">("not_downloaded");
-  const [clipProgress, setClipProgress] = useState(0);
-
-  const [lfmStatus, setLfmStatus] = useState<"not_downloaded" | "downloading" | "ready">("not_downloaded");
-  const [lfmProgress, setLfmProgress] = useState(0);
+  const [activeModelId, setActiveModelId] = useState<string>("LFM2_5_350M_FP16");
+  const [downloadedModels, setDownloadedModels] = useState<Record<string, boolean>>({});
+  const [downloadingModelId, setDownloadingModelId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const getFilenameFromUri = (uri: string) => {
     let cleanUri = uri.replace(/^https?:\/\//, '');
@@ -88,116 +130,89 @@ export default function ProfileScreen() {
   };
 
   // Check downloaded model files status
-  useEffect(() => {
-    async function checkFiles() {
-      try {
-        const files = await ResourceFetcher.listDownloadedFiles();
-        const encoderFilename = getFilenameFromUri(WHISPER_TINY_EN.encoderSource);
-        const decoderFilename = getFilenameFromUri(WHISPER_TINY_EN.decoderSource);
-        const hasEncoder = files.some(f => f.endsWith(encoderFilename));
-        const hasDecoder = files.some(f => f.endsWith(decoderFilename));
+  const checkFilesStatus = useCallback(async () => {
+    try {
+      const files = await ResourceFetcher.listDownloadedFiles() as string[];
 
-        if (hasEncoder && hasDecoder) {
-          setWhisperStatus("ready");
-        }
-        
-        const yoloFilename = getFilenameFromUri(SSDLITE_320_MOBILENET_V3_LARGE.modelSource);
-        const clipFilename = getFilenameFromUri(CLIP_VIT_BASE_PATCH32_IMAGE.modelSource);
-        const hasYolo = files.some(f => f.endsWith(yoloFilename));
-        const hasClip = files.some(f => f.endsWith(clipFilename));
-        if (hasYolo && hasClip) {
-          setClipStatus("ready");
-        }
-
-        const lfmFilename = getFilenameFromUri(LFM2_5_350M_QUANTIZED.modelSource);
-        const lfmTokenizerFilename = getFilenameFromUri(LFM2_5_350M_QUANTIZED.tokenizerSource);
-        const hasLfm = files.some(f => f.endsWith(lfmFilename));
-        const hasLfmTokenizer = files.some(f => f.endsWith(lfmTokenizerFilename));
-        if (hasLfm && hasLfmTokenizer) {
-          setLfmStatus("ready");
-        }
-      } catch (e) {
-        console.error("Error checking model files:", e);
+      const statusMap: Record<string, boolean> = {};
+      
+      // Check LLMs
+      for (const key of Object.keys(LFM_MODELS)) {
+        const model = LFM_MODELS[key as keyof typeof LFM_MODELS];
+        const modelFn = getFilenameFromUri(model.modelSource);
+        const tokenizerFn = getFilenameFromUri(model.tokenizerSource);
+        const hasModel = files.some((f: string) => f.endsWith(modelFn));
+        const hasTokenizer = files.some((f: string) => f.endsWith(tokenizerFn));
+        statusMap[key] = hasModel && hasTokenizer;
       }
+
+      // Check Utilities
+      for (const key of Object.keys(UTILITY_MODELS)) {
+        const model = UTILITY_MODELS[key as keyof typeof UTILITY_MODELS];
+        const modelFn = getFilenameFromUri(model.modelSource);
+        statusMap[key] = files.some((f: string) => f.endsWith(modelFn));
+      }
+
+      setDownloadedModels(statusMap);
+    } catch (e) {
+      console.error("Error checking model files:", e);
     }
-    checkFiles();
   }, []);
 
+  useEffect(() => {
+    checkFilesStatus();
+  }, [checkFilesStatus]);
 
-  const handleWhisperAction = async () => {
-    if (whisperStatus === "ready") return;
+  const handleDownloadModel = async (modelKey: string, isUtility: boolean) => {
+    const model = isUtility 
+      ? UTILITY_MODELS[modelKey as keyof typeof UTILITY_MODELS]
+      : LFM_MODELS[modelKey as keyof typeof LFM_MODELS];
+
+    if (downloadedModels[modelKey]) return;
+    if (downloadingModelId) {
+      Alert.alert("Busy", "Another model is currently downloading. Please wait.");
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     Alert.alert(
-      "Download Voice Model",
-      "Do you want to download the Offline Voice Dictation model? This file is ~150 MB.",
+      "Download Model",
+      `Do you want to download ${model.name}? This file is ~${model.size}.`,
       [
         { text: "Cancel", style: "cancel" },
         { 
           text: "Download", 
           onPress: async () => {
             try {
-              setWhisperStatus("downloading");
-              setWhisperProgress(0);
+              setDownloadingModelId(modelKey);
+              setDownloadProgress(0);
 
-              await ResourceFetcher.fetch(
-                undefined,
-                WHISPER_TINY_EN.tokenizerSource
-              );
+              if (isUtility) {
+                await ResourceFetcher.fetch(
+                  (progress: number) => {
+                    setDownloadProgress(Math.round(progress * 100));
+                  },
+                  model.modelSource
+                );
+              } else {
+                const llmModel = model as typeof LFM_MODELS[keyof typeof LFM_MODELS];
+                await ResourceFetcher.fetch(
+                  (progress: number) => {
+                    setDownloadProgress(Math.round(progress * 100));
+                  },
+                  llmModel.modelSource,
+                  llmModel.tokenizerSource,
+                  llmModel.tokenizerConfigSource
+                );
+              }
 
-              await ResourceFetcher.fetch(
-                (progress) => {
-                  setWhisperProgress(Math.round(progress * 100));
-                },
-                WHISPER_TINY_EN.encoderSource,
-                WHISPER_TINY_EN.decoderSource
-              );
-
-              setWhisperStatus("ready");
+              setDownloadingModelId(null);
+              setDownloadedModels(prev => ({ ...prev, [modelKey]: true }));
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert("Success", "Offline Voice Dictation model downloaded and ready.");
+              Alert.alert("Success", `${model.name} downloaded and ready.`);
             } catch (err) {
-              console.error("Whisper download failed:", err);
-              setWhisperStatus("not_downloaded");
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-              Alert.alert("Error", "Failed to download model file.");
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const handleClipAction = async () => {
-    if (clipStatus === "ready") return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    Alert.alert(
-      "Download Photo Model Pack",
-      "Do you want to download the Photo Product Matching models? This includes the Object detector and CLIP matcher (total size: ~107 MB).",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Download", 
-          onPress: async () => {
-            try {
-              setClipStatus("downloading");
-              setClipProgress(0);
-
-              await ResourceFetcher.fetch(
-                (progress) => {
-                  setClipProgress(Math.round(progress * 100));
-                },
-                SSDLITE_320_MOBILENET_V3_LARGE.modelSource,
-                CLIP_VIT_BASE_PATCH32_IMAGE.modelSource
-              );
-
-              setClipStatus("ready");
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert("Success", "Photo Product Matching models downloaded and ready.");
-            } catch (err) {
-              console.error("CLIP/YOLO download failed:", err);
-              setClipStatus("not_downloaded");
+              console.error(`Download failed for ${modelKey}:`, err);
+              setDownloadingModelId(null);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
               Alert.alert("Error", "Failed to download model files.");
             }
@@ -207,58 +222,16 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleLfmAction = async () => {
-    if (lfmStatus === "ready") return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const confirmDeleteModel = (modelKey: string, isUtility: boolean) => {
+    const model = isUtility
+      ? UTILITY_MODELS[modelKey as keyof typeof UTILITY_MODELS]
+      : LFM_MODELS[modelKey as keyof typeof LFM_MODELS];
 
-    Alert.alert(
-      "Download AI Assistant Model",
-      "Do you want to download the Offline AI Assistant model (LFM 2.5 350M)? This file is ~160 MB.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Download", 
-          onPress: async () => {
-            try {
-              setLfmStatus("downloading");
-              setLfmProgress(0);
-
-              await ResourceFetcher.fetch(
-                (progress) => {
-                  setLfmProgress(Math.round(progress * 100));
-                },
-                LFM2_5_350M_QUANTIZED.modelSource,
-                LFM2_5_350M_QUANTIZED.tokenizerSource,
-                LFM2_5_350M_QUANTIZED.tokenizerConfigSource
-              );
-
-              setLfmStatus("ready");
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert("Success", "Offline AI Assistant model downloaded and ready.");
-            } catch (err) {
-              console.error("LFM download failed:", err);
-              setLfmStatus("not_downloaded");
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-              Alert.alert("Error", "Failed to download model files.");
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const confirmDeleteModel = (modelType: "whisper" | "clip" | "lfm") => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const modelName = 
-      modelType === "whisper" 
-        ? "Offline Voice Dictation" 
-        : modelType === "clip" 
-          ? "Photo Product Matching" 
-          : "Offline AI Assistant";
 
     Alert.alert(
       "Remove Model",
-      `Are you sure you want to delete the ${modelName} model file(s) from your device?`,
+      `Are you sure you want to delete ${model.name} from your device?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -266,29 +239,19 @@ export default function ProfileScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              if (modelType === "whisper") {
-                await ResourceFetcher.deleteResources(
-                  WHISPER_TINY_EN.tokenizerSource,
-                  WHISPER_TINY_EN.encoderSource,
-                  WHISPER_TINY_EN.decoderSource
-                );
-                setWhisperStatus("not_downloaded");
-              } else if (modelType === "clip") {
-                await ResourceFetcher.deleteResources(
-                  SSDLITE_320_MOBILENET_V3_LARGE.modelSource,
-                  CLIP_VIT_BASE_PATCH32_IMAGE.modelSource
-                );
-                setClipStatus("not_downloaded");
+              if (isUtility) {
+                await ResourceFetcher.deleteResources(model.modelSource);
               } else {
+                const llmModel = model as typeof LFM_MODELS[keyof typeof LFM_MODELS];
                 await ResourceFetcher.deleteResources(
-                  LFM2_5_350M_QUANTIZED.modelSource,
-                  LFM2_5_350M_QUANTIZED.tokenizerSource,
-                  LFM2_5_350M_QUANTIZED.tokenizerConfigSource
+                  llmModel.modelSource,
+                  llmModel.tokenizerSource,
+                  llmModel.tokenizerConfigSource
                 );
-                setLfmStatus("not_downloaded");
               }
+              setDownloadedModels(prev => ({ ...prev, [modelKey]: false }));
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert("Removed", "Model file(s) deleted to free up space.");
+              Alert.alert("Removed", `${model.name} deleted to free up space.`);
             } catch (e) {
               console.error("Error deleting model file:", e);
               Alert.alert("Error", "Failed to delete model file.");
@@ -297,6 +260,16 @@ export default function ProfileScreen() {
         }
       ]
     );
+  };
+
+  const handleSelectModel = async (modelKey: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setActiveModelId(modelKey);
+    try {
+      await SecureStore.setItemAsync("selected_lfm_model_id", modelKey);
+    } catch (e) {
+      console.error("Error saving active model ID:", e);
+    }
   };
 
 
@@ -339,12 +312,19 @@ export default function ProfileScreen() {
           if (code) {
             setGroupCode(code);
           }
+
+          const storedModelId = await SecureStore.getItemAsync("selected_lfm_model_id");
+          if (storedModelId && LFM_MODELS[storedModelId as keyof typeof LFM_MODELS]) {
+            setActiveModelId(storedModelId);
+          }
+
+          await checkFilesStatus();
         } catch (e) {
           console.error("Failed to load secure settings:", e);
         }
       }
       loadPreferences();
-    }, [])
+    }, [checkFilesStatus])
   );
 
   const toggleBackupFreq = async () => {
@@ -561,9 +541,19 @@ export default function ProfileScreen() {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               router.back();
             }}
+            style={styles.profileInfoRow}
           >
-            <Text style={styles.profileName}>{userProfile?.name || "Guest User"}</Text>
-            <Text style={styles.profileUsername}>{userProfile?.email || "@guest"}</Text>
+            {userProfile?.photo ? (
+              <Image source={{ uri: userProfile.photo }} style={styles.profileAvatar} />
+            ) : (
+              <View style={[styles.profileAvatar, styles.avatarPlaceholder]}>
+                <Ionicons name="person" size={24} color="#71717a" />
+              </View>
+            )}
+            <View style={styles.profileHeaderNameContainer}>
+              <Text style={styles.profileName}>{userProfile?.name || "Guest User"}</Text>
+              <Text style={styles.profileUsername}>{userProfile?.email || "@guest"}</Text>
+            </View>
           </TouchableOpacity>
           <Text style={styles.tokensValue}>
             {tokens.toLocaleString()} Tokens
@@ -623,6 +613,36 @@ export default function ProfileScreen() {
 
             <View style={styles.separator} />
 
+            {/* GOOGLE ACCOUNT DETAILS */}
+            {userProfile && (
+              <>
+                <View style={styles.sectionHeaderContainer}>
+                  <Text style={styles.sectionHeader}>Google Account Details</Text>
+                </View>
+                
+                <View style={styles.detailsCard}>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>User ID</Text>
+                    <Text style={styles.detailValue} selectable={true}>{userProfile.id}</Text>
+                  </View>
+
+                  {userProfile.idToken && (
+                    <>
+                      <View style={styles.detailSeparator} />
+                      <View style={styles.detailItem}>
+                        <Text style={styles.detailLabel}>ID Token</Text>
+                        <Text style={styles.detailValue} selectable={true}>
+                          {userProfile.idToken}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+
+                <View style={styles.separator} />
+              </>
+            )}
+
             {/* DATABASE & MODEL CONTROLS */}
             <View style={styles.sectionHeaderContainer}>
               <Text style={styles.sectionHeader}>Storage & Models</Text>
@@ -656,95 +676,108 @@ export default function ProfileScreen() {
 
             <View style={styles.separator} />
 
-            {/* Offline Voice Model Downloader */}
-            <TouchableOpacity 
-              style={styles.row} 
-              onPress={handleWhisperAction} 
-              disabled={whisperStatus === "downloading"}
-              activeOpacity={0.7}
-            >
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={styles.rowLabel}>Offline Voice Dictation</Text>
-                <Text style={styles.rowSublabel}>
-                  {whisperStatus === "ready" 
-                    ? "Model is downloaded and ready (151 MB)" 
-                    : whisperStatus === "downloading" 
-                      ? `Downloading model... ${whisperProgress}%` 
-                      : "Tap to download offline speech-to-text (~151 MB)"}
-                </Text>
-              </View>
-              {whisperStatus === "downloading" ? (
-                <ActivityIndicator size="small" color="#000000" />
-              ) : whisperStatus === "ready" ? (
-                <TouchableOpacity onPress={() => confirmDeleteModel("whisper")}>
-                  <Text style={[styles.rowActionText, { color: "#ef4444" }]}>Remove</Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={styles.rowActionText}>Download</Text>
-              )}
-            </TouchableOpacity>
 
+
+            {/* Offline AI Models Section */}
+            <View style={styles.sectionHeaderContainer}>
+              <Text style={styles.sectionHeader}>Offline AI Models</Text>
+            </View>
+
+            {/* Sub-group 1: Text Chat Assistants */}
+            <View style={styles.subHeaderContainer}>
+              <Text style={styles.subHeader}>Text Chat Assistants</Text>
+            </View>
             <View style={styles.separator} />
 
-            {/* Offline Photo Matching Model Downloader */}
-            <TouchableOpacity 
-              style={styles.row} 
-              onPress={handleClipAction} 
-              disabled={clipStatus === "downloading"}
-              activeOpacity={0.7}
-            >
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={styles.rowLabel}>Photo Product Matching</Text>
-                <Text style={styles.rowSublabel}>
-                  {clipStatus === "ready" 
-                    ? "Models are downloaded and ready (107 MB)" 
-                    : clipStatus === "downloading" 
-                      ? `Downloading models... ${clipProgress}%` 
-                      : "Tap to download detector & match modules (~107 MB)"}
-                </Text>
-              </View>
-              {clipStatus === "downloading" ? (
-                <ActivityIndicator size="small" color="#000000" />
-              ) : clipStatus === "ready" ? (
-                <TouchableOpacity onPress={() => confirmDeleteModel("clip")}>
-                  <Text style={[styles.rowActionText, { color: "#ef4444" }]}>Remove</Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={styles.rowActionText}>Download</Text>
-              )}
-            </TouchableOpacity>
+            {Object.keys(LFM_MODELS).map((key) => {
+              const model = LFM_MODELS[key as keyof typeof LFM_MODELS];
+              const isSelected = activeModelId === key;
+              const isDownloaded = downloadedModels[key];
+              const isDownloading = downloadingModelId === key;
 
+              return (
+                <View key={key}>
+                  <View style={[styles.row, isSelected && styles.selectedModelRow]}>
+                    <TouchableOpacity 
+                      style={{ flex: 1, flexDirection: "row", alignItems: "center", paddingRight: 10 }}
+                      onPress={() => handleSelectModel(key)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.radioContainer}>
+                        <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
+                          {isSelected && <View style={styles.radioInner} />}
+                        </View>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.rowLabel, isSelected && { fontWeight: "700" }]}>{model.name}</Text>
+                        <Text style={styles.rowSublabel}>
+                          {isDownloaded 
+                            ? `Model ready • Tap to select (${model.size})` 
+                            : isDownloading 
+                              ? `Downloading model... ${downloadProgress}%` 
+                              : `Tap to select • Download size: ~${model.size}`}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    {isDownloading ? (
+                      <ActivityIndicator size="small" color="#000000" />
+                    ) : isDownloaded ? (
+                      <TouchableOpacity onPress={() => confirmDeleteModel(key, false)} style={{ paddingLeft: 12 }}>
+                        <Text style={[styles.rowActionText, { color: "#ef4444" }]}>Remove</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity onPress={() => handleDownloadModel(key, false)} style={{ paddingLeft: 12 }}>
+                        <Text style={styles.rowActionText}>Download</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <View style={styles.separator} />
+                </View>
+              );
+            })}
+
+            {/* Sub-group 2: Photo Search Utilities */}
+            <View style={styles.subHeaderContainer}>
+              <Text style={styles.subHeader}>Photo Search Utilities</Text>
+            </View>
             <View style={styles.separator} />
 
-            {/* Offline AI Assistant Downloader */}
-            <TouchableOpacity 
-              style={styles.row} 
-              onPress={handleLfmAction} 
-              disabled={lfmStatus === "downloading"}
-              activeOpacity={0.7}
-            >
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={styles.rowLabel}>Offline AI Assistant</Text>
-                <Text style={styles.rowSublabel}>
-                  {lfmStatus === "ready" 
-                    ? "Model is downloaded and ready (160 MB)" 
-                    : lfmStatus === "downloading" 
-                      ? `Downloading model... ${lfmProgress}%` 
-                      : "Tap to download offline AI Assistant (~160 MB)"}
-                </Text>
-              </View>
-              {lfmStatus === "downloading" ? (
-                <ActivityIndicator size="small" color="#000000" />
-              ) : lfmStatus === "ready" ? (
-                <TouchableOpacity onPress={() => confirmDeleteModel("lfm")}>
-                  <Text style={[styles.rowActionText, { color: "#ef4444" }]}>Remove</Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={styles.rowActionText}>Download</Text>
-              )}
-            </TouchableOpacity>
+            {Object.keys(UTILITY_MODELS).map((key) => {
+              const model = UTILITY_MODELS[key as keyof typeof UTILITY_MODELS];
+              const isDownloaded = downloadedModels[key];
+              const isDownloading = downloadingModelId === key;
 
-            <View style={styles.separator} />
+              return (
+                <View key={key}>
+                  <View style={styles.row}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={styles.rowLabel}>{model.name}</Text>
+                      <Text style={styles.rowSublabel}>
+                        {isDownloaded 
+                          ? `${model.description} (Ready • ${model.size})` 
+                          : isDownloading 
+                            ? `Downloading... ${downloadProgress}%` 
+                            : `${model.description} (Size: ~${model.size})`}
+                      </Text>
+                    </View>
+
+                    {isDownloading ? (
+                      <ActivityIndicator size="small" color="#000000" />
+                    ) : isDownloaded ? (
+                      <TouchableOpacity onPress={() => confirmDeleteModel(key, true)} style={{ paddingLeft: 12 }}>
+                        <Text style={[styles.rowActionText, { color: "#ef4444" }]}>Remove</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity onPress={() => handleDownloadModel(key, true)} style={{ paddingLeft: 12 }}>
+                        <Text style={styles.rowActionText}>Download</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <View style={styles.separator} />
+                </View>
+              );
+            })}
 
             {/* Sign Out */}
             <TouchableOpacity style={styles.row} onPress={handleSignOut} activeOpacity={0.7}>
@@ -808,19 +841,70 @@ const styles = StyleSheet.create({
   },
   profileHeader: {
     paddingHorizontal: 20,
-    paddingTop: 40,
-    paddingBottom: 40,
+    paddingTop: 30,
+    paddingBottom: 30,
+  },
+  profileInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  profileAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginRight: 16,
+  },
+  avatarPlaceholder: {
+    backgroundColor: "#f4f4f5",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  profileHeaderNameContainer: {
+    flex: 1,
+    justifyContent: "center",
   },
   profileName: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: "800",
     color: "#000000",
-    letterSpacing: -1,
+    letterSpacing: -0.5,
   },
   profileUsername: {
     fontSize: 14,
     color: "#888888",
-    marginTop: 4,
+    marginTop: 2,
+  },
+  detailsCard: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginTop: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  detailItem: {
+    marginVertical: 4,
+  },
+  detailLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  detailValue: {
+    fontSize: 14,
+    color: "#0f172a",
+    fontWeight: "600",
+  },
+  detailSeparator: {
+    height: 1,
+    backgroundColor: "#f1f5f9",
+    marginVertical: 6,
   },
   tokensValue: {
     fontSize: 22,
@@ -982,5 +1066,40 @@ const styles = StyleSheet.create({
     color: "#64748b",
     fontSize: 14,
     fontWeight: "600",
+  },
+  radioContainer: {
+    marginRight: 12,
+  },
+  radioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#cbd5e1",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  radioOuterSelected: {
+    borderColor: "#6366f1",
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#6366f1",
+  },
+  selectedModelRow: {
+    backgroundColor: "#f8fafc",
+  },
+  subHeaderContainer: {
+    paddingTop: 16,
+    paddingBottom: 6,
+  },
+  subHeader: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#94a3b8",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
 });

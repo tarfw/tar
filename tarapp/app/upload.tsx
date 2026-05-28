@@ -9,7 +9,8 @@ import {
   Switch,
   ScrollView,
   Alert,
-  Platform
+  Platform,
+  Share
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useRouter } from "expo-router";
@@ -93,18 +94,16 @@ export default function UploadScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.container} edges={["top", "bottom", "left", "right"]}>
         
-        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>S3 Upload Test</Text>
-          <View style={{ width: 40 }} /> {/* Spacer */}
+          <View style={{ width: 40 }} />
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
-          {/* Picker Area */}
           <TouchableOpacity 
             style={styles.pickerBox} 
             onPress={handlePickImage}
@@ -121,7 +120,6 @@ export default function UploadScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Settings Area */}
           <View style={styles.settingsContainer}>
             <View style={styles.switchRow}>
               <View style={styles.switchLabels}>
@@ -138,7 +136,6 @@ export default function UploadScreen() {
             </View>
           </View>
 
-          {/* Progress Indicator */}
           {isUploading && (
             <View style={styles.progressContainer}>
               <ActivityIndicator size="small" color="#000" />
@@ -151,7 +148,6 @@ export default function UploadScreen() {
             </View>
           )}
 
-          {/* Action Button */}
           {selectedImage && !isUploading && (
             <TouchableOpacity style={styles.uploadBtn} onPress={handleUpload}>
               <Text style={styles.uploadBtnText}>Upload to S3</Text>
@@ -159,7 +155,6 @@ export default function UploadScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Upload Success Info */}
           {uploadedKey && uploadedUrl && (
             <View style={styles.successContainer}>
               <Text style={styles.successHeader}>Upload Successful</Text>
@@ -172,6 +167,30 @@ export default function UploadScreen() {
               <View style={styles.metaRow}>
                 <Text style={styles.metaLabel}>URL Expiration:</Text>
                 <Text style={styles.metaValue}>90 Days</Text>
+              </View>
+
+              <View style={styles.urlSection}>
+                <Text style={styles.metaLabel}>S3 URL:</Text>
+                <View style={styles.urlRow}>
+                  <Text 
+                    style={styles.urlText} 
+                    selectable={true}
+                  >
+                    {uploadedUrl}
+                  </Text>
+                  <TouchableOpacity 
+                    style={styles.copyIconButton} 
+                    onPress={() => {
+                      Share.share({
+                        message: uploadedUrl,
+                      });
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="share-outline" size={18} color="#000" />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <Text style={styles.renderHeader}>Rendered directly from S3 download link:</Text>
@@ -354,5 +373,34 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     resizeMode: "cover",
-  }
+  },
+  urlSection: {
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  urlRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    padding: 12,
+    marginTop: 6,
+    gap: 8,
+  },
+  urlText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#0f172a",
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    lineHeight: 16,
+  },
+  copyIconButton: {
+    padding: 8,
+    backgroundColor: "#f1f5f9",
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

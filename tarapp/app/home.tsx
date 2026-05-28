@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { 
   StyleSheet, 
   View, 
@@ -7,7 +7,9 @@ import {
   TouchableOpacity, 
   Image,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  ActivityIndicator,
+  Alert
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,6 +18,26 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { getUserDb, getCollabDb } from "../lib/db";
 import { setActiveMassId } from "../lib/state";
+import * as Haptics from "expo-haptics";
+
+import { upsertMatterVector } from "../lib/vectorStore";
+
+let ExpoSpeechRecognitionModule: any = null;
+let useSpeechRecognitionEvent: (event: string, callback: (event: any) => void) => void = () => {};
+
+try {
+  const speechModule = require("expo-speech-recognition");
+  ExpoSpeechRecognitionModule = speechModule.ExpoSpeechRecognitionModule;
+  useSpeechRecognitionEvent = speechModule.useSpeechRecognitionEvent;
+} catch (err) {
+  console.warn("expo-speech-recognition native module not found, speech recognition disabled.", err);
+}
+
+
+
+const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+const MODEL = "openai/gpt-oss-120b";
+
 
 const groupOrderItems = (items: any[]) => {
   const groupedMap: { [streamId: string]: { header: any; items: any[] } } = {};
@@ -86,6 +108,223 @@ export default function HomePage() {
   const [pastItems, setPastItems] = useState<any[]>([]);
   const [selectedMass, setSelectedMass] = useState<any>(null);
   const [activeJob, setActiveJob] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Native Voice Dictation Integration
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcribedText, setTranscribedText] = useState("");
+  const [isProcessingVoiceCommand, setIsProcessingVoiceCommand] = useState(false);
+
+  // Listen for speech results
+  useSpeechRecognitionEvent("result", (event) => {
+    const text = event.results[0]?.transcript ?? "";
+    setTranscribedText(text);
+  });
+
+  useSpeechRecognitionEvent("end", () => {
+    setIsRecording(false);
+  });
+
+  useSpeechRecognitionEvent("error", (event) => {
+    console.error("Speech recognition error:", event.error, event.message);
+    setIsRecording(false);
+  });
+
+  const handleMicPress = async () => {
+    if (!ExpoSpeechRecognitionModule) {
+      Alert.alert(
+        "Speech Recognition Unavailable",
+        "Speech recognition is not compiled in this development build. Please tap on a text input and use the microphone button on your keyboard instead."
+      );
+      return;
+    }
+
+    if (isRecording) {
+      try {
+        ExpoSpeechRecognitionModule.stop();
+      } catch (err) {
+        console.error("Failed to stop recording:", err);
+      }
+      setIsRecording(false);
+      
+      // Process the transcribed text if any
+      if (transcribedText.trim()) {
+        await handleProcessVoiceCommand(transcribedText);
+      }
+    } else {
+      try {
+        const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert("Permission Denied", "Microphone and speech recognition permissions are required.");
+          return;
+        }
+
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setTranscribedText("");
+        setIsRecording(true);
+
+        ExpoSpeechRecognitionModule.start({
+          lang: "en-US",
+          interimResults: true,
+        });
+      } catch (err) {
+        console.error("Failed to start voice recognition:", err);
+        setIsRecording(false);
+        Alert.alert("Error", "Could not start voice recognition.");
+      }
+    }
+  };
+
+  const handleProcessVoiceCommand = async (command: string) => {
+    setIsProcessingVoiceCommand(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [
+            {
+              role: "system",
+               content: `You are the TAR AI Agent. Map requests to 4 tables:
+1. matter (entities/products/tasks): id, code, type, scope, title, data
+2. mass (inventory/time/price): id, matter, type, scope, qty, value, geo, start, end, data
+3. relation (links): src, tgt, type
+4. motion (events/logs): id, stream, seq, action, status, delta, data
+
+OPCODES for motion.action:
+- 1: SALE (Logged a sale/receipt)
+- 105: REMINDER (Simple notification/reminder)
+- 200: TASK (Actionable To-Do item)
+- 100: SYSTEM/UPDATE (Generic inventory or system change)
+
+MODELING RULES:
+- Note (pure idea): Create only a 'matter' entry with type="note".
+- Task (to-do): Create a 'matter' with type="task" and a corresponding 'motion' (stream=matter.id, action=200, status="OPEN").
+- Reminder: Create a 'matter' with type="task" and a corresponding 'mass' entry (matter=matter.id, type="slot", scope="reminder", start="YYYY-MM-DD HH:MM:SS" when it should trigger).
+- Scheduled Task (Deadline): Create a 'matter' with type="task", a 'mass' entry (matter=matter.id, type="slot", scope="deadline", start="YYYY-MM-DD" due date), and a 'motion' (stream=matter.id, action=200, status="OPEN").
+
+IMPORTANT: motion.delta MUST be a number (e.g. 250 or -5), NOT a JSON string or object.
+
+Output pure JSON exactly:
+{
+  "reply": "Short confirmation",
+  "matters": [],
+  "masses": [],
+  "relations": [],
+  "motions": [{ "id": "mot_1", "stream": "task_123", "seq": 1, "action": 200, "status": "OPEN", "data": "{\\"task\\":\\"Sleep for 1 hour\\"}" }]
+}
+Use string IDs to link items. Omit arrays if empty. NO markdown.`
+            },
+            {
+              role: "user",
+              content: command
+            }
+          ],
+          response_format: { type: "json_object" }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const json = await response.json();
+      const content = json.choices[0].message.content;
+      const parsed = JSON.parse(content);
+
+      const db = getUserDb();
+      let hasChanges = false;
+
+      const idMap = new Map();
+      const mapId = (oldId: string, prefix: string) => {
+        if (!oldId) return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        if (oldId.length < 15) {
+          if (!idMap.has(oldId)) {
+            idMap.set(oldId, `${prefix}_${Date.now()}_${Math.random().toString(36).substring(7)}`);
+          }
+          return idMap.get(oldId);
+        }
+        return oldId;
+      };
+
+      if (parsed.matters && parsed.matters.length > 0) {
+        for (const m of parsed.matters) {
+           const remappedId = mapId(m.id, 'mat');
+           await db.run(
+             "INSERT OR REPLACE INTO matter (id, code, type, title, data) VALUES (?, ?, ?, ?, ?)",
+             [remappedId, m.code || null, m.type || null, m.title || null, m.data || null]
+           );
+
+           try {
+             await upsertMatterVector(remappedId, {
+               title: m.title || "",
+               type: m.type || null,
+               scope: m.scope || null,
+               code: m.code || null,
+               data: m.data || null
+             });
+           } catch (vectorErr) {
+             console.error("Vector sync failed in voice command:", vectorErr);
+           }
+        }
+        hasChanges = true;
+      }
+
+      if (parsed.masses && parsed.masses.length > 0) {
+        for (const m of parsed.masses) {
+           await db.run(
+             "INSERT OR REPLACE INTO mass (id, matter, type, qty, value, start, end, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+             [mapId(m.id, 'mas'), mapId(m.matter, 'mat'), m.type || null, m.qty || null, m.value || null, m.start || null, m.end || null, m.data || null]
+           );
+        }
+        hasChanges = true;
+      }
+
+      if (parsed.relations && parsed.relations.length > 0) {
+        for (const r of parsed.relations) {
+           await db.run(
+             "INSERT INTO relation (src, tgt, type) VALUES (?, ?, ?)",
+             [mapId(r.src, 'mat'), mapId(r.tgt, 'mat'), r.type]
+           );
+        }
+        hasChanges = true;
+      }
+
+      if (parsed.motions && parsed.motions.length > 0) {
+        for (const m of parsed.motions) {
+          const streamId = mapId(m.stream, 'mat');
+          const seqRow = await db.all(
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?",
+            [streamId]
+          );
+          const seq = seqRow[0]?.next_seq || 1;
+           await db.run(
+             "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+             [mapId(m.id, 'mot'), streamId, seq, m.action || 1, m.status || "OPEN", m.delta || null, m.data || null]
+           );
+        }
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        await db.push();
+      }
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Command Logged", parsed.reply || "Your voice request has been processed.");
+    } catch (error) {
+      console.error("Groq API Voice Error:", error);
+      Alert.alert("Voice Parsing Failed", "Could not understand or parse the command.");
+    } finally {
+      setIsProcessingVoiceCommand(false);
+      setRefreshTrigger(prev => prev + 1);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -246,7 +485,7 @@ export default function HomePage() {
       loadData();
       const intervalId = setInterval(loadData, 2000);
       return () => clearInterval(intervalId);
-    }, [massId])
+    }, [massId, refreshTrigger])
   );
 
   const handleMarkDone = async (item: any) => {
@@ -719,23 +958,83 @@ export default function HomePage() {
           )}
         </ScrollView>
 
+        {/* Live Transcription Preview Overlay */}
+        {isRecording && (
+          <View style={styles.transcriptionOverlay}>
+            <View style={styles.recordingIndicatorContainer}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.recordingText}>Listening...</Text>
+            </View>
+            <View style={{ maxHeight: 60 }}>
+              <Text style={styles.transcriptionText}>
+                {transcribedText || "..."}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Processing Loader */}
+        {isProcessingVoiceCommand && (
+          <View style={styles.transcriptionOverlay}>
+            <View style={styles.recordingIndicatorContainer}>
+              <ActivityIndicator size="small" color="#6366f1" style={{ marginRight: 8 }} />
+              <Text style={[styles.recordingText, { color: '#6366f1' }]}>Processing command...</Text>
+            </View>
+          </View>
+        )}
+
         {/* Bottom Search Bar */}
         <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
           <View style={styles.bottomBarRow}>
-            <TouchableOpacity 
-              style={styles.circleBtn}
-              onPress={() => router.push('/search')}
-            >
-              <Ionicons name="search" size={22} color="#1a1a1a" />
-            </TouchableOpacity>
+            <View style={styles.leftGroup}>
+              <TouchableOpacity 
+                style={styles.circleBtn}
+                onPress={() => router.push('/search')}
+              >
+                <Ionicons name="search" size={18} color="#1a1a1a" />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.circleBtn, { marginLeft: 6 }]}
+                onPress={() => router.push('/upload')}
+              >
+                <Ionicons name="cloud-upload-outline" size={18} color="#1a1a1a" />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.circleBtn, { marginLeft: 6 }]}
+                onPress={() => router.push('/matter')}
+              >
+                <Ionicons name="cube-outline" size={18} color="#1a1a1a" />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.circleBtn, { marginLeft: 6 }]}
+                onPress={() => router.push('/motion')}
+              >
+                <Ionicons name="flash-outline" size={18} color="#1a1a1a" />
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.rightGroup}>
-              <TouchableOpacity style={styles.circleBtn}>
-                <Ionicons name="mic-outline" size={22} color="#1a1a1a" />
-              </TouchableOpacity>
+              {ExpoSpeechRecognitionModule && (
+                <TouchableOpacity 
+                  style={[
+                    styles.circleBtn,
+                    isRecording && styles.micBtnRecording
+                  ]}
+                  onPress={handleMicPress}
+                >
+                    <Ionicons 
+                      name={isRecording ? "stop" : "mic-outline"} 
+                      size={18} 
+                      color={isRecording ? "#fff" : "#1a1a1a"} 
+                    />
+                </TouchableOpacity>
+              )}
               
               <TouchableOpacity 
-                style={[styles.circleBtn, { marginLeft: 12 }]}
+                style={[styles.circleBtn, { marginLeft: ExpoSpeechRecognitionModule ? 6 : 0 }]}
                 activeOpacity={0.8}
                 onPress={() => router.push('/tarai')}
               >
@@ -743,17 +1042,17 @@ export default function HomePage() {
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={[styles.circleBtn, { marginLeft: 12 }]} 
+                style={[styles.circleBtn, { marginLeft: 6 }]} 
                 onPress={() => router.push('/aichat')}
               >
-                <Ionicons name="chatbubbles-outline" size={22} color="#1a1a1a" />
+                <Ionicons name="chatbubbles-outline" size={18} color="#1a1a1a" />
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={[styles.circleBtn, { marginLeft: 12 }]} 
+                style={[styles.circleBtn, { marginLeft: 6 }]} 
                 onPress={() => router.push('/space')}
               >
-                <Ionicons name="arrow-up" size={24} color="#1a1a1a" />
+                <Ionicons name="arrow-up" size={18} color="#1a1a1a" />
               </TouchableOpacity>
             </View>
           </View>
@@ -855,7 +1154,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     width: "100%",
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingTop: 12,
     backgroundColor: "#f9fafb",
     borderTopWidth: 1,
@@ -866,20 +1165,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  leftGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   rightGroup: {
     flexDirection: "row",
     alignItems: "center",
   },
   circleBtn: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "#f1f5f9",
     justifyContent: "center",
     alignItems: "center",
   },
   aiText: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "700",
     color: "#6366f1",
   },
@@ -1108,5 +1411,53 @@ const styles = StyleSheet.create({
   orderItemStatusText: {
     fontSize: 12,
     fontWeight: "600",
+  },
+  transcriptionOverlay: {
+    position: 'absolute',
+    bottom: 80,
+    left: 16,
+    right: 16,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 5,
+    zIndex: 100,
+  },
+  recordingIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ff3b30',
+    marginRight: 8,
+  },
+  recordingText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#666',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  transcriptionText: {
+    fontSize: 15,
+    color: '#0f172a',
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+  nonCommittedText: {
+    color: '#94a3b8',
+  },
+  micBtnRecording: {
+    backgroundColor: '#ff3b30',
   }
 });

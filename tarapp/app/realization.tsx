@@ -267,14 +267,7 @@ export default function RealizationScreen() {
 
       router.back();
 
-      try {
-        const db2 = getDbClient();
-        if ((db2 as any).isSync) {
-          (db2 as any).push().catch((err: any) =>
-            console.error("Background sync failed:", err)
-          );
-        }
-      } catch (_) {}
+      // No-op sync in local mode
     } catch (err: any) {
       console.error("Realization save failed:", err);
       Alert.alert("Save Error", err?.message || "Failed to save.");

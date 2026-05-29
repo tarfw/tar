@@ -75,6 +75,17 @@ export default function MotionScreen() {
     if (isSaving) return;
     setIsSaving(true);
 
+    console.log("[Motion:Save] Start saving motion log", {
+      motionId,
+      streamId,
+      seq,
+      selectedType,
+      customAction,
+      amountOrDelta,
+      status,
+      scope
+    });
+
     try {
       const db = getDbClient();
       const time = new Date().toISOString();
@@ -104,6 +115,16 @@ export default function MotionScreen() {
         finalDataStr = JSON.stringify(dataObj);
       }
 
+      console.log("[Motion:Save] Writing to database...", {
+        motionId,
+        streamId,
+        finalAction,
+        status,
+        parsedDelta,
+        finalDataStr,
+        time
+      });
+
       await db.run(
         `INSERT INTO motion (id, stream, seq, action, status, delta, scope, data, time) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -120,14 +141,13 @@ export default function MotionScreen() {
         ]
       );
 
+      console.log("[Motion:Save] Database write complete. Motion record successfully saved.");
+
       router.back();
 
-      // Trigger sync
-      setTimeout(() => {
-        db.push().catch(err => console.error("Background sync failed:", err));
-      }, 500);
+      // No-op sync in local mode
     } catch (error: any) {
-      console.error("Failed to create motion:", error);
+      console.error("[Motion:Save] Failed to create motion:", error);
       Alert.alert("Error", error?.message || "Failed to create motion log.");
       setIsSaving(false);
     }

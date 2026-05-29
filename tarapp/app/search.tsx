@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { getDbClient, getUserDb, getCollabDb, getGlobalDb } from "../lib/db";
+import { getUserDb } from "../lib/db";
 import { upsertMatterVector, deleteMatterVector, searchMatterVectors } from "../lib/vectorStore";
 import { setActiveMassId } from "../lib/state";
 
@@ -83,40 +83,8 @@ export default function SearchScreen() {
   const performSearch = useCallback(async (text: string) => {
     setLoading(true);
     try {
-      const uDb = getUserDb();
-      const tDb = getCollabDb();
-      const gDb = getGlobalDb();
-
+      const db = getUserDb();
       const hasQuery = text.trim().length > 0;
-
-      // Fetch global catalog search from worker API and cache it locally
-      if (hasQuery) {
-        try {
-          const wRes = await fetch(`https://s3storage.tamilframework.workers.dev/api/global/search?q=${encodeURIComponent(text)}&type=${encodeURIComponent(selectedType || "")}`);
-          if (wRes.ok) {
-            const wData = await wRes.json() as any;
-            if (wData && wData.matters) {
-              for (const m of wData.matters) {
-                await gDb.run(
-                  "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                  [m.id, m.code || null, m.type || null, m.scope || null, m.owner || null, m.title, m.public || 1, m.data || null, m.time || null]
-                ).catch(() => {});
-              }
-            }
-            if (wData && wData.mass) {
-              for (const ms of wData.mass) {
-                await gDb.run(
-                  "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, geo, start, end, data, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                  [ms.id, ms.matter, ms.type || null, ms.scope || null, ms.qty !== undefined && ms.qty !== null ? parseFloat(ms.qty) : null, ms.value !== undefined && ms.value !== null ? parseFloat(ms.value) : null, ms.active !== undefined ? ms.active : 1, ms.geo || null, ms.start || null, ms.end || null, ms.data || null, ms.time || null]
-                ).catch(() => {});
-              }
-            }
-          }
-        } catch (apiErr) {
-          console.log("[Search] Global remote DB API search failed, falling back to local cached global DB queries:", apiErr);
-        }
-      }
-
       const searchTerm = `%${text}%`;
       const fuzzyTerm = text.length > 1 ? `%${text.split("").join("%")}%` : searchTerm;
 
@@ -131,11 +99,7 @@ export default function SearchScreen() {
       if (selectedType) matterParams.push(selectedType);
 
       // Perform SQL matter search
-      const [uMatter, tMatter, gMatter] = await Promise.all([
-        uDb.all(`SELECT *, 'user' as originDb FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 10`, matterParams).catch(() => []),
-        tDb.all(`SELECT *, 'tenant' as originDb FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 10`, matterParams).catch(() => []),
-        gDb.all(`SELECT *, 'global' as originDb FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 10`, matterParams).catch(() => [])
-      ]);
+      const uMatter = await db.all(`SELECT *, 'user' as originDb FROM matter ${matterWhereClause} ${matterTypeClause} LIMIT 15`, matterParams).catch(() => []);
 
       const deduplicateById = (arr: any[]) => {
         const seen = new Set();
@@ -161,12 +125,8 @@ export default function SearchScreen() {
         const getMattersByIds = async (ids: string[]) => {
           if (ids.length === 0) return [];
           const placeholders = ids.map(() => "?").join(",");
-          const [uRows, tRows, gRows] = await Promise.all([
-            uDb.all(`SELECT *, 'user' as originDb FROM matter WHERE id IN (${placeholders})`, ids).catch(() => []),
-            tDb.all(`SELECT *, 'tenant' as originDb FROM matter WHERE id IN (${placeholders})`, ids).catch(() => []),
-            gDb.all(`SELECT *, 'global' as originDb FROM matter WHERE id IN (${placeholders})`, ids).catch(() => [])
-          ]);
-          return [...(uRows || []), ...(tRows || []), ...(gRows || [])];
+          const uRows = await db.all(`SELECT *, 'user' as originDb FROM matter WHERE id IN (${placeholders})`, ids).catch(() => []);
+          return uRows || [];
         };
 
         const vectorMatters = await getMattersByIds(vectorIds);
@@ -180,8 +140,6 @@ export default function SearchScreen() {
         // Combine SQL and Vector matter rows
         const combinedMatters = [
           ...(uMatter || []),
-          ...(tMatter || []),
-          ...(gMatter || []),
           ...vectorMatters
         ];
 
@@ -204,7 +162,7 @@ export default function SearchScreen() {
         finalMatterResults = filteredMatters.slice(0, 15);
       } else {
         // No query - just return regular items
-        finalMatterResults = deduplicateById([...(uMatter || []), ...(tMatter || []), ...(gMatter || [])]).slice(0, 15);
+        finalMatterResults = deduplicateById(uMatter || []).slice(0, 15);
       }
 
       const massTypeClause = selectedType ? "AND m.type = ?" : "";
@@ -217,45 +175,25 @@ export default function SearchScreen() {
         : [];
       if (selectedType) massParams.push(selectedType);
 
-      const [uMass, tMass, gMass] = await Promise.all([
-        uDb.all(`
-          SELECT m.*, t.title as matter_title, 'user' as originDb
-          FROM mass m
-          LEFT JOIN matter t ON m.matter = t.id
-          ${massWhereClause} ${massTypeClause}
-          LIMIT 10
-        `, massParams).catch(() => []),
-        tDb.all(`
-          SELECT m.*, t.title as matter_title, 'tenant' as originDb
-          FROM mass m
-          LEFT JOIN matter t ON m.matter = t.id
-          ${massWhereClause} ${massTypeClause}
-          LIMIT 10
-        `, massParams).catch(() => []),
-        gDb.all(`
-          SELECT m.*, t.title as matter_title, 'global' as originDb
-          FROM mass m
-          LEFT JOIN matter t ON m.matter = t.id
-          ${massWhereClause} ${massTypeClause}
-          LIMIT 10
-        `, massParams).catch(() => [])
-      ]);
+      const uMass = await db.all(`
+        SELECT m.*, t.title as matter_title, 'user' as originDb
+        FROM mass m
+        LEFT JOIN matter t ON m.matter = t.id
+        ${massWhereClause} ${massTypeClause}
+        LIMIT 15
+      `, massParams).catch(() => []);
 
       const motionWhereClause = hasQuery
         ? "WHERE data LIKE ? OR stream LIKE ?"
         : "WHERE 1=1";
       const motionParams = hasQuery ? [searchTerm, searchTerm] : [];
 
-      const [uMotion, tMotion, gMotion] = await Promise.all([
-        uDb.all(`SELECT *, 'user' as originDb FROM motion ${motionWhereClause} LIMIT 10`, motionParams).catch(() => []),
-        tDb.all(`SELECT *, 'tenant' as originDb FROM motion ${motionWhereClause} LIMIT 10`, motionParams).catch(() => []),
-        gDb.all(`SELECT *, 'global' as originDb FROM motion ${motionWhereClause} LIMIT 10`, motionParams).catch(() => [])
-      ]);
+      const uMotion = await db.all(`SELECT *, 'user' as originDb FROM motion ${motionWhereClause} LIMIT 15`, motionParams).catch(() => []);
 
       setResults({
         matter: finalMatterResults,
-        mass: deduplicateById([...(uMass || []), ...(tMass || []), ...(gMass || [])]).slice(0, 15),
-        motion: deduplicateById([...(uMotion || []), ...(tMotion || []), ...(gMotion || [])]).slice(0, 15),
+        mass: deduplicateById(uMass || []).slice(0, 15),
+        motion: deduplicateById(uMotion || []).slice(0, 15),
       });
     } catch (e) {
       console.error("Search failed:", e);
@@ -267,27 +205,17 @@ export default function SearchScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const uDb = getUserDb();
-        const tDb = getCollabDb();
-        const gDb = getGlobalDb();
+        const db = getUserDb();
 
-        const [uMatterTypes, tMatterTypes, gMatterTypes, uMassTypes, tMassTypes, gMassTypes] = await Promise.all([
-          uDb.all("SELECT DISTINCT type FROM matter WHERE type IS NOT NULL AND type != ''").catch(() => []),
-          tDb.all("SELECT DISTINCT type FROM matter WHERE type IS NOT NULL AND type != ''").catch(() => []),
-          gDb.all("SELECT DISTINCT type FROM matter WHERE type IS NOT NULL AND type != ''").catch(() => []),
-          uDb.all("SELECT DISTINCT type FROM mass WHERE type IS NOT NULL AND type != ''").catch(() => []),
-          tDb.all("SELECT DISTINCT type FROM mass WHERE type IS NOT NULL AND type != ''").catch(() => []),
-          gDb.all("SELECT DISTINCT type FROM mass WHERE type IS NOT NULL AND type != ''").catch(() => []),
+        const [uMatterTypes, uMassTypes] = await Promise.all([
+          db.all("SELECT DISTINCT type FROM matter WHERE type IS NOT NULL AND type != ''").catch(() => []),
+          db.all("SELECT DISTINCT type FROM mass WHERE type IS NOT NULL AND type != ''").catch(() => []),
         ]);
 
         const all = new Set<string>();
         const rows = [
           ...(uMatterTypes || []),
-          ...(tMatterTypes || []),
-          ...(gMatterTypes || []),
           ...(uMassTypes || []),
-          ...(tMassTypes || []),
-          ...(gMassTypes || [])
         ];
         for (const row of rows) {
           if (row.type) all.add(String(row.type));
@@ -407,8 +335,7 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
 
     try {
       const { type, data, editFields } = selectedItem;
-      const originDb = data.originDb || "tenant";
-      const db = originDb === "user" ? getUserDb() : originDb === "global" ? getGlobalDb() : getCollabDb();
+      const db = getUserDb();
 
       const changedFields: Record<string, string> = {};
       for (const [key, value] of Object.entries(editFields)) {
@@ -484,10 +411,6 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
       closeDetail();
 
       if (query.trim()) performSearch(query);
-
-      if (originDb === "tenant") {
-        db.push().catch((err) => console.error("Background sync failed:", err));
-      }
     } catch (error) {
       console.error("Save failed:", error);
       Alert.alert("Error", "Failed to save changes.");
@@ -505,8 +428,7 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
         style: "destructive",
         onPress: async () => {
           try {
-            const originDb = item.originDb || "tenant";
-            const db = originDb === "user" ? getUserDb() : originDb === "global" ? getGlobalDb() : getCollabDb();
+            const db = getUserDb();
             if (type === "mass") {
               await db.run("DELETE FROM mass WHERE id = ?", [item.id]);
             } else {
@@ -531,9 +453,6 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
                 "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 [motionId, item.id, seq, 100, "COMPLETED", null, JSON.stringify({ action: "DELETE", type })]
               );
-            }
-            if (originDb === "tenant") {
-              db.push().catch((err) => console.error("Background sync failed:", err));
             }
             if (query.trim()) performSearch(query);
           } catch (error) {

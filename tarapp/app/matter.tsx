@@ -18,7 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { getDbClient, routeDbForEntity, getUserDb, getCollabDb, getGlobalDb } from "../lib/db";
+import { getUserDb } from "../lib/db";
 import { upsertMatterVector } from "../lib/vectorStore";
 
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
@@ -288,45 +288,17 @@ export default function MatterScreen() {
   useEffect(() => {
     if (!editId) return;
     setLoading(true);
+    console.log("[Matter:Load] Starting edit session loader for editId:", editId);
     (async () => {
       try {
-        // Search across all three databases using search-fallthrough logic
-        let db = getCollabDb();
-        let rows: any[] = [];
-        
-        try {
-          const userDb = getUserDb();
-          const r = await userDb.all("SELECT * FROM matter WHERE id = ?", [editId]);
-          if (r && r.length > 0) {
-            rows = r;
-            db = userDb;
-          }
-        } catch (_) {}
-        
-        if (rows.length === 0) {
-          try {
-            const collabDb = getCollabDb();
-            const r = await collabDb.all("SELECT * FROM matter WHERE id = ?", [editId]);
-            if (r && r.length > 0) {
-              rows = r;
-              db = collabDb;
-            }
-          } catch (_) {}
-        }
-        
-        if (rows.length === 0) {
-          try {
-            const globalDb = getGlobalDb();
-            const r = await globalDb.all("SELECT * FROM matter WHERE id = ?", [editId]);
-            if (r && r.length > 0) {
-              rows = r;
-              db = globalDb;
-            }
-          } catch (_) {}
-        }
+        let db = getUserDb();
+        console.log("[Matter:Load] Querying matter record from local database...");
+        let rows = await db.all("SELECT * FROM matter WHERE id = ?", [editId]);
+        console.log("[Matter:Load] Query finished. Matching rows found:", rows?.length);
 
         if (Array.isArray(rows) && rows.length > 0) {
           const rec: any = rows[0];
+          console.log("[Matter:Load] Found matter record to edit:", rec);
           setOriginal(rec);
           setRecordId(String(rec.id ?? ""));
           setTitle(String(rec.title ?? ""));
@@ -351,10 +323,12 @@ export default function MatterScreen() {
           }
 
           // Load related Mass (Realization) records from the same resolved database
+          console.log("[Matter:Load] Querying related mass records...");
           const massRows = await db.all(
             "SELECT * FROM mass WHERE matter = ? AND active = 1 ORDER BY time DESC",
             [editId]
           );
+          console.log("[Matter:Load] Query finished. Related mass records loaded:", massRows?.length);
           if (Array.isArray(massRows)) {
             setMassRecords(massRows.map((r: any) => ({ ...r, _status: "unchanged" })));
             
@@ -369,11 +343,12 @@ export default function MatterScreen() {
             }
           }
         } else {
+          console.warn("[Matter:Load] Record not found for editId:", editId);
           Alert.alert("Error", "Record not found.");
           router.back();
         }
       } catch (e) {
-        console.error("Failed to load matter:", e);
+        console.error("[Matter:Load] Failed to load matter:", e);
       } finally {
         setLoading(false);
       }
@@ -382,89 +357,19 @@ export default function MatterScreen() {
 
   const handlePublish = async () => {
     if (publishing) return;
+    console.log("[Matter:Publish] Attempting to mark product public locally for ID:", recordId);
     setPublishing(true);
     try {
-      let finalDataObj = {};
-      try { finalDataObj = JSON.parse(data || "{}"); } catch {}
-      if (type === "product" || type === "food") {
-        finalDataObj = { ...finalDataObj, price: prodPrice, stock: prodStock };
-      }
-      
-      const matterPayload = {
-        id: recordId,
-        title,
-        type,
-        scope,
-        code,
-        data: JSON.stringify(finalDataObj),
-        time: new Date().toISOString()
-      };
-
-      const massPayload: any[] = [];
-      const parsedPrice = prodPrice.trim() !== "" ? parseFloat(prodPrice) : null;
-      const parsedStock = prodStock.trim() !== "" ? parseFloat(prodStock) : null;
-      
-      if (parsedPrice !== null) {
-        massPayload.push({
-          id: `mas_price_${recordId}`,
-          matter: recordId,
-          type: "price",
-          scope: "global",
-          qty: null,
-          value: parsedPrice,
-          active: 1
-        });
-      }
-      if (parsedStock !== null) {
-        massPayload.push({
-          id: `mas_stock_${recordId}`,
-          matter: recordId,
-          type: "stock",
-          scope: "warehouse",
-          qty: parsedStock,
-          value: null,
-          active: 1
-        });
-      }
-
-      for (const m of massRecords) {
-        if (m.type !== "price" && m.type !== "stock" && m._status !== "deleted") {
-          massPayload.push({
-            id: m.id,
-            matter: m.matter,
-            type: m.type,
-            scope: m.scope,
-            qty: m.qty,
-            value: m.value,
-            active: m.active
-          });
-        }
-      }
-
-      const response = await fetch("https://s3storage.tamilframework.workers.dev/api/publish", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          matter: matterPayload,
-          massRecords: massPayload
-        })
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || "Publishing endpoint returned error");
-      }
-
       const userDb = getUserDb();
+      console.log("[Matter:Publish] Running update query on SQLite...");
       await userDb.run("UPDATE matter SET public = 1 WHERE id = ?", [recordId]);
+      console.log("[Matter:Publish] Local update complete. Item marked public.");
 
       setIsDraft(false);
-      Alert.alert("Success", "Catalog product published successfully to Global database!");
+      Alert.alert("Success", "Catalog product marked as public successfully!");
       router.back();
     } catch (e: any) {
-      console.error("[Publish] Failed to publish to remote Global DB:", e);
+      console.error("[Matter:Publish] Failed to publish:", e);
       Alert.alert("Publish Failed", e.message || "Failed to publish product.");
     } finally {
       setPublishing(false);
@@ -477,8 +382,10 @@ export default function MatterScreen() {
       return;
     }
     setSaving(true);
+    console.log("[Matter:Save] Initiated save process for recordId:", recordId, { isEditing });
+
     try {
-      const db = routeDbForEntity(type, scope);
+      const db = getUserDb();
       const time = new Date().toISOString();
 
       // Merge dynamic form helper states into data field before saving
@@ -496,6 +403,7 @@ export default function MatterScreen() {
       }
       
       const mergedDataString = JSON.stringify(finalDataObj);
+      console.log("[Matter:Save] Merged data object payload:", mergedDataString);
 
       // Sync quick realizations inputs into the massRecords array
       let updatedMassRecords = [...massRecords];
@@ -587,7 +495,11 @@ export default function MatterScreen() {
         if (Object.keys(changedFields).length > 0) {
           const setClauses = Object.keys(changedFields).map((k) => `${k} = ?`).join(", ");
           const setValues = Object.values(changedFields);
+          console.log("[Matter:Save] Updating existing matter row with changed fields:", changedFields);
           await db.run(`UPDATE matter SET ${setClauses} WHERE id = ?`, [...setValues, recordId]);
+          console.log("[Matter:Save] Database update complete.");
+        } else {
+          console.log("[Matter:Save] No fields changed in matter row. Skipping update.");
         }
       } else {
         const dataVal = mergedDataString && mergedDataString !== "{}" ? mergedDataString : null;
@@ -613,14 +525,18 @@ export default function MatterScreen() {
         }
         
         const placeholders = insertCols.map(() => "?").join(", ");
+        console.log("[Matter:Save] Inserting new matter row with columns:", insertCols);
         await db.run(
           `INSERT INTO matter (${insertCols.join(", ")}) VALUES (${placeholders})`,
           insertVals
         );
+        console.log("[Matter:Save] Database insert complete.");
       }
 
       // Save related Mass (Realization) records
+      console.log("[Matter:Save] Synchronizing associated mass records. Count:", updatedMassRecords.length);
       for (const mass of updatedMassRecords) {
+        console.log(`[Matter:Save] Syncing mass id: ${mass.id}, status: ${mass._status}`);
         if (mass._status === "created") {
           await db.run(
             `INSERT INTO mass (id, matter, type, scope, qty, value, active, geo, start, end, data, time)
@@ -640,6 +556,7 @@ export default function MatterScreen() {
               time
             ]
           );
+          console.log(`[Matter:Save] Mass record successfully inserted: ${mass.id}`);
         } else if (mass._status === "updated") {
           await db.run(
             `UPDATE mass 
@@ -657,15 +574,18 @@ export default function MatterScreen() {
               mass.id
             ]
           );
+          console.log(`[Matter:Save] Mass record successfully updated: ${mass.id}`);
         } else if (mass._status === "deleted") {
           await db.run(
             `UPDATE mass SET active = 0 WHERE id = ?`,
             [mass.id]
           );
+          console.log(`[Matter:Save] Mass record successfully marked inactive (soft deleted): ${mass.id}`);
         }
       }
 
       // Sync local vector representation
+      console.log("[Matter:Save] Updating vector embeddings...");
       try {
         await upsertMatterVector(recordId, {
           title,
@@ -674,19 +594,16 @@ export default function MatterScreen() {
           code: code || null,
           data: mergedDataString || null
         });
+        console.log("[Matter:Save] Vector embedding updated successfully.");
       } catch (vectorErr) {
-        console.error("Vector sync failed during save:", vectorErr);
+        console.error("[Matter:Save] Vector sync failed during save:", vectorErr);
       }
 
       router.back();
       
-      try {
-        if (db === getCollabDb()) {
-          db.push().catch((err: any) => console.error("Background sync failed:", err));
-        }
-      } catch(e) {}
+      // No-op sync in local mode
     } catch (error: any) {
-      console.error("Save failed:", error);
+      console.error("[Matter:Save] Save failed:", error);
       Alert.alert("Save Error", error?.message || "Failed to save.");
     } finally {
       setSaving(false);
@@ -697,6 +614,8 @@ export default function MatterScreen() {
     if (!aiInput.trim()) return;
     setAiLoading(true);
     setAiReply(null);
+    console.log("[Matter:AI] Start parsing prompt via Groq API. Input:", aiInput);
+
     try {
       let currentDataObj = {};
       try { currentDataObj = JSON.parse(data || "{}"); } catch {}
@@ -715,6 +634,8 @@ export default function MatterScreen() {
         end: m.end,
         data: m.data
       }));
+
+      console.log("[Matter:AI] Prompt context package:", { currentValues, activeMassList });
 
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
@@ -769,8 +690,10 @@ MODELING RULES:
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       const json = await response.json();
       const parsed = JSON.parse(json.choices[0].message.content);
+      console.log("[Matter:AI] Received Groq completion output:", parsed);
 
       if (parsed.fields) {
+        console.log("[Matter:AI] Applying field updates:", parsed.fields);
         for (const [key, value] of Object.entries(parsed.fields)) {
           if (isEditing && key === "type") continue;
           switch (key) {
@@ -782,12 +705,14 @@ MODELING RULES:
         }
       }
       if (parsed.data_updates) {
+        console.log("[Matter:AI] Merging custom JSON data updates:", parsed.data_updates);
         let old = {};
         try { old = JSON.parse(data || "{}"); } catch {}
         setData(JSON.stringify({ ...old, ...parsed.data_updates }));
       }
 
       if (parsed.mass_updates && Array.isArray(parsed.mass_updates)) {
+        console.log("[Matter:AI] Applying associated mass updates:", parsed.mass_updates);
         setMassRecords(prev => {
           let updated = [...prev];
           for (const up of parsed.mass_updates) {
@@ -853,8 +778,9 @@ MODELING RULES:
 
       setAiReply(parsed.reply || "Done.");
       setAiInput("");
+      console.log("[Matter:AI] AI parsing complete and state successfully updated.");
     } catch (error) {
-      console.error("Groq API Error:", error);
+      console.error("[Matter:AI] Groq API Error:", error);
       setAiReply("Sorry, I couldn't process that.");
     }   finally {
       setAiLoading(false);

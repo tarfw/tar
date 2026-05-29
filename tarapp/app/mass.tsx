@@ -50,10 +50,7 @@ export default function MassScreen() {
 
       router.back();
 
-      // Sync changes to remote in the background AFTER navigation transition
-      setTimeout(() => {
-        db.push().catch(err => console.error("Background sync failed:", err));
-      }, 500);
+      // No-op sync in local mode
     } catch (error) {
       console.error("Failed to create mass:", error);
       Alert.alert("Error", "Failed to create mass. Check console for details.");

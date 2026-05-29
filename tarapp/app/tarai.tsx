@@ -388,9 +388,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         hasChanges = true;
       }
 
-      if (hasChanges) {
-        await db.push();
-      }
+
 
       const newAgentMsg: Message = {
         id: (Date.now() + 1).toString(),

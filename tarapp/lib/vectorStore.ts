@@ -1,4 +1,4 @@
-import { routeDbForEntity, getGlobalDb, getCollabDb, getUserDb } from "./db";
+import { getUserDb } from "./db";
 import { generateEmbedding } from "./embeddings";
 import * as SecureStore from "expo-secure-store";
 
@@ -92,18 +92,9 @@ export async function upsertMatterVector(
     const vector = await generateEmbedding(textToEmbed);
     const blob = float32ArrayToBlob(vector);
     
-    const db = routeDbForEntity(matter.type || null, matter.scope || null);
-    const dbName = db === getGlobalDb() ? "Global" : db === getUserDb() ? "User" : "Collab";
+    const db = getUserDb();
     await db.run("INSERT OR REPLACE INTO memory (matter, vector) VALUES (?, ?)", [id, blob as any]);
-    console.log(`[VectorStore] Indexed vector for matter ${id} in Local ${dbName} DB`);
-    
-    if (db === getCollabDb()) {
-      try {
-        await db.push();
-      } catch {
-        // Sync fail is acceptable
-      }
-    }
+    console.log(`[VectorStore] Indexed vector for matter ${id} in Local User DB`);
   } catch (e) {
     console.error(`[VectorStore] Failed to upsert vector for matter ${id}:`, e);
   }
@@ -111,18 +102,9 @@ export async function upsertMatterVector(
 
 export async function deleteMatterVector(id: string, type: string | null, scope: string | null) {
   try {
-    const db = routeDbForEntity(type, scope);
-    const dbName = db === getGlobalDb() ? "Global" : db === getUserDb() ? "User" : "Collab";
+    const db = getUserDb();
     await db.run("DELETE FROM memory WHERE matter = ?", [id]);
-    console.log(`[VectorStore] Deleted vector for matter ${id} from Local ${dbName} DB`);
-    
-    if (db === getCollabDb()) {
-      try {
-        await db.push();
-      } catch {
-        // Sync fail is acceptable
-      }
-    }
+    console.log(`[VectorStore] Deleted vector for matter ${id} from Local User DB`);
   } catch (e) {
     console.error(`[VectorStore] Failed to delete vector for matter ${id}:`, e);
   }
@@ -136,20 +118,12 @@ export async function searchMatterVectors(
     const queryVector = await generateEmbedding(query);
     const queryFloat32 = new Float32Array(queryVector);
 
-    const gDb = getGlobalDb();
-    const tDb = getCollabDb();
-    const uDb = getUserDb();
+    const db = getUserDb();
+    const rows = await db.all("SELECT matter, vector FROM memory").catch(() => []);
 
-    const [gRows, tRows, uRows] = await Promise.all([
-      gDb.all("SELECT matter, vector FROM memory").catch(() => []),
-      tDb.all("SELECT matter, vector FROM memory").catch(() => []),
-      uDb.all("SELECT matter, vector FROM memory").catch(() => [])
-    ]);
-
-    const allRows = [...gRows, ...tRows, ...uRows];
     const results: Array<{ matterId: string; similarity: number }> = [];
 
-    for (const row of allRows) {
+    for (const row of rows) {
       if (row.matter && row.vector) {
         try {
           const vectorFloat32 = blobToFloat32Array(row.vector);
@@ -175,20 +149,12 @@ export async function checkAndSyncExistingMatters() {
     const isSynced = await SecureStore.getItemAsync(SYNC_FLAG_KEY);
     if (!isSynced) {
       console.log("[VectorStore] Initial sync flag not found. Re-indexing all existing matters...");
-      const gDb = getGlobalDb();
-      const tDb = getCollabDb();
-      const uDb = getUserDb();
+      const db = getUserDb();
+      const matters = await db.all("SELECT * FROM matter").catch(() => []);
 
-      const [gMatters, tMatters, uMatters] = await Promise.all([
-        gDb.all("SELECT * FROM matter").catch(() => []),
-        tDb.all("SELECT * FROM matter").catch(() => []),
-        uDb.all("SELECT * FROM matter").catch(() => [])
-      ]);
-
-      const allMatters = [...gMatters, ...tMatters, ...uMatters];
-      console.log(`[VectorStore] Found ${allMatters.length} matters to index`);
+      console.log(`[VectorStore] Found ${matters.length} matters to index`);
       
-      for (const m of allMatters) {
+      for (const m of matters) {
         await upsertMatterVector(String(m.id), {
           title: m.title ? String(m.title) : "",
           type: m.type ? String(m.type) : null,

@@ -18,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
 import * as Haptics from "expo-haptics";
-import { getUserDb, getCollabDb, setCustomCollabCredentials } from "../lib/db";
+import { getUserDb } from "../lib/db";
 import { uploadFileToS3 } from "../lib/s3";
 import * as FileSystemStore from "expo-file-system/legacy";
 import { signOutGoogle, getCurrentUser, UserProfile } from "../lib/auth";
@@ -102,10 +102,7 @@ export default function ProfileScreen() {
       await SecureStore.setItemAsync("user_tokens", finalTokens.toString());
       await SecureStore.setItemAsync("user_pricing_plan", "Paid");
 
-      // Sync database
-      const collabDb = getCollabDb();
-      collabDb.push().catch(e => console.error("[Plan Sync] Push failed:", e));
-      collabDb.pull().catch(e => console.error("[Plan Sync] Pull failed:", e));
+
 
       Alert.alert(
         "Tokens Added",
@@ -338,120 +335,7 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleCreateGroup = async () => {
-    setIsProvisioning(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      const response = await fetch("https://s3storage.tamilframework.workers.dev/api/collab/create-group", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
-      });
-      if (!response.ok) {
-        throw new Error("Failed to create collaboration group");
-      }
-      const data = await response.json();
-      
-      await SecureStore.setItemAsync("collab_group_code", data.groupCode);
-      await SecureStore.setItemAsync("collab_sync_url", data.syncUrl);
-      await SecureStore.setItemAsync("collab_sync_token", data.authToken);
-      
-      setCustomCollabCredentials(data.syncUrl, data.authToken);
-      setGroupCode(data.groupCode);
 
-      const collabDb = getCollabDb();
-      await collabDb.connect();
-      await collabDb.push();
-      await collabDb.pull();
-
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Group Created", `New group ${data.groupCode} provisioned. Sync is active!`);
-    } catch (e: any) {
-      console.error(e);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Error", e.message || "Failed to create group.");
-    } finally {
-      setIsProvisioning(false);
-    }
-  };
-
-  const handleJoinGroup = () => {
-    Alert.prompt(
-      "Join Collaboration Group",
-      "Enter the 6-character group code:",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Join",
-          onPress: async (code?: string) => {
-            if (!code || code.trim().length === 0) return;
-            setIsProvisioning(true);
-            try {
-              const response = await fetch("https://s3storage.tamilframework.workers.dev/api/collab/join-group", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ groupCode: code.trim() })
-              });
-              if (!response.ok) {
-                throw new Error("Failed to join group");
-              }
-              const data = await response.json();
-              
-              await SecureStore.setItemAsync("collab_group_code", data.groupCode);
-              await SecureStore.setItemAsync("collab_sync_url", data.syncUrl);
-              await SecureStore.setItemAsync("collab_sync_token", data.authToken);
-              
-              setCustomCollabCredentials(data.syncUrl, data.authToken);
-              setGroupCode(data.groupCode);
-
-              const collabDb = getCollabDb();
-              await collabDb.connect();
-              await collabDb.push();
-              await collabDb.pull();
-
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert("Joined Group", `Connected to group ${data.groupCode} and synced database successfully!`);
-            } catch (e: any) {
-              console.error(e);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-              Alert.alert("Error", e.message || "Failed to join group.");
-            } finally {
-              setIsProvisioning(false);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const handleLeaveGroup = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
-      "Leave Group",
-      "Are you sure you want to disconnect from this collaboration group? This will clear local synced data credentials.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await SecureStore.deleteItemAsync("collab_group_code");
-              await SecureStore.deleteItemAsync("collab_sync_url");
-              await SecureStore.deleteItemAsync("collab_sync_token");
-              
-              setCustomCollabCredentials("", "");
-              setGroupCode(null);
-              
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert("Disconnected", "Successfully disconnected from collaboration group.");
-            } catch (e) {
-              console.error(e);
-            }
-          }
-        }
-      ]
-    );
-  };
 
   const handleBackupNow = async () => {
     setIsBackingUp(true);
@@ -573,45 +457,7 @@ export default function ProfileScreen() {
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <View style={styles.settingsList}>
 
-            {/* COLLABORATION GROUP SECTION */}
-            <View style={styles.sectionHeaderContainer}>
-              <Text style={styles.sectionHeader}>Collaboration Group</Text>
-            </View>
-            {groupCode ? (
-              <View style={styles.groupContainer}>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={styles.groupLabel}>Active Group: <Text style={styles.groupValue}>{groupCode}</Text></Text>
-                  <Text style={styles.groupSublabel} numberOfLines={1}>Syncing to Turso database</Text>
-                </View>
-                <TouchableOpacity onPress={handleLeaveGroup} style={styles.leaveGroupBtn}>
-                  <Text style={styles.leaveGroupBtnText}>Leave</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.groupActionsContainer}>
-                <TouchableOpacity 
-                  onPress={handleCreateGroup} 
-                  disabled={isProvisioning} 
-                  style={[styles.groupActionBtn, { backgroundColor: "#1a1a1a", marginRight: 8 }]}
-                >
-                  {isProvisioning ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.groupActionBtnText}>Create Group</Text>
-                  )}
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  onPress={handleJoinGroup} 
-                  disabled={isProvisioning} 
-                  style={[styles.groupActionBtn, { backgroundColor: "#f1f5f9" }]}
-                >
-                  <Text style={[styles.groupActionBtnText, { color: "#1a1a1a" }]}>Join Group</Text>
-                </TouchableOpacity>
-              </View>
-            )}
 
-            <View style={styles.separator} />
 
             {/* GOOGLE ACCOUNT DETAILS */}
             {userProfile && (

@@ -16,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
-import { getUserDb, getCollabDb } from "../lib/db";
+import { getUserDb } from "../lib/db";
 import { setActiveMassId } from "../lib/state";
 import * as Haptics from "expo-haptics";
 import { getCurrentUser, UserProfile } from "../lib/auth";
@@ -313,9 +313,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         hasChanges = true;
       }
 
-      if (hasChanges) {
-        await db.push();
-      }
+
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Command Logged", parsed.reply || "Your voice request has been processed.");
@@ -342,9 +340,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
       async function loadData() {
         try {
-          const uDb = getUserDb();
-          const tDb = getCollabDb();
-          
+          const db = getUserDb();
           const nowStr = new Date().toISOString();
           
           // 1. Load Future Items (active slots in mass starting in the future)
@@ -354,17 +350,10 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             LEFT JOIN matter t ON m.matter = t.id 
             WHERE m.active = 1 AND m.type = 'slot' AND (m.scope = 'reminder' OR m.scope = 'deadline') AND m.start > ?
           `;
-          const futureTenantQuery = `
-            SELECT m.*, t.title, 'tenant' as originDb 
-            FROM mass m 
-            LEFT JOIN matter t ON m.matter = t.id 
-            WHERE m.active = 1 AND m.type = 'slot' AND (m.scope = 'reminder' OR m.scope = 'deadline') AND m.start > ?
-          `;
           
-          let uFuture = await uDb.all(futureQuery, [nowStr]);
-          let tFuture = await tDb.all(futureTenantQuery, [nowStr]);
+          let uFuture = await db.all(futureQuery, [nowStr]);
           
-          const combinedFuture = [...(Array.isArray(uFuture) ? uFuture : []), ...(Array.isArray(tFuture) ? tFuture : [])]
+          const combinedFuture = (Array.isArray(uFuture) ? uFuture : [])
             .sort((a, b) => String(a.start || "").localeCompare(String(b.start || "")));
             
           setFutureItems(combinedFuture);
@@ -376,18 +365,11 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             LEFT JOIN matter t ON m.matter = t.id 
             WHERE m.active = 1 AND m.type = 'slot' AND m.start <= ? AND (m.end IS NULL OR m.end >= ?)
           `;
-          const nowSlotsTenantQuery = `
-            SELECT m.*, t.title, 'tenant' as originDb
-            FROM mass m 
-            LEFT JOIN matter t ON m.matter = t.id 
-            WHERE m.active = 1 AND m.type = 'slot' AND m.start <= ? AND (m.end IS NULL OR m.end >= ?)
-          `;
           
-          let uNowSlots = await uDb.all(nowSlotsQuery, [nowStr, nowStr]);
-          let tNowSlots = await tDb.all(nowSlotsTenantQuery, [nowStr, nowStr]);
+          let uNowSlots = await db.all(nowSlotsQuery, [nowStr, nowStr]);
 
           // Determine the active job status from active slots occurring now
-          const allNowSlots = [...(Array.isArray(uNowSlots) ? uNowSlots : []), ...(Array.isArray(tNowSlots) ? tNowSlots : [])];
+          const allNowSlots = Array.isArray(uNowSlots) ? uNowSlots : [];
           const activeSlotWithScope = allNowSlots.find(s => s.scope);
           if (activeSlotWithScope) {
             setActiveJob(activeSlotWithScope.scope ? String(activeSlotWithScope.scope) : null);
@@ -412,10 +394,9 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
               raw: s
             }));
 
-          const uPendingMotions = await uDb.all("SELECT *, 'user' as originDb FROM motion WHERE status != 'COMPLETED' AND action != 1 ORDER BY time DESC LIMIT 20");
-          const tPendingMotions = await tDb.all("SELECT *, 'tenant' as originDb FROM motion WHERE status != 'COMPLETED' AND action != 1 ORDER BY time DESC LIMIT 20");
+          const uPendingMotions = await db.all("SELECT *, 'user' as originDb FROM motion WHERE status != 'COMPLETED' AND action != 1 ORDER BY time DESC LIMIT 20");
           
-          const pendingMotions = [...(Array.isArray(uPendingMotions) ? uPendingMotions : []), ...(Array.isArray(tPendingMotions) ? tPendingMotions : [])];
+          const pendingMotions = Array.isArray(uPendingMotions) ? uPendingMotions : [];
 
           // Load pending tasks (matter records of type 'task' that do not have a COMPLETED motion log)
           const pendingTasksQuery = `
@@ -427,20 +408,10 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
                 WHERE mot.stream = m.id AND (mot.status = 'COMPLETED' OR mot.action = 200)
               )
           `;
-          const pendingTasksTenantQuery = `
-            SELECT m.*, 'tenant' as originDb
-            FROM matter m
-            WHERE m.type = 'task'
-              AND NOT EXISTS (
-                SELECT 1 FROM motion mot
-                WHERE mot.stream = m.id AND (mot.status = 'COMPLETED' OR mot.action = 200)
-              )
-          `;
 
-          const uTasks = await uDb.all(pendingTasksQuery).catch(() => []);
-          const tTasks = await tDb.all(pendingTasksTenantQuery).catch(() => []);
+          const uTasks = await db.all(pendingTasksQuery).catch(() => []);
 
-          const taskItems = [...(Array.isArray(uTasks) ? uTasks : []), ...(Array.isArray(tTasks) ? tTasks : [])]
+          const taskItems = (Array.isArray(uTasks) ? uTasks : [])
             .map(t => ({
               id: t.id,
               isTaskMatter: true,
@@ -460,10 +431,9 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
           setNowItems(groupedNow);
 
           // 3. Load Past Items (completed motions, receipts, logs)
-          const uPastMotions = await uDb.all("SELECT *, 'user' as originDb FROM motion WHERE status = 'COMPLETED' OR action = 1 ORDER BY time DESC LIMIT 30");
-          const tPastMotions = await tDb.all("SELECT *, 'tenant' as originDb FROM motion WHERE status = 'COMPLETED' OR action = 1 ORDER BY time DESC LIMIT 30");
+          const uPastMotions = await db.all("SELECT *, 'user' as originDb FROM motion WHERE status = 'COMPLETED' OR action = 1 ORDER BY time DESC LIMIT 30");
           
-          const combinedPast = [...(Array.isArray(uPastMotions) ? uPastMotions : []), ...(Array.isArray(tPastMotions) ? tPastMotions : [])];
+          const combinedPast = Array.isArray(uPastMotions) ? uPastMotions : [];
           const groupedPast = groupOrderItems(combinedPast)
             .sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")))
             .slice(0, 40);
@@ -472,16 +442,10 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
           // Load selected mass overlay if any
           if (massId) {
-            let massRow = await uDb.all(
+            let massRow = await db.all(
               `SELECT m.*, t.title FROM mass m LEFT JOIN matter t ON m.matter = t.id WHERE m.id = ?`, 
               [massId]
             );
-            if (!Array.isArray(massRow) || massRow.length === 0) {
-              massRow = await tDb.all(
-                `SELECT m.*, t.title FROM mass m LEFT JOIN matter t ON m.matter = t.id WHERE m.id = ?`, 
-                [massId]
-              );
-            }
             if (Array.isArray(massRow) && massRow.length > 0) {
               setSelectedMass(massRow[0]);
             }
@@ -502,9 +466,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
   const handleMarkDone = async (item: any) => {
     try {
-      const uDb = getUserDb();
-      const tDb = getCollabDb();
-      const db = item.originDb === 'user' ? uDb : tDb;
+      const db = getUserDb();
       
       if (item.isMass) {
         // Deactivate the mass scheduled reminder/slot
@@ -549,8 +511,6 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         // Complete the motion task
         await db.run("UPDATE motion SET status = 'COMPLETED' WHERE id = ?", [item.id]);
       }
-      // Sync to Turso in the background
-      db.push().catch(e => console.error("Background sync failed:", e));
     } catch (e) {
       console.error("Failed to mark done:", e);
     }
@@ -889,17 +849,26 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
               <Text style={styles.userName}>{userProfile?.name || "Guest"}</Text>
             </Animated.View>
           </TouchableOpacity>
-          <Animated.View key={activeJob || "idle"} entering={FadeIn.duration(300)}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
             <TouchableOpacity 
-              style={[styles.headerStatusBadge, { backgroundColor: badgeStyles.bg }]} 
-              onPress={() => router.push("/profile")}
+              onPress={() => router.push("/history")} 
+              style={{ marginRight: 14, padding: 4 }}
               activeOpacity={0.7}
             >
-              <Text style={[styles.headerStatusBadgeText, { color: badgeStyles.color }]}>
-                {badgeStyles.text}
-              </Text>
+              <Ionicons name="time-outline" size={24} color="#64748b" />
             </TouchableOpacity>
-          </Animated.View>
+            <Animated.View key={activeJob || "idle"} entering={FadeIn.duration(300)}>
+              <TouchableOpacity 
+                style={[styles.headerStatusBadge, { backgroundColor: badgeStyles.bg }]} 
+                onPress={() => router.push("/profile")}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.headerStatusBadgeText, { color: badgeStyles.color }]}>
+                  {badgeStyles.text}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
         </View>
 
         <ScrollView 
@@ -925,8 +894,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
           {/* Now Section */}
           {nowItems.length > 0 && (
-            <View>
-              <Text style={styles.sectionHeader}>[ NOW ]</Text>
+            <View style={{ marginTop: 15 }}>
               <View style={styles.motionList}>
                 {nowItems.map((item, index) => (
                   <React.Fragment key={`${item.originDb || 'now'}_${item.id}`}>
@@ -944,34 +912,13 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             </View>
           )}
 
-          {/* Past Section */}
-          {pastItems.length > 0 && (
-            <View>
-              <Text style={styles.sectionHeader}>[ PAST ]</Text>
-              <View style={styles.motionList}>
-                {pastItems.map((item, index) => (
-                  <React.Fragment key={`${item.originDb || 'past'}_${item.id}`}>
-                    {item.isOrderGroup ? (
-                      renderOrderGroupCard(item, index, pastItems.length)
-                    ) : (
-                      <View>
-                        {renderCard(item)}
-                        {index < pastItems.length - 1 && !pastItems[index + 1].isOrderGroup && <View style={styles.separator} />}
-                      </View>
-                    )}
-                  </React.Fragment>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {futureItems.length === 0 && nowItems.length === 0 && pastItems.length === 0 && (
+          {futureItems.length === 0 && nowItems.length === 0 && (
             <Animated.View 
               entering={FadeInDown.delay(400).duration(800)}
               style={styles.emptyState}
             >
               <Ionicons name="layers-outline" size={48} color="#e2e8f0" />
-              <Text style={styles.emptyText}>No motion data or scheduled slots found.</Text>
+              <Text style={styles.emptyText}>No active slots or pending motions found.</Text>
             </Animated.View>
           )}
         </ScrollView>
@@ -1482,5 +1429,26 @@ const styles = StyleSheet.create({
   },
   micBtnRecording: {
     backgroundColor: '#ff3b30',
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingRight: 20,
+    marginTop: 25,
+    marginBottom: 10,
+  },
+  historyBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: "#f1f5f9",
+  },
+  historyBtnText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#6366f1",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   }
 });

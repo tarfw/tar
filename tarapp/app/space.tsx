@@ -11,7 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { getDbClient, getGlobalDb } from "../lib/db";
+import { getUserDb } from "../lib/db";
 
 interface CatalogItem {
   mass_id: string;
@@ -38,7 +38,7 @@ export default function SpaceScreen() {
     useCallback(() => {
       async function loadCatalog() {
         try {
-          const db = getGlobalDb();
+          const db = getUserDb();
           // Join mass and matter to get physical limits (price/stock) and abstract concepts (title)
           const rows = await db.all(`
             SELECT m.id as mass_id, m.matter as matter_id, m.qty as stock, m.value as price, t.title as title, t.code as code 
@@ -80,8 +80,8 @@ export default function SpaceScreen() {
     if (cartItems.length === 0) return;
     setIsCheckingOut(true);
     try {
-      const db = getDbClient();
-      const globalDb = getGlobalDb();
+      const db = getUserDb();
+      const globalDb = getUserDb();
       const streamId = `ord_${Date.now()}`; // Unique order stream
       const totalAmount = cartItems.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0);
 
@@ -130,9 +130,6 @@ export default function SpaceScreen() {
           );
         }
       }
-
-      // Sync collab database to Turso in the background (local-first, instant UI transition)
-      db.push().catch(e => console.error("Background collab sync failed:", e));
 
       setCart({});
       router.back(); // Return to home timeline immediately

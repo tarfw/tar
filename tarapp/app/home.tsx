@@ -108,6 +108,7 @@ export default function HomePage() {
   const [nowItems, setNowItems] = useState<any[]>([]);
   const [pastItems, setPastItems] = useState<any[]>([]);
   const [selectedMass, setSelectedMass] = useState<any>(null);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
   const [activeJob, setActiveJob] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -533,11 +534,16 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
     }
 
     return (
-      <View key={`${item.originDb}_${item.id}`} style={styles.motionItem}>
+      <TouchableOpacity 
+        key={`${item.originDb}_${item.id}`} 
+        style={styles.motionItem}
+        activeOpacity={0.7}
+        onPress={() => setSelectedItem(item)}
+      >
         <View style={styles.motionItemLeft}>
           <TouchableOpacity 
             style={styles.statusWrapper}
-            onPress={() => handleMarkDone({ id: item.id, isMass: true, originDb: item.originDb, subtitle: item.title || "Reminder", raw: item })}
+            onPress={() => setSelectedItem(item)}
           >
             <Ionicons 
               name="ellipse-outline" 
@@ -556,17 +562,22 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             <Text style={styles.futureTimeText}>{displayDate} {displayTime}</Text>
           ) : null}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   const renderTaskMatterCard = (item: any) => {
     return (
-      <View key={`${item.originDb}_${item.id}`} style={styles.motionItem}>
+      <TouchableOpacity 
+        key={`${item.originDb}_${item.id}`} 
+        style={styles.motionItem}
+        activeOpacity={0.7}
+        onPress={() => setSelectedItem(item)}
+      >
         <View style={styles.motionItemLeft}>
           <TouchableOpacity 
             style={styles.statusWrapper}
-            onPress={() => handleMarkDone(item)}
+            onPress={() => setSelectedItem(item)}
           >
             <Ionicons 
               name="ellipse-outline" 
@@ -585,7 +596,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             {formatRelativeTime(item.time)}
           </Text>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -667,11 +678,16 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
     }
 
     return (
-      <View key={`${motion.originDb || 'motion'}_${motion.id}`} style={styles.motionItem}>
+      <TouchableOpacity 
+        key={`${motion.originDb || 'motion'}_${motion.id}`} 
+        style={styles.motionItem}
+        activeOpacity={0.7}
+        onPress={() => setSelectedItem(motion)}
+      >
         <View style={styles.motionItemLeft}>
           <TouchableOpacity 
             style={styles.statusWrapper}
-            onPress={() => !isCompleted && handleMarkDone(motion)}
+            onPress={() => setSelectedItem(motion)}
             disabled={isCompleted}
           >
             <Ionicons 
@@ -689,7 +705,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         <View style={styles.motionItemRight}>
           {config.amount && <Text style={styles.itemAmount} numberOfLines={1}>{config.amount}</Text>}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -1072,6 +1088,54 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
                   <Text style={styles.massStatValue}>{selectedMass.type || 'Mass'}</Text>
                 </View>
               </View>
+            </View>
+          </View>
+        )}
+
+        {/* Bottom Drawer Modal for Item Status Updates */}
+        {selectedItem && (
+          <View style={[styles.drawerOverlay, { paddingBottom: insets.bottom + 16 }]}>
+            <View style={styles.drawerCard}>
+              <View style={styles.massHeader}>
+                <View style={styles.massTitleRow}>
+                  <View style={[styles.massIndicator, { backgroundColor: selectedItem.isMass ? '#ea580c' : selectedItem.isTaskMatter ? '#c026d3' : '#6366f1' }]} />
+                  <Text style={styles.massTitleText} numberOfLines={1}>
+                    {selectedItem.subtitle || selectedItem.title || 'Active Item'}
+                  </Text>
+                </View>
+                <TouchableOpacity 
+                  onPress={() => setSelectedItem(null)}
+                  style={styles.massCloseBtn}
+                >
+                  <Ionicons name="close-circle" size={24} color="#94a3b8" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ fontSize: 13, color: '#64748b', fontWeight: '600' }}>
+                  Type: <Text style={{ color: '#1e293b', fontWeight: '700' }}>{selectedItem.isMass ? 'Scheduled Slot' : selectedItem.isTaskMatter ? 'Pending Task' : 'Motion Flow'}</Text>
+                </Text>
+                {selectedItem.time && (
+                  <Text style={{ fontSize: 13, color: '#64748b', fontWeight: '600', marginTop: 4 }}>
+                    Time: <Text style={{ color: '#1e293b' }}>{formatRelativeTime(selectedItem.time)}</Text>
+                  </Text>
+                )}
+              </View>
+
+              <TouchableOpacity 
+                style={styles.drawerActionBtn} 
+                activeOpacity={0.8}
+                onPress={async () => {
+                  const dbItem = selectedItem.isMass 
+                    ? { id: selectedItem.id, isMass: true, originDb: selectedItem.originDb, subtitle: selectedItem.title || "Reminder", raw: selectedItem.raw || selectedItem } 
+                    : selectedItem;
+                  await handleMarkDone(dbItem);
+                  setSelectedItem(null);
+                }}
+              >
+                <Ionicons name="checkmark-circle-outline" size={20} color="white" style={{ marginRight: 8 }} />
+                <Text style={styles.drawerActionBtnText}>Mark as Completed</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -1463,5 +1527,33 @@ const styles = StyleSheet.create({
     color: "#6366f1",
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  drawerActionBtn: {
+    backgroundColor: '#6366f1',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  drawerActionBtnText: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  drawerOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 200,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+  },
+  drawerCard: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
   }
 });

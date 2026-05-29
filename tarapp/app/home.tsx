@@ -19,6 +19,7 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { getUserDb, getCollabDb } from "../lib/db";
 import { setActiveMassId } from "../lib/state";
 import * as Haptics from "expo-haptics";
+import { getCurrentUser, UserProfile } from "../lib/auth";
 
 import { upsertMatterVector } from "../lib/vectorStore";
 
@@ -109,6 +110,7 @@ export default function HomePage() {
   const [selectedMass, setSelectedMass] = useState<any>(null);
   const [activeJob, setActiveJob] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   // Native Voice Dictation Integration
   const [isRecording, setIsRecording] = useState(false);
@@ -328,6 +330,16 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
   useFocusEffect(
     useCallback(() => {
+      async function loadProfile() {
+        try {
+          const user = await getCurrentUser();
+          setUserProfile(user);
+        } catch (e) {
+          console.error("Failed to load user profile in Home:", e);
+        }
+      }
+      loadProfile();
+
       async function loadData() {
         try {
           const uDb = getUserDb();
@@ -864,11 +876,17 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             style={{ flexDirection: "row", alignItems: "center" }}
           >
             <Animated.View entering={FadeIn.delay(200)} style={styles.userInfo}>
-              <Image 
-                source={{ uri: "https://api.dicebear.com/7.x/avataaars/svg?seed=prabha" }} 
-                style={styles.avatar} 
-              />
-              <Text style={styles.userName}>prabha</Text>
+              {userProfile?.photo ? (
+                <Image 
+                  source={{ uri: userProfile.photo }} 
+                  style={styles.avatar} 
+                />
+              ) : (
+                <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                  <Ionicons name="person" size={16} color="#71717a" />
+                </View>
+              )}
+              <Text style={styles.userName}>{userProfile?.name || "Guest"}</Text>
             </Animated.View>
           </TouchableOpacity>
           <Animated.View key={activeJob || "idle"} entering={FadeIn.duration(300)}>
@@ -1127,6 +1145,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#000",
     marginRight: 10,
+  },
+  avatarPlaceholder: {
+    backgroundColor: "#f4f4f5",
+    justifyContent: "center",
+    alignItems: "center",
   },
   userName: {
     fontSize: 18,

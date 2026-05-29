@@ -89,7 +89,7 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
     }
 
     // 2. Fallback to silent native sign in
-    const hasPreviousSignIn = GoogleSignin.hasPreviousSignIn();
+    const hasPreviousSignIn = await GoogleSignin.hasPreviousSignIn();
     if (hasPreviousSignIn) {
       const response = await GoogleSignin.signInSilently();
       const signInResult = response as any;

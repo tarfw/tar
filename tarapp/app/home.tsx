@@ -518,8 +518,19 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
   const renderMassCard = (item: any) => {
     const isReminder = item.scope === 'reminder';
-    const displayTime = new Date(item.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const displayDate = new Date(item.start).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const startTime = item.start || item.time || (item.raw && item.raw.start);
+    
+    let displayTime = "";
+    let displayDate = "";
+    if (startTime) {
+      try {
+        const d = new Date(startTime);
+        if (!isNaN(d.getTime())) {
+          displayTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          displayDate = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        }
+      } catch (e) {}
+    }
 
     return (
       <View key={`${item.originDb}_${item.id}`} style={styles.motionItem}>
@@ -541,7 +552,9 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
           </View>
         </View>
         <View style={styles.motionItemRight}>
-          <Text style={styles.futureTimeText}>{displayDate} {displayTime}</Text>
+          {displayDate || displayTime ? (
+            <Text style={styles.futureTimeText}>{displayDate} {displayTime}</Text>
+          ) : null}
         </View>
       </View>
     );

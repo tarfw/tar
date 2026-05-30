@@ -990,23 +990,16 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
               <TouchableOpacity 
                 style={[styles.circleBtn, { marginLeft: 6 }]}
-                onPress={() => router.push('/upload')}
+                onPress={() => router.push('/workflows')}
               >
-                <Ionicons name="cloud-upload-outline" size={18} color="#1a1a1a" />
+                <Ionicons name="git-network-outline" size={18} color="#1a1a1a" />
               </TouchableOpacity>
 
               <TouchableOpacity 
                 style={[styles.circleBtn, { marginLeft: 6 }]}
-                onPress={() => router.push('/matter')}
+                onPress={() => router.push('/aigui2')}
               >
-                <Ionicons name="cube-outline" size={18} color="#1a1a1a" />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.circleBtn, { marginLeft: 6 }]}
-                onPress={() => router.push('/motion')}
-              >
-                <Ionicons name="flash-outline" size={18} color="#1a1a1a" />
+                <Ionicons name="terminal-outline" size={18} color="#1a1a1a" />
               </TouchableOpacity>
             </View>
 
@@ -1023,6 +1016,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
                       name={isRecording ? "stop" : "mic-outline"} 
                       size={18} 
                       color={isRecording ? "#fff" : "#1a1a1a"} 
+                      style={{ marginRight: 0 }}
                     />
                 </TouchableOpacity>
               )}
@@ -1030,16 +1024,9 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
               <TouchableOpacity 
                 style={[styles.circleBtn, { marginLeft: ExpoSpeechRecognitionModule ? 6 : 0 }]}
                 activeOpacity={0.8}
-                onPress={() => router.push('/tarai')}
-              >
-                <Text style={styles.aiText}>AI</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.circleBtn, { marginLeft: 6 }]} 
                 onPress={() => router.push('/aichat')}
               >
-                <Ionicons name="chatbubbles-outline" size={18} color="#1a1a1a" />
+                <Text style={styles.aiText}>AI</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 

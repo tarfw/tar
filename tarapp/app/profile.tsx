@@ -8,17 +8,16 @@ import {
   Alert,
   Platform,
   ScrollView,
-  Modal,
   Image
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, Stack, useFocusEffect } from "expo-router";
 import { ResourceFetcher, SSDLITE_320_MOBILENET_V3_LARGE, CLIP_VIT_BASE_PATCH32_IMAGE } from "react-native-executorch";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
 import * as Haptics from "expo-haptics";
-import { getUserDb } from "../lib/db";
+import { getUserDb, initDb } from "../lib/db";
 import { uploadFileToS3 } from "../lib/s3";
 import * as FileSystemStore from "expo-file-system/legacy";
 import { signOutGoogle, getCurrentUser, UserProfile } from "../lib/auth";
@@ -26,7 +25,7 @@ import { signOutGoogle, getCurrentUser, UserProfile } from "../lib/auth";
 export const LFM_MODELS = {
   LFM2_5_350M_QUANTIZED: {
     id: "LFM2_5_350M_QUANTIZED",
-    name: "LFM 2.5 350M (Quantized)",
+    name: "Tar AI 350M Q",
     size: "454 MB",
     modelSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/xnnpack/lfm2_5_350m_xnnpack_8w4da.pte",
     tokenizerSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/tokenizer.json",
@@ -34,7 +33,7 @@ export const LFM_MODELS = {
   },
   LFM2_5_350M_FP16: {
     id: "LFM2_5_350M_FP16",
-    name: "LFM 2.5 350M (FP16)",
+    name: "Tar AI 350M",
     size: "845 MB",
     modelSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/xnnpack/lfm2_5_350m_xnnpack_fp16.pte",
     tokenizerSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm-2.5/resolve/v0.8.0/lfm2.5-350M/tokenizer.json",
@@ -42,7 +41,7 @@ export const LFM_MODELS = {
   },
   LFM2_5_1_2B_INSTRUCT_QUANTIZED: {
     id: "LFM2_5_1_2B_INSTRUCT_QUANTIZED",
-    name: "LFM 2.5 1.2B Instruct (Quantized)",
+    name: "Tar AI 1.2B",
     size: "796 MB",
     modelSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm2.5-1.2B-instruct/resolve/v0.8.0/quantized/lfm2_5_1_2b_8da4w.pte",
     tokenizerSource: "https://huggingface.co/software-mansion/react-native-executorch-lfm2.5-1.2B-instruct/resolve/v0.8.0/tokenizer.json",
@@ -53,41 +52,95 @@ export const LFM_MODELS = {
 export const UTILITY_MODELS = {
   SSDLITE_DETECTOR: {
     id: "SSDLITE_DETECTOR",
-    name: "Object Detector (SSDLite MobileNetV3)",
+    name: "Tar Vision SSDLite",
     size: "20 MB",
     modelSource: SSDLITE_320_MOBILENET_V3_LARGE.modelSource,
     description: "Locates candidate product objects in photos for matching."
   },
   YOLO26S_DETECTOR: {
     id: "YOLO26S_DETECTOR",
-    name: "Object Detector (YOLO26 Small)",
+    name: "Tar Vision YOLO",
     size: "16 MB",
     modelSource: "https://huggingface.co/software-mansion/react-native-executorch-yolo26/resolve/v0.7.0/yolo26s/xnnpack/yolo26s.pte",
     description: "Real-time object detector model optimized with XNNPACK."
   },
   CLIP_MATCHER: {
     id: "CLIP_MATCHER",
-    name: "Photo Feature Matcher (CLIP ViT-B/32)",
+    name: "Tar Vision CLIP",
     size: "87 MB",
     modelSource: CLIP_VIT_BASE_PATCH32_IMAGE.modelSource,
     description: "Extracts visual feature embeddings to match products."
   }
 };
 
+const SCOPES = [
+  { category: "Personal", targetDb: "user_${self_id}.db", prefix: "p" },
+  { category: "Global", targetDb: "global.db", prefix: "g" },
+  { category: "Family", targetDb: "user_sync_${owner_id}.db", prefix: "f:{id}" },
+  { category: "Team / Work", targetDb: "user_sync_${owner_id}.db", prefix: "t:{id}" },
+  { category: "Friends", targetDb: "user_sync_${owner_id}.db", prefix: "r:{id}" },
+  { category: "Storefront", targetDb: "user_sync_${owner_id}.db", prefix: "s:{id}" },
+  { category: "Warehouse", targetDb: "user_sync_${owner_id}.db", prefix: "w:{id}" },
+  { category: "Client / CRM", targetDb: "user_sync_${owner_id}.db", prefix: "c:{id}" },
+  { category: "Campaigns", targetDb: "user_sync_${owner_id}.db", prefix: "m:{id}" },
+  { category: "Forms", targetDb: "user_sync_${owner_id}.db", prefix: "x:{id}" },
+  { category: "HR / Staff", targetDb: "user_sync_${owner_id}.db", prefix: "h:{id}" },
+  { category: "Logistics", targetDb: "user_sync_${owner_id}.db", prefix: "d" }
+];
+
+const DUMMY_MEMBERS: Record<string, { name: string; role: string; photo: string }[]> = {
+  "Personal": [
+    { name: "You (Private Catalog)", role: "Owner", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Felix&backgroundColor=b6e3f4" }
+  ],
+  "Global": [
+    { name: "System Admin", role: "Admin", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Admin&backgroundColor=c0aede" },
+    { name: "Public Catalog Sync", role: "Automation", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Robot&backgroundColor=d1d4f9" }
+  ],
+  "Family": [
+    { name: "Mom", role: "Admin", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Mom&backgroundColor=ffd5dc" },
+    { name: "Sister", role: "Member", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Sister&backgroundColor=ffdf00" }
+  ],
+  "Team / Work": [
+    { name: "Alice Smith", role: "Manager", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Alice&backgroundColor=c2f0c2" },
+    { name: "Bob Johnson", role: "Lead Developer", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Bob&backgroundColor=ffe0b2" },
+    { name: "Charlie Brown", role: "QA Engineer", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Charlie&backgroundColor=b6e3f4" }
+  ],
+  "Friends": [
+    { name: "Dave Miller", role: "Member", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Dave&backgroundColor=c0aede" },
+    { name: "Eva Green", role: "Member", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Eva&backgroundColor=ffd5dc" }
+  ],
+  "Storefront": [
+    { name: "Central Retail Store", role: "Store", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Store&backgroundColor=d1d4f9" }
+  ],
+  "Warehouse": [
+    { name: "Chennai SCM Warehouse", role: "Logistics", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Warehouse&backgroundColor=ffdf00" }
+  ],
+  "Client / CRM": [
+    { name: "Acme Corp (VIP Lead)", role: "Client", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Client&backgroundColor=c2f0c2" },
+    { name: "Wayne Enterprises", role: "Client", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Bruce&backgroundColor=ffe0b2" }
+  ],
+  "Campaigns": [
+    { name: "Summer Launch Campaign", role: "Campaign", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Campaign&backgroundColor=b6e3f4" }
+  ],
+  "Forms": [
+    { name: "Employee Feedback Form", role: "Form", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Form&backgroundColor=c0aede" }
+  ],
+  "HR / Staff": [
+    { name: "HR Manager Office", role: "Admin", photo: "https://api.dicebear.com/7.x/notionists/png?seed=HR&backgroundColor=ffd5dc" }
+  ],
+  "Logistics": [
+    { name: "Fleet Dispatcher", role: "Operations", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Dispatcher&backgroundColor=d1d4f9" },
+    { name: "Delivery Partner 01", role: "Transit", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Delivery&backgroundColor=ffdf00" }
+  ]
+};
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [backupFreq, setBackupFreq] = useState<"daily" | "weekly">("daily");
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [lastBackupTime, setLastBackupTime] = useState<string>("Never");
-  const [pricingPlan, setPricingPlan] = useState<string>("Free");
   const [tokens, setTokens] = useState<number>(0);
-  const [groupCode, setGroupCode] = useState<string | null>(null);
-  const [isProvisioning, setIsProvisioning] = useState(false);
-  const [showAddTokensDrawer, setShowAddTokensDrawer] = useState(false);
 
   const handlePurchaseTokens = async () => {
     try {
@@ -96,23 +149,31 @@ export default function ProfileScreen() {
       const finalTokens = tokens + addedTokens;
       
       setTokens(finalTokens);
-      setPricingPlan("Paid");
-      setShowAddTokensDrawer(false);
 
       await SecureStore.setItemAsync("user_tokens", finalTokens.toString());
       await SecureStore.setItemAsync("user_pricing_plan", "Paid");
 
-
-
       Alert.alert(
         "Tokens Added",
-        `Successfully added ${addedTokens.toLocaleString()} tokens.\nYour collaborative database is now synced.`,
+        `Successfully added ${addedTokens.toLocaleString()} tokens.`,
         [{ text: "OK" }]
       );
     } catch (e) {
       console.error(e);
       Alert.alert("Error", "Could not complete the purchase.");
     }
+  };
+
+  const promptAddTokens = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(
+      "Add Tokens",
+      "Purchase 3,000,000 tokens for ₹500 to enable sync and AI features?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Add (₹500)", onPress: handlePurchaseTokens }
+      ]
+    );
   };
 
   const [activeModelId, setActiveModelId] = useState<string>("LFM2_5_350M_FP16");
@@ -126,14 +187,11 @@ export default function ProfileScreen() {
     return cleanUri.replace(/[^a-zA-Z0-9._-]/g, '_');
   };
 
-  // Check downloaded model files status
   const checkFilesStatus = useCallback(async () => {
     try {
       const files = await ResourceFetcher.listDownloadedFiles() as string[];
-
       const statusMap: Record<string, boolean> = {};
       
-      // Check LLMs
       for (const key of Object.keys(LFM_MODELS)) {
         const model = LFM_MODELS[key as keyof typeof LFM_MODELS];
         const modelFn = getFilenameFromUri(model.modelSource);
@@ -143,7 +201,6 @@ export default function ProfileScreen() {
         statusMap[key] = hasModel && hasTokenizer;
       }
 
-      // Check Utilities
       for (const key of Object.keys(UTILITY_MODELS)) {
         const model = UTILITY_MODELS[key as keyof typeof UTILITY_MODELS];
         const modelFn = getFilenameFromUri(model.modelSource);
@@ -269,9 +326,6 @@ export default function ProfileScreen() {
     }
   };
 
-
-
-  // Reload preferences and tokens when the screen gets focus
   useFocusEffect(
     useCallback(() => {
       async function loadPreferences() {
@@ -279,35 +333,14 @@ export default function ProfileScreen() {
           const user = await getCurrentUser();
           setUserProfile(user);
 
-          const storedFreq = await SecureStore.getItemAsync("private_db_backup_frequency");
-          if (storedFreq === "weekly" || storedFreq === "daily") {
-            setBackupFreq(storedFreq);
-          }
-
           const storedTime = await SecureStore.getItemAsync("private_db_last_backup_time");
           if (storedTime) {
             setLastBackupTime(storedTime);
           }
 
-          const plan = await SecureStore.getItemAsync("user_pricing_plan");
-          if (plan) {
-            setPricingPlan(plan);
-          } else {
-            setPricingPlan("Free");
-            await SecureStore.setItemAsync("user_pricing_plan", "Free");
-          }
-
           const storedTokens = await SecureStore.getItemAsync("user_tokens");
           if (storedTokens !== null) {
             setTokens(parseInt(storedTokens, 10));
-          } else {
-            setTokens(0);
-            await SecureStore.setItemAsync("user_tokens", "0");
-          }
-
-          const code = await SecureStore.getItemAsync("collab_group_code");
-          if (code) {
-            setGroupCode(code);
           }
 
           const storedModelId = await SecureStore.getItemAsync("selected_lfm_model_id");
@@ -324,25 +357,11 @@ export default function ProfileScreen() {
     }, [checkFilesStatus])
   );
 
-  const toggleBackupFreq = async () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const newFreq = backupFreq === "daily" ? "weekly" : "daily";
-      setBackupFreq(newFreq);
-      await SecureStore.setItemAsync("private_db_backup_frequency", newFreq);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-
-
   const handleBackupNow = async () => {
     setIsBackingUp(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       const uDb = getUserDb();
-      
       const tempFilename = "user_backup.db";
       const localTempUri = FileSystemStore.documentDirectory + tempFilename;
       let rawTempPath = localTempUri;
@@ -350,17 +369,12 @@ export default function ProfileScreen() {
         rawTempPath = rawTempPath.substring(7);
       }
 
-      // 1. Delete previous temp file if exists
       try {
         await FileSystemStore.deleteAsync(localTempUri, { idempotent: true });
       } catch (_) {}
 
-      // 2. Perform SQLite safe copy VACUUM INTO
-      console.log(`[Backup] Vacuuming user database to ${rawTempPath}...`);
       await uDb.run("VACUUM INTO ?", [rawTempPath]);
 
-      // 3. Upload vacuumed copy to S3 (private/{uid}/backups/...)
-      console.log("[Backup] Uploading copy to S3...");
       const result = await uploadFileToS3(
         localTempUri,
         "user.db",
@@ -368,7 +382,6 @@ export default function ProfileScreen() {
         false
       );
 
-      // 4. Delete local temp file
       await FileSystemStore.deleteAsync(localTempUri, { idempotent: true });
 
       const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + 
@@ -377,11 +390,11 @@ export default function ProfileScreen() {
       await SecureStore.setItemAsync("private_db_last_backup_time", timestamp);
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Backup Complete", `Private database backed up to Cloudflare S3 successfully!\nPath: ${result.key}`);
+      Alert.alert("Backup Complete", `Database backed up successfully.\nPath: ${result.key}`);
     } catch (e: any) {
       console.error("Backup failed:", e);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Backup Failed", e.message || "Unable to safe-copy or upload private database.");
+      Alert.alert("Backup Failed", e.message || "Unable to backup private database.");
     } finally {
       setIsBackingUp(false);
     }
@@ -400,7 +413,13 @@ export default function ProfileScreen() {
           onPress: async () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             try {
+              const currentUser = await getCurrentUser();
+              if (currentUser) {
+                await SecureStore.deleteItemAsync(`user_sync_url_${currentUser.id}`);
+                await SecureStore.deleteItemAsync(`user_sync_token_${currentUser.id}`);
+              }
               await signOutGoogle();
+              await initDb();
             } catch (err) {
               console.error("Error signing out:", err);
             }
@@ -417,7 +436,7 @@ export default function ProfileScreen() {
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
         
-        {/* User Card */}
+        {/* Profile Info Header */}
         <View style={styles.profileHeader}>
           <TouchableOpacity 
             activeOpacity={0.8} 
@@ -431,7 +450,7 @@ export default function ProfileScreen() {
               <Image source={{ uri: userProfile.photo }} style={styles.profileAvatar} />
             ) : (
               <View style={[styles.profileAvatar, styles.avatarPlaceholder]}>
-                <Ionicons name="person" size={24} color="#71717a" />
+                <Ionicons name="person" size={20} color="#71717a" />
               </View>
             )}
             <View style={styles.profileHeaderNameContainer}>
@@ -439,240 +458,257 @@ export default function ProfileScreen() {
               <Text style={styles.profileUsername}>{userProfile?.email || "@guest"}</Text>
             </View>
           </TouchableOpacity>
-          <Text style={styles.tokensValue}>
-            {tokens.toLocaleString()} Tokens
-          </Text>
-          <TouchableOpacity 
-            activeOpacity={0.7} 
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowAddTokensDrawer(true);
-            }}
-          >
-            <Text style={styles.manageTokensText}>Add Tokens →</Text>
-          </TouchableOpacity>
+
+          <View style={styles.tokenRow}>
+            <Text style={styles.tokensValue}>
+              {tokens.toLocaleString()} Tokens
+            </Text>
+            <TouchableOpacity 
+              activeOpacity={0.7} 
+              onPress={promptAddTokens}
+              style={styles.addTokensButton}
+            >
+              <Text style={styles.manageTokensText}>Add Tokens</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Settings List */}
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <View style={styles.settingsList}>
 
-
-
-            {/* GOOGLE ACCOUNT DETAILS */}
-            {userProfile && (
-              <>
-                <View style={styles.sectionHeaderContainer}>
-                  <Text style={styles.sectionHeader}>Google Account Details</Text>
-                </View>
-                
-                <View style={styles.detailsCard}>
-                  <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>User ID</Text>
-                    <Text style={styles.detailValue} selectable={true}>{userProfile.id}</Text>
-                  </View>
-
-                  {userProfile.idToken && (
-                    <>
-                      <View style={styles.detailSeparator} />
-                      <View style={styles.detailItem}>
-                        <Text style={styles.detailLabel}>ID Token</Text>
-                        <Text style={styles.detailValue} selectable={true}>
-                          {userProfile.idToken}
-                        </Text>
+            {/* Scope Codes Table / List */}
+            <View style={styles.sectionHeaderContainer}>
+              <Text style={styles.sectionHeader}>Scope Mapping</Text>
+            </View>
+            
+            <View style={styles.scopesListContainer}>
+              {SCOPES.map((item, index) => {
+                const members = DUMMY_MEMBERS[item.category] || [];
+                return (
+                  <View key={index} style={styles.scopeItemWrapper}>
+                    <View style={styles.scopeHeaderRow}>
+                      <View>
+                        <Text style={styles.scopeCategoryName}>{item.category}</Text>
+                        <Text style={styles.scopeDatabaseName}>{item.targetDb}</Text>
                       </View>
-                    </>
+                      <View style={styles.scopePrefixBadge}>
+                        <Text style={styles.scopePrefixText}>{item.prefix}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.membersContainer}>
+                      {members.map((member, mIdx) => (
+                        <View key={mIdx} style={styles.memberRow}>
+                          <Image source={{ uri: member.photo }} style={styles.memberAvatar} />
+                          <View style={styles.memberInfo}>
+                            <Text style={styles.memberName}>{member.name}</Text>
+                            <Text style={styles.memberRole}>{member.role}</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Storage Settings */}
+            <View style={styles.sectionHeaderContainer}>
+              <Text style={styles.sectionHeader}>Storage</Text>
+            </View>
+
+            <View style={styles.scopesListContainer}>
+              <View style={styles.scopeItemWrapper}>
+                <TouchableOpacity 
+                  style={styles.scopeHeaderRow} 
+                  onPress={handleBackupNow} 
+                  disabled={isBackingUp}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                    <Image 
+                      source={{ uri: "https://api.dicebear.com/7.x/notionists/png?seed=Database&backgroundColor=b6e3f4" }} 
+                      style={styles.memberAvatar} 
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.scopeCategoryName}>Backup Database</Text>
+                      <Text style={styles.scopeDatabaseName}>Last: {lastBackupTime}</Text>
+                    </View>
+                  </View>
+                  {isBackingUp ? (
+                    <ActivityIndicator size="small" color="#000000" />
+                  ) : (
+                    <View style={styles.scopePrefixBadge}>
+                      <Text style={styles.scopePrefixText}>RUN NOW</Text>
+                    </View>
                   )}
-                </View>
-
-                <View style={styles.separator} />
-              </>
-            )}
-
-            {/* DATABASE & MODEL CONTROLS */}
-            <View style={styles.sectionHeaderContainer}>
-              <Text style={styles.sectionHeader}>Storage & Models</Text>
-            </View>
-
-            {/* Backup Frequency Toggle */}
-            <TouchableOpacity style={styles.row} onPress={toggleBackupFreq} activeOpacity={0.7}>
-              <Text style={styles.rowLabel}>Backup Frequency</Text>
-              <Text style={styles.rowValue}>{backupFreq === "daily" ? "Daily" : "Weekly"}</Text>
-            </TouchableOpacity>
-
-            <View style={styles.separator} />
-
-            {/* Backup Action */}
-            <TouchableOpacity 
-              style={styles.row} 
-              onPress={handleBackupNow} 
-              disabled={isBackingUp}
-              activeOpacity={0.7}
-            >
-              <View>
-                <Text style={styles.rowLabel}>Backup Database</Text>
-                <Text style={styles.rowSublabel}>Last sync: {lastBackupTime}</Text>
+                </TouchableOpacity>
               </View>
-              {isBackingUp ? (
-                <ActivityIndicator size="small" color="#000000" />
-              ) : (
-                <Text style={styles.rowActionText}>Run Now</Text>
-              )}
-            </TouchableOpacity>
+            </View>
 
-            <View style={styles.separator} />
-
-
-
-            {/* Offline AI Models Section */}
+            {/* AI Models */}
             <View style={styles.sectionHeaderContainer}>
-              <Text style={styles.sectionHeader}>Offline AI Models</Text>
+              <Text style={styles.sectionHeader}>AI Models</Text>
             </View>
 
-            {/* Sub-group 1: Text Chat Assistants */}
             <View style={styles.subHeaderContainer}>
-              <Text style={styles.subHeader}>Text Chat Assistants</Text>
+              <Text style={styles.subHeader}>Language</Text>
             </View>
-            <View style={styles.separator} />
 
-            {Object.keys(LFM_MODELS).map((key) => {
-              const model = LFM_MODELS[key as keyof typeof LFM_MODELS];
-              const isSelected = activeModelId === key;
-              const isDownloaded = downloadedModels[key];
-              const isDownloading = downloadingModelId === key;
+            <View style={styles.scopesListContainer}>
+              {Object.keys(LFM_MODELS).map((key) => {
+                const model = LFM_MODELS[key as keyof typeof LFM_MODELS];
+                const isSelected = activeModelId === key;
+                const isDownloaded = downloadedModels[key];
+                const isDownloading = downloadingModelId === key;
 
-              return (
-                <View key={key}>
-                  <View style={[styles.row, isSelected && styles.selectedModelRow]}>
+                let avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Brain&backgroundColor=c0aede";
+                if (key === "LFM2_5_350M_QUANTIZED") {
+                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Mind&backgroundColor=c0aede";
+                } else if (key === "LFM2_5_350M_FP16") {
+                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Brain&backgroundColor=d1d4f9";
+                } else if (key === "LFM2_5_1_2B_INSTRUCT_QUANTIZED") {
+                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Intellect&backgroundColor=ffd5dc";
+                }
+
+                return (
+                  <View key={key} style={styles.scopeItemWrapper}>
                     <TouchableOpacity 
-                      style={{ flex: 1, flexDirection: "row", alignItems: "center", paddingRight: 10 }}
+                      style={styles.scopeHeaderRow}
                       onPress={() => handleSelectModel(key)}
                       activeOpacity={0.7}
                     >
-                      <View style={styles.radioContainer}>
-                        <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
-                          {isSelected && <View style={styles.radioInner} />}
+                      <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                        <Image source={{ uri: avatarUrl }} style={styles.memberAvatar} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.scopeCategoryName, isSelected && { fontWeight: "800" }]}>
+                            {model.name} {isSelected && "• Active"}
+                          </Text>
+                          <Text style={styles.scopeDatabaseName}>
+                            {isDownloading 
+                              ? `Downloading ${downloadProgress}%` 
+                              : isDownloaded 
+                                ? "Ready on device" 
+                                : `Offline • ${model.size}`}
+                          </Text>
                         </View>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.rowLabel, isSelected && { fontWeight: "700" }]}>{model.name}</Text>
-                        <Text style={styles.rowSublabel}>
-                          {isDownloaded 
-                            ? `Model ready • Tap to select (${model.size})` 
-                            : isDownloading 
-                              ? `Downloading model... ${downloadProgress}%` 
-                              : `Tap to select • Download size: ~${model.size}`}
-                        </Text>
+
+                      <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        {isDownloading ? (
+                          <ActivityIndicator size="small" color="#000000" />
+                        ) : isDownloaded ? (
+                          <TouchableOpacity 
+                            onPress={() => confirmDeleteModel(key, false)}
+                            style={[styles.scopePrefixBadge, { backgroundColor: "#fee2e2" }]}
+                          >
+                            <Text style={[styles.scopePrefixText, { color: "#ef4444" }]}>REMOVE</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity 
+                            onPress={() => handleDownloadModel(key, false)}
+                            style={styles.scopePrefixBadge}
+                          >
+                            <Text style={styles.scopePrefixText}>GET</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </TouchableOpacity>
-
-                    {isDownloading ? (
-                      <ActivityIndicator size="small" color="#000000" />
-                    ) : isDownloaded ? (
-                      <TouchableOpacity onPress={() => confirmDeleteModel(key, false)} style={{ paddingLeft: 12 }}>
-                        <Text style={[styles.rowActionText, { color: "#ef4444" }]}>Remove</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity onPress={() => handleDownloadModel(key, false)} style={{ paddingLeft: 12 }}>
-                        <Text style={styles.rowActionText}>Download</Text>
-                      </TouchableOpacity>
-                    )}
                   </View>
-                  <View style={styles.separator} />
-                </View>
-              );
-            })}
-
-            {/* Sub-group 2: Photo Search Utilities */}
-            <View style={styles.subHeaderContainer}>
-              <Text style={styles.subHeader}>Photo Search Utilities</Text>
+                );
+              })}
             </View>
-            <View style={styles.separator} />
 
-            {Object.keys(UTILITY_MODELS).map((key) => {
-              const model = UTILITY_MODELS[key as keyof typeof UTILITY_MODELS];
-              const isDownloaded = downloadedModels[key];
-              const isDownloading = downloadingModelId === key;
+            <View style={styles.subHeaderContainer}>
+              <Text style={styles.subHeader}>Vision</Text>
+            </View>
 
-              return (
-                <View key={key}>
-                  <View style={styles.row}>
-                    <View style={{ flex: 1, paddingRight: 10 }}>
-                      <Text style={styles.rowLabel}>{model.name}</Text>
-                      <Text style={styles.rowSublabel}>
-                        {isDownloaded 
-                          ? `${model.description} (Ready • ${model.size})` 
-                          : isDownloading 
-                            ? `Downloading... ${downloadProgress}%` 
-                            : `${model.description} (Size: ~${model.size})`}
-                      </Text>
+            <View style={styles.scopesListContainer}>
+              {Object.keys(UTILITY_MODELS).map((key) => {
+                const model = UTILITY_MODELS[key as keyof typeof UTILITY_MODELS];
+                const isDownloaded = downloadedModels[key];
+                const isDownloading = downloadingModelId === key;
+
+                let avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Camera&backgroundColor=ffe0b2";
+                if (key === "SSDLITE_DETECTOR") {
+                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Eye&backgroundColor=ffdf00";
+                } else if (key === "YOLO26S_DETECTOR") {
+                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Vision&backgroundColor=c2f0c2";
+                } else if (key === "CLIP_MATCHER") {
+                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Snap&backgroundColor=ffe0b2";
+                }
+
+                return (
+                  <View key={key} style={styles.scopeItemWrapper}>
+                    <View style={styles.scopeHeaderRow}>
+                      <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                        <Image source={{ uri: avatarUrl }} style={styles.memberAvatar} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.scopeCategoryName}>{model.name}</Text>
+                          <Text style={styles.scopeDatabaseName}>
+                            {isDownloading 
+                              ? `Downloading ${downloadProgress}%` 
+                              : isDownloaded 
+                                ? `Ready • ${model.size}` 
+                                : `Offline • ${model.size}`}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        {isDownloading ? (
+                          <ActivityIndicator size="small" color="#000000" />
+                        ) : isDownloaded ? (
+                          <TouchableOpacity 
+                            onPress={() => confirmDeleteModel(key, true)}
+                            style={[styles.scopePrefixBadge, { backgroundColor: "#fee2e2" }]}
+                          >
+                            <Text style={[styles.scopePrefixText, { color: "#ef4444" }]}>REMOVE</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity 
+                            onPress={() => handleDownloadModel(key, true)}
+                            style={styles.scopePrefixBadge}
+                          >
+                            <Text style={styles.scopePrefixText}>GET</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
-
-                    {isDownloading ? (
-                      <ActivityIndicator size="small" color="#000000" />
-                    ) : isDownloaded ? (
-                      <TouchableOpacity onPress={() => confirmDeleteModel(key, true)} style={{ paddingLeft: 12 }}>
-                        <Text style={[styles.rowActionText, { color: "#ef4444" }]}>Remove</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity onPress={() => handleDownloadModel(key, true)} style={{ paddingLeft: 12 }}>
-                        <Text style={styles.rowActionText}>Download</Text>
-                      </TouchableOpacity>
-                    )}
                   </View>
-                  <View style={styles.separator} />
-                </View>
-              );
-            })}
+                );
+              })}
+            </View>
 
             {/* Sign Out */}
-            <TouchableOpacity style={styles.row} onPress={handleSignOut} activeOpacity={0.7}>
-              <Text style={[styles.rowLabel, { color: "#ef4444" }]}>Sign Out</Text>
-            </TouchableOpacity>
+            <View style={styles.scopesListContainer}>
+              <View style={[styles.scopeItemWrapper, { borderBottomWidth: 0 }]}>
+                <TouchableOpacity 
+                  style={styles.scopeHeaderRow} 
+                  onPress={handleSignOut} 
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                    <Image 
+                      source={{ uri: "https://api.dicebear.com/7.x/notionists/png?seed=Exit&backgroundColor=ffd5dc" }} 
+                      style={styles.memberAvatar} 
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.scopeCategoryName, { color: "#ef4444" }]}>Sign Out</Text>
+                      <Text style={styles.scopeDatabaseName}>Exit current session</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.scopePrefixBadge, { backgroundColor: "#fee2e2" }]}>
+                    <Text style={[styles.scopePrefixText, { color: "#ef4444" }]}>EXIT</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
 
           </View>
         </ScrollView>
 
       </SafeAreaView>
-
-      {/* Add Tokens Drawer */}
-      <Modal
-        visible={showAddTokensDrawer}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowAddTokensDrawer(false)}
-      >
-        <TouchableOpacity 
-          style={styles.drawerBackdrop} 
-          activeOpacity={1} 
-          onPress={() => setShowAddTokensDrawer(false)}
-        >
-          <View style={[styles.drawerContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 16 : 24 }]}>
-            <TouchableOpacity activeOpacity={1} style={styles.drawerContent}>
-              <Text style={styles.drawerTitle}>Add Tokens</Text>
-              <Text style={styles.drawerSubtitle}>
-                Get 3,000,000 tokens for ₹500 to activate team collaboration, real-time database sync, and AI features.
-              </Text>
-
-              <TouchableOpacity 
-                style={styles.drawerPurchaseBtn} 
-                onPress={handlePurchaseTokens}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.drawerPurchaseBtnText}>Add 3M Tokens (₹500)</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.drawerCancelBtn} 
-                onPress={() => setShowAddTokensDrawer(false)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.drawerCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 }
@@ -687,19 +723,21 @@ const styles = StyleSheet.create({
   },
   profileHeader: {
     paddingHorizontal: 20,
-    paddingTop: 30,
-    paddingBottom: 30,
+    paddingTop: 20,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
   },
   profileInfoRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   profileAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    marginRight: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 12,
   },
   avatarPlaceholder: {
     backgroundColor: "#f4f4f5",
@@ -711,235 +749,56 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   profileName: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#000000",
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0f172a",
     letterSpacing: -0.5,
   },
   profileUsername: {
-    fontSize: 14,
-    color: "#888888",
-    marginTop: 2,
-  },
-  detailsCard: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginTop: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  detailItem: {
-    marginVertical: 4,
-  },
-  detailLabel: {
-    fontSize: 10,
-    fontWeight: "800",
+    fontSize: 13,
     color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2,
+    marginTop: 1,
   },
-  detailValue: {
-    fontSize: 14,
-    color: "#0f172a",
-    fontWeight: "600",
-  },
-  detailSeparator: {
-    height: 1,
-    backgroundColor: "#f1f5f9",
-    marginVertical: 6,
-  },
-  tokensValue: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#64748b",
-    marginTop: 8,
-  },
-  settingsList: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-  },
-  row: {
+  tokenRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 20,
   },
-  rowLabel: {
-    fontSize: 16,
+  tokensValue: {
+    fontSize: 15,
     fontWeight: "600",
-    color: "#000000",
+    color: "#0f172a",
   },
-  rowSublabel: {
-    fontSize: 12,
-    color: "#888888",
-    marginTop: 4,
-  },
-  rowValue: {
-    fontSize: 16,
-    color: "#888888",
-    fontWeight: "500",
-    textTransform: "capitalize",
-  },
-  rowActionText: {
-    fontSize: 16,
-    color: "#000000",
-    fontWeight: "700",
-  },
-  separator: {
-    height: 1,
+  addTokensButton: {
     backgroundColor: "#f1f5f9",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  manageTokensText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#0f172a",
+  },
+  settingsList: {
+    paddingBottom: 40,
   },
   sectionHeaderContainer: {
     paddingTop: 24,
     paddingBottom: 8,
+    paddingHorizontal: 20,
   },
   sectionHeader: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#94a3b8",
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
-  manageTokensText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginTop: 8,
-  },
-  groupContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 16,
-  },
-  groupLabel: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#0f172a",
-  },
-  groupValue: {
-    fontWeight: "800",
-    color: "#6366f1",
-  },
-  groupSublabel: {
-    fontSize: 12,
-    color: "#888888",
-    marginTop: 2,
-  },
-  leaveGroupBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#ef4444",
-  },
-  leaveGroupBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#ef4444",
-  },
-  groupActionsContainer: {
-    flexDirection: "row",
-    paddingVertical: 16,
-  },
-  groupActionBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  groupActionBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  drawerBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "flex-end",
-  },
-  drawerContainer: {
-    backgroundColor: "#ffffff",
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    borderTopWidth: 1,
-    borderTopColor: "#e2e8f0",
-  },
-  drawerContent: {
-    alignItems: "center",
-    width: "100%",
-  },
-  drawerTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#0f172a",
-    marginBottom: 10,
-  },
-  drawerSubtitle: {
-    fontSize: 14,
-    color: "#64748b",
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  drawerPurchaseBtn: {
-    width: "100%",
-    backgroundColor: "#0f172a",
-    paddingVertical: 16,
-    borderRadius: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  drawerPurchaseBtnText: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  drawerCancelBtn: {
-    width: "100%",
-    paddingVertical: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  drawerCancelBtnText: {
-    color: "#64748b",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  radioContainer: {
-    marginRight: 12,
-  },
-  radioOuter: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#cbd5e1",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  radioOuterSelected: {
-    borderColor: "#6366f1",
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#6366f1",
-  },
-  selectedModelRow: {
-    backgroundColor: "#f8fafc",
-  },
   subHeaderContainer: {
-    paddingTop: 16,
+    paddingTop: 14,
     paddingBottom: 6,
+    paddingHorizontal: 20,
   },
   subHeader: {
     fontSize: 11,
@@ -947,5 +806,73 @@ const styles = StyleSheet.create({
     color: "#94a3b8",
     textTransform: "uppercase",
     letterSpacing: 0.6,
+  },
+  // Full-width Scopes list (no outer borders, no rounded corners)
+  scopesListContainer: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  scopeItemWrapper: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  scopeHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  scopeCategoryName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  scopeDatabaseName: {
+    fontSize: 11,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  scopePrefixBadge: {
+    backgroundColor: "#f1f5f9",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scopePrefixText: {
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    fontSize: 12,
+    color: "#0f172a",
+    fontWeight: "700",
+  },
+  membersContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 4,
+    marginBottom: 12,
+  },
+  memberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  memberAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 12,
+  },
+  memberInfo: {
+    flex: 1,
+  },
+  memberName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#0f172a",
+  },
+  memberRole: {
+    fontSize: 11,
+    color: "#64748b",
   },
 });

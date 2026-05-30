@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { signInWithGoogle, getCurrentUser } from "../lib/auth";
+import { initDb } from "../lib/db";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -34,6 +35,7 @@ export default function LoginScreen() {
     try {
       const user = await signInWithGoogle();
       if (user) {
+        await initDb();
         router.replace("/home");
       }
     } catch (error: any) {

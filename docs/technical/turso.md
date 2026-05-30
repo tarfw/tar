@@ -47,7 +47,6 @@ The `exec(sql: string)` method natively handles executing multiple SQL statement
 ### Syncing
 - `await db.pull()`: Pulls remote changes to the local database.
 - `await db.push()`: Pushes local changes to the remote database.
-- `await db.sync()`: Performs a full sync.
 
 ## Common Issues & Troubleshooting
 1. **`[Error: unexpected token ')' at offset 0]` during initialization**: This occurs if you attempt to manually `.split(";")` your SQL schema string and pass it statement-by-statement into `db.exec()`. Because `db.exec()` processes strings expecting properly terminated SQL, manual splitting breaks the internal tokenizer `prepareFirst()`. The fix is to pass the whole schema string to `exec()`.

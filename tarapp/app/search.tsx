@@ -571,9 +571,7 @@ If no fields need changing, return: { "fields": {}, "reply": "explanation why" }
             style={styles.resultItem}
             activeOpacity={0.7}
             onPress={() => {
-              if (type === "matter") {
-                router.push(`/matter?id=${item.id}`);
-              } else if (type === "mass") {
+              if (type === "matter" || type === "mass") {
                 selectItem(type, item);
               }
             }}

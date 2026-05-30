@@ -308,7 +308,6 @@ export default function HistoryPage() {
           contentContainerStyle={{ paddingBottom: 40 }}
         >
           <View>
-            <Text style={styles.sectionHeader}>[ PAST ]</Text>
             {pastItems.length > 0 ? (
               <View style={styles.motionList}>
                 {pastItems.map((item, index) => (

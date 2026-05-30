@@ -287,6 +287,112 @@ export default {
       }
     }
 
+    if (request.method === "POST" && url.pathname === "/api/user/get-or-create-db") {
+      try {
+        const { userId } = await request.json() as any;
+        if (!userId) {
+          return new Response(JSON.stringify({ error: "Missing userId" }), {
+            status: 400,
+            headers: responseHeaders,
+          });
+        }
+
+        const org = env.TURSO_ORG || "tarframework";
+        const platformToken = env.TURSO_PLATFORM_API_TOKEN;
+        const groupName = env.TURSO_GROUP || "default";
+
+        if (!platformToken) {
+          throw new Error("Missing TURSO_PLATFORM_API_TOKEN in backend environment");
+        }
+
+        // Clean user ID to be used in Turso DB names (lowercase alphanumeric and hyphens, starting with letter/number)
+        const sanitizedUserId = userId.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
+        const dbName = `u${sanitizedUserId}`.substring(0, 64);
+
+        console.log(`[Turso API] Finding or creating database ${dbName} for user ${userId} in org ${org}...`);
+
+        let dbUrl = "";
+        let dbToken = "";
+
+        // 1. Check if database already exists
+        const listRes = await fetch(`https://api.turso.tech/v1/organizations/${org}/databases`, {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${platformToken}`,
+          }
+        });
+
+        if (!listRes.ok) {
+          const errText = await listRes.text();
+          throw new Error(`Turso Platform API listing failed: ${errText}`);
+        }
+
+        const listData = await listRes.json() as any;
+        const existingDb = listData.databases?.find((d: any) => d.Name === dbName);
+
+        if (existingDb) {
+          console.log(`[Turso API] Database ${dbName} already exists`);
+          dbUrl = `libsql://${existingDb.Hostname}`;
+        } else {
+          console.log(`[Turso API] Database ${dbName} does not exist. Creating...`);
+          // Create database
+          const createRes = await fetch(`https://api.turso.tech/v1/organizations/${org}/databases`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${platformToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              name: dbName,
+              group: groupName
+            })
+          });
+
+          if (!createRes.ok) {
+            const errText = await createRes.text();
+            throw new Error(`Turso Platform API database creation failed: ${errText}`);
+          }
+
+          const createData = await createRes.json() as any;
+          dbUrl = `libsql://${createData.database.Hostname}`;
+          console.log(`[Turso API] Created database ${dbName} successfully at ${dbUrl}`);
+        }
+
+        // 2. Generate a fresh auth token for this database
+        console.log(`[Turso API] Generating token for database ${dbName}...`);
+        const tokenRes = await fetch(`https://api.turso.tech/v1/organizations/${org}/databases/${dbName}/auth/tokens`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${platformToken}`,
+            "Content-Type": "application/json"
+          }
+        });
+
+        if (!tokenRes.ok) {
+          const errText = await tokenRes.text();
+          throw new Error(`Turso Platform API token generation failed: ${errText}`);
+        }
+
+        const tokenData = await tokenRes.json() as any;
+        dbToken = tokenData.jwt;
+
+        return new Response(
+          JSON.stringify({
+            userId,
+            syncUrl: dbUrl,
+            authToken: dbToken,
+          }),
+          { status: 200, headers: responseHeaders }
+        );
+      } catch (e: any) {
+        console.error("[Worker Error] get-or-create-db failed:", e);
+        return new Response(JSON.stringify({ error: e.message }), {
+          status: 500,
+          headers: responseHeaders,
+        });
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/api/collab/create-group") {
       try {
         const groupCode = `GRP_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;

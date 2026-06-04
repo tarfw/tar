@@ -88,7 +88,7 @@ export default function HistoryPage() {
           const db = getUserDb();
           console.log("[History:Load] Fetching past completed motions from user.db...");
           const uPastMotions = await db.all(
-            "SELECT *, 'user' as originDb FROM motion WHERE status = 'COMPLETED' OR action = 1 ORDER BY time DESC LIMIT 100"
+            "SELECT *, 'user' as originDb FROM motion WHERE status = 'COMPLETED' OR action = 201 ORDER BY time DESC LIMIT 100"
           );
           
           const combinedPast = Array.isArray(uPastMotions) ? uPastMotions : [];
@@ -163,15 +163,16 @@ export default function HistoryPage() {
         subtitle: (parsedData.title || motion.stream || "").trim(),
         amount: displayDelta !== null ? (displayDelta > 0 ? `+${displayDelta}` : displayDelta.toString()) : null
       };
-    } else if (action >= 101 && action <= 150) {
+    } else if (action === 504 || (action >= 101 && action <= 150)) {
+      const isReminder = parsedData.triggered_at || parsedData.task?.toLowerCase().includes("reminder") || action <= 150;
       config = {
-        icon: "notifications",
-        color: "#2563eb",
-        title: "Reminder",
+        icon: isReminder ? "notifications" : "checkbox",
+        color: isReminder ? "#2563eb" : "#c026d3",
+        title: isReminder ? "Reminder" : "Task",
         subtitle: (parsedData.task || parsedData.text || motion.stream || "").trim(),
         amount: null
       };
-    } else if (action >= 151 && action <= 250) {
+    } else if (action === 200 || (action >= 151 && action <= 250)) {
       config = {
         icon: "checkbox",
         color: "#c026d3",

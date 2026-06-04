@@ -134,13 +134,89 @@ const DUMMY_MEMBERS: Record<string, { name: string; role: string; photo: string 
   ]
 };
 
+function InitialAvatar({ name, size = 48 }: { name: string; size?: number }) {
+  const cleanName = name.replace(/\(.*\)/, "").replace(/@\w+/, "").trim();
+  const parts = cleanName.split(/\s+/);
+  let initials = "";
+  if (parts.length > 0 && parts[0] && parts[0][0]) {
+    initials += parts[0][0];
+  }
+  if (parts.length > 1 && parts[1] && parts[1][0]) {
+    initials += parts[1][0];
+  }
+  initials = initials.toUpperCase();
+
+  const colors = [
+    "#b6e3f4", // light blue
+    "#c0aede", // lavender
+    "#ffd5dc", // rose
+    "#ffdf00", // pastel yellow
+    "#c2f0c2", // pastel green
+    "#ffe0b2", // peach
+    "#d1d4f9", // indigo
+    "#cbd5e1"  // slate
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const color = colors[Math.abs(hash) % colors.length];
+
+  return (
+    <View style={[
+      styles.memberAvatar,
+      {
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: color,
+        justifyContent: "center",
+        alignItems: "center"
+      }
+    ]}>
+      <Text style={{
+        fontSize: size * 0.38,
+        fontWeight: "700",
+        color: "#0f172a"
+      }}>
+        {initials || "?"}
+      </Text>
+    </View>
+  );
+}
+
+function IconAvatar({ icon, bgColor, size = 48 }: { icon: keyof typeof Ionicons.glyphMap; bgColor: string; size?: number }) {
+  return (
+    <View style={[
+      styles.memberAvatar,
+      {
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: bgColor,
+        justifyContent: "center",
+        alignItems: "center"
+      }
+    ]}>
+      <Ionicons name={icon} size={size * 0.45} color="#0f172a" />
+    </View>
+  );
+}
+
+let cachedDownloadedModels: Record<string, boolean> | null = null;
+let cachedUserProfile: UserProfile | null = null;
+let cachedLastBackupTime: string | null = null;
+let cachedTokens: number | null = null;
+let cachedActiveModelId: string | null = null;
+
 export default function ProfileScreen() {
+  console.log("[ProfileScreen] Component rendering...");
   const router = useRouter();
 
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(cachedUserProfile);
   const [isBackingUp, setIsBackingUp] = useState(false);
-  const [lastBackupTime, setLastBackupTime] = useState<string>("Never");
-  const [tokens, setTokens] = useState<number>(0);
+  const [lastBackupTime, setLastBackupTime] = useState<string>(cachedLastBackupTime || "Never");
+  const [tokens, setTokens] = useState<number>(cachedTokens || 0);
 
   const handlePurchaseTokens = async () => {
     try {
@@ -148,6 +224,7 @@ export default function ProfileScreen() {
       const addedTokens = 3000000;
       const finalTokens = tokens + addedTokens;
       
+      cachedTokens = finalTokens;
       setTokens(finalTokens);
 
       await SecureStore.setItemAsync("user_tokens", finalTokens.toString());
@@ -176,7 +253,7 @@ export default function ProfileScreen() {
     );
   };
 
-  const [activeModelId, setActiveModelId] = useState<string>("LFM2_5_350M_FP16");
+  const [activeModelId, setActiveModelId] = useState<string>(cachedActiveModelId || "LFM2_5_350M_FP16");
   const [downloadedModels, setDownloadedModels] = useState<Record<string, boolean>>({});
   const [downloadingModelId, setDownloadingModelId] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -187,9 +264,20 @@ export default function ProfileScreen() {
     return cleanUri.replace(/[^a-zA-Z0-9._-]/g, '_');
   };
 
-  const checkFilesStatus = useCallback(async () => {
+  const checkFilesStatus = useCallback(async (force = false) => {
+    if (cachedDownloadedModels && !force) {
+      console.log("[ProfileScreen] checkFilesStatus: using cached models status");
+      setDownloadedModels(cachedDownloadedModels);
+      return;
+    }
+    const startTime = Date.now();
+    console.log("[ProfileScreen] checkFilesStatus started (disk scan)");
     try {
+      const t0 = Date.now();
       const files = await ResourceFetcher.listDownloadedFiles() as string[];
+      console.log(`[ProfileScreen] ResourceFetcher.listDownloadedFiles took ${Date.now() - t0}ms. Found ${files?.length || 0} files.`);
+      
+      const t1 = Date.now();
       const statusMap: Record<string, boolean> = {};
       
       for (const key of Object.keys(LFM_MODELS)) {
@@ -207,15 +295,15 @@ export default function ProfileScreen() {
         statusMap[key] = files.some((f: string) => f.endsWith(modelFn));
       }
 
+      cachedDownloadedModels = statusMap;
       setDownloadedModels(statusMap);
+      console.log(`[ProfileScreen] checkFilesStatus mapping took ${Date.now() - t1}ms. Total checkFilesStatus time: ${Date.now() - startTime}ms`);
     } catch (e) {
       console.error("Error checking model files:", e);
     }
   }, []);
 
-  useEffect(() => {
-    checkFilesStatus();
-  }, [checkFilesStatus]);
+  // Removed redundant mount useEffect to prevent duplicate file system checks and resource contention.
 
   const handleDownloadModel = async (modelKey: string, isUtility: boolean) => {
     const model = isUtility 
@@ -261,6 +349,7 @@ export default function ProfileScreen() {
               }
 
               setDownloadingModelId(null);
+              cachedDownloadedModels = { ...cachedDownloadedModels, [modelKey]: true };
               setDownloadedModels(prev => ({ ...prev, [modelKey]: true }));
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               Alert.alert("Success", `${model.name} downloaded and ready.`);
@@ -303,6 +392,7 @@ export default function ProfileScreen() {
                   llmModel.tokenizerConfigSource
                 );
               }
+              cachedDownloadedModels = { ...cachedDownloadedModels, [modelKey]: false };
               setDownloadedModels(prev => ({ ...prev, [modelKey]: false }));
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               Alert.alert("Removed", `${model.name} deleted to free up space.`);
@@ -318,6 +408,7 @@ export default function ProfileScreen() {
 
   const handleSelectModel = async (modelKey: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    cachedActiveModelId = modelKey;
     setActiveModelId(modelKey);
     try {
       await SecureStore.setItemAsync("selected_lfm_model_id", modelKey);
@@ -328,32 +419,73 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      let isMounted = true;
+      const startTime = Date.now();
+      console.log("[ProfileScreen] useFocusEffect triggered");
+      
       async function loadPreferences() {
         try {
-          const user = await getCurrentUser();
-          setUserProfile(user);
+          console.log("[ProfileScreen] loadPreferences started (parallelized)");
+          
+          const t0 = Date.now();
+          const promises: Promise<any>[] = [];
+          
+          if (cachedUserProfile) {
+            promises.push(Promise.resolve(cachedUserProfile));
+          } else {
+            promises.push(getCurrentUser());
+          }
+          
+          if (cachedLastBackupTime) {
+            promises.push(Promise.resolve(cachedLastBackupTime));
+          } else {
+            promises.push(SecureStore.getItemAsync("private_db_last_backup_time"));
+          }
+          
+          // Tokens always query to reflect changes from chat consumption
+          promises.push(SecureStore.getItemAsync("user_tokens"));
+          
+          if (cachedActiveModelId) {
+            promises.push(Promise.resolve(cachedActiveModelId));
+          } else {
+            promises.push(SecureStore.getItemAsync("selected_lfm_model_id"));
+          }
+          
+          promises.push(checkFilesStatus());
 
-          const storedTime = await SecureStore.getItemAsync("private_db_last_backup_time");
+          const [user, storedTime, storedTokens, storedModelId, _] = await Promise.all(promises);
+          console.log(`[ProfileScreen] Parallel fetch completed in ${Date.now() - t0}ms`);
+
+          if (!isMounted) return;
+
+          if (user) {
+            cachedUserProfile = user;
+            setUserProfile(user);
+          }
           if (storedTime) {
+            cachedLastBackupTime = storedTime;
             setLastBackupTime(storedTime);
           }
-
-          const storedTokens = await SecureStore.getItemAsync("user_tokens");
           if (storedTokens !== null) {
-            setTokens(parseInt(storedTokens, 10));
+            const parsedTokens = parseInt(storedTokens, 10);
+            cachedTokens = parsedTokens;
+            setTokens(parsedTokens);
           }
-
-          const storedModelId = await SecureStore.getItemAsync("selected_lfm_model_id");
           if (storedModelId && LFM_MODELS[storedModelId as keyof typeof LFM_MODELS]) {
+            cachedActiveModelId = storedModelId;
             setActiveModelId(storedModelId);
           }
-
-          await checkFilesStatus();
+          
+          console.log(`[ProfileScreen] loadPreferences completed in ${Date.now() - startTime}ms total`);
         } catch (e) {
           console.error("Failed to load secure settings:", e);
         }
       }
       loadPreferences();
+      
+      return () => {
+        isMounted = false;
+      };
     }, [checkFilesStatus])
   );
 
@@ -386,6 +518,7 @@ export default function ProfileScreen() {
 
       const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + 
                         ", " + new Date().toLocaleDateString([], { month: "short", day: "numeric" });
+      cachedLastBackupTime = timestamp;
       setLastBackupTime(timestamp);
       await SecureStore.setItemAsync("private_db_last_backup_time", timestamp);
       
@@ -419,6 +552,11 @@ export default function ProfileScreen() {
                 await SecureStore.deleteItemAsync(`user_sync_token_${currentUser.id}`);
               }
               await signOutGoogle();
+              cachedUserProfile = null;
+              cachedLastBackupTime = null;
+              cachedTokens = null;
+              cachedActiveModelId = null;
+              cachedDownloadedModels = null;
               await initDb();
             } catch (err) {
               console.error("Error signing out:", err);
@@ -499,7 +637,7 @@ export default function ProfileScreen() {
                     <View style={styles.membersContainer}>
                       {members.map((member, mIdx) => (
                         <View key={mIdx} style={styles.memberRow}>
-                          <Image source={{ uri: member.photo }} style={styles.memberAvatar} />
+                          <InitialAvatar name={member.name} />
                           <View style={styles.memberInfo}>
                             <Text style={styles.memberName}>{member.name}</Text>
                             <Text style={styles.memberRole}>{member.role}</Text>
@@ -526,10 +664,7 @@ export default function ProfileScreen() {
                   activeOpacity={0.7}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                    <Image 
-                      source={{ uri: "https://api.dicebear.com/7.x/notionists/png?seed=Database&backgroundColor=b6e3f4" }} 
-                      style={styles.memberAvatar} 
-                    />
+                    <IconAvatar icon="server-outline" bgColor="#b6e3f4" />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.scopeCategoryName}>Backup Database</Text>
                       <Text style={styles.scopeDatabaseName}>Last: {lastBackupTime}</Text>
@@ -562,13 +697,17 @@ export default function ProfileScreen() {
                 const isDownloaded = downloadedModels[key];
                 const isDownloading = downloadingModelId === key;
 
-                let avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Brain&backgroundColor=c0aede";
+                let iconName: keyof typeof Ionicons.glyphMap = "hardware-chip-outline";
+                let bgColor = "#c0aede";
                 if (key === "LFM2_5_350M_QUANTIZED") {
-                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Mind&backgroundColor=c0aede";
+                  iconName = "hardware-chip-outline";
+                  bgColor = "#c0aede";
                 } else if (key === "LFM2_5_350M_FP16") {
-                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Brain&backgroundColor=d1d4f9";
+                  iconName = "extension-puzzle-outline";
+                  bgColor = "#d1d4f9";
                 } else if (key === "LFM2_5_1_2B_INSTRUCT_QUANTIZED") {
-                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Intellect&backgroundColor=ffd5dc";
+                  iconName = "sparkles-outline";
+                  bgColor = "#ffd5dc";
                 }
 
                 return (
@@ -579,7 +718,7 @@ export default function ProfileScreen() {
                       activeOpacity={0.7}
                     >
                       <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                        <Image source={{ uri: avatarUrl }} style={styles.memberAvatar} />
+                        <IconAvatar icon={iconName} bgColor={bgColor} />
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.scopeCategoryName, isSelected && { fontWeight: "800" }]}>
                             {model.name} {isSelected && "• Active"}
@@ -629,20 +768,24 @@ export default function ProfileScreen() {
                 const isDownloaded = downloadedModels[key];
                 const isDownloading = downloadingModelId === key;
 
-                let avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Camera&backgroundColor=ffe0b2";
+                let iconName: keyof typeof Ionicons.glyphMap = "camera-outline";
+                let bgColor = "#ffe0b2";
                 if (key === "SSDLITE_DETECTOR") {
-                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Eye&backgroundColor=ffdf00";
+                  iconName = "scan-outline";
+                  bgColor = "#ffdf00";
                 } else if (key === "YOLO26S_DETECTOR") {
-                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Vision&backgroundColor=c2f0c2";
+                  iconName = "eye-outline";
+                  bgColor = "#c2f0c2";
                 } else if (key === "CLIP_MATCHER") {
-                  avatarUrl = "https://api.dicebear.com/7.x/notionists/png?seed=Snap&backgroundColor=ffe0b2";
+                  iconName = "image-outline";
+                  bgColor = "#ffe0b2";
                 }
 
                 return (
                   <View key={key} style={styles.scopeItemWrapper}>
                     <View style={styles.scopeHeaderRow}>
                       <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                        <Image source={{ uri: avatarUrl }} style={styles.memberAvatar} />
+                        <IconAvatar icon={iconName} bgColor={bgColor} />
                         <View style={{ flex: 1 }}>
                           <Text style={styles.scopeCategoryName}>{model.name}</Text>
                           <Text style={styles.scopeDatabaseName}>
@@ -689,10 +832,7 @@ export default function ProfileScreen() {
                   activeOpacity={0.7}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                    <Image 
-                      source={{ uri: "https://api.dicebear.com/7.x/notionists/png?seed=Exit&backgroundColor=ffd5dc" }} 
-                      style={styles.memberAvatar} 
-                    />
+                    <IconAvatar icon="log-out-outline" bgColor="#ffd5dc" />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.scopeCategoryName, { color: "#ef4444" }]}>Sign Out</Text>
                       <Text style={styles.scopeDatabaseName}>Exit current session</Text>

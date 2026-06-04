@@ -86,7 +86,7 @@ export default function WorkflowsScreen() {
       setShiftSales(salesTotal);
 
       // Restore delivery status from database logs
-      const deliveryLogs = syncRows.filter((r: any) => r.scope === "delivery");
+      const deliveryLogs = syncRows.filter((r: any) => r.scope === "d");
       if (deliveryLogs.length > 0) {
         const lastDeliv = deliveryLogs[0];
         setActiveOrderId(lastDeliv.stream ? String(lastDeliv.stream) : null);
@@ -168,7 +168,7 @@ export default function WorkflowsScreen() {
     setIsLoading(true);
     try {
       const time = new Date().toISOString();
-      const targetScope = "delivery";
+      const targetScope = "d";
       const db = routeDbForEntity("motion", targetScope);
 
       let orderId = activeOrderId;
@@ -252,7 +252,7 @@ export default function WorkflowsScreen() {
 
               // Clear only our workflow related logs to protect user notes
               await privateDb.run("DELETE FROM motion WHERE scope = 'p' AND stream LIKE 'shift%'");
-              await syncDb.run("DELETE FROM motion WHERE scope = 's:pos' OR scope = 'delivery'");
+              await syncDb.run("DELETE FROM motion WHERE scope = 's:pos' OR scope = 'd'");
 
               if (syncEnabled) {
                 await syncDb.push().catch((err) => console.warn("Failed to push sync reset:", err));

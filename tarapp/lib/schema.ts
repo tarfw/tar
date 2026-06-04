@@ -2,8 +2,8 @@ export const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS matter (
     id TEXT PRIMARY KEY,
     code TEXT UNIQUE,
-    type TEXT,
-    scope TEXT,
+    type TEXT NOT NULL,
+    scope TEXT NOT NULL,
     owner TEXT,
     title TEXT,
     public INTEGER DEFAULT 0,
@@ -25,8 +25,8 @@ export const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS mass (
     id TEXT PRIMARY KEY,
     matter TEXT NOT NULL,
-    type TEXT,
-    scope TEXT,
+    type TEXT NOT NULL,
+    scope TEXT NOT NULL,
     qty REAL,
     value REAL,
     active INTEGER DEFAULT 1,
@@ -43,7 +43,7 @@ export const SCHEMA_STATEMENTS = [
     action INTEGER NOT NULL,
     status TEXT,
     delta REAL,
-    scope TEXT,
+    scope TEXT NOT NULL,
     data TEXT,
     time TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(stream, seq)

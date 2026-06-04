@@ -197,19 +197,18 @@ export default function HomePage() {
 1. matter (entities/products/tasks): id, code, type, scope, title, data
 2. mass (inventory/time/price): id, matter, type, scope, qty, value, geo, start, end, data
 3. relation (links): src, tgt, type
-4. motion (events/logs): id, stream, seq, action, status, delta, data
+4. motion (events/logs): id, stream, seq, action, status, delta, scope, data
 
 OPCODES for motion.action:
-- 1: SALE (Logged a sale/receipt)
-- 105: REMINDER (Simple notification/reminder)
-- 200: TASK (Actionable To-Do item)
+- 201: SALE (Logged a sale/receipt)
+- 504: TASK_ASSIGNED (Simple notification, reminder, or actionable to-do item)
 - 100: SYSTEM/UPDATE (Generic inventory or system change)
 
 MODELING RULES:
-- Note (pure idea): Create only a 'matter' entry with type="note".
-- Task (to-do): Create a 'matter' with type="task" and a corresponding 'motion' (stream=matter.id, action=200, status="OPEN").
-- Reminder: Create a 'matter' with type="task" and a corresponding 'mass' entry (matter=matter.id, type="slot", scope="reminder", start="YYYY-MM-DD HH:MM:SS" when it should trigger).
-- Scheduled Task (Deadline): Create a 'matter' with type="task", a 'mass' entry (matter=matter.id, type="slot", scope="deadline", start="YYYY-MM-DD" due date), and a 'motion' (stream=matter.id, action=200, status="OPEN").
+- Note (pure idea): Create only a 'matter' entry with type="note" and scope="p".
+- Task (to-do): Create a 'matter' with type="task", scope="p" and a corresponding 'motion' (stream=matter.id, action=504, status="OPEN", scope="p").
+- Reminder: Create a 'matter' with type="task", scope="p" and a corresponding 'mass' entry (matter=matter.id, type="reminder", scope="p", start="YYYY-MM-DD HH:MM:SS" when it should trigger).
+- Scheduled Task (Deadline): Create a 'matter' with type="task", scope="p", a 'mass' entry (matter=matter.id, type="deadline", scope="p", start="YYYY-MM-DD" due date), and a 'motion' (stream=matter.id, action=504, status="OPEN", scope="p").
 
 IMPORTANT: motion.delta MUST be a number (e.g. 250 or -5), NOT a JSON string or object.
 
@@ -219,7 +218,7 @@ Output pure JSON exactly:
   "matters": [],
   "masses": [],
   "relations": [],
-  "motions": [{ "id": "mot_1", "stream": "task_123", "seq": 1, "action": 200, "status": "OPEN", "data": "{\\"task\\":\\"Sleep for 1 hour\\"}" }]
+  "motions": [{ "id": "mot_1", "stream": "task_123", "seq": 1, "action": 504, "status": "OPEN", "scope": "p", "data": "{\\"task\\":\\"Sleep for 1 hour\\"}" }]
 }
 Use string IDs to link items. Omit arrays if empty. NO markdown.`
             },
@@ -259,15 +258,15 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         for (const m of parsed.matters) {
            const remappedId = mapId(m.id, 'mat');
            await db.run(
-             "INSERT OR REPLACE INTO matter (id, code, type, title, data) VALUES (?, ?, ?, ?, ?)",
-             [remappedId, m.code || null, m.type || null, m.title || null, m.data || null]
+             "INSERT OR REPLACE INTO matter (id, code, type, scope, title, data) VALUES (?, ?, ?, ?, ?, ?)",
+             [remappedId, m.code || null, m.type || "note", m.scope || "p", m.title || null, m.data || null]
            );
 
            try {
              await upsertMatterVector(remappedId, {
                title: m.title || "",
-               type: m.type || null,
-               scope: m.scope || null,
+               type: m.type || "note",
+               scope: m.scope || "p",
                code: m.code || null,
                data: m.data || null
              });
@@ -281,8 +280,8 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
       if (parsed.masses && parsed.masses.length > 0) {
         for (const m of parsed.masses) {
            await db.run(
-             "INSERT OR REPLACE INTO mass (id, matter, type, qty, value, start, end, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-             [mapId(m.id, 'mas'), mapId(m.matter, 'mat'), m.type || null, m.qty || null, m.value || null, m.start || null, m.end || null, m.data || null]
+             "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, start, end, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             [mapId(m.id, 'mas'), mapId(m.matter, 'mat'), m.type || "slot", m.scope || "p", m.qty || null, m.value || null, m.start || null, m.end || null, m.data || null]
            );
         }
         hasChanges = true;
@@ -307,8 +306,8 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
           );
           const seq = seqRow[0]?.next_seq || 1;
            await db.run(
-             "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
-             [mapId(m.id, 'mot'), streamId, seq, m.action || 1, m.status || "OPEN", m.delta || null, m.data || null]
+             "INSERT INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+             [mapId(m.id, 'mot'), streamId, seq, m.action || 504, m.status || "OPEN", m.delta || null, m.scope || "p", m.data || null]
            );
         }
         hasChanges = true;
@@ -349,7 +348,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             SELECT m.*, t.title, 'user' as originDb 
             FROM mass m 
             LEFT JOIN matter t ON m.matter = t.id 
-            WHERE m.active = 1 AND m.type = 'slot' AND (m.scope = 'reminder' OR m.scope = 'deadline') AND m.start > ?
+            WHERE m.active = 1 AND m.scope = 'p' AND (m.type = 'reminder' OR m.type = 'deadline') AND m.start > ?
           `;
           
           let uFuture = await db.all(futureQuery, [nowStr]);
@@ -364,7 +363,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             SELECT m.*, t.title, 'user' as originDb
             FROM mass m 
             LEFT JOIN matter t ON m.matter = t.id 
-            WHERE m.active = 1 AND m.type = 'slot' AND m.start <= ? AND (m.end IS NULL OR m.end >= ?)
+            WHERE m.active = 1 AND m.scope = 'p' AND (m.type = 'reminder' OR m.type = 'deadline') AND m.start <= ? AND (m.end IS NULL OR m.end >= ?)
           `;
           
           let uNowSlots = await db.all(nowSlotsQuery, [nowStr, nowStr]);
@@ -387,15 +386,15 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
               id: s.id,
               isMass: true,
               originDb: s.originDb,
-              title: s.scope === "reminder" ? "Reminder Active" : "Active Slot",
+              title: s.type === "reminder" ? "Reminder Active" : "Active Slot",
               subtitle: s.title || "Active Item",
               time: s.start,
-              action: s.scope === "reminder" ? 105 : 100,
+              action: s.type === "reminder" ? 504 : 100,
               status: "ACTIVE",
               raw: s
             }));
 
-          const uPendingMotions = await db.all("SELECT *, 'user' as originDb FROM motion WHERE status != 'COMPLETED' AND action != 1 ORDER BY time DESC LIMIT 20");
+          const uPendingMotions = await db.all("SELECT *, 'user' as originDb FROM motion WHERE status != 'COMPLETED' AND action != 201 AND scope = 'p' ORDER BY time DESC LIMIT 20");
           
           const pendingMotions = Array.isArray(uPendingMotions) ? uPendingMotions : [];
 
@@ -403,10 +402,10 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
           const pendingTasksQuery = `
             SELECT m.*, 'user' as originDb
             FROM matter m
-            WHERE m.type = 'task'
+            WHERE m.type = 'task' AND m.scope = 'p'
               AND NOT EXISTS (
                 SELECT 1 FROM motion mot
-                WHERE mot.stream = m.id AND (mot.status = 'COMPLETED' OR mot.action = 200)
+                WHERE mot.stream = m.id AND (mot.status = 'COMPLETED' OR mot.action = 504)
               )
           `;
 
@@ -420,7 +419,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
               title: "Task Pending",
               subtitle: t.title || "Untitled Task",
               time: t.time || nowStr,
-              action: 200,
+              action: 504,
               status: "PENDING",
               raw: t
             }));
@@ -432,7 +431,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
           setNowItems(groupedNow);
 
           // 3. Load Past Items (completed motions, receipts, logs)
-          const uPastMotions = await db.all("SELECT *, 'user' as originDb FROM motion WHERE status = 'COMPLETED' OR action = 1 ORDER BY time DESC LIMIT 30");
+          const uPastMotions = await db.all("SELECT *, 'user' as originDb FROM motion WHERE (status = 'COMPLETED' OR action = 201) AND scope = 'p' ORDER BY time DESC LIMIT 30");
           
           const combinedPast = Array.isArray(uPastMotions) ? uPastMotions : [];
           const groupedPast = groupOrderItems(combinedPast)
@@ -465,7 +464,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
     }, [massId, refreshTrigger])
   );
 
-  const handleMarkDone = async (item: any) => {
+   const handleMarkDone = async (item: any) => {
     try {
       const db = getUserDb();
       
@@ -479,14 +478,15 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         const seq = seqRow[0]?.next_seq || 1;
         
         await db.run(
-          "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
           [
             motionId,
             item.raw.matter,
             seq,
-            item.raw.scope === "reminder" ? 105 : 200,
+            504, // TASK_ASSIGNED Opcode
             "COMPLETED",
             null,
+            "p", // scope
             JSON.stringify({ task: item.subtitle, completed_at: new Date().toISOString() })
           ]
         );
@@ -497,14 +497,15 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         const seq = seqRow[0]?.next_seq || 1;
         
         await db.run(
-          "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
           [
             motionId,
             item.id,
             seq,
-            200, // Action 200 for Task Completion
+            504, // TASK_ASSIGNED Opcode
             "COMPLETED",
             null,
+            "p", // scope
             JSON.stringify({ task: item.subtitle, completed_at: new Date().toISOString() })
           ]
         );
@@ -518,7 +519,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
   };
 
   const renderMassCard = (item: any) => {
-    const isReminder = item.scope === 'reminder';
+    const isReminder = item.type === 'reminder';
     const startTime = item.start || item.time || (item.raw && item.raw.start);
     
     let displayTime = "";
@@ -651,15 +652,16 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         subtitle: (parsedData.title || motion.stream || "").trim(),
         amount: displayDelta !== null ? (displayDelta > 0 ? `+${displayDelta}` : displayDelta.toString()) : null
       };
-    } else if (action >= 101 && action <= 150) {
+    } else if (action === 504 || (action >= 101 && action <= 150)) {
+      const isReminder = parsedData.triggered_at || parsedData.task?.toLowerCase().includes("reminder") || action <= 150;
       config = {
-        icon: "notifications",
-        color: "#2563eb",
-        title: "Reminder",
+        icon: isReminder ? "notifications" : "checkbox",
+        color: isReminder ? "#2563eb" : "#c026d3",
+        title: isReminder ? "Reminder" : "Task",
         subtitle: (parsedData.task || parsedData.text || motion.stream || "").trim(),
         amount: null
       };
-    } else if (action >= 151 && action <= 250) {
+    } else if (action === 200 || (action >= 151 && action <= 250)) {
       config = {
         icon: "checkbox",
         color: "#c026d3",
@@ -983,9 +985,12 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             <View style={styles.leftGroup}>
               <TouchableOpacity 
                 style={styles.circleBtn}
-                onPress={() => router.push('/search')}
+                onPress={() => router.push('/tagents')}
               >
-                <Ionicons name="search" size={18} color="#1a1a1a" />
+                <Image 
+                  source={{ uri: "https://api.dicebear.com/7.x/notionists/png?seed=Alice&glassesProbability=100&backgroundColor=c0aede" }} 
+                  style={{ width: 40, height: 40, borderRadius: 20 }} 
+                />
               </TouchableOpacity>
 
               <TouchableOpacity 
@@ -997,9 +1002,9 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
               <TouchableOpacity 
                 style={[styles.circleBtn, { marginLeft: 6 }]}
-                onPress={() => router.push('/aigui2')}
+                onPress={() => router.push('/create')}
               >
-                <Ionicons name="terminal-outline" size={18} color="#1a1a1a" />
+                <Ionicons name="add-outline" size={18} color="#1a1a1a" />
               </TouchableOpacity>
             </View>
 

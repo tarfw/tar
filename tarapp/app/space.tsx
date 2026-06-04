@@ -11,7 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { getUserDb } from "../lib/db";
+import { getUserDb, getGlobalDb } from "../lib/db";
 
 interface CatalogItem {
   mass_id: string;
@@ -38,7 +38,7 @@ export default function SpaceScreen() {
     useCallback(() => {
       async function loadCatalog() {
         try {
-          const db = getUserDb();
+          const db = getGlobalDb();
           // Join mass and matter to get physical limits (price/stock) and abstract concepts (title)
           const rows = await db.all(`
             SELECT m.id as mass_id, m.matter as matter_id, m.qty as stock, m.value as price, t.title as title, t.code as code 
@@ -81,7 +81,7 @@ export default function SpaceScreen() {
     setIsCheckingOut(true);
     try {
       const db = getUserDb();
-      const globalDb = getUserDb();
+      const globalDb = getGlobalDb();
       const streamId = `ord_${Date.now()}`; // Unique order stream
       const totalAmount = cartItems.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0);
 
@@ -89,7 +89,7 @@ export default function SpaceScreen() {
 
       // 1. Insert order Sale header motion (Opcode 201) in Tenant DB with status 'PENDING'
       await db.run(
-        "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [
           motionId,
           streamId,
@@ -97,6 +97,7 @@ export default function SpaceScreen() {
           201, // Opcode 201 for SALE
           "PENDING",
           totalAmount,
+          "p", // scope
           JSON.stringify({ items_count: totalItems })
         ]
       );
@@ -107,7 +108,7 @@ export default function SpaceScreen() {
       for (const item of cartItems) {
         const itemMotionId = `mot_item_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         await db.run(
-          "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
           [
             itemMotionId,
             streamId,
@@ -115,6 +116,7 @@ export default function SpaceScreen() {
             101, // Opcode 101 for SOLD (inventory movement)
             "PENDING",
             -item.qty, // Negative delta representing movement out of stock
+            "p", // scope
             JSON.stringify({ mass_id: item.mass_id, matter_id: item.matter_id, title: item.title, price: item.price })
           ]
         );

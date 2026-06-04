@@ -67,6 +67,122 @@ The application defines four unified tables representing the physical, kinetic, 
 | **weight** | REAL | DEFAULT 1.0 | Link strength, display sort index, or coefficient value. |
 | **time** | TEXT | DEFAULT CURRENT_TIMESTAMP | Relation establishment timestamp. |
 
+### E. Allowed Entity Types & Categories
+
+These sub-tables define the permitted values for the `type` column across all four core schemas.
+
+#### 1. `matter.type` (Identity Templates)
+Defines the core catalog blueprint, template, or identity of an entity.
+* **`'product'`**: Blueprints for storefront items, services, or goods.
+* **`'task'`**: Task or Todo definitions.
+* **`'profile'`**: User or employee profile templates (Google Identity data).
+* **`'form'`**: Blueprints for dynamic forms and questionnaires.
+* **`'note'`**: General purpose sticky notes or documentation files.
+
+#### 2. `mass.type` (Realization & Allocation)
+Represents physical quantities, bookings, shift slots, locations, and pricing metrics.
+* **`'stock'`**: Physical inventory count/level and location tags.
+* **`'slot'`**: Bookings, rosters, calendar shift slot allocations.
+* **`'cart'`**: Active checkout cart records.
+* **`'ticket'`**: Customer support ticket folders.
+* **`'lead'`**: CRM sales lead folders.
+* **`'trip'`**: Active delivery or passenger rides in logistics.
+* **`'shift'`**: HR attendance shifts.
+* **`'form_task'`**: A single scheduled running instance of a form blueprint.
+
+#### 3. `motion.action` (Transactional Action Logs)
+Append-only log of events and status changes on a timeline stream (Opcodes).
+* **`Commerce (100s)`**: `SOLD (101)`, `ORDER_PLACED (105)`, `DELIVERED (109)`, `REFUND (111)`
+* **`POS & Kitchen (200s)`**: `SALE (201)`, `SHIFT_START (202)`, `ORDER_FIRE (206)`
+* **`CRM & Helpdesk (300s)`**: `LEAD_CREATED (303)`, `TICKET_OPEN (306)`, `RESOLVED (308)`
+* **`Logistics & SCM (400s)`**: `DISPATCHED (401)`, `IN_TRANSIT (402)`, `TRANSFER_OUT (405)`
+* **`HR & Rosters (500s)`**: `CLOCK_IN (501)`, `CLOCK_OUT (502)`, `LEAVE_REQUESTED (506)`
+* **`Marketing & ERP (600s, 900s)`**: `PUSH_SENT (601)`, `FORM_SUBMIT (604)`, `RIDE_REQUESTED (903)`
+* **`Services & Payments (700s, 800s)`**: `BOOKED (701)`, `PAYMENT_SUCCESS (802)`, `EXPENSE_RECORD (806)`
+
+#### 4. `relation.type` (Structural Network)
+Directed link connections defining hierarchy or rules between different entities.
+* **`'parent-child'`**: Categories containing sub-categories, or nested items.
+* **`'blocked_by'`**: Project task dependencies (Task A must be completed before Task B).
+* **`'assigned_to'`**: Linking a profile to a task or a workspace.
+* **`'submits_to'`**: Linking form submissions back to the form template.
+
+---
+
+## 1.2. Business Domain & Entity Type Mapping Matrix
+
+The database schema structure and corresponding opcodes cover the following business features:
+
+| Business Domain / Use Case | Covered? | Database Table & Opcode Implementation |
+| :--- | :---: | :--- |
+| **CRM** | **YES** | `matter (type='profile')` + `mass (type='lead')` + `motion (LEAD_CREATED 303, CONTACTED 304)` |
+| **Notes App** | **YES** | `matter (type='note')` + `relation` (for linking notes to categories or projects) |
+| **Bookings & Reservations** | **YES** | `mass (type='slot')` + `motion (BOOKED 701, COMPLETED 702)` |
+| **POS (Point of Sale)** | **YES** | `mass (type='stock')` + `motion (SALE 201, SHIFT_START 202, CASH_CLOSE 205)` |
+| **Forms Builder & Submissions** | **YES** | `matter (type='form')` + `mass (type='form_task')` + `motion (FORM_SUBMIT 604)` |
+| **Customer Helpdesk / Tickets** | **YES** | `mass (type='ticket')` + `motion (TICKET_OPEN 306, REPLY 307, RESOLVED 308)` |
+| **Storefront Site & Products** | **YES** | `matter (type='product')` (catalog definition templates rendered in flat visual cards) |
+| **Inventory & SCM** | **YES** | `mass (type='stock')` + `motion (SOLD 101, TRANSFER_OUT 405, TRANSFER_IN 406)` |
+| **Invoice** | **YES** | `motion (INVOICE_GENERATED 110)` (append-only ledger linked to order streams) |
+| **Expense, Spend, Payment** | **YES** | `motion (PAYMENT_INITIATED 801, PAYMENT_SUCCESS 802, EXPENSE_RECORD 806)` |
+| **Accounts Books & Ledgers** | **YES** | `motion` (append-only sequential ledger with balance verification using `delta`) |
+| **Payroll** | **YES** | `motion (PAYROLL 503)` (payout logs linked to employee profile matters) |
+| **ERP & Procurement** | **YES** | `motion (PROCURE_REQ 907, RECRUIT_APPLY 906)` |
+| **Logistics & Delivery** | **YES** | `motion (DISPATCHED 401, IN_TRANSIT 402, DELIVERED 109, ETA_UPDATED 404)` |
+| **Projects, Management, Todos** | **YES** | `matter (type='task')` + `relation` (parent-child or dependencies) + `motion (TASK_ASSIGNED 504)` |
+
+---
+
+## 1.3. Storefront & CMS Layout Architecture
+
+Storefront page layouts, CMS configuration widgets, theme settings, and section hierarchies are mapped directly into the relational core.
+
+```mermaid
+graph TD
+    M1["matter (type='form'/'layout')<br>Layout Component Blueprint"] -->|Defines Structure / Styles| MS1["mass (type='slot')<br>Specific Page Slot Instance"]
+    MS1 -->|Arranged on Pages via| R1["relation (type='parent-child')<br>Layout Tree Hierarchy & Order"]
+    MS1 -->|Impressions & Click actions logged in| MO1["motion (action=601/604)<br>Interaction & Analytical Ledger"]
+```
+
+### CMS Layout Schema Mapping Matrix
+
+| System Component | Database Table | Columns & JSON Configuration Payload | Example Application |
+| :--- | :--- | :--- | :--- |
+| **Section Component Blueprint** | `matter` | `type = 'form'` (or `'layout'`) <br>`data = { "widget": "carousel", "theme": "dark", "height": 300 }` | Defines style variables and template configuration rules for a reusable storefront block (e.g. Hero Banner, Product Grid, CTA Widget). |
+| **Live Section Placement** | `mass` | `type = 'slot'`<br>`scope = 's:102/home'` (Home page route of Store 102)<br>`start` / `end` (scheduled timing constraints)<br>`active = 1` | Instantiates a component blueprint onto a specific page scope. Allows setting scheduled marketing campaigns. |
+| **Component Hierarchy & Sorting** | `relation` | `src = 'home_page_matter_id'` <br>`tgt = 'hero_section_mass_id'` <br>`type = 'parent-child'` <br>`weight = 1.0` (indicates page display order) | Links layout instances to pages and sets their visual sorting order sequentially. |
+| **CMS Edit & Analytics Tracking** | `motion` | `action = 601` (Push/Impression) / `604` (Form/Click)<br>`data = { "element": "cta_button", "action": "click" }` | Logs administrative layout edits and offline interaction events (click-throughs, banner impressions). |
+
+### Example Layout Configuration Payload
+For rendering a **Featured Products Grid** on a homepage storefront:
+
+1. **`matter` (Widget definition)**:
+   ```json
+   {
+     "id": "comp_product_grid",
+     "type": "form",
+     "title": "Storefront Grid Widget",
+     "data": {
+       "style": "masonry_3_cols",
+       "limit": 6,
+       "show_price": true
+     }
+   }
+   ```
+2. **`mass` (Homepage instance)**:
+   ```json
+   {
+     "id": "slot_home_featured",
+     "matter": "comp_product_grid",
+     "type": "slot",
+     "scope": "s:102/homepage",
+     "active": 1
+   }
+   ```
+3. **`relation` (Linking items to Grid slot)**:
+   * Source: `slot_home_featured` $\rightarrow$ Target: `prod_tshirt` (Type: `'parent-child'`, Weight: `1.0`)
+   * Source: `slot_home_featured` $\rightarrow$ Target: `prod_jeans` (Type: `'parent-child'`, Weight: `2.0`)
+
 ---
 
 ## 2. Scope Code System & Database Mapping

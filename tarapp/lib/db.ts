@@ -302,9 +302,10 @@ export async function initDb() {
     console.error(`[DB:Global] Initialization failed:`, e);
   }
 
-  // Seed mock data in private local DB
+  // Seed mock data in both private local DB and global DB
   try {
     await seedMockData(privateDb);
+    await seedMockData(globalDb);
   } catch (err) {
     console.error("[DB] Mock seeding failed:", err);
   }
@@ -324,14 +325,14 @@ export async function seedMockData(db: Database) {
     console.log("[DB:Seed] Seeding mock data...");
     const nowStr = new Date().toISOString();
 
-    // Use Case 1: Delivery Routing (scope: delivery)
+    // Use Case 1: Delivery Routing (scope: logistics/d)
     const orderId = "ord_delivery_909";
     await db.run(
       "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [orderId, "DELIV_909", "food", "delivery", "restaurant_staff", "Spicy Paneer Biryani + Mango Lassi", JSON.stringify({ customer_phone: "+1-555-0199" })]
+      [orderId, "DELIV_909", "food", "d", "restaurant_staff", "Spicy Paneer Biryani + Mango Lassi", JSON.stringify({ customer_phone: "+1-555-0199" })]
     );
     await db.run(
-      "INSERT OR REPLACE INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, 1, 201, 'READY_FOR_PICKUP', 250.00, 'delivery', ?)",
+      "INSERT OR REPLACE INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, 1, 201, 'READY_FOR_PICKUP', 250.00, 'd', ?)",
       ["mot_deliv_header", orderId, JSON.stringify({ delivery_address: "128 Oak Avenue, Sector 4" })]
     );
     await db.run(
@@ -346,7 +347,7 @@ export async function seedMockData(db: Database) {
       [productId, "THERMOS_99", "product", "g", "store_owner", "Stainless Steel Hydro-Flask (1L)", JSON.stringify({ category: "Kitchenware" })]
     );
     await db.run(
-      "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active) VALUES (?, ?, 'stock', 'warehouse', 45, 899.00, 1)",
+      "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active) VALUES (?, ?, 'stock', 'w:general', 45, 899.00, 1)",
       ["mas_stock_99", productId]
     );
     await db.run(
@@ -354,14 +355,14 @@ export async function seedMockData(db: Database) {
       [productId + "_note", "THERMOS_99_NOTE", "Supplier Contract Details", JSON.stringify({ supplier_cost: 340.00, supplier_name: "Zenith Imports Ltd." })]
     );
 
-    // Use Case 3: Dispatch & Tasks (scope: dispatch & personal)
+    // Use Case 3: Dispatch & Tasks (scope: logistics/d & personal)
     const jobId = "job_plumb_88";
     await db.run(
       "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [jobId, "PLUMB_88", "task", "dispatch", "dispatch_officer", "Water Heater Pressure Release Leak", JSON.stringify({ client: "John Adams", urgency: "High" })]
+      [jobId, "PLUMB_88", "task", "d", "dispatch_officer", "Water Heater Pressure Release Leak", JSON.stringify({ client: "John Adams", urgency: "High" })]
     );
     await db.run(
-      "INSERT OR REPLACE INTO mass (id, matter, type, scope, active, start, end, data) VALUES (?, ?, 'slot', 'dispatch', 1, ?, ?, ?)",
+      "INSERT OR REPLACE INTO mass (id, matter, type, scope, active, start, end, data) VALUES (?, ?, 'slot', 'd', 1, ?, ?, ?)",
       ["mas_job_88", jobId, nowStr, nowStr, JSON.stringify({ required_tool: "gas_leak_detector" })]
     );
     await db.run(

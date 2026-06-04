@@ -40,7 +40,7 @@ export default function RootLayout() {
               SELECT m.*, t.title 
               FROM mass m 
               LEFT JOIN matter t ON m.matter = t.id 
-              WHERE m.active = 1 AND m.type = 'slot' AND m.scope = 'reminder' AND m.start <= ?
+              WHERE m.active = 1 AND m.type = 'reminder' AND m.scope = 'p' AND m.start <= ?
             `;
             
             const reminders = await db.all(findRemindersQuery, [nowStr]);
@@ -56,14 +56,15 @@ export default function RootLayout() {
                 const seq = seqRow[0]?.next_seq || 1;
                 
                 await db.run(
-                  "INSERT INTO motion (id, stream, seq, action, status, delta, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  "INSERT INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                   [
                     motionId,
                     reminder.matter,
                     seq,
-                    105, // REMINDER Opcode
+                    504, // TASK_ASSIGNED Opcode from plan.md
                     "COMPLETED",
                     null,
+                    "p", // scope
                     JSON.stringify({ task: reminder.title || "Reminder due", triggered_at: nowStr })
                   ]
                 );
@@ -102,7 +103,15 @@ export default function RootLayout() {
           headerShown: false,
           contentStyle: { backgroundColor: "white" },
         }}
-      />
+      >
+        <Stack.Screen 
+          name="tagents" 
+          options={{ 
+            presentation: "modal", 
+            animation: "none",
+          }} 
+        />
+      </Stack>
     </SafeAreaProvider>
   );
 }

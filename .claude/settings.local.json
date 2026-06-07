@@ -28,7 +28,10 @@
       "WebFetch(domain:stripe.com)",
       "WebFetch(domain:vercel.com)",
       "WebFetch(domain:www.apple.com)",
-      "WebFetch(domain:www.notion.so)"
+      "WebFetch(domain:www.notion.so)",
+      "WebSearch",
+      "WebFetch(domain:docs.turso.tech)",
+      "WebFetch(domain:turso.tech)"
     ]
   }
 }

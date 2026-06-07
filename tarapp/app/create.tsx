@@ -199,11 +199,6 @@ export default function CreateMatterScreen() {
   // Visual "data" state (JSON properties payload)
   const [data, setData] = useState<Record<string, any>>({});
 
-  // Local AI Input State
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [isWaitingForAi, setIsWaitingForAi] = useState(false);
-  const isAddActionRef = useRef(false);
-
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [quickAddText, setQuickAddText] = useState("");
@@ -1189,82 +1184,7 @@ export default function CreateMatterScreen() {
     );
   };
 
-  // Monitor LLM state for processing result
-  useEffect(() => {
-    if (isWaitingForAi && !llm.isGenerating) {
-      setIsWaitingForAi(false);
-      const finalResponse = llm.response;
-      console.log("LOG: AI processing finished. Raw response from LLM:", finalResponse);
-      
-      if (finalResponse) {
-        logAiStep("output", "AI Raw Output Received", finalResponse);
-        
-        let cleanResponse = finalResponse.trim();
-        console.log("LOG: Trimmed response:", cleanResponse);
-        
-        // Clean markdown code blocks if present
-        if (cleanResponse.startsWith("```")) {
-          cleanResponse = cleanResponse.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/\s*```$/, "");
-          console.log("LOG: Removed code block wrapping. Cleaned:", cleanResponse);
-          logAiStep("info", "Removed Markdown Wrapping", cleanResponse);
-        }
-        
-        try {
-          // Robust brace extraction parsing
-          const firstBrace = cleanResponse.indexOf("{");
-          const lastBrace = cleanResponse.lastIndexOf("}");
-          if (firstBrace === -1 || lastBrace === -1) {
-            throw new Error("No opening/closing curly brace found in response");
-          }
-          
-          let candidate = cleanResponse.substring(firstBrace, lastBrace + 1);
-          console.log("LOG: Extracted brace candidate block:", candidate);
-          
-          // Match open/close braces to discard trailing noise or extra braces
-          let openCount = 0;
-          let finalJsonString = "";
-          for (let i = 0; i < candidate.length; i++) {
-            const char = candidate[i];
-            if (char === "{") openCount++;
-            if (char === "}") openCount--;
-            finalJsonString += char;
-            if (openCount === 0 && i > 0) {
-              break;
-            }
-          }
-          
-          console.log("LOG: Final parsed candidate string:", finalJsonString);
-          logAiStep("info", "JSON Block Extracted", finalJsonString);
-          
-          const parsed = JSON.parse(finalJsonString);
-          console.log("LOG: JSON successfully parsed:", parsed);
-          
-          if (parsed && typeof parsed === "object") {
-            const cleanedParsed = filterDataForType(type, parsed);
-            const currentFiltered = filterDataForType(type, data);
-            const merged = mergeParsedFields(currentFiltered, cleanedParsed, isAddActionRef.current);
-            
-            setData((prev) => {
-              const updated = mergeParsedFields(filterDataForType(type, prev), cleanedParsed, isAddActionRef.current);
-              console.log("LOG: Merged data payload state:", updated);
-              return updated;
-            });
-            
-            logAiStep("fill", "Form Fields Populated (Fill)", `Extracted Fields:\n${JSON.stringify(cleanedParsed, null, 2)}\n\nMerged State Data:\n${JSON.stringify(merged, null, 2)}`);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          } else {
-            throw new Error("Parsed result is not a JSON object");
-          }
-        } catch (e: any) {
-          console.error("LOG: Parsing failure:", e);
-          logAiStep("error", "AI Output Parsing Failed", `Cleaned response was:\n"${cleanResponse}"\n\nError: ${e?.message || String(e)}`);
-          Alert.alert("AI Error", `Failed to parse AI output. Output: "${cleanResponse}". Error: ${e?.message || e}`);
-        }
-      } else {
-        logAiStep("error", "Empty Output Received", "Local LLM returned an empty or undefined response.");
-      }
-    }
-  }, [llm.isGenerating, isWaitingForAi, llm.response]);
+
 
   useEffect(() => {
     if (isWaitingForClassification && !llm.isGenerating) {
@@ -1338,81 +1258,7 @@ export default function CreateMatterScreen() {
     setData((prev) => ({ ...prev, [key]: value }));
   };
 
-  // AI local LLM processing routine
-  const handleAiProcess = async () => {
-    if (!aiPrompt.trim()) return;
-    const prompt = aiPrompt.trim();
-    setAiPrompt("");
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    // 1. Try to parse directly on client-side first for instant/reliable response
-    const patterns = [
-      /^(?:add|set|change|update)\s+([a-z0-9_-]+)[\s,:]+(?:is|to|level)?\s*(.+)$/i,
-      /^([a-z0-9_-]+)[\s,:]+(?:is|to|level)?\s*(.+)$/i
-    ];
-
-    let directParsed: Record<string, any> | null = null;
-    for (const regex of patterns) {
-      const match = prompt.match(regex);
-      if (match) {
-        let key = match[1].toLowerCase();
-        if (key === "colour") key = "color";
-        const valStr = match[2].trim();
-        let val: any = valStr;
-        if (/^\d+$/.test(valStr)) {
-          val = parseInt(valStr, 10);
-        } else if (/^\d+\.\d+$/.test(valStr)) {
-          val = parseFloat(valStr);
-        }
-        directParsed = { [key]: val };
-        break;
-      }
-    }
-
-    const isAddAction = prompt.toLowerCase().startsWith("add");
-    isAddActionRef.current = isAddAction;
-
-    if (directParsed) {
-      console.log("LOG: Direct parser matched successfully:", directParsed);
-      logAiStep("fill", "Direct Parse Match (Instant)", JSON.stringify(directParsed, null, 2));
-      
-      const cleanedParsed = filterDataForType(type, directParsed);
-      setData((prev) => {
-        const updated = mergeParsedFields(filterDataForType(type, prev), cleanedParsed, isAddAction);
-        console.log("LOG: Merged data payload state:", updated);
-        return updated;
-      });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      return;
-    }
-
-    // 2. Fall back to LLM for complex/natural language prompts
-    if (!isReady || llm.isGenerating) return;
-    setIsWaitingForAi(true);
-
-    try {
-      const query = `System: Extract the key-value pairs from the request as a valid JSON object. Output ONLY the JSON.
-
-Request: "Price is 50 and category kitchen"
-Output: {"price": 50, "category": "kitchen"}
-
-Request: "Add size large"
-Output: {"size": "large"}
-
-Request: "${prompt}"
-Output:`;
-
-      console.log("LOG: Initiating local LLM call. Prompt query:", query);
-      logAiStep("input", "AI Input Submitted (LLM Fallback)", `User Prompt:\n"${prompt}"`);
-      logAiStep("info", "LLM Prompt Formatted", `Formatted Query Sent to Local LLM:\n\n${query}`);
-      await llm.sendMessage(query);
-    } catch (err: any) {
-      console.error("LOG: Local LLM error on submit:", err);
-      logAiStep("error", "LLM Submission Error", err?.message || String(err));
-      setIsWaitingForAi(false);
-      Alert.alert("AI Error", err.message || "Failed to process prompt using local LLM.");
-    }
-  };
 
   const handleSave = async () => {
     const finalId = matterId.trim();
@@ -1515,37 +1361,7 @@ Output:`;
 
         </ScrollView>
 
-        {/* AI Input Field above the bottom bar */}
-        <View style={styles.aiInputContainer}>
-          <View style={styles.aiInputRow}>
-            <TextInput
-              style={styles.aiTextInput}
-              placeholder={
-                !isReady
-                  ? "Loading Offline AI..."
-                  : "Ask AI to fill fields (e.g. 'price 150')..."
-              }
-              placeholderTextColor="#a1a1aa"
-              value={aiPrompt}
-              onChangeText={setAiPrompt}
-              editable={isReady && !llm.isGenerating}
-            />
-            {llm.isGenerating ? (
-              <ActivityIndicator size="small" color="#d946ef" />
-            ) : (
-              <TouchableOpacity 
-                onPress={handleAiProcess} 
-                disabled={!isReady || !aiPrompt.trim()}
-                style={[
-                  styles.aiProcessBtn, 
-                  (!isReady || !aiPrompt.trim()) && styles.aiProcessBtnDisabled
-                ]}
-              >
-                <Ionicons name="arrow-up" size={14} color={(!isReady || !aiPrompt.trim()) ? "#a1a1aa" : "white"} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+
 
         {/* Sticky Bottom Chips Bar */}
         <View style={styles.bottomStickyBar}>
@@ -1705,7 +1521,7 @@ Output:`;
               </TouchableOpacity>
             </View>
             <Text style={{ fontSize: 11, color: "#a1a1aa", marginTop: 6, marginLeft: 8 }}>
-              AI classifies your entry (e.g. 'crimson' → Color, 'XL' → Size).
+              {"AI classifies your entry (e.g. 'crimson' → Color, 'XL' → Size)."}
             </Text>
           </View>
 
@@ -1912,40 +1728,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#27272a",
   },
-  aiInputContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: "#fafafa",
-    borderTopWidth: 0.5,
-    borderTopColor: "#e4e4e7",
-  },
-  aiInputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "white",
-    borderWidth: 1,
-    borderColor: "#e4e4e7",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  aiTextInput: {
-    flex: 1,
-    fontSize: 14,
-    color: "#18181b",
-    padding: 0,
-  },
-  aiProcessBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "#d946ef",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  aiProcessBtnDisabled: {
-    backgroundColor: "#f4f4f5",
-  },
+
   dataCanvasContainer: {
     marginTop: 20,
   },

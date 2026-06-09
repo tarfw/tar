@@ -988,51 +988,6 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             contentContainerStyle={styles.suggestionChipsContainer}
           >
             <TouchableOpacity
-              style={[styles.suggestionChip, { backgroundColor: "#eff6ff" }]}
-              onPress={() => router.push("/create_product")}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="cube-outline" size={12} color="#1d4ed8" style={{ marginRight: 4 }} />
-              <Text style={[styles.suggestionChipText, { color: "#1d4ed8" }]}>+ Product</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.suggestionChip, { backgroundColor: "#fef2f2" }]}
-              onPress={() => router.push("/create_task")}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="checkbox-outline" size={12} color="#b91c1c" style={{ marginRight: 4 }} />
-              <Text style={[styles.suggestionChipText, { color: "#b91c1c" }]}>+ Task</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.suggestionChip, { backgroundColor: "#fdf2f8" }]}
-              onPress={() => router.push("/create_profile")}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="person-outline" size={12} color="#be185d" style={{ marginRight: 4 }} />
-              <Text style={[styles.suggestionChipText, { color: "#be185d" }]}>+ Profile</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.suggestionChip, { backgroundColor: "#f0fdf4" }]}
-              onPress={() => router.push("/create_form")}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="document-outline" size={12} color="#15803d" style={{ marginRight: 4 }} />
-              <Text style={[styles.suggestionChipText, { color: "#15803d" }]}>+ Form</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.suggestionChip, { backgroundColor: "#faf5ff" }]}
-              onPress={() => router.push("/create_note")}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="document-text-outline" size={12} color="#7e22ce" style={{ marginRight: 4 }} />
-              <Text style={[styles.suggestionChipText, { color: "#7e22ce" }]}>+ Note</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={[styles.suggestionChip, { backgroundColor: "#ecfeff" }]}
               onPress={() => router.push("/workspace")}
               activeOpacity={0.7}

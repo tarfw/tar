@@ -985,6 +985,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={{ height: 36, marginBottom: 8 }}
             contentContainerStyle={styles.suggestionChipsContainer}
           >
             <TouchableOpacity

@@ -78,7 +78,7 @@ interface NoteRow {
   time: string;
 }
 
-type SheetKind = "customer" | "lead" | "ticket" | "task" | "note" | "review" | "slot" | "stock" | "trip" | "driver" | "transfer" | null;
+type SheetKind = "customer" | "lead" | "ticket" | "task" | "note" | "review" | "slot" | "stock" | "trip" | "driver" | "transfer" | "budget" | "expense" | "invoice" | "product" | "variant" | "modifier" | "publish" | null;
 
 // Microsoft To Do (Fluent) palette
 const ACCENT = "#2564cf";
@@ -86,6 +86,7 @@ const TEXT_PRIMARY = "#292827";
 const TEXT_SECONDARY = "#605e5c";
 const TEXT_TERTIARY = "#a19f9d";
 const DIVIDER = "#edebe9";
+const DANGER = "#a80000";
 
 const PRIORITIES = ["low", "medium", "high"];
 const LEAD_SOURCES = ["referral", "web", "walk_in", "campaign"];
@@ -179,13 +180,30 @@ export default function WorkspaceScreen() {
   const [scheduleSlots, setScheduleSlots] = useState<CrmMassRow[]>([]);
   const [stocks, setStocks] = useState<CrmMassRow[]>([]);
   const [trips, setTrips] = useState<CrmMassRow[]>([]);
+  const [budgets, setBudgets] = useState<CrmMassRow[]>([]);
+  const [invoices, setInvoices] = useState<CrmMassRow[]>([]);
   const [timeline, setTimeline] = useState<CrmMotionRow[]>([]);
+  // Product entity state
+  const [variants, setVariants] = useState<CrmMassRow[]>([]);
+  const [modifiers, setModifiers] = useState<CrmMassRow[]>([]);
+  const [publishedProfiles, setPublishedProfiles] = useState<CustomerRow[]>([]);
+  const [publishedProducts, setPublishedProducts] = useState<CustomerRow[]>([]);
   // Derived per-stream state (plan2.md): stage/source/subject come from the
   // motion ledger — single source of truth, no mass.data mirror.
   const [streamInfo, setStreamInfo] = useState<Record<string, { stage: string; source?: string; note?: string; subject?: string; desc?: string }>>({});
 
   // Bottom sheet drawer state — one drawer, multiple kinds
   const [sheet, setSheet] = useState<SheetKind>(null);
+
+  // Finance form states
+  const [budgetName, setBudgetName] = useState("");
+  const [budgetLimit, setBudgetLimit] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState("Supplies");
+  const [expenseDesc, setExpenseDesc] = useState("");
+  const [invoiceAmount, setInvoiceAmount] = useState("");
+  const [invoiceRef, setInvoiceRef] = useState("");
+  const [selectedBudgetPool, setSelectedBudgetPool] = useState<CrmMassRow | null>(null);
 
   // Entity / Customer form
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
@@ -226,6 +244,25 @@ export default function WorkspaceScreen() {
   const [stockQty, setStockQty] = useState("");
   const [stockVal, setStockVal] = useState("");
 
+  // Product form
+  const [productTitle, setProductTitle] = useState("");
+  const [productCode, setProductCode] = useState("");
+  const [productBasePrice, setProductBasePrice] = useState("");
+  const [productCat, setProductCat] = useState("retail");
+
+  // Variant form
+  const [variantLabel, setVariantLabel] = useState("");
+  const [variantQty, setVariantQty] = useState("");
+  const [variantPrice, setVariantPrice] = useState("");
+  const [editingVariant, setEditingVariant] = useState<CrmMassRow | null>(null);
+
+  // Modifier form
+  const [modifierTitle, setModifierTitle] = useState("");
+  const [modifierPrice, setModifierPrice] = useState("");
+
+  // Publish form
+  const [publishTargetId, setPublishTargetId] = useState("");
+
   // Trip form (SCM)
   const [tripRef, setTripRef] = useState("");
   const [tripQty, setTripQty] = useState("");
@@ -260,7 +297,7 @@ export default function WorkspaceScreen() {
     try {
       const db = routeDbForEntity("customer", activeScope);
       const rows = await db.all(
-        "SELECT id, code, type, title, owner, data, time FROM matter WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier') AND scope = ? ORDER BY time DESC",
+        "SELECT id, code, type, title, owner, data, time FROM matter WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier', 'vehicle', 'finance', 'product', 'profile') AND scope = ? ORDER BY time DESC",
         [activeScope]
       );
       setCustomers((rows as any[]) || []);
@@ -273,10 +310,10 @@ export default function WorkspaceScreen() {
     try {
       const db = getDb();
       
-      // Leads & Tickets (Only for Customer/Business)
+      // Leads & Tickets (Only for Customer/Business/Vehicle)
       let leadRows: any[] = [];
       let ticketRows: any[] = [];
-      if (typeVal === "customer" || typeVal === "business") {
+      if (typeVal === "customer" || typeVal === "business" || typeVal === "vehicle" || typeVal === "product" || typeVal === "profile") {
         leadRows = await db.all(
           "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'lead' AND active = 1 ORDER BY time DESC",
           [customerId]
@@ -305,11 +342,57 @@ export default function WorkspaceScreen() {
         );
       }
 
-      // Carrier Trips (Only for Carrier)
+      // Carrier/Vehicle Trips (Only for Carrier/Vehicle)
       let tripRows: any[] = [];
-      if (typeVal === "carrier") {
+      if (typeVal === "carrier" || typeVal === "vehicle") {
         tripRows = await db.all(
           "SELECT id, matter, type, qty, value, active, geo, start, end, data, time FROM mass WHERE matter = ? AND type = 'trip' ORDER BY start DESC",
+          [customerId]
+        );
+      }
+
+      // Finance Budgets & Invoices (Only for Finance)
+      let budgetRows: any[] = [];
+      let invoiceRows: any[] = [];
+      if (typeVal === "finance") {
+        budgetRows = await db.all(
+          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'budget' ORDER BY time DESC",
+          [customerId]
+        );
+        invoiceRows = await db.all(
+          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'invoice' ORDER BY time DESC",
+          [customerId]
+        );
+      }
+
+      // Product Variants & Modifiers / Profile Storefronts
+      let variantRows: any[] = [];
+      let modifierRows: any[] = [];
+      let profileRows: any[] = [];
+      let publishedProductRows: any[] = [];
+      if (typeVal === "product") {
+        variantRows = await db.all(
+          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'variant' ORDER BY time ASC",
+          [customerId]
+        );
+        modifierRows = await db.all(
+          `SELECT ms.id, ms.matter, ms.type, ms.qty, ms.value, ms.active, ms.start, ms.end, ms.data, ms.time
+           FROM mass ms
+           JOIN relation r ON r.tgt = ms.matter AND r.src = ? AND r.type = 'modifier_of'
+           WHERE ms.type = 'modifier'`,
+          [customerId]
+        );
+        profileRows = await db.all(
+          `SELECT m.id, m.code, m.type, m.title, m.owner, m.data, m.time
+           FROM matter m
+           JOIN relation r ON r.tgt = m.id AND r.src = ? AND r.type = 'published_to'`,
+          [customerId]
+        );
+      } else if (typeVal === "profile") {
+        publishedProductRows = await db.all(
+          `SELECT m.id, m.code, m.type, m.title, m.owner, m.data, m.time
+           FROM matter m
+           JOIN relation r ON r.src = m.id AND r.tgt = ? AND r.type = 'published_to'`,
           [customerId]
         );
       }
@@ -337,7 +420,6 @@ export default function WorkspaceScreen() {
           [customerId]
         );
       }
-
       // Notes:
       let noteRows: any[] = [];
       if (customerId === "general_personal") {
@@ -414,12 +496,17 @@ export default function WorkspaceScreen() {
       setScheduleSlots((slotRows as any[]) || []);
       setStocks((stockRows as any[]) || []);
       setTrips((tripRows as any[]) || []);
+      setBudgets((budgetRows as any[]) || []);
+      setInvoices((invoiceRows as any[]) || []);
       setTimeline((motionRows as any[]) || []);
+      setVariants((variantRows as any[]) || []);
+      setModifiers((modifierRows as any[]) || []);
+      setPublishedProfiles((profileRows as any[]) || []);
+      setPublishedProducts((publishedProductRows as any[]) || []);
     } catch (e) {
       console.warn("[CRM] Failed to load customer detail:", e);
     }
   }, [getDb, scope]);
-
   useEffect(() => {
     async function boot() {
       const id = await getSelfId();
@@ -507,15 +594,25 @@ export default function WorkspaceScreen() {
       entityType === "business" ? "biz" : 
       entityType === "warehouse" ? "wh" :
       entityType === "carrier" ? "carrier" :
+      entityType === "vehicle" ? "veh" :
+      entityType === "finance" ? "fin" :
+      entityType === "product" ? "prod" :
+      entityType === "profile" ? "prof" :
       "cust"
     );
     const isWarehouse = entityType === "warehouse";
     const isCarrier = entityType === "carrier";
+    const isVehicle = entityType === "vehicle";
+    const isFinance = entityType === "finance";
     const dataJson = JSON.stringify({ 
       email: custEmail.trim(), 
       phone: custPhone.trim(),
       ...(isWarehouse ? { capacity: 10000, dock_count: 4 } : {}),
-      ...(isCarrier ? { tier: "ground", vehicle_types: ["Van"] } : {})
+      ...(isCarrier ? { tier: "ground", vehicle_types: ["Van"] } : {}),
+      ...(isVehicle ? { fuel_type: "hybrid", status: "active" } : {}),
+      ...(isFinance ? { currency: "USD", status: "active" } : {}),
+      ...(entityType === "product" ? { cat: "retail", base_price: 0 } : {}),
+      ...(entityType === "profile" ? { cat: "store", cur: "USD" } : {})
     });
     const timeStr = new Date().toISOString();
     await db.run(
@@ -639,7 +736,7 @@ export default function WorkspaceScreen() {
         await db.run("UPDATE mass SET active = 0 WHERE id = ?", [trip.id]);
       }
       await pushIfEnabled(db);
-      await loadCustomerDetail(selectedCustomer!.id, "carrier");
+      await loadCustomerDetail(selectedCustomer!.id, selectedCustomer!.type || "");
     });
   };
 
@@ -656,7 +753,7 @@ export default function WorkspaceScreen() {
             const db = getDb();
             await appendMotion(db, trip.id, 410, "ATTEMPT_FAILED", null, { reason: "Customer not home / no answer" });
             await pushIfEnabled(db);
-            await loadCustomerDetail(selectedCustomer!.id, "carrier");
+            await loadCustomerDetail(selectedCustomer!.id, selectedCustomer!.type || "");
           })
         }
       ]
@@ -678,7 +775,7 @@ export default function WorkspaceScreen() {
             await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [timeStr, trip.id]);
             await appendMotion(db, trip.id, 407, "RETURN_REQUESTED", null, { reason: "Customer refused shipment" });
             await pushIfEnabled(db);
-            await loadCustomerDetail(selectedCustomer!.id, "carrier");
+            await loadCustomerDetail(selectedCustomer!.id, selectedCustomer!.type || "");
           })
         }
       ]
@@ -698,7 +795,7 @@ export default function WorkspaceScreen() {
             const db = getDb();
             await appendMotion(db, trip.id, 404, "ETA_UPDATED", 15, { eta_minutes: 15 });
             await pushIfEnabled(db);
-            await loadCustomerDetail(selectedCustomer!.id, "carrier");
+            await loadCustomerDetail(selectedCustomer!.id, selectedCustomer!.type || "");
           })
         }
       ]
@@ -782,10 +879,141 @@ export default function WorkspaceScreen() {
       await pushIfEnabled(db);
       setTripRef(""); setTripQty(""); setTripGeo("833075fffffffff"); setTripDriver("");
       setSheet(null);
-      await loadCustomerDetail(selectedCustomer.id, "carrier");
+      await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
     });
   };
 
+
+  // ---- Product Catalog (matter type=product) ----
+
+  const createProduct = () => {
+    const title = productTitle.trim();
+    if (!title) { Alert.alert("Validation Error", "Please enter a product title."); return; }
+    runMutation(async () => {
+      const db = getDb();
+      const productId = rid("prod");
+      const timeStr = new Date().toISOString();
+      const dataJson = JSON.stringify({ cat: productCat, base_price: Number(productBasePrice) || 0 });
+      await db.run(
+        "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'product', ?, ?, ?, 1, ?, ?)",
+        [productId, productCode.trim() || null, scope, selfId, title, dataJson, timeStr]
+      );
+      await pushIfEnabled(db);
+      setProductTitle(""); setProductCode(""); setProductBasePrice(""); setProductCat("retail");
+      setSheet(null);
+      await loadCustomers(scope!);
+    });
+  };
+
+  // ---- Variant Inventory (mass type=variant) ----
+
+  const createVariant = () => {
+    if (!selectedCustomer) return;
+    const label = variantLabel.trim();
+    if (!label) { Alert.alert("Validation Error", "Please enter a variant label."); return; }
+    const qtyVal = Number(variantQty) || 0;
+    const priceVal = Number(variantPrice) || 0;
+    runMutation(async () => {
+      const db = getDb();
+      const variantId = rid("var");
+      const timeStr = new Date().toISOString();
+      await db.run(
+        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'variant', ?, ?, ?, 1, ?, ?)",
+        [variantId, selectedCustomer.id, scope, qtyVal, priceVal, JSON.stringify({ label }), timeStr]
+      );
+      await appendMotion(db, variantId, 406, "TRANSFER_IN", qtyVal, { label, src: "vendor" });
+      await pushIfEnabled(db);
+      setVariantLabel(""); setVariantQty(""); setVariantPrice("");
+      setSheet(null);
+      await loadCustomerDetail(selectedCustomer.id, "product");
+    });
+  };
+
+  const adjustVariantStock = (variant: CrmMassRow, direction: "in" | "out") => {
+    if (!selectedCustomer) return;
+    const qtyChange = direction === "in" ? 10 : -10;
+    const newQty = Math.max(0, (variant.qty || 0) + qtyChange);
+    runMutation(async () => {
+      const db = getDb();
+      await db.run("UPDATE mass SET qty = ? WHERE id = ?", [newQty, variant.id]);
+      const action = direction === "in" ? 406 : 405;
+      const status = direction === "in" ? "TRANSFER_IN" : "TRANSFER_OUT";
+      await appendMotion(db, variant.id, action, status, qtyChange, { label: parseData(variant.data).label });
+      await pushIfEnabled(db);
+      await loadCustomerDetail(selectedCustomer.id, "product");
+    });
+  };
+
+  // ---- Modifiers ----
+
+  const createModifier = () => {
+    if (!selectedCustomer) return;
+    const title = modifierTitle.trim();
+    if (!title) { Alert.alert("Validation Error", "Please enter a modifier name."); return; }
+    const priceVal = Number(modifierPrice) || 0;
+    runMutation(async () => {
+      const db = getDb();
+      const modId = rid("mod");
+      const massId = rid("modprice");
+      const timeStr = new Date().toISOString();
+      await db.run(
+        "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'product', ?, ?, ?, 1, ?, ?)",
+        [modId, null, scope, selfId, title, JSON.stringify({ mod: 1 }), timeStr]
+      );
+      await addRelation(db, selectedCustomer.id, modId, "modifier_of");
+      await db.run(
+        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'modifier', ?, NULL, ?, 1, ?, ?)",
+        [massId, modId, scope, priceVal, JSON.stringify({ title }), timeStr]
+      );
+      await pushIfEnabled(db);
+      setModifierTitle(""); setModifierPrice("");
+      setSheet(null);
+      await loadCustomerDetail(selectedCustomer.id, "product");
+    });
+  };
+
+  const deactivateModifier = (modifier: CrmMassRow) => {
+    if (!selectedCustomer) return;
+    runMutation(async () => {
+      const db = getDb();
+      await db.run("UPDATE mass SET active = 0 WHERE id = ?", [modifier.id]);
+      await pushIfEnabled(db);
+      await loadCustomerDetail(selectedCustomer.id, "product");
+    });
+  };
+
+  // ---- Publish to Storefront ----
+
+  const publishToProfile = () => {
+    if (!selectedCustomer || !publishTargetId.trim()) {
+      Alert.alert("Validation Error", "Please enter a storefront entity ID.");
+      return;
+    }
+    runMutation(async () => {
+      const db = getDb();
+      await addRelation(db, selectedCustomer.id, publishTargetId.trim(), "published_to");
+      await pushIfEnabled(db);
+      setPublishTargetId("");
+      setSheet(null);
+      await loadCustomerDetail(selectedCustomer.id, "product");
+    });
+  };
+
+  const unpublishFromProfile = (targetId: string) => {
+    if (!selectedCustomer) return;
+    runMutation(async () => {
+      const db = getDb();
+      if (selectedCustomer.type === "profile") {
+        await db.run("DELETE FROM relation WHERE src = ? AND tgt = ? AND type = 'published_to'", [targetId, selectedCustomer.id]);
+        await pushIfEnabled(db);
+        await loadCustomerDetail(selectedCustomer.id, "profile");
+      } else {
+        await db.run("DELETE FROM relation WHERE src = ? AND tgt = ? AND type = 'published_to'", [selectedCustomer.id, targetId]);
+        await pushIfEnabled(db);
+        await loadCustomerDetail(selectedCustomer.id, "product");
+      }
+    });
+  };
   const openDriverSelector = (trip: CrmMassRow) => {
     setDriverTripId(trip.id);
     openSheet("driver");
@@ -806,7 +1034,7 @@ export default function WorkspaceScreen() {
       await pushIfEnabled(db);
       setSheet(null);
       setDriverTripId(null);
-      await loadCustomerDetail(selectedCustomer.id, "carrier");
+      await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
     });
   };
 
@@ -1091,6 +1319,112 @@ export default function WorkspaceScreen() {
     });
   };
 
+  // ---- Finance Operations ----
+
+  const createBudgetAllocation = () => {
+    if (!selectedCustomer) return;
+    const name = budgetName.trim();
+    if (!name) {
+      Alert.alert("Validation Error", "Please enter a budget pool name.");
+      return;
+    }
+    const limit = Number(budgetLimit) || 0;
+    if (limit <= 0) {
+      Alert.alert("Validation Error", "Please enter a valid budget limit.");
+      return;
+    }
+    runMutation(async () => {
+      const db = getDb();
+      const budgetId = rid("budget");
+      const now = new Date();
+      const timeStr = now.toISOString();
+      await db.run(
+        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'budget', ?, ?, ?, 1, ?, NULL, ?, ?)",
+        [budgetId, selectedCustomer.id, scope, limit, limit, timeStr, JSON.stringify({ name }), timeStr]
+      );
+      await appendMotion(db, budgetId, 806, "BUDGET_ALLOCATED", limit, { name, limit });
+      await pushIfEnabled(db);
+      setBudgetName("");
+      setBudgetLimit("");
+      setSheet(null);
+      await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
+    });
+  };
+
+  const recordExpense = () => {
+    if (!selectedCustomer || !selectedBudgetPool) return;
+    const amount = Number(expenseAmount) || 0;
+    if (amount <= 0) {
+      Alert.alert("Validation Error", "Please enter a valid expense amount.");
+      return;
+    }
+    const currentQty = selectedBudgetPool.qty || 0;
+    runMutation(async () => {
+      const db = getDb();
+      const newQty = Math.max(0, currentQty - amount);
+      await db.run("UPDATE mass SET qty = ? WHERE id = ?", [newQty, selectedBudgetPool.id]);
+      
+      await appendMotion(db, selectedBudgetPool.id, 806, "EXPENSE_REC", -amount, {
+        category: expenseCategory,
+        desc: expenseDesc.trim(),
+        originalLimit: selectedBudgetPool.value
+      });
+      await pushIfEnabled(db);
+      setExpenseAmount("");
+      setExpenseDesc("");
+      setSelectedBudgetPool(null);
+      setSheet(null);
+      await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
+    });
+  };
+
+  const createInvoice = () => {
+    if (!selectedCustomer) return;
+    const amount = Number(invoiceAmount) || 0;
+    if (amount <= 0) {
+      Alert.alert("Validation Error", "Please enter a valid invoice amount.");
+      return;
+    }
+    const ref = invoiceRef.trim() || rid("inv");
+    runMutation(async () => {
+      const db = getDb();
+      const invoiceId = rid("invoice");
+      const timeStr = new Date().toISOString();
+      await db.run(
+        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'invoice', ?, 1, ?, 1, ?, NULL, ?, ?)",
+        [invoiceId, selectedCustomer.id, scope, amount, timeStr, JSON.stringify({ ref }), timeStr]
+      );
+      await appendMotion(db, invoiceId, 801, "PAYMENT_INIT", amount, { ref });
+      await pushIfEnabled(db);
+      setInvoiceAmount("");
+      setInvoiceRef("");
+      setSheet(null);
+      await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
+    });
+  };
+
+  const resolveInvoiceSuccess = (invoice: CrmMassRow) => {
+    if (!selectedCustomer) return;
+    runMutation(async () => {
+      const db = getDb();
+      await db.run("UPDATE mass SET active = 0 WHERE id = ?", [invoice.id]);
+      await appendMotion(db, invoice.id, 802, "PAYMENT_SUCCESS", invoice.value, {});
+      await pushIfEnabled(db);
+      await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
+    });
+  };
+
+  const resolveInvoiceFailure = (invoice: CrmMassRow) => {
+    if (!selectedCustomer) return;
+    runMutation(async () => {
+      const db = getDb();
+      await db.run("UPDATE mass SET active = 0 WHERE id = ?", [invoice.id]);
+      await appendMotion(db, invoice.id, 805, "PAYMENT_FAIL", 0, {});
+      await pushIfEnabled(db);
+      await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
+    });
+  };
+
   // ---- Render ----
 
   if (!selfId) {
@@ -1171,6 +1505,18 @@ export default function WorkspaceScreen() {
               typeLabel = "Team";
               typeColor = "#8764b8"; // purple
               typeIcon = "people-outline";
+            } else if (c.type === "finance") {
+              typeLabel = "Finance / Budget";
+              typeColor = "#107c41"; // green
+              typeIcon = "cash-outline";
+            } else if (c.type === "product") {
+              typeLabel = "Product";
+              typeColor = "#2563eb"; // blue
+              typeIcon = "pricetag-outline";
+            } else if (c.type === "profile") {
+              typeLabel = "Storefront Profile";
+              typeColor = "#0891b2"; // teal
+              typeIcon = "storefront-outline";
             } else if (c.type === "family") {
               typeLabel = "Family";
               typeColor = "#ec4899"; // pink
@@ -1187,6 +1533,10 @@ export default function WorkspaceScreen() {
               typeLabel = "Carrier";
               typeColor = "#a78bfa"; // light purple
               typeIcon = "bus-outline";
+            } else if (c.type === "vehicle") {
+              typeLabel = "Vehicle / Fleet";
+              typeColor = "#f97316"; // orange
+              typeIcon = "car-outline";
             }
             
             return (
@@ -1315,10 +1665,10 @@ export default function WorkspaceScreen() {
                 </>
               )}
 
-              {/* Tickets — only for Customer/Business */}
-              {(selectedCustomer.type === "customer" || selectedCustomer.type === "business") && (
+              {/* Tickets — only for Customer/Business/Vehicle */}
+              {(selectedCustomer.type === "customer" || selectedCustomer.type === "business" || selectedCustomer.type === "vehicle" || selectedCustomer.type === "product" || selectedCustomer.type === "profile") && (
                 <>
-                  <SectionHeader title="Tickets" tables="mass + motion" />
+                  <SectionHeader title={selectedCustomer.type === "vehicle" ? "Maintenance & Sourcing" : "Tickets"} tables="mass + motion" />
                   {tickets.map((ticket) => {
                     const priority = parseData(ticket.data).priority || "medium";
                     const subject = streamInfo[ticket.id]?.subject;
@@ -1465,7 +1815,7 @@ export default function WorkspaceScreen() {
                             }
                           ]} />
                         )}
-                        <View style={styles.divider} />
+                      <View style={styles.divider} />
                       </View>
                     );
                   })}
@@ -1474,10 +1824,136 @@ export default function WorkspaceScreen() {
                 </>
               )}
 
-              {/* Carrier Trips / Shipments — only for Carrier */}
-              {selectedCustomer.type === "carrier" && (
+              {/* Product variants, modifiers & profiles — only for Product */}
+              {selectedCustomer.type === "product" && (
                 <>
-                  <SectionHeader title="Active Trips & Shipments" tables="mass (trip)" />
+                  {/* Variants */}
+                  <SectionHeader title="Variants (mass type=variant)" tables="mass (variant)" />
+                  {variants.map((v) => {
+                    const dataObj = parseData(v.data);
+                    const qtyVal = v.qty ?? 0;
+                    return (
+                      <View key={v.id}>
+                        <View style={styles.listRow}>
+                          <Ionicons name="pricetag-outline" size={18} color={ACCENT} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.rowTitle}>{dataObj.label || v.id}</Text>
+                            <Text style={styles.rowSub}>
+                              {qtyVal} units · ${Number(v.value || 0).toFixed(2)}
+                            </Text>
+                          </View>
+                          {/* Quick restock / write-off buttons */}
+                          <View style={{ flexDirection: "row", gap: 8 }}>
+                            <TouchableOpacity
+                              style={[styles.quickChip, { paddingVertical: 4, paddingHorizontal: 8 }]}
+                              onPress={() => adjustVariantStock(v, "in")}
+                              disabled={busy}
+                            >
+                              <Text style={{ fontSize: 11, color: ACCENT, fontWeight: "600" }}>Restock (+10)</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.quickChip, { paddingVertical: 4, paddingHorizontal: 8 }]}
+                              onPress={() => adjustVariantStock(v, "out")}
+                              disabled={busy}
+                            >
+                              <Text style={{ fontSize: 11, color: DANGER, fontWeight: "600" }}>Write-off (-10)</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                        <View style={styles.divider} />
+                      </View>
+                    );
+                  })}
+                  <AddRow label="Add Variant" onPress={() => openSheet("variant")} />
+
+                  {/* Modifiers */}
+                  <SectionHeader title="Modifiers & Add-ons (mass type=modifier)" tables="mass (modifier)" />
+                  {modifiers.map((m) => {
+                    return (
+                      <View key={m.id}>
+                        <View style={styles.listRow}>
+                          <Ionicons name="add-circle-outline" size={18} color={ACCENT} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.rowTitle}>{m.id}</Text>
+                            <Text style={styles.rowSub}>
+                              +${Number(m.value || 0).toFixed(2)} · {m.active ? "Active" : "Inactive"}
+                            </Text>
+                          </View>
+                          {m.active && (
+                            <TouchableOpacity
+                              style={[styles.quickChip, { paddingVertical: 4, paddingHorizontal: 8 }]}
+                              onPress={() => deactivateModifier(m)}
+                              disabled={busy}
+                            >
+                              <Text style={{ fontSize: 11, color: DANGER, fontWeight: "600" }}>Deactivate</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                        <View style={styles.divider} />
+                      </View>
+                    );
+                  })}
+                  <AddRow label="Add Modifier / Add-on" onPress={() => openSheet("modifier")} />
+
+                  {/* Published to Storefront Profiles */}
+                  <SectionHeader title="Published to Storefront Profiles" tables="relation (published_to)" />
+                  {publishedProfiles.map((p) => {
+                    return (
+                      <View key={p.id}>
+                        <View style={styles.listRow}>
+                          <Ionicons name="storefront-outline" size={18} color={ACCENT} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.rowTitle}>{p.title || p.id}</Text>
+                            <Text style={styles.rowSub}>@{p.id}</Text>
+                          </View>
+                          <TouchableOpacity
+                            style={[styles.quickChip, { paddingVertical: 4, paddingHorizontal: 8 }]}
+                            onPress={() => unpublishFromProfile(p.id)}
+                            disabled={busy}
+                          >
+                            <Text style={{ fontSize: 11, color: DANGER, fontWeight: "600" }}>Unpublish</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <View style={styles.divider} />
+                      </View>
+                    );
+                  })}
+                  <AddRow label="Publish to Storefront" onPress={() => openSheet("publish")} />
+                </>
+              )}
+
+              {/* Published products — only for Storefront Profiles */}
+              {selectedCustomer.type === "profile" && (
+                <>
+                  <SectionHeader title="Published Products" tables="relation (published_to) + matter (product)" />
+                  {publishedProducts.map((p) => {
+                    return (
+                      <View key={p.id}>
+                        <View style={styles.listRow}>
+                          <Ionicons name="pricetag-outline" size={18} color={ACCENT} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.rowTitle}>{p.title || p.id}</Text>
+                            <Text style={styles.rowSub}>@{p.code || p.id}</Text>
+                          </View>
+                          <TouchableOpacity
+                            style={[styles.quickChip, { paddingVertical: 4, paddingHorizontal: 8 }]}
+                            onPress={() => unpublishFromProfile(p.id)}
+                            disabled={busy}
+                          >
+                            <Text style={{ fontSize: 11, color: DANGER, fontWeight: "600" }}>Unpublish</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <View style={styles.divider} />
+                      </View>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* Carrier/Vehicle Trips / Shipments — only for Carrier/Vehicle */}
+              {(selectedCustomer.type === "carrier" || selectedCustomer.type === "vehicle") && (
+                <>
+                  <SectionHeader title={selectedCustomer.type === "vehicle" ? "Active Rides & Dispatches" : "Active Trips & Shipments"} tables="mass (trip)" />
                   {trips.map((trip) => {
                     const info = streamInfo[trip.id] || { stage: "dispatched" };
                     const isDelivered = info.stage === "delivered";
@@ -1536,8 +2012,135 @@ export default function WorkspaceScreen() {
                       </View>
                     );
                   })}
-                  {trips.length === 0 && <Text style={styles.emptyText}>No active trips for this carrier.</Text>}
-                  <AddRow label="Dispatch trip" onPress={() => openSheet("trip")} />
+                  {trips.length === 0 && <Text style={styles.emptyText}>{selectedCustomer.type === "vehicle" ? "No active rides for this vehicle." : "No active trips for this carrier."}</Text>}
+                  <AddRow label={selectedCustomer.type === "vehicle" ? "Dispatch ride" : "Dispatch trip"} onPress={() => openSheet("trip")} />
+                </>
+              )}
+
+              {/* Finance Budgets & Invoices — only for Finance Account */}
+              {selectedCustomer.type === "finance" && (
+                <>
+                  <SectionHeader title="Budget Pools & Allocations" tables="mass (budget)" />
+                  {budgets.map((budget) => {
+                    const d = parseData(budget.data);
+                    const name = d.name || budget.id;
+                    const limitVal = budget.value || 0;
+                    const spentVal = limitVal - (budget.qty || 0);
+                    const remainingVal = budget.qty || 0;
+                    const isLow = remainingVal < (limitVal * 0.1); // below 10%
+                    
+                    return (
+                      <View key={budget.id}>
+                        <View style={styles.listRow}>
+                          <Ionicons name="pie-chart-outline" size={18} color={isLow ? "#d93b3b" : "#107c41"} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.rowTitle}>
+                              {name} {isLow ? <Text style={{ color: "#d93b3b", fontSize: 11 }}>⚠️ LOW BUDGET</Text> : null}
+                            </Text>
+                            <Text style={styles.rowSub}>
+                              Limit: ${limitVal.toFixed(2)} · Spent: ${spentVal.toFixed(2)}
+                            </Text>
+                          </View>
+                          <Text style={[styles.stageText, { color: isLow ? "#d93b3b" : "#107c41" }]}>
+                            ${remainingVal.toFixed(2)} left
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setSelectedBudgetPool(budget);
+                              setExpenseCategory("Supplies");
+                              setExpenseAmount("");
+                              setExpenseDesc("");
+                              openSheet("expense");
+                            }}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons name="cash-outline" size={16} color={ACCENT} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => toggleRowData(budget.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="server-outline" size={15} color={expandedRowId === budget.id ? ACCENT : TEXT_TERTIARY} />
+                          </TouchableOpacity>
+                        </View>
+                        {expandedRowId === budget.id && (
+                          <RowData rows={[
+                            {
+                              table: "mass",
+                              cols: [["id", budget.id], ["matter", budget.matter], ["type", "budget"], ["scope", scope], ["qty (remaining)", budget.qty], ["value (limit)", budget.value], ["active", budget.active], ["start", budget.start], ["end", budget.end], ["data", budget.data]]
+                            },
+                            {
+                              table: `motion (stream = ${budget.id})`,
+                              cols: timeline.filter((m) => m.stream === budget.id).map((m) => [
+                                `seq ${m.seq}`,
+                                `${OPCODE_LABELS[m.action] || m.action} · ${m.status || ""} · Δ${m.delta ?? "—"}`
+                              ] as [string, any])
+                            }
+                          ]} />
+                        )}
+                        <View style={styles.divider} />
+                      </View>
+                    );
+                  })}
+                  {budgets.length === 0 && <Text style={styles.emptyText}>No budget allocations found.</Text>}
+                  <AddRow label="Allocate budget pool" onPress={() => openSheet("budget")} />
+
+                  <SectionHeader title="Payment Gateway Invoices" tables="mass (invoice)" />
+                  {invoices.map((invoice) => {
+                    const d = parseData(invoice.data);
+                    const ref = d.ref || invoice.id;
+                    const amountVal = invoice.value || 0;
+                    const isClosed = invoice.active === 0;
+                    
+                    const isPaid = timeline.some(m => m.stream === invoice.id && m.action === 802);
+                    const isFailed = timeline.some(m => m.stream === invoice.id && m.action === 805);
+                    const statusText = isPaid ? "SUCCESS" : isFailed ? "FAILED" : "PENDING";
+                    const statusColor = isPaid ? "#107c41" : isFailed ? "#d93b3b" : "#ffaa44";
+
+                    return (
+                      <View key={invoice.id}>
+                        <View style={styles.listRow}>
+                          <Ionicons name="card-outline" size={18} color={statusColor} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.rowTitle, isClosed && styles.rowTitleDone]}>
+                              {ref} (${amountVal.toFixed(2)})
+                            </Text>
+                            <Text style={styles.rowSub}>
+                              Status: {statusText}
+                            </Text>
+                          </View>
+                          {!isClosed && (
+                            <View style={{ flexDirection: "row", gap: 10 }}>
+                              <TouchableOpacity onPress={() => resolveInvoiceSuccess(invoice)} disabled={busy} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                <Ionicons name="checkmark-circle-outline" size={20} color="#107c41" />
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => resolveInvoiceFailure(invoice)} disabled={busy} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                <Ionicons name="close-circle-outline" size={20} color="#d93b3b" />
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                          <TouchableOpacity onPress={() => toggleRowData(invoice.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="server-outline" size={15} color={expandedRowId === invoice.id ? ACCENT : TEXT_TERTIARY} />
+                          </TouchableOpacity>
+                        </View>
+                        {expandedRowId === invoice.id && (
+                          <RowData rows={[
+                            {
+                              table: "mass",
+                              cols: [["id", invoice.id], ["matter", invoice.matter], ["type", "invoice"], ["scope", scope], ["qty", invoice.qty], ["value", invoice.value], ["active", invoice.active], ["start", invoice.start], ["end", invoice.end], ["data", invoice.data]]
+                            },
+                            {
+                              table: `motion (stream = ${invoice.id})`,
+                              cols: timeline.filter((m) => m.stream === invoice.id).map((m) => [
+                                `seq ${m.seq}`,
+                                `${OPCODE_LABELS[m.action] || m.action} · ${m.status || ""} · Δ${m.delta ?? "—"}`
+                              ] as [string, any])
+                            }
+                          ]} />
+                        )}
+                        <View style={styles.divider} />
+                      </View>
+                    );
+                  })}
+                  {invoices.length === 0 && <Text style={styles.emptyText}>No invoices found.</Text>}
+                  <AddRow label="Create checkout invoice (801)" onPress={() => openSheet("invoice")} />
                 </>
               )}
 
@@ -1686,7 +2289,11 @@ export default function WorkspaceScreen() {
                     { label: "Team", value: "person" },
                     { label: "Family", value: "family" },
                     { label: "Warehouse", value: "warehouse" },
-                    { label: "Carrier", value: "carrier" }
+                    { label: "Carrier", value: "carrier" },
+                    { label: "Vehicle", value: "vehicle" },
+                    { label: "Finance", value: "finance" },
+                    { label: "Product", value: "product" },
+                    { label: "Profile", value: "profile" }
                   ].map((t) => (
                     <TouchableOpacity
                       key={t.value}
@@ -1830,7 +2437,7 @@ export default function WorkspaceScreen() {
 
             {sheet === "trip" && (
               <>
-                <Text style={styles.modalTitle}>Dispatch new trip</Text>
+                <Text style={styles.modalTitle}>{selectedCustomer?.type === "vehicle" ? "Dispatch new ride" : "Dispatch new trip"}</Text>
                 <Text style={styles.modalSchemaHint}>mass (type: trip, scope: {scope}) + motion 401 DISPATCHED</Text>
                 <TextInput style={styles.modalInput} value={tripRef} onChangeText={setTripRef} placeholder="Trip Reference / Details" placeholderTextColor={TEXT_TERTIARY} autoFocus />
                 <TextInput style={styles.modalInput} value={tripQty} onChangeText={setTripQty} placeholder="Onboard Qty" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
@@ -1939,6 +2546,222 @@ export default function WorkspaceScreen() {
 
                 <TouchableOpacity style={styles.modalSubmitBtn} onPress={confirmStockTransfer} disabled={busy} activeOpacity={0.8}>
                   {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Confirm Transfer</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {sheet === "budget" && (
+              <>
+                <Text style={styles.modalTitle}>Allocate Budget Pool</Text>
+                <Text style={styles.modalSchemaHint}>mass (type: budget, value = limit) + motion 806</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={budgetName}
+                  onChangeText={setBudgetName}
+                  placeholder="Budget Pool Name (e.g. Supplies, Travel)"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  autoFocus
+                />
+                <TextInput
+                  style={styles.modalInput}
+                  value={budgetLimit}
+                  onChangeText={setBudgetLimit}
+                  placeholder="Allocated Limit (e.g. 1000)"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity style={styles.modalSubmitBtn} onPress={createBudgetAllocation} disabled={busy} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Allocate Budget</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {sheet === "expense" && (
+              <>
+                <Text style={styles.modalTitle}>Log Expense</Text>
+                <Text style={styles.modalSchemaHint}>motion 806 EXPENSE_REC (subtracts from budget qty)</Text>
+                <Text style={{ fontSize: 13, color: TEXT_SECONDARY, marginBottom: 8 }}>
+                  Budget Pool: {selectedBudgetPool ? parseData(selectedBudgetPool.data).name || selectedBudgetPool.id : ""}
+                </Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={expenseAmount}
+                  onChangeText={setExpenseAmount}
+                  placeholder="Expense Amount"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  keyboardType="numeric"
+                  autoFocus
+                />
+                <TextInput
+                  style={styles.modalInput}
+                  value={expenseDesc}
+                  onChangeText={setExpenseDesc}
+                  placeholder="Expense Description"
+                  placeholderTextColor={TEXT_TERTIARY}
+                />
+                
+                <Text style={{ fontSize: 13, color: TEXT_SECONDARY, marginTop: 4, marginBottom: 6 }}>
+                  Category:
+                </Text>
+                <View style={styles.segmentRow}>
+                  {["Supplies", "Travel", "Software", "Rent", "Utility"].map((cat) => (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[styles.segment, expenseCategory === cat && styles.segmentActive, { minWidth: "20%" }]}
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setExpenseCategory(cat); }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.segmentText, expenseCategory === cat && styles.segmentTextActive]}>{cat}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity style={styles.modalSubmitBtn} onPress={recordExpense} disabled={busy} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Record Expense</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {sheet === "invoice" && (
+              <>
+                <Text style={styles.modalTitle}>Create Checkout Invoice</Text>
+                <Text style={styles.modalSchemaHint}>mass (type: invoice, value = price) + motion 801 PAYMENT_INIT</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={invoiceAmount}
+                  onChangeText={setInvoiceAmount}
+                  placeholder="Invoice Amount"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  keyboardType="numeric"
+                  autoFocus
+                />
+                <TextInput
+                  style={styles.modalInput}
+                  value={invoiceRef}
+                  onChangeText={setInvoiceRef}
+                  placeholder="Invoice Reference (e.g. INV-992)"
+                  placeholderTextColor={TEXT_TERTIARY}
+                />
+                <TouchableOpacity style={styles.modalSubmitBtn} onPress={createInvoice} disabled={busy} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Create Invoice</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {sheet === "product" && (
+              <>
+                <Text style={styles.modalTitle}>Create Product Blueprint</Text>
+                <Text style={styles.modalSchemaHint}>matter (type: product) ? vector store</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={productTitle}
+                  onChangeText={setProductTitle}
+                  placeholder="Product Title"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  autoFocus
+                />
+                <TextInput
+                  style={styles.modalInput}
+                  value={productCode}
+                  onChangeText={setProductCode}
+                  placeholder="Product Code (e.g. SNEAKERS01)"
+                  placeholderTextColor={TEXT_TERTIARY}
+                />
+                <TextInput
+                  style={styles.modalInput}
+                  value={productBasePrice}
+                  onChangeText={setProductBasePrice}
+                  placeholder="Base Price (Optional)"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  keyboardType="numeric"
+                />
+                <TextInput
+                  style={styles.modalInput}
+                  value={productCat}
+                  onChangeText={setProductCat}
+                  placeholder="Category (e.g. retail, food)"
+                  placeholderTextColor={TEXT_TERTIARY}
+                />
+                <TouchableOpacity style={styles.modalSubmitBtn} onPress={createProduct} disabled={busy} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Create Product</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {sheet === "variant" && (
+              <>
+                <Text style={styles.modalTitle}>Add Variant Stock</Text>
+                <Text style={styles.modalSchemaHint}>mass (type: variant) + motion 406 TRANSFER_IN</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={variantLabel}
+                  onChangeText={setVariantLabel}
+                  placeholder="Label (e.g. Black / S)"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  autoFocus
+                />
+                <TextInput
+                  style={styles.modalInput}
+                  value={variantQty}
+                  onChangeText={setVariantQty}
+                  placeholder="Initial Stock Qty"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  keyboardType="numeric"
+                />
+                <TextInput
+                  style={styles.modalInput}
+                  value={variantPrice}
+                  onChangeText={setVariantPrice}
+                  placeholder="Price"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity style={styles.modalSubmitBtn} onPress={createVariant} disabled={busy} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Add Variant</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {sheet === "modifier" && (
+              <>
+                <Text style={styles.modalTitle}>Add Modifier / Add-on</Text>
+                <Text style={styles.modalSchemaHint}>matter (modifier product) + relation + mass (price)</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={modifierTitle}
+                  onChangeText={setModifierTitle}
+                  placeholder="Modifier Name (e.g. Extra Cheese)"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  autoFocus
+                />
+                <TextInput
+                  style={styles.modalInput}
+                  value={modifierPrice}
+                  onChangeText={setModifierPrice}
+                  placeholder="Add-on Price"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity style={styles.modalSubmitBtn} onPress={createModifier} disabled={busy} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Add Modifier</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {sheet === "publish" && (
+              <>
+                <Text style={styles.modalTitle}>Publish to Storefront</Text>
+                <Text style={styles.modalSchemaHint}>relation (published_to)</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={publishTargetId}
+                  onChangeText={setPublishTargetId}
+                  placeholder="Storefront Profile ID (e.g. TAMILSHOES)"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  autoFocus
+                />
+                <TouchableOpacity style={styles.modalSubmitBtn} onPress={publishToProfile} disabled={busy} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Publish Product</Text>}
                 </TouchableOpacity>
               </>
             )}

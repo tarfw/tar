@@ -1042,6 +1042,15 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={[styles.suggestionChip, { backgroundColor: "#fdf2f8" }]}
+              onPress={() => router.push("/pos")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="receipt-outline" size={12} color="#be185d" style={{ marginRight: 4 }} />
+              <Text style={[styles.suggestionChipText, { color: "#be185d" }]}>POS</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.suggestionChip, { backgroundColor: "#fffbeb" }]}
               onPress={() => router.push("/domainsample")}
               activeOpacity={0.7}

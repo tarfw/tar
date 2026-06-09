@@ -53,13 +53,7 @@ export default function DomainSampleScreen() {
   const [posSpice, setPosSpice] = useState("medium");
   const [posFired, setPosFired] = useState(false);
 
-  // Logistics
-  const [logRoute, setLogRoute] = useState("Dispatch");
-  const [logEta, setLogEta] = useState("+15m");
 
-  // HR
-  const [hrClockedIn, setHrClockedIn] = useState(false);
-  const [hrLeaveRequested, setHrLeaveRequested] = useState(false);
 
   // Marketing
   const [mktRating, setMktRating] = useState(5);
@@ -417,25 +411,7 @@ export default function DomainSampleScreen() {
               </View>
             )}
 
-            {selectedDomain.id === "crm" && (
-              <View style={styles.posOptionsSectionGrid}>
-                <Text style={styles.posGridSectionLabel}>Workspace Hub</Text>
-                <View style={styles.posOptionsGrid}>
-                  <TouchableOpacity
-                    onPress={() => router.push("/workspace")}
-                    style={[styles.posGridSelectBox, { minWidth: "100%", borderColor: "#3b82f6" }]}
-                  >
-                    <Text style={styles.posEmojiIconSmall}>📞</Text>
-                    <View style={styles.posGridSelectBoxTextContainer}>
-                      <Text style={[styles.posGridBoxTitle, { color: "#1d4ed8" }]}>
-                        Open Workspace Hub
-                      </Text>
-                      <Text style={styles.posGridBoxSubtitle}>Manage tasks, schedules, team members, and family — live database</Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+
 
             {selectedDomain.id === "retail" && (
               <View>
@@ -543,109 +519,9 @@ export default function DomainSampleScreen() {
 
 
 
-            {selectedDomain.id === "logistics" && (
-              <View>
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Route Dispatch Phase</Text>
-                  <View style={styles.posOptionsGrid}>
-                    {["Dispatch", "In Transit", "Delivered"].map(rt => {
-                      const isSelected = logRoute === rt;
-                      return (
-                        <TouchableOpacity
-                          key={rt}
-                          onPress={() => setLogRoute(rt)}
-                          style={[
-                            styles.posGridSelectBox,
-                            isSelected ? styles.posGridSelectBoxSelected : null
-                          ] as any}
-                        >
-                          <Text style={styles.posEmojiIconSmall}>📍</Text>
-                          <View style={styles.posGridSelectBoxTextContainer}>
-                            <Text style={[styles.posGridBoxTitle, isSelected ? styles.posGridBoxTitleSelected : null] as any}>
-                              {rt}
-                            </Text>
-                            <Text style={styles.posGridBoxSubtitle}>Carrier State</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
 
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>ETA Traffic Latency</Text>
-                  <View style={styles.posOptionsGrid}>
-                    {["+0m", "+15m", "+30m"].map(et => {
-                      const isSelected = logEta === et;
-                      return (
-                        <TouchableOpacity
-                          key={et}
-                          onPress={() => setLogEta(et)}
-                          style={[
-                            styles.posGridSelectBox,
-                            isSelected ? styles.posGridSelectBoxSelected : null
-                          ] as any}
-                        >
-                          <Text style={styles.posEmojiIconSmall}>⏰</Text>
-                          <View style={styles.posGridSelectBoxTextContainer}>
-                            <Text style={[styles.posGridBoxTitle, isSelected ? styles.posGridBoxTitleSelected : null] as any}>
-                              {et} Delay
-                            </Text>
-                            <Text style={styles.posGridBoxSubtitle}>Offset Estimate</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
-            )}
 
-            {selectedDomain.id === "hr" && (
-              <View>
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Shift Punch Clock</Text>
-                  <View style={styles.posOptionsGrid}>
-                    <TouchableOpacity
-                      onPress={() => setHrClockedIn(!hrClockedIn)}
-                      style={[
-                        styles.posGridSelectBox,
-                        hrClockedIn ? styles.posGridSelectBoxSelected : null
-                      ] as any}
-                    >
-                      <Text style={styles.posEmojiIconSmall}>⏱️</Text>
-                      <View style={styles.posGridSelectBoxTextContainer}>
-                        <Text style={[styles.posGridBoxTitle, hrClockedIn ? styles.posGridBoxTitleSelected : null] as any}>
-                          {hrClockedIn ? "Clocked In" : "Clocked Out"}
-                        </Text>
-                        <Text style={styles.posGridBoxSubtitle}>Roster Attendance</Text>
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                </View>
 
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Leaves & Time Off</Text>
-                  <View style={styles.posOptionsGrid}>
-                    <TouchableOpacity
-                      onPress={() => setHrLeaveRequested(!hrLeaveRequested)}
-                      style={[
-                        styles.posGridSelectBox,
-                        hrLeaveRequested ? styles.posGridSelectBoxSelected : null
-                      ] as any}
-                    >
-                      <Text style={styles.posEmojiIconSmall}>🌴</Text>
-                      <View style={styles.posGridSelectBoxTextContainer}>
-                        <Text style={[styles.posGridBoxTitle, hrLeaveRequested ? styles.posGridBoxTitleSelected : null] as any}>
-                          {hrLeaveRequested ? "Requested!" : "Request Leave"}
-                        </Text>
-                        <Text style={styles.posGridBoxSubtitle}>1.0 Day Request</Text>
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            )}
 
             {selectedDomain.id === "marketing" && (
               <View>
@@ -937,12 +813,7 @@ export default function DomainSampleScreen() {
               } else if (selectedDomain.id === "pos") {
                 isSelected = item.type === "stock" && posSpice === "medium";
                 title = item.type === "slot" ? "Dining Table #4 Reservation" : "Biryani Inventory Reserve";
-              } else if (selectedDomain.id === "logistics") {
-                isSelected = item.type === "trip" && logRoute === "In Transit";
-                title = item.type === "stock" ? "Chennai Depot Inventory" : "DHL Transit Route #01";
-              } else if (selectedDomain.id === "hr") {
-                isSelected = hrClockedIn;
-                title = "Manager Shift Slot (8h)";
+
               } else if (selectedDomain.id === "marketing") {
                 isSelected = mktSubmitted;
                 title = "Customer Feedback Form Blueprints";

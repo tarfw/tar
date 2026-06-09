@@ -40,6 +40,7 @@ interface CrmMassRow {
   qty: number | null;
   value: number | null;
   active: number;
+  geo?: string | null;
   start: string | null;
   end: string | null;
   data: string | null;
@@ -77,7 +78,7 @@ interface NoteRow {
   time: string;
 }
 
-type SheetKind = "customer" | "lead" | "ticket" | "task" | "note" | "review" | "slot" | null;
+type SheetKind = "customer" | "lead" | "ticket" | "task" | "note" | "review" | "slot" | "stock" | "trip" | "driver" | "transfer" | null;
 
 // Microsoft To Do (Fluent) palette
 const ACCENT = "#2564cf";
@@ -176,6 +177,8 @@ export default function WorkspaceScreen() {
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [scheduleSlots, setScheduleSlots] = useState<CrmMassRow[]>([]);
+  const [stocks, setStocks] = useState<CrmMassRow[]>([]);
+  const [trips, setTrips] = useState<CrmMassRow[]>([]);
   const [timeline, setTimeline] = useState<CrmMotionRow[]>([]);
   // Derived per-stream state (plan2.md): stage/source/subject come from the
   // motion ledger — single source of truth, no mass.data mirror.
@@ -218,6 +221,24 @@ export default function WorkspaceScreen() {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
 
+  // Stock form (SCM)
+  const [stockName, setStockName] = useState("");
+  const [stockQty, setStockQty] = useState("");
+  const [stockVal, setStockVal] = useState("");
+
+  // Trip form (SCM)
+  const [tripRef, setTripRef] = useState("");
+  const [tripQty, setTripQty] = useState("");
+  const [tripGeo, setTripGeo] = useState("833075fffffffff");
+  const [tripDriver, setTripDriver] = useState("");
+  const [driverTripId, setDriverTripId] = useState<string | null>(null);
+
+  // Transfer states
+  const [transferStock, setTransferStock] = useState<CrmMassRow | null>(null);
+  const [transferDirection, setTransferDirection] = useState<"in" | "out">("in");
+  const [transferQty, setTransferQty] = useState("10");
+  const [transferStorefront, setTransferStorefront] = useState("");
+
   // Ticket reply inline input
   const [replyTicketId, setReplyTicketId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
@@ -239,7 +260,7 @@ export default function WorkspaceScreen() {
     try {
       const db = routeDbForEntity("customer", activeScope);
       const rows = await db.all(
-        "SELECT id, code, type, title, owner, data, time FROM matter WHERE type IN ('customer', 'business', 'person', 'family') AND scope = ? ORDER BY time DESC",
+        "SELECT id, code, type, title, owner, data, time FROM matter WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier') AND scope = ? ORDER BY time DESC",
         [activeScope]
       );
       setCustomers((rows as any[]) || []);
@@ -271,6 +292,24 @@ export default function WorkspaceScreen() {
       if (typeVal === "person" || typeVal === "family") {
         slotRows = await db.all(
           "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'slot' ORDER BY start DESC",
+          [customerId]
+        );
+      }
+
+      // Warehouse Inventory Stocks (Only for Warehouse)
+      let stockRows: any[] = [];
+      if (typeVal === "warehouse") {
+        stockRows = await db.all(
+          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'stock' ORDER BY time DESC",
+          [customerId]
+        );
+      }
+
+      // Carrier Trips (Only for Carrier)
+      let tripRows: any[] = [];
+      if (typeVal === "carrier") {
+        tripRows = await db.all(
+          "SELECT id, matter, type, qty, value, active, geo, start, end, data, time FROM mass WHERE matter = ? AND type = 'trip' ORDER BY start DESC",
           [customerId]
         );
       }
@@ -357,6 +396,15 @@ export default function WorkspaceScreen() {
         else if (m.action === 304) e.stage = "contacted";
         else if (m.action === 305) e.stage = "converted";
         else if (m.action === 306) { e.subject = d.subject; e.desc = d.desc; }
+        else if (m.action === 401) { e.stage = "dispatched"; e.desc = d.ref ? `Dispatched: ${d.ref}` : "Dispatched"; }
+        else if (m.action === 402) { e.stage = "in_transit"; e.desc = d.driver ? `In Transit via ${d.driver}` : "In Transit"; }
+        else if (m.action === 403) { e.desc = d.driverName ? `Driver Assigned: ${d.driverName}` : "Driver Assigned"; }
+        else if (m.action === 404) { e.desc = d.eta_minutes ? `ETA: +${d.eta_minutes} mins` : "ETA updated"; }
+        else if (m.action === 405) { e.stage = "transfer_out"; e.desc = d.dest ? `To: ${d.dest}` : "Stock Transfer Out"; }
+        else if (m.action === 406) { e.stage = "transfer_in"; e.desc = d.src ? `From: ${d.src}` : "Stock Transfer In"; }
+        else if (m.action === 407) { e.stage = "returned"; e.desc = d.reason ? `Returned: ${d.reason}` : "Returned"; }
+        else if (m.action === 410) { e.stage = "attempt_failed"; e.desc = d.reason ? `Attempt Failed: ${d.reason}` : "Delivery Attempt Failed"; }
+        else if (m.action === 109) { e.stage = "delivered"; e.desc = "Delivered successfully"; }
       });
       setStreamInfo(info);
       setLeads((leadRows as any[]) || []);
@@ -364,6 +412,8 @@ export default function WorkspaceScreen() {
       setTasks((taskRows as any[]) || []);
       setNotes((noteRows as any[]) || []);
       setScheduleSlots((slotRows as any[]) || []);
+      setStocks((stockRows as any[]) || []);
+      setTrips((tripRows as any[]) || []);
       setTimeline((motionRows as any[]) || []);
     } catch (e) {
       console.warn("[CRM] Failed to load customer detail:", e);
@@ -451,8 +501,22 @@ export default function WorkspaceScreen() {
       return;
     }
     const db = getDb();
-    const id = editingCustomerId || rid(entityType === "person" ? "usr" : entityType === "family" ? "fam" : entityType === "business" ? "biz" : "cust");
-    const dataJson = JSON.stringify({ email: custEmail.trim(), phone: custPhone.trim() });
+    const id = editingCustomerId || rid(
+      entityType === "person" ? "usr" : 
+      entityType === "family" ? "fam" : 
+      entityType === "business" ? "biz" : 
+      entityType === "warehouse" ? "wh" :
+      entityType === "carrier" ? "carrier" :
+      "cust"
+    );
+    const isWarehouse = entityType === "warehouse";
+    const isCarrier = entityType === "carrier";
+    const dataJson = JSON.stringify({ 
+      email: custEmail.trim(), 
+      phone: custPhone.trim(),
+      ...(isWarehouse ? { capacity: 10000, dock_count: 4 } : {}),
+      ...(isCarrier ? { tier: "ground", vehicle_types: ["Van"] } : {})
+    });
     const timeStr = new Date().toISOString();
     await db.run(
       "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -481,6 +545,269 @@ export default function WorkspaceScreen() {
     setReplyTicketId(null);
     const t = customer.id === "general_personal" ? "personal" : (customer.type || "customer");
     await loadCustomerDetail(customer.id, t);
+  };
+
+  const startStockTransfer = (stock: CrmMassRow, direction: "in" | "out") => {
+    setTransferStock(stock);
+    setTransferDirection(direction);
+    setTransferQty("10");
+    setTransferStorefront("");
+    openSheet("transfer");
+  };
+
+  const confirmStockTransfer = () => {
+    if (!selectedCustomer || !transferStock) return;
+    const qtyChange = Number(transferQty);
+    if (isNaN(qtyChange) || qtyChange <= 0) {
+      Alert.alert("Validation Error", "Please enter a valid quantity.");
+      return;
+    }
+    const finalChange = transferDirection === "in" ? qtyChange : -qtyChange;
+    const newQty = Math.max(0, (transferStock.qty || 0) + finalChange);
+
+    runMutation(async () => {
+      const db = getDb();
+      
+      // -- Part 4: Warehouse Capacity Constraints check --
+      if (transferDirection === "in") {
+        // Calculate sum of all stock quantities in this warehouse
+        const stocksResult = await db.all("SELECT SUM(qty) AS total_qty FROM mass WHERE matter = ? AND type = 'stock'", [selectedCustomer.id]);
+        const currentTotal = Number(stocksResult[0]?.total_qty || 0);
+        // Find capacity from warehouse matter data
+        const whRows = await db.all("SELECT data FROM matter WHERE id = ?", [selectedCustomer.id]);
+        let capacity = 10000;
+        if (whRows && whRows[0]) {
+          const parsedWh = parseData(whRows[0].data as string | null);
+          if (parsedWh && typeof parsedWh.capacity === "number") {
+            capacity = parsedWh.capacity;
+          }
+        }
+        // Exclude the old quantity of this specific stock when calculating new total
+        const newTotal = currentTotal - (transferStock.qty || 0) + newQty;
+        if (newTotal > capacity) {
+          Alert.alert(
+            "Capacity Exceeded",
+            `Cannot complete transfer. Total inventory quantity (${newTotal}) would exceed the warehouse capacity limit of ${capacity}.`
+          );
+          return;
+        }
+      }
+
+      await db.run("UPDATE mass SET qty = ? WHERE id = ?", [newQty, transferStock.id]);
+      
+      const action = transferDirection === "in" ? 406 : 405;
+      const actionLabel = transferDirection === "in" ? "TRANSFER_IN" : "TRANSFER_OUT";
+      
+      // Store the storefront information in motion data
+      const storefrontName = customers.find(c => c.id === transferStorefront)?.title || "";
+      const motionData = {
+        dest: transferDirection === "out" ? storefrontName : undefined,
+        src: transferDirection === "in" ? storefrontName : undefined,
+        storefrontId: transferStorefront || undefined,
+        qty: qtyChange
+      };
+      
+      await appendMotion(db, transferStock.id, action, actionLabel, finalChange, motionData);
+
+      // Write relation if storefront is selected
+      if (transferStorefront) {
+        await addRelation(db, transferStock.id, transferStorefront, "storefront_transfer");
+      }
+      
+      await pushIfEnabled(db);
+      setSheet(null);
+      setTransferStock(null);
+      setTransferStorefront("");
+      await loadCustomerDetail(selectedCustomer!.id, "warehouse");
+    });
+  };
+
+  const advanceTrip = (trip: CrmMassRow) => {
+    if (!selectedCustomer) return;
+    const info = streamInfo[trip.id] || { stage: "dispatched" };
+    const stage = info.stage;
+    if (stage === "delivered" || stage === "returned") return;
+    
+    runMutation(async () => {
+      const db = getDb();
+      if (stage === "dispatched" || stage === "new" || stage === "attempt_failed") {
+        const d = parseData(trip.data);
+        const driverName = d.driver || "Unassigned";
+        await appendMotion(db, trip.id, 402, "IN_TRANSIT", null, { driver: driverName });
+      } else if (stage === "in_transit") {
+        await appendMotion(db, trip.id, 109, "DELIVERED", null, {});
+        await db.run("UPDATE mass SET active = 0 WHERE id = ?", [trip.id]);
+      }
+      await pushIfEnabled(db);
+      await loadCustomerDetail(selectedCustomer!.id, "carrier");
+    });
+  };
+
+  const logDeliveryAttempt = (trip: CrmMassRow) => {
+    if (!selectedCustomer) return;
+    Alert.alert(
+      "Failed Delivery Attempt",
+      "Log failed attempt reason? (Customer not home)",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm Fail",
+          onPress: () => runMutation(async () => {
+            const db = getDb();
+            await appendMotion(db, trip.id, 410, "ATTEMPT_FAILED", null, { reason: "Customer not home / no answer" });
+            await pushIfEnabled(db);
+            await loadCustomerDetail(selectedCustomer!.id, "carrier");
+          })
+        }
+      ]
+    );
+  };
+
+  const logReturnRequest = (trip: CrmMassRow) => {
+    if (!selectedCustomer) return;
+    Alert.alert(
+      "Return Request",
+      "Log return/refusal request and close delivery trip?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm Return",
+          onPress: () => runMutation(async () => {
+            const db = getDb();
+            const timeStr = new Date().toISOString();
+            await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [timeStr, trip.id]);
+            await appendMotion(db, trip.id, 407, "RETURN_REQUESTED", null, { reason: "Customer refused shipment" });
+            await pushIfEnabled(db);
+            await loadCustomerDetail(selectedCustomer!.id, "carrier");
+          })
+        }
+      ]
+    );
+  };
+
+  const updateTripEta = (trip: CrmMassRow) => {
+    if (!selectedCustomer) return;
+    Alert.alert(
+      "Update ETA",
+      "Add 15 minutes delay to this trip's ETA?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "+15 Mins",
+          onPress: () => runMutation(async () => {
+            const db = getDb();
+            await appendMotion(db, trip.id, 404, "ETA_UPDATED", 15, { eta_minutes: 15 });
+            await pushIfEnabled(db);
+            await loadCustomerDetail(selectedCustomer!.id, "carrier");
+          })
+        }
+      ]
+    );
+  };
+
+  const createStock = () => {
+    if (!selectedCustomer) return;
+    const name = stockName.trim();
+    if (!name) {
+      Alert.alert("Validation Error", "Please enter stock SKU/name.");
+      return;
+    }
+    const qtyVal = Number(stockQty) || 0;
+    const valVal = Number(stockVal) || 0;
+    if (qtyVal < 0) {
+      Alert.alert("Validation Error", "Initial quantity cannot be negative.");
+      return;
+    }
+    runMutation(async () => {
+      const db = getDb();
+      
+      // Calculate capacity check
+      const stocksResult = await db.all("SELECT SUM(qty) AS total_qty FROM mass WHERE matter = ? AND type = 'stock'", [selectedCustomer.id]);
+      const currentTotal = Number(stocksResult[0]?.total_qty || 0);
+      // Get capacity from selectedCustomer.data
+      const whRows = await db.all("SELECT data FROM matter WHERE id = ?", [selectedCustomer.id]);
+      let capacity = 10000;
+      if (whRows && whRows[0]) {
+        const parsedWh = parseData(whRows[0].data as string | null);
+        if (parsedWh && typeof parsedWh.capacity === "number") {
+          capacity = parsedWh.capacity;
+        }
+      }
+      const newTotal = currentTotal + qtyVal;
+      if (newTotal > capacity) {
+        Alert.alert(
+          "Capacity Exceeded",
+          `Cannot add stock item. Total inventory quantity (${newTotal}) would exceed the warehouse capacity limit of ${capacity}.`
+        );
+        return;
+      }
+
+      const stockId = rid("stock");
+      const now = new Date();
+      const timeStr = now.toISOString();
+      await db.run(
+        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'stock', ?, ?, ?, 1, ?, NULL, ?, ?)",
+        [stockId, selectedCustomer.id, scope, qtyVal, valVal, timeStr, JSON.stringify({ name }), timeStr]
+      );
+      await appendMotion(db, stockId, 406, "TRANSFER_IN", qtyVal, { name, src: "vendor" });
+      await pushIfEnabled(db);
+      setStockName(""); setStockQty(""); setStockVal("");
+      setSheet(null);
+      await loadCustomerDetail(selectedCustomer.id, "warehouse");
+    });
+  };
+
+  const createTrip = () => {
+    if (!selectedCustomer) return;
+    const ref = tripRef.trim();
+    if (!ref) {
+      Alert.alert("Validation Error", "Please enter trip details/ref.");
+      return;
+    }
+    runMutation(async () => {
+      const db = getDb();
+      const tripId = rid("trip");
+      const qtyVal = Number(tripQty) || 1;
+      const now = new Date();
+      const timeStr = now.toISOString();
+      const driverName = customers.find(c => c.id === tripDriver)?.title || "Unassigned";
+      await db.run(
+        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, geo, start, end, data, time) VALUES (?, ?, 'trip', ?, ?, 0, 1, ?, ?, NULL, ?, ?)",
+        [tripId, selectedCustomer.id, scope, qtyVal, tripGeo, timeStr, JSON.stringify({ ref, driver: driverName, driverId: tripDriver || null }), timeStr]
+      );
+      await appendMotion(db, tripId, 401, "DISPATCHED", null, { ref, driver: driverName });
+      if (tripDriver) {
+        await appendMotion(db, tripId, 403, "DRIVER_ASSIGNED", null, { driverId: tripDriver, driverName });
+      }
+      await pushIfEnabled(db);
+      setTripRef(""); setTripQty(""); setTripGeo("833075fffffffff"); setTripDriver("");
+      setSheet(null);
+      await loadCustomerDetail(selectedCustomer.id, "carrier");
+    });
+  };
+
+  const openDriverSelector = (trip: CrmMassRow) => {
+    setDriverTripId(trip.id);
+    openSheet("driver");
+  };
+
+  const assignDriver = (driverId: string, driverName: string) => {
+    if (!driverTripId || !selectedCustomer) return;
+    runMutation(async () => {
+      const db = getDb();
+      const rows = await db.all("SELECT data FROM mass WHERE id = ?", [driverTripId]);
+      let existingData = {};
+      if (rows && rows[0]) {
+        existingData = parseData(rows[0].data as string | null);
+      }
+      const newData = JSON.stringify({ ...existingData, driver: driverName, driverId });
+      await db.run("UPDATE mass SET data = ? WHERE id = ?", [newData, driverTripId]);
+      await appendMotion(db, driverTripId, 403, "DRIVER_ASSIGNED", null, { driverId, driverName });
+      await pushIfEnabled(db);
+      setSheet(null);
+      setDriverTripId(null);
+      await loadCustomerDetail(selectedCustomer.id, "carrier");
+    });
   };
 
   // ---- Quick events (301 / 302 / 309 — stream = customer matter id) ----
@@ -852,6 +1179,14 @@ export default function WorkspaceScreen() {
               typeLabel = "Business";
               typeColor = "#107c41"; // green
               typeIcon = "briefcase-outline";
+            } else if (c.type === "warehouse") {
+              typeLabel = "Warehouse";
+              typeColor = "#8b5cf6"; // violet
+              typeIcon = "cube-outline";
+            } else if (c.type === "carrier") {
+              typeLabel = "Carrier";
+              typeColor = "#a78bfa"; // light purple
+              typeIcon = "bus-outline";
             }
             
             return (
@@ -1091,6 +1426,121 @@ export default function WorkspaceScreen() {
                 </>
               )}
 
+              {/* Warehouse Inventory Stock — only for Warehouse */}
+              {selectedCustomer.type === "warehouse" && (
+                <>
+                  <SectionHeader title="Inventory Stock" tables="mass (stock)" />
+                  {stocks.map((stock) => {
+                    const d = parseData(stock.data);
+                    return (
+                      <View key={stock.id}>
+                        <View style={styles.listRow}>
+                          <Ionicons name="cube-outline" size={18} color={ACCENT} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.rowTitle}>{d.name || stock.id} · Qty: {stock.qty}</Text>
+                            <Text style={styles.rowSub}>Unit Value: ${Number(stock.value || 0).toFixed(2)} · {fmtTime(stock.time)}</Text>
+                          </View>
+                          <TouchableOpacity onPress={() => toggleRowData(stock.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="server-outline" size={15} color={expandedRowId === stock.id ? ACCENT : TEXT_TERTIARY} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => startStockTransfer(stock, "out")} disabled={busy} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="log-out-outline" size={16} color={ACCENT} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => startStockTransfer(stock, "in")} disabled={busy} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="log-in-outline" size={16} color="#107c41" />
+                          </TouchableOpacity>
+                        </View>
+                        {expandedRowId === stock.id && (
+                          <RowData rows={[
+                            {
+                              table: "mass",
+                              cols: [["id", stock.id], ["matter", stock.matter], ["type", "stock"], ["scope", scope], ["qty", stock.qty], ["value", stock.value], ["active", stock.active], ["start", stock.start], ["end", stock.end], ["data", stock.data]]
+                            },
+                            {
+                              table: `motion (stream = ${stock.id})`,
+                              cols: timeline.filter((m) => m.stream === stock.id).map((m) => [
+                                `seq ${m.seq}`,
+                                `${OPCODE_LABELS[m.action] || m.action} · ${m.status || ""} · Δ${m.delta ?? "—"}`
+                              ] as [string, any])
+                            }
+                          ]} />
+                        )}
+                        <View style={styles.divider} />
+                      </View>
+                    );
+                  })}
+                  {stocks.length === 0 && <Text style={styles.emptyText}>No stock items found in this warehouse.</Text>}
+                  <AddRow label="Add stock item" onPress={() => openSheet("stock")} />
+                </>
+              )}
+
+              {/* Carrier Trips / Shipments — only for Carrier */}
+              {selectedCustomer.type === "carrier" && (
+                <>
+                  <SectionHeader title="Active Trips & Shipments" tables="mass (trip)" />
+                  {trips.map((trip) => {
+                    const info = streamInfo[trip.id] || { stage: "dispatched" };
+                    const isDelivered = info.stage === "delivered";
+                    const isReturned = info.stage === "returned";
+                    const isClosed = isDelivered || isReturned;
+                    const d = parseData(trip.data);
+                    return (
+                      <View key={trip.id}>
+                        <View style={styles.listRow}>
+                          <TouchableOpacity onPress={() => advanceTrip(trip)} disabled={busy || isClosed} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <CheckCircle done={isClosed} color={isReturned ? "#d93b3b" : "#107c41"} />
+                          </TouchableOpacity>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.rowTitle, isClosed && styles.rowTitleDone]}>
+                              {d.ref || trip.id} {trip.geo ? `(Hex: ${trip.geo})` : ""}
+                            </Text>
+                            <Text style={styles.rowSub}>
+                              Qty: {trip.qty} · Driver: {d.driver || "Unassigned"} · {info.desc || "No transit updates yet"}
+                            </Text>
+                          </View>
+                          <Text style={[styles.stageText, { color: isReturned ? "#d93b3b" : isDelivered ? "#107c41" : ACCENT }]}>
+                            {(info.stage || "dispatched").replace("_", " ").toUpperCase()}
+                          </Text>
+                          <TouchableOpacity onPress={() => openDriverSelector(trip)} disabled={busy || isClosed} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="person-add-outline" size={16} color={isClosed ? TEXT_TERTIARY : ACCENT} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => logDeliveryAttempt(trip)} disabled={busy || isClosed} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="warning-outline" size={16} color={isClosed ? TEXT_TERTIARY : "#ffaa44"} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => logReturnRequest(trip)} disabled={busy || isClosed} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="arrow-undo-outline" size={16} color={isClosed ? TEXT_TERTIARY : "#d93b3b"} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => updateTripEta(trip)} disabled={busy || isClosed} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="time-outline" size={16} color={isClosed ? TEXT_TERTIARY : ACCENT} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => toggleRowData(trip.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="server-outline" size={15} color={expandedRowId === trip.id ? ACCENT : TEXT_TERTIARY} />
+                          </TouchableOpacity>
+                        </View>
+                        {expandedRowId === trip.id && (
+                          <RowData rows={[
+                            {
+                              table: "mass",
+                              cols: [["id", trip.id], ["matter", trip.matter], ["type", "trip"], ["scope", scope], ["qty", trip.qty], ["value", trip.value], ["active", trip.active], ["geo", trip.geo], ["start", trip.start], ["end", trip.end], ["data", trip.data]]
+                            },
+                            {
+                              table: `motion (stream = ${trip.id})`,
+                              cols: timeline.filter((m) => m.stream === trip.id).map((m) => [
+                                `seq ${m.seq}`,
+                                `${OPCODE_LABELS[m.action] || m.action} · ${m.status || ""} · Δ${m.delta ?? "—"}`
+                              ] as [string, any])
+                            }
+                          ]} />
+                        )}
+                        <View style={styles.divider} />
+                      </View>
+                    );
+                  })}
+                  {trips.length === 0 && <Text style={styles.emptyText}>No active trips for this carrier.</Text>}
+                  <AddRow label="Dispatch trip" onPress={() => openSheet("trip")} />
+                </>
+              )}
+
               {/* Tasks — for all contexts */}
               <SectionHeader title="Tasks" tables="matter + relation + mass + motion" />
               {tasks.map((task) => {
@@ -1234,7 +1684,9 @@ export default function WorkspaceScreen() {
                     { label: "Customer", value: "customer" },
                     { label: "Business", value: "business" },
                     { label: "Team", value: "person" },
-                    { label: "Family", value: "family" }
+                    { label: "Family", value: "family" },
+                    { label: "Warehouse", value: "warehouse" },
+                    { label: "Carrier", value: "carrier" }
                   ].map((t) => (
                     <TouchableOpacity
                       key={t.value}
@@ -1362,6 +1814,134 @@ export default function WorkspaceScreen() {
                 </TouchableOpacity>
               </>
             )}
+
+            {sheet === "stock" && (
+              <>
+                <Text style={styles.modalTitle}>Add stock item</Text>
+                <Text style={styles.modalSchemaHint}>mass (type: stock, scope: {scope}) + motion 406 TRANSFER_IN</Text>
+                <TextInput style={styles.modalInput} value={stockName} onChangeText={setStockName} placeholder="Item SKU / Name" placeholderTextColor={TEXT_TERTIARY} autoFocus />
+                <TextInput style={styles.modalInput} value={stockQty} onChangeText={setStockQty} placeholder="Initial Qty" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
+                <TextInput style={styles.modalInput} value={stockVal} onChangeText={setStockVal} placeholder="Unit Value" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
+                <TouchableOpacity style={styles.modalSubmitBtn} onPress={createStock} disabled={busy} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Add Stock</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {sheet === "trip" && (
+              <>
+                <Text style={styles.modalTitle}>Dispatch new trip</Text>
+                <Text style={styles.modalSchemaHint}>mass (type: trip, scope: {scope}) + motion 401 DISPATCHED</Text>
+                <TextInput style={styles.modalInput} value={tripRef} onChangeText={setTripRef} placeholder="Trip Reference / Details" placeholderTextColor={TEXT_TERTIARY} autoFocus />
+                <TextInput style={styles.modalInput} value={tripQty} onChangeText={setTripQty} placeholder="Onboard Qty" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
+                <TextInput style={styles.modalInput} value={tripGeo} onChangeText={setTripGeo} placeholder="H3 Geo Coordinate" placeholderTextColor={TEXT_TERTIARY} />
+                
+                <Text style={{ fontSize: 13, color: TEXT_SECONDARY, marginTop: 4, marginBottom: 6 }}>Assign Driver:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                  <TouchableOpacity
+                    style={[styles.segment, !tripDriver && styles.segmentActive, { minWidth: 80, marginRight: 6 }]}
+                    onPress={() => setTripDriver("")}
+                  >
+                    <Text style={[styles.segmentText, !tripDriver && styles.segmentTextActive]}>Unassigned</Text>
+                  </TouchableOpacity>
+                  {customers.filter(c => c.type === "person").map((driver) => (
+                    <TouchableOpacity
+                      key={driver.id}
+                      style={[styles.segment, tripDriver === driver.id && styles.segmentActive, { minWidth: 80, marginRight: 6 }]}
+                      onPress={() => setTripDriver(driver.id)}
+                    >
+                      <Text style={[styles.segmentText, tripDriver === driver.id && styles.segmentTextActive]}>{driver.title}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <TouchableOpacity style={styles.modalSubmitBtn} onPress={createTrip} disabled={busy} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Dispatch Trip</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {sheet === "driver" && (
+              <>
+                <Text style={styles.modalTitle}>Assign Driver to Trip</Text>
+                <Text style={styles.modalSchemaHint}>motion 403 DRIVER_ASSIGNED</Text>
+                <ScrollView style={{ maxHeight: 200, marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={[styles.listRow, { paddingHorizontal: 10, paddingVertical: 10 }]}
+                    onPress={() => assignDriver("", "Unassigned")}
+                  >
+                    <Ionicons name="person-remove-outline" size={16} color="#d93b3b" />
+                    <Text style={{ flex: 1, fontSize: 14, color: "#d93b3b" }}>Unassigned / Remove Driver</Text>
+                  </TouchableOpacity>
+                  <View style={styles.divider} />
+                  {customers.filter(c => c.type === "person").map(driver => (
+                    <View key={driver.id}>
+                      <TouchableOpacity
+                        style={[styles.listRow, { paddingHorizontal: 10, paddingVertical: 10 }]}
+                        onPress={() => assignDriver(driver.id, driver.title)}
+                      >
+                        <Ionicons name="person-outline" size={16} color={ACCENT} />
+                        <Text style={{ flex: 1, fontSize: 14 }}>{driver.title}</Text>
+                      </TouchableOpacity>
+                      <View style={styles.divider} />
+                    </View>
+                  ))}
+                  {customers.filter(c => c.type === "person").length === 0 && (
+                    <Text style={styles.emptyText}>No team members found. Add a Team member first.</Text>
+                  )}
+                </ScrollView>
+              </>
+            )}
+
+            {sheet === "transfer" && (
+              <>
+                <Text style={styles.modalTitle}>
+                  {transferDirection === "in" ? "Log Inventory Transfer In" : "Log Inventory Transfer Out"}
+                </Text>
+                <Text style={styles.modalSchemaHint}>
+                  mass + motion ({transferDirection === "in" ? "406 TRANSFER_IN" : "405 TRANSFER_OUT"}) + relation
+                </Text>
+                
+                <Text style={{ fontSize: 13, color: TEXT_SECONDARY, marginBottom: 8 }}>
+                  Item: {transferStock ? parseData(transferStock.data).name || transferStock.id : ""}
+                </Text>
+
+                <TextInput
+                  style={styles.modalInput}
+                  value={transferQty}
+                  onChangeText={setTransferQty}
+                  placeholder="Transfer Quantity"
+                  placeholderTextColor={TEXT_TERTIARY}
+                  keyboardType="numeric"
+                  autoFocus
+                />
+
+                <Text style={{ fontSize: 13, color: TEXT_SECONDARY, marginTop: 4, marginBottom: 6 }}>
+                  Storefront Association (Optional):
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                  <TouchableOpacity
+                    style={[styles.segment, !transferStorefront && styles.segmentActive, { minWidth: 80, marginRight: 6 }]}
+                    onPress={() => setTransferStorefront("")}
+                  >
+                    <Text style={[styles.segmentText, !transferStorefront && styles.segmentTextActive]}>None / Internal</Text>
+                  </TouchableOpacity>
+                  {customers.filter(c => c.type === "business").map((store) => (
+                    <TouchableOpacity
+                      key={store.id}
+                      style={[styles.segment, transferStorefront === store.id && styles.segmentActive, { minWidth: 80, marginRight: 6 }]}
+                      onPress={() => setTransferStorefront(store.id)}
+                    >
+                      <Text style={[styles.segmentText, transferStorefront === store.id && styles.segmentTextActive]}>{store.title}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <TouchableOpacity style={styles.modalSubmitBtn} onPress={confirmStockTransfer} disabled={busy} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Confirm Transfer</Text>}
+                </TouchableOpacity>
+              </>
+            )}
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -1425,8 +2005,8 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 17, fontWeight: "700", color: TEXT_PRIMARY, marginBottom: 2 },
   modalSchemaHint: { fontSize: 10, color: TEXT_TERTIARY, marginBottom: 14, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },
   modalInput: { backgroundColor: "#faf9f8", borderWidth: 1, borderColor: DIVIDER, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: TEXT_PRIMARY, marginBottom: 10 },
-  segmentRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
-  segment: { flex: 1, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: DIVIDER, alignItems: "center", backgroundColor: "white" },
+  segmentRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 },
+  segment: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: DIVIDER, alignItems: "center", backgroundColor: "white", minWidth: "30%", flexGrow: 1 },
   segmentActive: { backgroundColor: "#f3f6fd", borderColor: ACCENT },
   segmentText: { fontSize: 12, color: TEXT_SECONDARY },
   segmentTextActive: { color: ACCENT, fontWeight: "700" },

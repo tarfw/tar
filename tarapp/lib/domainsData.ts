@@ -277,123 +277,8 @@ export const DOMAINS: DomainDefinition[] = [
       { stream: "mas_table_4", seq: "1780834500000002", action: "201", phase: null, delta: "12.00", data: '{"pay":"cash"}' }
     ]
   },
-  {
-    id: "crm",
-    name: "Workspace Hub",
-    scopePrefix: "c:{id}",
-    scopeClass: "Client / CRM",
-    opcodes: "301 - 309",
-    color: "#3b82f6",
-    pastelBg: "#dbeafe",
-    emoji: "📞",
-    description: "Universal workspace directory for managing tasks, schedule/shifts, team, family, businesses, and customers.",
-    title: "Workspace Hub",
-    code: "CRM",
-    owner: "you",
-    priceRange: "Live Database",
-    image: null,
-    technicalDetails: [],
-    bullets: [],
-    profileTitle: "Workspace Hub",
-    profileCode: "CRM_LIVE",
-    profileAvatarText: "WH",
-    profileAvatarBg: "#1e3a8a",
-    profileBadgeText: "LIVE DATA",
-    matter: [],
-    mass: [],
-    motion: []
-  },
-  {
-    id: "logistics",
-    name: "Logistics & SCM",
-    scopePrefix: "d",
-    scopeClass: "Logistics",
-    opcodes: "401 - 410",
-    color: "#8b5cf6",
-    pastelBg: "#ede9fe",
-    emoji: "🚚",
-    description: "Real-time dispatching, warehouse transfer logistics, active trip route coordinates, and returns.",
-    title: "DHL Express Dispatch",
-    code: "DHL_EXP",
-    owner: "logistics_admin",
-    priceRange: "Transit Active",
-    image: null,
-    technicalDetails: [
-      { key: "Item Model Number", val: "@dhl_exp" },
-      { key: "ASIN / Blueprint ID", val: "@carrier_dhl" },
-      { key: "Category", val: "Logistics / Shipping" },
-      { key: "Owner", val: "logistics_admin" },
-      { key: "Scope / Region", val: "Logistics (d)" },
-      { key: "Visibility", val: "Public (1)" }
-    ],
-    bullets: [
-      "Real-time route optimization using H3 hex coordinates for driver tracking.",
-      "Active dispatch states with dynamic ETA updates and latency offsets.",
-      "Seamless warehouse stock transfer logs integrated with retail inventory nodes."
-    ],
-    profileTitle: "Chennai Central Depot",
-    profileCode: "WH_CHENNAI",
-    profileAvatarText: "WD",
-    profileAvatarBg: "#5b21b6",
-    profileBadgeText: "WAREHOUSE",
-    matter: [
-      { id: "carrier_dhl", code: "DHL_EXP", type: "carrier", scope: "d", owner: "logistics_admin", title: "DHL Express Courier", public: "1", data: '{"tier":"air","vehicle_types":["Van","Bike"]}', time: "1780833600" },
-      { id: "wh_ch03", code: "WH_CHENNAI", type: "warehouse", scope: "w:ch03", owner: "scm_ops", title: "Chennai Central Depot", public: "1", data: '{"capacity":10000,"dock_count":4}', time: "1780833600" }
-    ],
-    mass: [
-      { id: "mas_trip_dhl01", matter: "carrier_dhl", type: "trip", scope: "d", qty: "120", value: "0.00", active: "1", variant: null, geo: "833075fffffffff", mark: "0", time: "1780833600" },
-      { id: "mas_stock_wh03", matter: "wh_ch03", type: "stock", scope: "w:ch03", qty: "500", value: "25.00", active: "1", variant: "0", mark: "0", time: "1780833600" }
-    ],
-    motion: [
-      { stream: "mas_trip_dhl01", seq: "1780833900000004", action: "401", phase: "402", delta: "0.0", data: '{"ph":{"402":1780834100},"driver":"usr_driver1"}' },
-      { stream: "mas_trip_dhl01", seq: "1780834200000004", action: "404", phase: null, delta: "15.0", data: '{"eta_minutes":15}' },
-      { stream: "mas_stock_wh03", seq: "1780834500000004", action: "405", phase: null, delta: "-50.0", data: '{"dest":"s:101"}' }
-    ]
-  },
-  {
-    id: "hr",
-    name: "HR & Staff",
-    scopePrefix: "h:{id}",
-    scopeClass: "HR / Staff",
-    opcodes: "501 - 508",
-    color: "#ec4899",
-    pastelBg: "#fce7f3",
-    emoji: "🧑‍💼",
-    description: "Shift roster schedules, attendance time clocking, leave allocations, payroll, and employee audits.",
-    title: "Yazhini (Manager)",
-    code: "EMP_YAZHINI",
-    owner: "hr_director",
-    priceRange: "$350 / Hour",
-    image: null,
-    technicalDetails: [
-      { key: "Item Model Number", val: "@emp_yazhini" },
-      { key: "ASIN / Blueprint ID", val: "@usr_emp_yazhini" },
-      { key: "Role / Rank", val: "Manager" },
-      { key: "Owner / Director", val: "hr_director" },
-      { key: "Scope / Region", val: "Staff (h:staff)" },
-      { key: "Visibility", val: "Internal (1)" }
-    ],
-    bullets: [
-      "Secure employee ledger tracking shifts, clock-ins, and payroll rates.",
-      "Leave balance policy engines integrated with private manager tasks.",
-      "Relates staff profiles to active retail storefront shifts and cashier tills."
-    ],
-    profileTitle: "HR Administration Depot",
-    profileCode: "HR_DEPT",
-    profileAvatarText: "HR",
-    profileAvatarBg: "#9d174d",
-    profileBadgeText: "ADMIN WORK",
-    matter: [
-      { id: "usr_emp_yazhini", code: "EMP_YAZHINI", type: "profile", scope: "h:staff", owner: "hr_director", title: "Yazhini", public: "1", data: '{"role":"Manager","hourly_wage":350}', time: "1780833600" }
-    ],
-    mass: [
-      { id: "mas_shift_yazhini", matter: "usr_emp_yazhini", type: "shift", scope: "h:staff", qty: "8", value: "2800.00", active: "1", variant: null, mark: "0", time: "1780833600" }
-    ],
-    motion: [
-      { stream: "mas_shift_yazhini", seq: "1780833900000005", action: "501", phase: null, delta: "0.0", data: '{"device":"terminal_front"}' },
-      { stream: "mas_shift_yazhini", seq: "1780834200000005", action: "506", phase: "507", delta: "1.0", data: '{"ph":{"507":1780834300},"reason":"family_event"}' }
-    ]
-  },
+
+
   {
     id: "marketing",
     name: "Marketing & Forms",
@@ -598,9 +483,12 @@ export const OPCODE_LABELS: { [key: number]: string } = {
   309: "BIRTHDAY OFFER",
   401: "DISPATCHED",
   402: "IN TRANSIT",
+  403: "DRIVER ASSIGNED",
   404: "ETA UPDATE",
   405: "TRANSFER OUT",
   406: "TRANSFER IN",
+  407: "RETURN REQUEST",
+  410: "DELIVERY ATTEMPT",
   501: "CLOCK IN",
   502: "CLOCK OUT",
   504: "TASK ASSIGNED",

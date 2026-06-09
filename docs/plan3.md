@@ -1,157 +1,88 @@
-# Plan 3 — General Tasks & Notes + Cross-User Task Assignment
+Searched for "OPCODE_LABELS"
+Viewed domainsData.ts:570-621
+Searched for "toggleTask"
+Searched for "appendMotion"
+Viewed workspace.tsx:650-750
+Viewed workspace.tsx:750-860
+Viewed workspace.tsx:860-920
+Viewed workspace.tsx:920-950
 
-CRM anchors everything on a *customer*. The same 5-table pattern works with
-**no anchor** (personal tasks/notes) or with a *person who is also a user of
-the app* (assignment). This plan covers both.
+Yes, all the core TAR architecture operations and opcodes for CRM, tasks, notes, SCM, and logistics are fully covered and functional inside `workspace.tsx`.
 
----
+Here is the complete mapping of how these domains and opcodes are integrated on this screen:
 
-## 1. General Tasks & Notes (no customer) — same pattern, different scope
+| Domain                 | Opcode  | Label               | Trigger Event in UI                                         | Underlying TAR Tables Used                       |
+| :--------------------- | :-----: | :------------------ | :---------------------------------------------------------- | :----------------------------------------------- |
+| **CRM (Quick Events)** | **301** | `STORE VISIT`       | Tapping the "Visit" quick action chip                       | `motion`                                         |
+|                        | **302** | `REVIEW`            | Submitting a rating & review comment modal                  | `motion`                                         |
+|                        | **309** | `BIRTHDAY OFFER`    | Tapping the "Offer" quick action chip                       | `motion`                                         |
+| **CRM (Leads)**        | **303** | `LEAD CREATE`       | Adding a new lead via the Lead form drawer                  | `mass` + `motion`                                |
+|                        | **304** | `CONTACTED`         | Tapping the lead checkbox for the first time                | `motion`                                         |
+|                        | **305** | `CONVERTED`         | Tapping the lead checkbox to finalize/win                   | `motion`                                         |
+| **CRM (Support)**      | **306** | `TICKET OPEN`       | Submitting a new support ticket form                        | `mass` + `motion`                                |
+|                        | **307** | `REPLY`             | Submitting a reply thread text message                      | `motion`                                         |
+|                        | **308** | `RESOLVED`          | Tapping the trash/delete icon on a ticket                   | `mass` + `motion`                                |
+| **Notes**              |    —    | —                   | Submitting a note (vector-embedded automatically)           | `matter` + `relation`                            |
+| **Tasks**              | **504** | `TASK ASSIGNED`     | Creating a personal task or assigning it to an entity       | `matter` + `relation` + `mass` (slot) + `motion` |
+|                        | **504** | `DONE` / `REOPENED` | Tapping the checkbox circle next to a task item             | `mass` + `motion`                                |
+| **SCM (Shifts)**       | **501** | `SHIFT START`       | Adding a schedule/shift slot in Team/Family mode            | `mass` + `motion`                                |
+| **SCM (Inventory)**    | **406** | `TRANSFER IN`       | Adding a stock SKU, or tapping the green Log In (📥) button | `mass` + `motion`                                |
+|                        | **405** | `TRANSFER OUT`      | Tapping the blue Log Out (📤) button next to stock          | `mass` + `motion`                                |
+| **Logistics**          | **401** | `DISPATCHED`        | Creating a trip shipment dispatch                           | `mass` + `motion`                                |
+|                        | **402** | `IN TRANSIT`        | First status advancement of a carrier shipment trip         | `motion`                                         |
+|                        | **109** | `DELIVERED`         | Second status advancement (marks trip completed)            | `mass` + `motion`                                |
+|                        | **404** | `ETA UPDATE`        | Tapping the Clock button to append a transit delay          | `motion`                                         |
 
-The CRM flow already proved the shape. Only two things change:
+Searched for "relation"
+Viewed workspace.tsx:470-520
+Viewed workspace.tsx:740-770
+Viewed workspace.tsx:700-739
+Viewed workspace.tsx:770-830
+Viewed workspace.tsx:870-920
+Viewed workspace.tsx:250-280
+Viewed workspace.tsx:400-460
+Viewed workspace.tsx:1300-1320
+Viewed workspace.tsx:1330-1360
+Viewed workspace.tsx:1360-1400
+Viewed workspace.tsx:75-88
+Edited workspace.tsx
+Viewed workspace.tsx:220-240
+Edited workspace.tsx
+Viewed workspace.tsx:520-570
+Viewed workspace.tsx:570-585
+Edited workspace.tsx
+Viewed workspace.tsx:650-690
+Viewed workspace.tsx:690-740
+Edited workspace.tsx
+Viewed workspace.tsx:1720-1750
+Viewed workspace.tsx:1800-1845
+Viewed workspace.tsx:1845-1895
+Edited workspace.tsx
+Viewed workspace.tsx:1370-1410
+Viewed workspace.tsx:1410-1470
+Edited workspace.tsx
+Ran command: `npx tsc --noEmit`
+Viewed workspace.tsx:580-595
+Viewed workspace.tsx:720-745
+Viewed workspace.tsx:565-580
+Edited workspace.tsx
+Viewed workspace.tsx:722-732
+Edited workspace.tsx
+Ran command: `npx tsc --noEmit`
 
-| Aspect          | CRM version                  | General version                       |
-|-----------------|------------------------------|---------------------------------------|
-| Scope           | `c:{selfId}` (synced)        | `p` (private local DB, never synced)  |
-| Relation anchor | `relation: customer → task`  | none — or `relation: project → task`  |
+I have successfully implemented both requested features:
 
-```
- PERSONAL TASK                          PERSONAL NOTE
- ┌─────────────────────┐               ┌─────────────────────┐
- │ matter              │               │ matter              │
- │  type='task'        │               │  type='note'        │
- │  scope='p'          │               │  scope='p'          │
- │  title              │               │  title + data.text  │
- └────────┬────────────┘               └─────────┬───────────┘
-          │                                      │
- ┌────────▼────────────┐               ┌─────────▼───────────┐
- │ mass (slot)         │               │ memory (vector)     │
- │  active=1 pending   │               │  semantic search    │
- │  end = due date     │               └─────────────────────┘
- └────────┬────────────┘
-          │
- ┌────────▼────────────┐    Optional grouping ("lists" à la MS To Do):
- │ motion 504          │    matter type='project' + relation: project → task
- │  ASSIGNED/DONE/     │    — identical to how customer → task works in CRM.
- │  REOPENED           │
- └─────────────────────┘
-```
+### 1. Storefront Destination & Cross-Domain Relations
 
-- `home.tsx` already reads `p`-scoped mass slots for its Future/Now/Past lists
-  — general tasks created this way appear there automatically.
-- `create_task.tsx` already writes this shape; a "My Tasks" screen is just the
-  CRM screen's Tasks+Notes sections with `scope='p'` and no relation filter.
+- **Interactive Transfer Form (`sheet === "transfer"`)**: Tapping the inbound (📥) or outbound (📤) transfer button now opens a detailed transfer drawer rather than an immediate alert.
+- **Storefront Association**: The drawer prompts the user for quantity and renders a horizontal selector of storefronts (entities of type `"business"`).
+- **Graph Relations & Ledger Linkage**:
+  - If a storefront is selected, a new record is written to the `relation` table (`addRelation(db, stock.id, storefrontId, "storefront_transfer")`) to establish the link between the SCM stock item and the CRM retail shop ID.
+  - The selected storefront details are saved into the `motion` payload (under `dest` or `src` properties for outbound/inbound transfers).
 
----
+### 2. Warehouse Capacity Constraints
 
-## 2. Assigning a task to ANOTHER USER — how it works
-
-### The key insight: there is no central server. Each user owns a Turso DB.
-
-```
-   YOU (assigner)                          KABILAN (assignee)
-   user_sync_YOU.db  ──Turso──┐    ┌──Turso── user_sync_KABILAN.db
-                              │    │
-   "Where does the shared task live?"
-   → In the ASSIGNER's DB. The assignee gets delegated access to it.
-```
-
-A task assigned by you lives in **your** synced DB under a collab scope.
-The assignee's app opens *your* DB as a second connection:
-
-- `routeDbForEntity(type, scope, scopeOwnerId)` — db.ts:163 — already routes
-  to `getCollaboratorSyncDb(ownerId)` when `scopeOwnerId !== selfId`.
-- `getCollaboratorSyncDb(ownerId, delegatedToken)` — db.ts:98 — already opens
-  `user_sync_{ownerId}.db` against `libsql://db-{ownerId}.turso.io` with a
-  delegated auth token.
-
-**What's missing today**: distributing the delegated token (a worker endpoint)
-and an "assignments" discovery query. The schema needs nothing new.
-
-### Data design (one home per fact, per plan2.md)
-
-```
- IN ASSIGNER'S DB (scope = h:{assignerId} or x:{teamId})
- ───────────────────────────────────────────────────────
- ┌──────────────────────────┐
- │ matter                   │   the assignee is a matter row too —
- │  id: usr_kabilan         │   type='profile', code = their userId.
- │  type='profile'          │   (CRM customers who ARE users simply
- │  code: <kabilan_userId>  │   carry their userId in code/data.)
- └──────────┬───────────────┘
-            │ relation: src=usr_kabilan, tgt=task_x9, type='assigned'
- ┌──────────▼───────────────┐
- │ matter  task_x9          │
- │  type='task' owner=YOU   │
- └──────────┬───────────────┘
- ┌──────────▼───────────────┐
- │ mass (slot)              │  active=1, end=due date
- └──────────┬───────────────┘
- ┌──────────▼───────────────┐
- │ motion 504 "ASSIGNED"    │  data: {assignee: <userId>}
- │ motion 504 "ACCEPTED"    │  ← written BY KABILAN into YOUR db
- │ motion 504 "DONE"        │  ← written BY KABILAN into YOUR db
- └──────────────────────────┘
-```
-
-- **Who is it assigned to?** → `relation` (profile → task), single home.
-- **Status?** → latest motion seq (ASSIGNED → ACCEPTED → DONE), no mirrors.
-- **Due?** → `mass.end`. **Open?** → `mass.active`.
-
-### Assignment flow (sequence)
-
-```
- 1. ASSIGNER (you)                       2. WORKER (Cloudflare)
- ┌───────────────────────────┐          ┌─────────────────────────────┐
- │ create task in OWN db     │          │ POST /api/share/grant       │
- │  matter+relation+mass+504 │─────────▶│  {taskOwner: YOU,           │
- │ db.push()                 │          │   grantee: KABILAN}         │
- └───────────────────────────┘          │ → issues delegated Turso    │
-                                        │   token for YOUR db,        │
-                                        │   stores pending grant      │
-                                        └──────────┬──────────────────┘
-                                                   │
- 3. ASSIGNEE (Kabilan)                             ▼
- ┌─────────────────────────────────────────────────────────────────┐
- │ GET /api/share/inbox → [{owner: YOU, token, scope}]             │
- │ getCollaboratorSyncDb(YOU, token)  ← db.ts already supports this│
- │ pull() → SELECT tasks via relation WHERE src = usr_kabilan      │
- │ taps Accept/Done → appendMotion(504) into YOUR db → push()      │
- └─────────────────────────────────────────────────────────────────┘
- 4. You pull() → see ACCEPTED/DONE in your ledger. Done.
-```
-
-Seq-collision safety across two writers on one stream: the existing
-`UNIQUE(stream, seq)` + `MAX(seq)+1` pattern holds because writes funnel
-through the same Turso primary; on conflict the client retries (wrap the
-motion INSERT in one retry).
-
-### Notes shared the same way
-
-`relation: usr_kabilan → note_x1, type='shared_note'` in your DB; assignee
-reads it through the same delegated connection. No new mechanics.
-
----
-
-## 3. Implementation steps (when we build it)
-
-| # | Step | Where | Effort |
-|---|------|-------|--------|
-| 1 | "My Tasks / Notes" screen: CRM Tasks+Notes sections, scope `p`, optional project grouping | new `tasks.tsx` (reuse crm.tsx components) | S |
-| 2 | Worker endpoints: `POST /share/grant` (mint delegated token via Turso API), `GET /share/inbox` | Cloudflare worker (s3storage…workers.dev) | M |
-| 3 | Assign UI: picker of profile matters that have a `code` = userId → relation + 504 ASSIGNED | crm.tsx / tasks.tsx | S |
-| 4 | Assignee inbox: poll `/share/inbox`, open collaborator DBs, merged "Assigned to me" list | tasks.tsx | M |
-| 5 | Accept/Done writes into owner DB + push; retry-once on seq conflict | shared helper (lift `appendMotion` into `lib/motion.ts`) | S |
-
-Order: 1 → 3 (works today, single-user) → 2 → 4 → 5 (true cross-user).
-
-### What already exists vs missing
-
-| Piece | Status |
-|---|---|
-| Schema (matter/mass/motion/relation) | ✅ nothing to add |
-| Task/note write pattern | ✅ proven in crm.tsx |
-| Routing to another user's DB | ✅ `getCollaboratorSyncDb` (db.ts:98) |
-| Delegated token issuance/distribution | ❌ worker endpoints needed |
-| Assignment discovery ("assigned to me") | ❌ inbox query needed |
-| Multi-writer seq retry | ❌ one small wrapper |
+- **Capacity Limit Resolution**: When creating inventory items or executing stock transfers, the application dynamically resolves the warehouse's capacity limit from its matter payload (defaulting to `10000`).
+- **Active Quantity Check**:
+  - Calculates the current sum of all active stock item quantities inside the warehouse via `SELECT SUM(qty)`.
+  - Preemptively validates the transaction in both `createStock` and `confirmStockTransfer` to block any addition that would exceed the capacity. If blocked, a warning alert is displayed.

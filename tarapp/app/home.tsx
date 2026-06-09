@@ -1027,20 +1027,6 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
                   style={{ width: 40, height: 40, borderRadius: 20 }} 
                 />
               </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.circleBtn, { marginLeft: 6 }]}
-                onPress={() => router.push('/workflows')}
-              >
-                <Ionicons name="git-network-outline" size={18} color="#1a1a1a" />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.circleBtn, { marginLeft: 6 }]}
-                onPress={() => router.push('/create')}
-              >
-                <Ionicons name="add-outline" size={18} color="#1a1a1a" />
-              </TouchableOpacity>
             </View>
 
             <View style={styles.rightGroup}>

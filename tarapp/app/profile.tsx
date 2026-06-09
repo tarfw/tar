@@ -73,118 +73,6 @@ export const UTILITY_MODELS = {
   }
 };
 
-const SCOPES = [
-  { category: "Personal", targetDb: "user_${self_id}.db", prefix: "p" },
-  { category: "Global", targetDb: "global.db", prefix: "g" },
-  { category: "Family", targetDb: "user_sync_${owner_id}.db", prefix: "f:{id}" },
-  { category: "Team / Work", targetDb: "user_sync_${owner_id}.db", prefix: "t:{id}" },
-  { category: "Friends", targetDb: "user_sync_${owner_id}.db", prefix: "r:{id}" },
-  { category: "Storefront", targetDb: "user_sync_${owner_id}.db", prefix: "s:{id}" },
-  { category: "Warehouse", targetDb: "user_sync_${owner_id}.db", prefix: "w:{id}" },
-  { category: "Client / CRM", targetDb: "user_sync_${owner_id}.db", prefix: "c:{id}" },
-  { category: "Campaigns", targetDb: "user_sync_${owner_id}.db", prefix: "m:{id}" },
-  { category: "Forms", targetDb: "user_sync_${owner_id}.db", prefix: "x:{id}" },
-  { category: "HR / Staff", targetDb: "user_sync_${owner_id}.db", prefix: "h:{id}" },
-  { category: "Logistics", targetDb: "user_sync_${owner_id}.db", prefix: "d" }
-];
-
-const DUMMY_MEMBERS: Record<string, { name: string; role: string; photo: string }[]> = {
-  "Personal": [
-    { name: "You (Private Catalog)", role: "Owner", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Felix&backgroundColor=b6e3f4" }
-  ],
-  "Global": [
-    { name: "System Admin", role: "Admin", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Admin&backgroundColor=c0aede" },
-    { name: "Public Catalog Sync", role: "Automation", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Robot&backgroundColor=d1d4f9" }
-  ],
-  "Family": [
-    { name: "Mom", role: "Admin", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Mom&backgroundColor=ffd5dc" },
-    { name: "Sister", role: "Member", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Sister&backgroundColor=ffdf00" }
-  ],
-  "Team / Work": [
-    { name: "Alice Smith", role: "Manager", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Alice&backgroundColor=c2f0c2" },
-    { name: "Bob Johnson", role: "Lead Developer", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Bob&backgroundColor=ffe0b2" },
-    { name: "Charlie Brown", role: "QA Engineer", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Charlie&backgroundColor=b6e3f4" }
-  ],
-  "Friends": [
-    { name: "Dave Miller", role: "Member", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Dave&backgroundColor=c0aede" },
-    { name: "Eva Green", role: "Member", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Eva&backgroundColor=ffd5dc" }
-  ],
-  "Storefront": [
-    { name: "Central Retail Store", role: "Store", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Store&backgroundColor=d1d4f9" }
-  ],
-  "Warehouse": [
-    { name: "Chennai SCM Warehouse", role: "Logistics", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Warehouse&backgroundColor=ffdf00" }
-  ],
-  "Client / CRM": [
-    { name: "Acme Corp (VIP Lead)", role: "Client", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Client&backgroundColor=c2f0c2" },
-    { name: "Wayne Enterprises", role: "Client", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Bruce&backgroundColor=ffe0b2" }
-  ],
-  "Campaigns": [
-    { name: "Summer Launch Campaign", role: "Campaign", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Campaign&backgroundColor=b6e3f4" }
-  ],
-  "Forms": [
-    { name: "Employee Feedback Form", role: "Form", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Form&backgroundColor=c0aede" }
-  ],
-  "HR / Staff": [
-    { name: "HR Manager Office", role: "Admin", photo: "https://api.dicebear.com/7.x/notionists/png?seed=HR&backgroundColor=ffd5dc" }
-  ],
-  "Logistics": [
-    { name: "Fleet Dispatcher", role: "Operations", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Dispatcher&backgroundColor=d1d4f9" },
-    { name: "Delivery Partner 01", role: "Transit", photo: "https://api.dicebear.com/7.x/notionists/png?seed=Delivery&backgroundColor=ffdf00" }
-  ]
-};
-
-function InitialAvatar({ name, size = 48 }: { name: string; size?: number }) {
-  const cleanName = name.replace(/\(.*\)/, "").replace(/@\w+/, "").trim();
-  const parts = cleanName.split(/\s+/);
-  let initials = "";
-  if (parts.length > 0 && parts[0] && parts[0][0]) {
-    initials += parts[0][0];
-  }
-  if (parts.length > 1 && parts[1] && parts[1][0]) {
-    initials += parts[1][0];
-  }
-  initials = initials.toUpperCase();
-
-  const colors = [
-    "#b6e3f4", // light blue
-    "#c0aede", // lavender
-    "#ffd5dc", // rose
-    "#ffdf00", // pastel yellow
-    "#c2f0c2", // pastel green
-    "#ffe0b2", // peach
-    "#d1d4f9", // indigo
-    "#cbd5e1"  // slate
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const color = colors[Math.abs(hash) % colors.length];
-
-  return (
-    <View style={[
-      styles.memberAvatar,
-      {
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: color,
-        justifyContent: "center",
-        alignItems: "center"
-      }
-    ]}>
-      <Text style={{
-        fontSize: size * 0.38,
-        fontWeight: "700",
-        color: "#0f172a"
-      }}>
-        {initials || "?"}
-      </Text>
-    </View>
-  );
-}
-
 function IconAvatar({ icon, bgColor, size = 48 }: { icon: keyof typeof Ionicons.glyphMap; bgColor: string; size?: number }) {
   return (
     <View style={[
@@ -614,41 +502,6 @@ export default function ProfileScreen() {
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <View style={styles.settingsList}>
 
-            {/* Scope Codes Table / List */}
-            <View style={styles.sectionHeaderContainer}>
-              <Text style={styles.sectionHeader}>Scope Mapping</Text>
-            </View>
-            
-            <View style={styles.scopesListContainer}>
-              {SCOPES.map((item, index) => {
-                const members = DUMMY_MEMBERS[item.category] || [];
-                return (
-                  <View key={index} style={styles.scopeItemWrapper}>
-                    <View style={styles.scopeHeaderRow}>
-                      <View>
-                        <Text style={styles.scopeCategoryName}>{item.category}</Text>
-                        <Text style={styles.scopeDatabaseName}>{item.targetDb}</Text>
-                      </View>
-                      <View style={styles.scopePrefixBadge}>
-                        <Text style={styles.scopePrefixText}>{item.prefix}</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.membersContainer}>
-                      {members.map((member, mIdx) => (
-                        <View key={mIdx} style={styles.memberRow}>
-                          <InitialAvatar name={member.name} />
-                          <View style={styles.memberInfo}>
-                            <Text style={styles.memberName}>{member.name}</Text>
-                            <Text style={styles.memberRole}>{member.role}</Text>
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
 
             {/* Storage Settings */}
             <View style={styles.sectionHeaderContainer}>
@@ -677,6 +530,32 @@ export default function ProfileScreen() {
                       <Text style={styles.scopePrefixText}>RUN NOW</Text>
                     </View>
                   )}
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* System Demos */}
+            <View style={styles.sectionHeaderContainer}>
+              <Text style={styles.sectionHeader}>System Demos</Text>
+            </View>
+
+            <View style={styles.scopesListContainer}>
+              <View style={styles.scopeItemWrapper}>
+                <TouchableOpacity 
+                  style={styles.scopeHeaderRow} 
+                  onPress={() => router.push("/domainsample")}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                    <IconAvatar icon="sparkles-outline" bgColor="#fffbeb" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.scopeCategoryName}>Domain Samples</Text>
+                      <Text style={styles.scopeDatabaseName}>Explore catalog & system schemas</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.scopePrefixBadge, { backgroundColor: "#fffbeb" }]}>
+                    <Text style={[styles.scopePrefixText, { color: "#b45309" }]}>OPEN</Text>
+                  </View>
                 </TouchableOpacity>
               </View>
             </View>

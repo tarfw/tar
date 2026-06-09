@@ -7,7 +7,7 @@ const CLOUDFLARE_WORKER_URL = "https://s3storage.tamilframework.workers.dev";
 
 // Cache of dynamically opened database connections and session tokens
 const dbConnections: Record<string, Database> = {};
-let cachedSelfId: string | null = null;
+export let cachedSelfId: string | null = null;
 let cachedSyncUrl: string = "";
 let cachedSyncToken: string = "";
 
@@ -24,6 +24,7 @@ export async function isCollabSyncEnabled(): Promise<boolean> {
  * Retrieves the current logged-in user ID or falls back to 'guest'
  */
 export async function getSelfId(): Promise<string> {
+  if (cachedSelfId) return cachedSelfId;
   try {
     const user = await getCurrentUser();
     if (user && user.id) {
@@ -172,6 +173,7 @@ export function routeDbForEntity(type: string | null, scope: string | null, scop
  * Initialization function called during app boot and session switches
  */
 export async function initDb() {
+  cachedSelfId = null;
   const selfId = await getSelfId();
   console.log(`[DB] Initializing database files for user: ${selfId}`);
   

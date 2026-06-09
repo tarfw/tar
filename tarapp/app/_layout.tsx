@@ -103,15 +103,7 @@ export default function RootLayout() {
           headerShown: false,
           contentStyle: { backgroundColor: "white" },
         }}
-      >
-        <Stack.Screen 
-          name="tagents" 
-          options={{ 
-            presentation: "modal", 
-            animation: "none",
-          }} 
-        />
-      </Stack>
+      />
     </SafeAreaProvider>
   );
 }

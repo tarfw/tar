@@ -859,54 +859,13 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity 
-            activeOpacity={0.8} 
-            onPress={() => router.push("/profile")}
-            style={{ flexDirection: "row", alignItems: "center" }}
-          >
-            <Animated.View entering={FadeIn.delay(200)} style={styles.userInfo}>
-              {userProfile?.photo ? (
-                <Image 
-                  source={{ uri: userProfile.photo }} 
-                  style={styles.avatar} 
-                />
-              ) : (
-                <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                  <Ionicons name="person" size={16} color="#71717a" />
-                </View>
-              )}
-              <Text style={styles.userName}>{userProfile?.name || "Guest"}</Text>
-            </Animated.View>
-          </TouchableOpacity>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <TouchableOpacity 
-              onPress={() => router.push("/history")} 
-              style={{ marginRight: 14, padding: 4 }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="time-outline" size={24} color="#64748b" />
-            </TouchableOpacity>
-            <Animated.View key={activeJob || "idle"} entering={FadeIn.duration(300)}>
-              <TouchableOpacity 
-                style={[styles.headerStatusBadge, { backgroundColor: badgeStyles.bg }]} 
-                onPress={() => router.push("/profile")}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.headerStatusBadgeText, { color: badgeStyles.color }]}>
-                  {badgeStyles.text}
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-        </View>
+
 
         <ScrollView 
           style={styles.scrollView} 
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 100 }}
+          contentContainerStyle={{ paddingTop: 16, paddingBottom: 100 }}
         >
           {/* Future Section */}
           {futureItems.length > 0 && (
@@ -981,51 +940,24 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
         {/* Bottom Search Bar */}
         <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-          {/* Suggestion Chips */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ height: 36, marginBottom: 8 }}
-            contentContainerStyle={styles.suggestionChipsContainer}
-          >
-            <TouchableOpacity
-              style={[styles.suggestionChip, { backgroundColor: "#ecfeff" }]}
-              onPress={() => router.push("/workspace")}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="call-outline" size={12} color="#0e7490" style={{ marginRight: 4 }} />
-              <Text style={[styles.suggestionChipText, { color: "#0e7490" }]}>Workspace</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.suggestionChip, { backgroundColor: "#fdf2f8" }]}
-              onPress={() => router.push("/pos")}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="receipt-outline" size={12} color="#be185d" style={{ marginRight: 4 }} />
-              <Text style={[styles.suggestionChipText, { color: "#be185d" }]}>POS</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.suggestionChip, { backgroundColor: "#fffbeb" }]}
-              onPress={() => router.push("/domainsample")}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="sparkles-outline" size={12} color="#b45309" style={{ marginRight: 4 }} />
-              <Text style={[styles.suggestionChipText, { color: "#b45309" }]}>Domain Samples</Text>
-            </TouchableOpacity>
-          </ScrollView>
 
           <View style={styles.bottomBarRow}>
             <View style={styles.leftGroup}>
               <TouchableOpacity 
                 style={styles.circleBtn}
-                onPress={() => router.push('/tagents')}
+                onPress={() => router.push('/profile')}
               >
                 <Image 
                   source={{ uri: "https://api.dicebear.com/7.x/notionists/png?seed=Alice&glassesProbability=100&backgroundColor=c0aede" }} 
                   style={{ width: 40, height: 40, borderRadius: 20 }} 
                 />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.bigWorkspaceChip}
+                onPress={() => router.push("/workspace")}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="add" size={24} color="#4f46e5" />
               </TouchableOpacity>
             </View>
 
@@ -1056,8 +988,9 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={[styles.circleBtn, { marginLeft: 6 }]} 
-                onPress={() => router.push('/space')}
+                style={[styles.circleBtn, { marginLeft: 6 }]}
+                activeOpacity={0.8}
+                onPress={() => router.push('/pos')}
               >
                 <Ionicons name="arrow-up" size={18} color="#1a1a1a" />
               </TouchableOpacity>
@@ -1107,8 +1040,17 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
 
         {/* Bottom Drawer Modal for Item Status Updates */}
         {selectedItem && (
-          <View style={[styles.drawerOverlay, { paddingBottom: insets.bottom + 16 }]}>
-            <View style={styles.drawerCard}>
+          <>
+            <TouchableOpacity 
+              style={styles.backdrop} 
+              activeOpacity={1} 
+              onPress={() => setSelectedItem(null)} 
+            />
+            <View style={[styles.drawerOverlay, { paddingBottom: insets.bottom + 16 }]}>
+              <View style={{ alignItems: "center", paddingTop: 8 }}>
+                <View style={{ width: 32, height: 4, borderRadius: 2, backgroundColor: '#e2e8f0' }} />
+              </View>
+              <View style={styles.drawerCard}>
               <View style={styles.massHeader}>
                 <View style={styles.massTitleRow}>
                   <View style={[styles.massIndicator, { backgroundColor: selectedItem.isMass ? '#ea580c' : selectedItem.isTaskMatter ? '#c026d3' : '#6366f1' }]} />
@@ -1151,6 +1093,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
               </TouchableOpacity>
             </View>
           </View>
+          </>
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -1240,6 +1183,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#f1f5f9",
     justifyContent: "center",
     alignItems: "center",
+  },
+  bigWorkspaceChip: {
+    width: 100,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#eef2ff",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 10,
   },
   aiText: {
     fontSize: 13,
@@ -1541,19 +1494,28 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.32)',
+    zIndex: 199,
+  },
   drawerActionBtn: {
     backgroundColor: '#6366f1',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 4,
+    paddingVertical: 14,
+    borderRadius: 24,
+    marginTop: 12,
   },
   drawerActionBtnText: {
     color: 'white',
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   drawerOverlay: {
     position: 'absolute',
@@ -1562,12 +1524,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 200,
     backgroundColor: 'white',
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 20,
   },
   drawerCard: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   suggestionChipsContainer: {
     flexDirection: "row",

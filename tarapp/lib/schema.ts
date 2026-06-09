@@ -50,6 +50,7 @@ export const SCHEMA_STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_matter_code ON matter(code)`,
   `CREATE INDEX IF NOT EXISTS idx_matter_public ON matter(public, type)`,
+  `CREATE INDEX IF NOT EXISTS idx_matter_scope_type ON matter(scope, type)`,
   `CREATE INDEX IF NOT EXISTS idx_relation_tgt ON relation(tgt, type)`,
   `CREATE INDEX IF NOT EXISTS idx_relation_type ON relation(type)`,
   `CREATE INDEX IF NOT EXISTS idx_mass_matter ON mass(matter)`,

@@ -12,12 +12,12 @@ import {
   ActivityIndicator,
   Modal
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
-import { getSelfId, routeDbForEntity, isCollabSyncEnabled } from "../lib/db";
+import { getSelfId, routeDbForEntity, isCollabSyncEnabled, cachedSelfId } from "../lib/db";
 import { upsertMatterVector } from "../lib/vectorStore";
 import { OPCODE_LABELS } from "../lib/domainsData";
 
@@ -167,8 +167,10 @@ function CheckCircle({ done, color = ACCENT }: { done: boolean; color?: string }
 
 export default function WorkspaceScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { entityId } = useLocalSearchParams<{ entityId?: string }>();
 
-  const [selfId, setSelfId] = useState<string | null>(null);
+  const [selfId, setSelfId] = useState<string | null>(cachedSelfId);
   const scope = selfId ? `c:${selfId}` : null;
 
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
@@ -514,8 +516,51 @@ export default function WorkspaceScreen() {
       setSyncEnabled(await isCollabSyncEnabled());
       await loadCustomers(`c:${id}`);
     }
+    if (cachedSelfId) {
+      loadCustomers(`c:${cachedSelfId}`);
+    }
     boot();
   }, [loadCustomers]);
+
+  useEffect(() => {
+    const activeEntityId = entityId || "general_personal";
+    if (activeEntityId === "general_personal") {
+      const personalCust = {
+        id: "general_personal",
+        code: "personal",
+        type: "personal",
+        title: "General / Personal",
+        owner: selfId || "guest",
+        data: null,
+        time: new Date().toISOString()
+      };
+      setSelectedCustomer(personalCust);
+      loadCustomerDetail("general_personal", "personal");
+    } else {
+      const found = customers.find(c => c.id === activeEntityId);
+      if (found) {
+        setSelectedCustomer(found);
+        loadCustomerDetail(found.id, found.type || "customer");
+      } else {
+        // Fallback: Query the database directly for this specific entity!
+        // This is robust and prevents the "No Entity Selected" bug when transitioning screens!
+        async function fetchSingleEntity() {
+          try {
+            const db = routeDbForEntity("customer", scope || `c:${cachedSelfId || "guest"}`);
+            const rows = await db.all("SELECT id, code, type, title, owner, data, time FROM matter WHERE id = ?", [activeEntityId]);
+            if (rows && rows.length > 0) {
+              const entity = rows[0] as any as CustomerRow;
+              setSelectedCustomer(entity);
+              loadCustomerDetail(entity.id, entity.type || "customer");
+            }
+          } catch (e) {
+            console.warn("Failed to fetch single entity on fallback:", e);
+          }
+        }
+        fetchSingleEntity();
+      }
+    }
+  }, [entityId, customers, selfId, scope, loadCustomerDetail]);
 
   const pushIfEnabled = async (db: any) => {
     if (await isCollabSyncEnabled()) {
@@ -1445,144 +1490,33 @@ export default function WorkspaceScreen() {
       <StatusBar style="dark" />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
 
-        {/* Header — MS To Do style: back arrow + large accent title */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="arrow-back" size={22} color={ACCENT} />
-          </TouchableOpacity>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Ionicons name={syncEnabled ? "cloud-done-outline" : "cloud-offline-outline"} size={18} color={TEXT_SECONDARY} />
-            {busy && <ActivityIndicator size="small" color={ACCENT} />}
-          </View>
-        </View>
+
         <View style={styles.titleBlock}>
-          <Text style={styles.bigTitle}>Workspace Hub</Text>
-          <Text style={styles.bigSubtitle}>{scope} · matter / mass / motion / relation</Text>
+          <TouchableOpacity 
+            style={styles.workspaceSelectorChip} 
+            onPress={() => router.push("/entity")}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="folder-open-outline" size={18} color={ACCENT} style={{ marginRight: 6 }} />
+            <Text style={styles.workspaceSelectorChipText}>
+              {selectedCustomer ? selectedCustomer.title : "General / Personal"}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={ACCENT} style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
+          <Text style={styles.bigSubtitle}>
+            {selectedCustomer 
+              ? `${(selectedCustomer.type || "").toUpperCase()} · ${scope}` 
+              : `${scope} · matter / mass / motion / relation`}
+          </Text>
         </View>
 
         <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-          {/* Universal Directory Header */}
-          <SectionHeader title="Workspace Directory" tables="matter" />
-          
-          {/* General / Personal virtual context */}
-          <View>
-            <TouchableOpacity
-              style={[styles.listRow, selectedCustomer?.id === "general_personal" && styles.listRowSelected]}
-              onPress={() => selectCustomer({
-                id: "general_personal",
-                code: "personal",
-                type: "personal",
-                title: "General / Personal",
-                owner: selfId,
-                data: null,
-                time: new Date().toISOString()
-              })}
-              activeOpacity={0.6}
-            >
-              <View style={[styles.avatarCircle, selectedCustomer?.id === "general_personal" && { backgroundColor: ACCENT }]}>
-                <Ionicons name="apps-outline" size={18} color={selectedCustomer?.id === "general_personal" ? "white" : TEXT_SECONDARY} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rowTitle}>General / Personal</Text>
-                <Text style={styles.rowSub}>Private tasks & notes</Text>
-              </View>
-              <Ionicons name={selectedCustomer?.id === "general_personal" ? "chevron-down" : "chevron-forward"} size={16} color={TEXT_TERTIARY} />
-            </TouchableOpacity>
-            <View style={styles.divider} />
-          </View>
-
-          {/* Grouped / Listed Entities from DB */}
-          {customers.map((c) => {
-            const d = parseData(c.data);
-            const isSelected = selectedCustomer?.id === c.id;
-            
-            // Determine type label, color, and icon
-            let typeLabel = "Customer";
-            let typeColor = "#ca5010"; // orange
-            let typeIcon = "business-outline";
-            if (c.type === "person") {
-              typeLabel = "Team";
-              typeColor = "#8764b8"; // purple
-              typeIcon = "people-outline";
-            } else if (c.type === "finance") {
-              typeLabel = "Finance / Budget";
-              typeColor = "#107c41"; // green
-              typeIcon = "cash-outline";
-            } else if (c.type === "product") {
-              typeLabel = "Product";
-              typeColor = "#2563eb"; // blue
-              typeIcon = "pricetag-outline";
-            } else if (c.type === "profile") {
-              typeLabel = "Storefront Profile";
-              typeColor = "#0891b2"; // teal
-              typeIcon = "storefront-outline";
-            } else if (c.type === "family") {
-              typeLabel = "Family";
-              typeColor = "#ec4899"; // pink
-              typeIcon = "heart-outline";
-            } else if (c.type === "business") {
-              typeLabel = "Business";
-              typeColor = "#107c41"; // green
-              typeIcon = "briefcase-outline";
-            } else if (c.type === "warehouse") {
-              typeLabel = "Warehouse";
-              typeColor = "#8b5cf6"; // violet
-              typeIcon = "cube-outline";
-            } else if (c.type === "carrier") {
-              typeLabel = "Carrier";
-              typeColor = "#a78bfa"; // light purple
-              typeIcon = "bus-outline";
-            } else if (c.type === "vehicle") {
-              typeLabel = "Vehicle / Fleet";
-              typeColor = "#f97316"; // orange
-              typeIcon = "car-outline";
-            }
-            
-            return (
-              <View key={c.id}>
-                <TouchableOpacity
-                  style={[styles.listRow, isSelected && styles.listRowSelected]}
-                  onPress={() => selectCustomer(c)}
-                  activeOpacity={0.6}
-                >
-                  <View style={[styles.avatarCircle, isSelected && { backgroundColor: typeColor }]}>
-                    {isSelected ? (
-                      <Text style={{ color: "white", fontSize: 13, fontWeight: "700" }}>
-                        {(c.title || "?").charAt(0).toUpperCase()}
-                      </Text>
-                    ) : (
-                      <Ionicons name={typeIcon as any} size={16} color={TEXT_SECONDARY} />
-                    )}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.rowTitle}>{c.title}</Text>
-                    <Text style={styles.rowSub}>
-                      {typeLabel} · {d.email || d.phone || c.id}
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={() => toggleRowData(c.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="server-outline" size={15} color={expandedRowId === c.id ? ACCENT : TEXT_TERTIARY} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => openCustomerSheet(c)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="pencil-outline" size={16} color={TEXT_TERTIARY} />
-                  </TouchableOpacity>
-                  <Ionicons name={isSelected ? "chevron-down" : "chevron-forward"} size={16} color={TEXT_TERTIARY} />
-                </TouchableOpacity>
-                {expandedRowId === c.id && (
-                  <RowData rows={[{
-                    table: "matter",
-                    cols: [["id", c.id], ["code", c.code], ["type", c.type], ["scope", scope], ["owner", c.owner], ["title", c.title], ["public", 0], ["data", c.data], ["time", c.time]]
-                  }]} />
-                )}
-                <View style={styles.divider} />
-              </View>
-            );
-          })}
-          <AddRow label="Add contact / entity" onPress={() => openCustomerSheet()} />
-
-          {/* Customer / Entity Detail Section */}
-          {selectedCustomer && (
+          {!selectedCustomer ? (
+            <View style={{ flex: 1, alignItems: "center", justifyContent: "center", marginTop: 100 }}>
+              <ActivityIndicator size="large" color={ACCENT} />
+            </View>
+          ) : (
             <View>
               {/* Quick events — only for Customer/Business */}
               {(selectedCustomer.type === "customer" || selectedCustomer.type === "business") && (
@@ -2261,17 +2195,13 @@ export default function WorkspaceScreen() {
               {timeline.length === 0 && <Text style={styles.emptyText}>No activity yet.</Text>}
             </View>
           )}
-
-          {customers.length === 0 && !selectedCustomer && (
-            <Text style={styles.emptyText}>No contacts yet. Add one or select General / Personal context to start.</Text>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
       {/* ---- Bottom sheet drawer (single Modal, content per kind) ---- */}
       <Modal visible={sheet !== null} transparent animationType="slide" onRequestClose={() => setSheet(null)}>
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setSheet(null)}>
-          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+          <TouchableOpacity activeOpacity={1} style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
             <View style={{ alignItems: "center" }}>
               <View style={styles.modalKnob} />
             </View>
@@ -2775,7 +2705,22 @@ export default function WorkspaceScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "white" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4 },
-  titleBlock: { paddingHorizontal: 20, paddingBottom: 8 },
+  titleBlock: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+  workspaceSelectorChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f3f6fd",
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginBottom: 6,
+  },
+  workspaceSelectorChipText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: ACCENT,
+  },
   bigTitle: { fontSize: 26, fontWeight: "700", color: ACCENT },
   bigSubtitle: { fontSize: 11, color: TEXT_TERTIARY, marginTop: 2, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },
   scrollContent: { paddingBottom: 40 },
@@ -2822,17 +2767,17 @@ const styles = StyleSheet.create({
   rowDataCol: { width: 88, fontSize: 10, color: TEXT_SECONDARY, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },
   rowDataVal: { flex: 1, fontSize: 10, color: TEXT_PRIMARY, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },
 
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  modalSheet: { backgroundColor: "white", borderTopLeftRadius: 14, borderTopRightRadius: 14, padding: 20, paddingBottom: 34 },
-  modalKnob: { width: 36, height: 4, borderRadius: 2, backgroundColor: DIVIDER, marginBottom: 12 },
-  modalTitle: { fontSize: 17, fontWeight: "700", color: TEXT_PRIMARY, marginBottom: 2 },
-  modalSchemaHint: { fontSize: 10, color: TEXT_TERTIARY, marginBottom: 14, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },
-  modalInput: { backgroundColor: "#faf9f8", borderWidth: 1, borderColor: DIVIDER, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: TEXT_PRIMARY, marginBottom: 10 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.32)", justifyContent: "flex-end" },
+  modalSheet: { backgroundColor: "white", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24, borderWidth: 0 },
+  modalKnob: { width: 32, height: 4, borderRadius: 2, backgroundColor: "#e2e8f0", marginTop: 8, marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: "600", color: "#1f1f1f", marginBottom: 4 },
+  modalSchemaHint: { fontSize: 10, color: "#747775", marginBottom: 16, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },
+  modalInput: { backgroundColor: "#f1f5f9", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, color: TEXT_PRIMARY, marginBottom: 12, borderWidth: 0 },
   segmentRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 },
   segment: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: DIVIDER, alignItems: "center", backgroundColor: "white", minWidth: "30%", flexGrow: 1 },
   segmentActive: { backgroundColor: "#f3f6fd", borderColor: ACCENT },
   segmentText: { fontSize: 12, color: TEXT_SECONDARY },
   segmentTextActive: { color: ACCENT, fontWeight: "700" },
-  modalSubmitBtn: { backgroundColor: ACCENT, borderRadius: 6, paddingVertical: 12, alignItems: "center", justifyContent: "center", marginTop: 4 },
-  modalSubmitBtnText: { fontSize: 14, fontWeight: "700", color: "white" }
+  modalSubmitBtn: { backgroundColor: ACCENT, borderRadius: 24, paddingVertical: 14, alignItems: "center", justifyContent: "center", marginTop: 12 },
+  modalSubmitBtnText: { fontSize: 15, fontWeight: "600", color: "white" }
 });

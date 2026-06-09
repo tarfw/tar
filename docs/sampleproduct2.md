@@ -92,6 +92,17 @@ Row `105`: PLACED → DELIVERED via `phase=109`, step times in `ph`. Row `801`: 
 
 Cart events. Single writer → dense seq, `time` kept.
 
+| Database | Target Data | Sync Scope | Primary Purpose | Lifecycle |
+| :--- | :--- | :--- | :--- | :--- |
+| `user_{self}.db` | Ephemeral cart events (add, edit, steps) | None (Local only) | Offloads high-frequency user actions | Purged on successful checkout |
+
+**Checkout Flow:**
+```
+[User Action] ──> [Write user_{self}.db (102-104)] ──> [Checkout Submit]
+                                                             │
+[Clear Local Cart] <── [Purge Local user_{self}.db] <── [Write Sync DB (101/105)]
+```
+
 | stream | seq | action | delta | data | time |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `sneakers0` | `1` | `102` | `1.0` | *NULL* | `1780834200` |
@@ -148,16 +159,27 @@ KDS transition: `UPDATE motion SET phase = :op, data = json_set(data, '$.ph.' ||
 
 ---
 
-## Day-Close Compaction
+## Day-Close Compaction & S3 Archival
 
-Once a day, fold the day's deltas into `qty` and delete the old motion rows — keeps the DB small.
+Once a day, fold the day's deltas into `qty`, export the old ledger rows to S3, and delete them from the local database to keep it small and fast.
 
-| Step | Action |
-| :--- | :--- |
-| 1 | `qty = qty + SUM(deltas after mark)` |
-| 2 | `mark = last folded seq` |
-| 3 | Export folded motion rows to S3 |
-| 4 | Delete them from motion |
+| Target Database | Archive Location | Run Frequency | Trigger Time | Format |
+| :--- | :--- | :--- | :--- | :--- |
+| Store Sync DB (`s:XYZ`) | AWS S3 Bucket (`s3://...`) | Daily | Closing / Low-Traffic | Parquet or JSONL |
+
+**Compaction & Archival Flow:**
+```
+[Store Sync DB (motion)] ──> [Calculate SUM(delta)] ──> [Update mass.qty & mark]
+            │                                                      │
+[Delete from motion] <─── [Export to S3 (JSONL/Parquet)] <─────────┘
+```
+
+| Step | Action | Description |
+| :--- | :--- | :--- |
+| 1 | **Calculate Delta** | `qty = qty + SUM(deltas after mark)` |
+| 2 | **Update Mark** | `mark = last folded seq` |
+| 3 | **Export to S3** | Export folded `motion` rows to S3 (Parquet/JSONL) |
+| 4 | **Purge Ledger** | Delete exported rows from `motion` |
 
 Never `VACUUM` a synced replica.
 

@@ -1033,12 +1033,21 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={[styles.suggestionChip, { backgroundColor: "#ecfeff" }]}
+              onPress={() => router.push("/workspace")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="call-outline" size={12} color="#0e7490" style={{ marginRight: 4 }} />
+              <Text style={[styles.suggestionChipText, { color: "#0e7490" }]}>Workspace</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.suggestionChip, { backgroundColor: "#fffbeb" }]}
-              onPress={() => router.push("/sampleproduct")}
+              onPress={() => router.push("/domainsample")}
               activeOpacity={0.7}
             >
               <Ionicons name="sparkles-outline" size={12} color="#b45309" style={{ marginRight: 4 }} />
-              <Text style={[styles.suggestionChipText, { color: "#b45309" }]}>Sample Data</Text>
+              <Text style={[styles.suggestionChipText, { color: "#b45309" }]}>Domain Samples</Text>
             </TouchableOpacity>
           </ScrollView>
 

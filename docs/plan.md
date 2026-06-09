@@ -1,355 +1,215 @@
 # Database Schemas & Cost-Sync Optimization
 
-This document defines the database schemas, optimized scope codes, event opcodes, Google Identity integration, and dynamic routing of the TAR local-first sync architecture under the **Database-per-User (Owner-Database)** model.
+This document defines the schemas, scope codes, event opcodes, identity model, and routing of the TAR local-first sync architecture under the Database-per-User model.
+
+---
+
+## Table of Contents
+1. [Schema Definitions](#1-schema-definitions)
+2. [Scope Code & Database Routing](#2-scope-code--database-routing)
+3. [Storefront & CMS Layout](#3-storefront--cms-layout)
+4. [Opcode Write Strategy & Storage Tiers](#4-opcode-write-strategy--storage-tiers)
+5. [Identity & Profile Sync](#5-identity--profile-sync)
+6. [Dynamic Forms](#6-dynamic-forms)
+7. [Pricing, Turso Costs & P&L](#7-pricing-turso-costs--pl)
 
 ---
 
 ## 1. Schema Definitions
 
-The application defines four unified tables representing the physical, kinetic, and structural components of the system. Depending on the data's scope, these tables are instantiated across different isolated database files on the device.
+### matter (Core Catalog / Blueprints)
+| Column | Type | Details |
+| :--- | :--- | :--- |
+| **id** | TEXT | PRIMARY KEY (e.g. `prod_thermos_99`, `usr_googleid`) |
+| **code** | TEXT | UNIQUE SKU or code |
+| **type** | TEXT | NOT NULL (`'product'`, `'task'`, `'profile'`, `'form'`, `'note'`) |
+| **scope** | TEXT | NOT NULL routing scope code (e.g., `g`, `p`, `s:102`) |
+| **owner** | TEXT | Creator ID |
+| **title** | TEXT | Display title |
+| **public** | INT | Visibility toggle (1 = public, 0 = private) |
+| **data** | TEXT | Custom fields stored as JSON |
+| **time** | TEXT | Creation audit timestamp |
 
-### A. matter
-*Intrinsic Identity (What it is — global catalog or definition template)*
+### mass (Realizations / Stock / Slot / Variants)
+| Column | Type | Details |
+| :--- | :--- | :--- |
+| **id** | TEXT | PRIMARY KEY (e.g., `mas_stock_99`) |
+| **matter** | TEXT | References matter(id) |
+| **type** | TEXT | NOT NULL (`'stock'`, `'slot'`, `'cart'`, `'ticket'`, `'lead'`, `'trip'`) |
+| **scope** | TEXT | Slot partition scope code |
+| **qty** | REAL | Stock count, weight, or slot count |
+| **value** | REAL | Price / valuation / cost |
+| **active** | INT | Active toggle (1 = active, 0 = retired) |
+| **variant**| INT | Variant ordinal index (option array index) |
+| **mark** | INT | Last sequence folded into qty (compaction watermark) |
+| **geo** | TEXT | H3 spatial hexagon coordinates |
+| **start** | TEXT | Start timestamp (shifts / rosters / bookings) |
+| **end** | TEXT | End timestamp (shifts / rosters / bookings) |
+| **data** | TEXT | Dynamic attributes |
+| **time** | TEXT | Registration audit timestamp |
 
-| Column | Type | Details | Use Case |
-| :--- | :--- | :--- | :--- |
-| **id** | TEXT | PRIMARY KEY | Unique ID (e.g., `prod_thermos_99`, `usr_googleid`). |
-| **code** | TEXT | UNIQUE | Human-readable unique code/SKU (e.g., `THERMOS_99`). |
-| **type** | TEXT | NOT NULL | Entity category (e.g., `'product'`, `'task'`, `'profile'`, `'form'`). |
-| **scope** | TEXT | NOT NULL | Scope code (e.g., `g`, `p`, `s:102`). See Scope Code Guide. |
-| **owner** | TEXT | - | Entity creator or department (e.g., `'store_owner'`). |
-| **title** | TEXT | - | Display title (e.g., `"Water Heater Pressure Leak"`). |
-| **public** | INT | DEFAULT 0 | Visibility toggle (`1` = public catalog, `0` = private). |
-| **data** | TEXT | - | Dynamic custom fields stored as stringified JSON. |
-| **time** | TEXT | DEFAULT CURRENT_TIMESTAMP | Creation audit timestamp. |
+### motion (Kinetic Ledger / Append-only & Phase updates)
+`WITHOUT ROWID` with PRIMARY KEY `(stream, seq)`
+| Column | Type | Details |
+| :--- | :--- | :--- |
+| **stream** | TEXT | PK (1/2) - Timeline group ID (matches `mass.id` or `matter.id`) |
+| **seq** | INT | PK (2/2) - Offline monotonic sequence (unixepoch_ms * 1000 + nonce) |
+| **action** | INT | NOT NULL - Action opcode |
+| **phase** | INT | In-place lifecycle state index (mutated in-place to save sync cost) |
+| **delta** | REAL | Numeric offset / change value |
+| **data** | TEXT | JSON payload (with event timeline history in `ph`) |
 
-### B. mass
-*Physical Realization (Where / How much / Price / Time slots)*
-
-| Column | Type | Details | Use Case |
-| :--- | :--- | :--- | :--- |
-| **id** | TEXT | PRIMARY KEY | Unique slot/realization ID (e.g., `mas_stock_99`). |
-| **matter** | TEXT | REFERENCES matter(id) | Links back to the core `matter` identity record. |
-| **type** | TEXT | NOT NULL | Realization category (e.g., `'stock'`, `'slot'`). |
-| **scope** | TEXT | NOT NULL | Physical slot partition scope code. |
-| **qty** | REAL | - | Inventory stock level, weight, or slot count. |
-| **value** | REAL | - | Currency price, valuation, or cost (e.g. `899.00`). |
-| **active** | INT | DEFAULT 1 | Active control flag (`1` = active alert/slot, `0` = completed). |
-| **geo** | TEXT | - | H3 spatial hexagon coordinates or lat/long. |
-| **start** | TEXT | - | Start timestamp for shift roster, booking, or alarm. |
-| **end** | TEXT | - | End timestamp for shift roster, booking, or task deadline. |
-| **data** | TEXT | - | Dynamic attributes specific to the physical context. |
-| **time** | TEXT | DEFAULT CURRENT_TIMESTAMP | Registration audit timestamp. |
-
-### C. motion
-*Kinetic Ledger (What happened — append-only stream of actions)*
-
-| Column | Type | Details | Use Case |
-| :--- | :--- | :--- | :--- |
-| **id** | TEXT | PRIMARY KEY | Unique transaction log ID (e.g., `mot_deliv_101`). |
-| **stream** | TEXT | NOT NULL | Timeline group ID (typically matches a `matter.id`). |
-| **seq** | INT | NOT NULL | Monotonic sequential index to prevent out-of-order execution. |
-| **action** | INT | NOT NULL | Action category numeric opcode (e.g., `105`, `802`). |
-| **status** | TEXT | - | Phase in the state machine (e.g., `'READY'`, `'DELIVERED'`). |
-| **delta** | REAL | - | Quantifiable change/offset (e.g., value adjustment `+250.00`). |
-| **scope** | TEXT | NOT NULL | Context bucket of transaction execution. |
-| **data** | TEXT | - | JSON payload storing context-specific details. |
-| **time** | TEXT | DEFAULT CURRENT_TIMESTAMP | Execution timestamp. |
-
-### D. relation
-*Structural Network (How they connect — directed graph links)*
-
-| Column | Type | Details | Use Case |
-| :--- | :--- | :--- | :--- |
-| **src** | TEXT | PRIMARY KEY (1/3) | Source matter entity identifier (`matter.id`). |
-| **tgt** | TEXT | PRIMARY KEY (2/3) | Target matter entity identifier (`matter.id`). |
-| **type** | PRIMARY KEY (3/3) | Relationship class (e.g., `'parent-child'`, `'blocked_by'`). |
-| **weight** | REAL | DEFAULT 1.0 | Link strength, display sort index, or coefficient value. |
-| **time** | TEXT | DEFAULT CURRENT_TIMESTAMP | Relation establishment timestamp. |
-
-### E. Allowed Entity Types & Categories
-
-These sub-tables define the permitted values for the `type` column across all four core schemas.
-
-#### 1. `matter.type` (Identity Templates)
-Defines the core catalog blueprint, template, or identity of an entity.
-* **`'product'`**: Blueprints for storefront items, services, or goods.
-* **`'task'`**: Task or Todo definitions.
-* **`'profile'`**: User or employee profile templates (Google Identity data).
-* **`'form'`**: Blueprints for dynamic forms and questionnaires.
-* **`'note'`**: General purpose sticky notes or documentation files.
-
-#### 2. `mass.type` (Realization & Allocation)
-Represents physical quantities, bookings, shift slots, locations, and pricing metrics.
-* **`'stock'`**: Physical inventory count/level and location tags.
-* **`'slot'`**: Bookings, rosters, calendar shift slot allocations.
-* **`'cart'`**: Active checkout cart records.
-* **`'ticket'`**: Customer support ticket folders.
-* **`'lead'`**: CRM sales lead folders.
-* **`'trip'`**: Active delivery or passenger rides in logistics.
-* **`'shift'`**: HR attendance shifts.
-* **`'form_task'`**: A single scheduled running instance of a form blueprint.
-
-#### 3. `motion.action` (Transactional Action Logs)
-Append-only log of events and status changes on a timeline stream (Opcodes).
-* **`Commerce (100s)`**: `SOLD (101)`, `ORDER_PLACED (105)`, `DELIVERED (109)`, `REFUND (111)`
-* **`POS & Kitchen (200s)`**: `SALE (201)`, `SHIFT_START (202)`, `ORDER_FIRE (206)`
-* **`CRM & Helpdesk (300s)`**: `LEAD_CREATED (303)`, `TICKET_OPEN (306)`, `RESOLVED (308)`
-* **`Logistics & SCM (400s)`**: `DISPATCHED (401)`, `IN_TRANSIT (402)`, `TRANSFER_OUT (405)`
-* **`HR & Rosters (500s)`**: `CLOCK_IN (501)`, `CLOCK_OUT (502)`, `LEAVE_REQUESTED (506)`
-* **`Marketing & ERP (600s, 900s)`**: `PUSH_SENT (601)`, `FORM_SUBMIT (604)`, `RIDE_REQUESTED (903)`
-* **`Services & Payments (700s, 800s)`**: `BOOKED (701)`, `PAYMENT_SUCCESS (802)`, `EXPENSE_RECORD (806)`
-
-#### 4. `relation.type` (Structural Network)
-Directed link connections defining hierarchy or rules between different entities.
-* **`'parent-child'`**: Categories containing sub-categories, or nested items.
-* **`'blocked_by'`**: Project task dependencies (Task A must be completed before Task B).
-* **`'assigned_to'`**: Linking a profile to a task or a workspace.
-* **`'submits_to'`**: Linking form submissions back to the form template.
+### relation (Structural Network Graph)
+| Column | Type | Details |
+| :--- | :--- | :--- |
+| **src** | TEXT | PK (1/3) - Source entity ID (`matter.id`) |
+| **tgt** | TEXT | PK (2/3) - Target entity ID (`matter.id`) |
+| **type** | TEXT | PK (3/3) - Link class (`'parent-child'`, `'blocked_by'`, `'assigned_to'`, `'submits_to'`) |
+| **weight**| REAL | Order sort index / link strength coefficient |
+| **time** | TEXT | Relation establishment timestamp |
 
 ---
 
-## 1.2. Business Domain & Entity Type Mapping Matrix
+## 2. Scope Code & Database Routing
 
-The database schema structure and corresponding opcodes cover the following business features:
+Queries route to physical SQLite files based on scope code prefixes:
 
-| Business Domain / Use Case | Covered? | Database Table & Opcode Implementation |
-| :--- | :---: | :--- |
-| **CRM** | **YES** | `matter (type='profile')` + `mass (type='lead')` + `motion (LEAD_CREATED 303, CONTACTED 304)` |
-| **Notes App** | **YES** | `matter (type='note')` + `relation` (for linking notes to categories or projects) |
-| **Bookings & Reservations** | **YES** | `mass (type='slot')` + `motion (BOOKED 701, COMPLETED 702)` |
-| **POS (Point of Sale)** | **YES** | `mass (type='stock')` + `motion (SALE 201, SHIFT_START 202, CASH_CLOSE 205)` |
-| **Forms Builder & Submissions** | **YES** | `matter (type='form')` + `mass (type='form_task')` + `motion (FORM_SUBMIT 604)` |
-| **Customer Helpdesk / Tickets** | **YES** | `mass (type='ticket')` + `motion (TICKET_OPEN 306, REPLY 307, RESOLVED 308)` |
-| **Storefront Site & Products** | **YES** | `matter (type='product')` (catalog definition templates rendered in flat visual cards) |
-| **Inventory & SCM** | **YES** | `mass (type='stock')` + `motion (SOLD 101, TRANSFER_OUT 405, TRANSFER_IN 406)` |
-| **Invoice** | **YES** | `motion (INVOICE_GENERATED 110)` (append-only ledger linked to order streams) |
-| **Expense, Spend, Payment** | **YES** | `motion (PAYMENT_INITIATED 801, PAYMENT_SUCCESS 802, EXPENSE_RECORD 806)` |
-| **Accounts Books & Ledgers** | **YES** | `motion` (append-only sequential ledger with balance verification using `delta`) |
-| **Payroll** | **YES** | `motion (PAYROLL 503)` (payout logs linked to employee profile matters) |
-| **ERP & Procurement** | **YES** | `motion (PROCURE_REQ 907, RECRUIT_APPLY 906)` |
-| **Logistics & Delivery** | **YES** | `motion (DISPATCHED 401, IN_TRANSIT 402, DELIVERED 109, ETA_UPDATED 404)` |
-| **Projects, Management, Todos** | **YES** | `matter (type='task')` + `relation` (parent-child or dependencies) + `motion (TASK_ASSIGNED 504)` |
+| Scope Prefix | Scope Class | Target Local DB (Device) | Remote Sync DB (Turso Cloud) |
+| :--- | :--- | :--- | :--- |
+| `p` | Personal | `user_${self_id}.db` | *None (Local Only)* |
+| `g` | Global | `global.db` (Local Cache) | API Cache / Workers |
+| `f:{id}` | Family | `user_sync_${owner_id}.db` | `db_${owner_id}` |
+| `t:{id}` | Team / Work | `user_sync_${owner_id}.db` | `db_${owner_id}` |
+| `r:{id}` | Friends | `user_sync_${owner_id}.db` | `db_${owner_id}` |
+| `s:{id}` | Storefront | `user_sync_${owner_id}.db` | `db_${owner_id}` |
+| `w:{id}` | Warehouse | `user_sync_${owner_id}.db` | `db_${owner_id}` |
+| `c:{id}` | Client / CRM| `user_sync_${owner_id}.db` | `db_${owner_id}` |
+| `m:{id}` | Campaign | `user_sync_${owner_id}.db` | `db_${owner_id}` |
+| `x:{id}` | Surveys / ERP| `user_sync_${owner_id}.db` | `db_${owner_id}` |
+| `h:{id}` | HR / Staff | `user_sync_${owner_id}.db` | `db_${owner_id}` |
+| `d` | Logistics | `user_sync_${owner_id}.db` | `db_${owner_id}` |
 
 ---
 
-## 1.3. Storefront & CMS Layout Architecture
+## 3. Storefront & CMS Layout
 
-Storefront page layouts, CMS configuration widgets, theme settings, and section hierarchies are mapped directly into the relational core.
-
-```mermaid
-graph TD
-    M1["matter (type='form'/'layout')<br>Layout Component Blueprint"] -->|Defines Structure / Styles| MS1["mass (type='slot')<br>Specific Page Slot Instance"]
-    MS1 -->|Arranged on Pages via| R1["relation (type='parent-child')<br>Layout Tree Hierarchy & Order"]
-    MS1 -->|Impressions & Click actions logged in| MO1["motion (action=601/604)<br>Interaction & Analytical Ledger"]
+```text
+  ╔═════════════════════════════════════════════════════════════════════╗
+  ║ Storefront & CMS Layout Architecture Mapping                        ║
+  ╠═════════════════════════════════════════════════════════════════════╣
+  ║  1. Matter (Core Identity / Blueprint Template)                     ║
+  ║  ┌───────────────────────────────────────────────────────────────┐  ║
+  ║  │  id:    "comp_product_grid"    type:  "layout"                │  ║
+  ║  │  data:  {"style": "masonry_3_cols", "limit": 6}               │  ║
+  ║  └───────────────────────────────────────────────────────────────┘  ║
+  ║                                  │                                  ║
+  ║                                  ▼ Defines Structure                ║
+  ║  2. Mass (Specific Page Slot Realization)                           ║
+  ║  ┌───────────────────────────────────────────────────────────────┐  ║
+  ║  │  id:     "slot_home_featured"  type:   "slot"                 │  ║
+  ║  │  matter: "comp_product_grid"   scope:  "s:102/homepage"       │  ║
+  ║  └───────────────────────────────────────────────────────────────┘  ║
+  ║             │                                       │               ║
+  ║             ▼ Arranged via relation                 ▼ Logged in     ║
+  ║                                                     │  motion       ║
+  ║  3. Relation (Hierarchy & Order)                    ▼               ║
+  ║  ┌─────────────────────────────────┐   4. Motion (Interactions)     ║
+  ║  │ src:    "slot_home_featured"    │   ┌────────────────────────┐   ║
+  ║  │ tgt:    "prod_tshirt"           │   │ stream: "slot_ho..."   │   ║
+  ║  │ type:   "parent-child"          │   │ action: 601 (Impress)  │   ║
+  ║  │ weight: 1.0                     │   │ data:   {"click": true}│   ║
+  ║  └─────────────────────────────────┘   └────────────────────────┘   ║
+  ╚═════════════════════════════════════════════════════════════════════╝
 ```
 
-### CMS Layout Schema Mapping Matrix
+---
 
-| System Component | Database Table | Columns & JSON Configuration Payload | Example Application |
+## 4. Opcode Write Strategy & Storage Tiers
+
+### Storage Tiers & Lifecycle
+* **Local (Stays Local)**: Private client state stored in `user_${self_id}.db` (e.g., carts, wishlists, personal todos). Never synced to cloud.
+* **Collab (Collaborative Sync)**: Active operational data in `user_sync_${owner_id}.db` synced via Turso (e.g., active orders, stock levels).
+* **S3 (Archival)**: Historical `motion` ledgers are deleted from Turso and archived to S3 during day-close compaction. Active balances fold into `mass.qty` (monitored via `mass.mark` watermark).
+
+### Opcode Write Strategies
+* **Local User**: Stored only in **Local** database (100% sync cost savings).
+* **Phase Update**: Updates `phase` column in-place in **Collab** database (70%-85% sync cost savings).
+* **Append**: Appends new rows to **Collab** database (standard insert for ledgers, archived to **S3** at day-close).
+
+| Opcode Group | Write Strategy | Target DB | Example Opcodes |
 | :--- | :--- | :--- | :--- |
-| **Section Component Blueprint** | `matter` | `type = 'form'` (or `'layout'`) <br>`data = { "widget": "carousel", "theme": "dark", "height": 300 }` | Defines style variables and template configuration rules for a reusable storefront block (e.g. Hero Banner, Product Grid, CTA Widget). |
-| **Live Section Placement** | `mass` | `type = 'slot'`<br>`scope = 's:102/home'` (Home page route of Store 102)<br>`start` / `end` (scheduled timing constraints)<br>`active = 1` | Instantiates a component blueprint onto a specific page scope. Allows setting scheduled marketing campaigns. |
-| **Component Hierarchy & Sorting** | `relation` | `src = 'home_page_matter_id'` <br>`tgt = 'hero_section_mass_id'` <br>`type = 'parent-child'` <br>`weight = 1.0` (indicates page display order) | Links layout instances to pages and sets their visual sorting order sequentially. |
-| **CMS Edit & Analytics Tracking** | `motion` | `action = 601` (Push/Impression) / `604` (Form/Click)<br>`data = { "element": "cta_button", "action": "click" }` | Logs administrative layout edits and offline interaction events (click-throughs, banner impressions). |
+| **Local Cart & Wishlist** | **Local User** | `user_${self_id}.db` | `CART_ADD (102)`, `CART_REMOVE (103)`, `WISHLISTED (114)` |
+| **Local Private Tasks** | **Local User** | `user_${self_id}.db` | `TASK_ASSIGNED (504)` |
+| **Sales & Payments Logs** | **Append** | `user_sync_${owner_id}.db` | `SOLD (101)`, `SALE (201)`, `PAYMENT_INITIATED (801)` |
+| **Order & Job Lifecycle** | **Phase Update**| `user_sync_${owner_id}.db` | `CHECKOUT (104)`, `CONFIRMED (106)`, `PREPARING (107)`, `READY (108)`, `DELIVERED (109)` |
+| **Ticket & Helpdesk Jobs** | **Phase Update**| `user_sync_${owner_id}.db` | `RESOLVED (308)`, `TOKEN_CALLED (209)`, `TOKEN_SERVED (210)` |
+| **CRM Leads & Operations** | **Phase Update**| `user_sync_${owner_id}.db` | `CONTACTED (304)`, `CONVERTED (305)` |
+| **Logistics & Transit States**| **Phase Update**| `user_sync_${owner_id}.db` | `IN_TRANSIT (402)`, `DRIVER_ASSIGNED (403)`, `ETA_UPDATED (404)` |
+| **ERP, SCM & Admin Logs** | **Append** | `user_sync_${owner_id}.db` | `SHIFT_START (202)`, `SHIFT_END (204)`, `PAYROLL (503)`, `INVOICE_GENERATED (110)` |
 
-### Example Layout Configuration Payload
-For rendering a **Featured Products Grid** on a homepage storefront:
-
-1. **`matter` (Widget definition)**:
-   ```json
-   {
-     "id": "comp_product_grid",
-     "type": "form",
-     "title": "Storefront Grid Widget",
-     "data": {
-       "style": "masonry_3_cols",
-       "limit": 6,
-       "show_price": true
-     }
-   }
-   ```
-2. **`mass` (Homepage instance)**:
-   ```json
-   {
-     "id": "slot_home_featured",
-     "matter": "comp_product_grid",
-     "type": "slot",
-     "scope": "s:102/homepage",
-     "active": 1
-   }
-   ```
-3. **`relation` (Linking items to Grid slot)**:
-   * Source: `slot_home_featured` $\rightarrow$ Target: `prod_tshirt` (Type: `'parent-child'`, Weight: `1.0`)
-   * Source: `slot_home_featured` $\rightarrow$ Target: `prod_jeans` (Type: `'parent-child'`, Weight: `2.0`)
-
----
-
-## 2. Scope Code System & Database Mapping
-
-Verbose scope strings are encoded into compact, prefixed tokens to shrink database size, reduce Turso sync bandwidth usage, and speed up SQLite index performance. 
-
-Under the **Database-per-User** model, each user owns a remote database (`db_${owner_id}`). The client device routes data queries to the correct physical SQLite file based on the scope code.
-
-| Scope Category | Target Local DB (Device) | Remote Sync DB (Turso Cloud) | Code Prefix | Domain | Use Case / Example |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Personal** | `user_${self_id}.db` | *None (Local Only)* | `p` | Private | Personal drafts, tasks, alarms (`p`). |
-| **Global** | `global.db` (Cache) | API Cache / Workers | `g` | Public | Global product lists, standard menus (`g`). |
-| **Family** | `user_sync_${owner_id}.db` | `db_${owner_id}` | `f:{id}` | Social | Family-shared chores, lists (`f:402`). |
-| **Team / Work** | `user_sync_${owner_id}.db` | `db_${owner_id}` | `t:{id}` | Org / Projects | Co-worker task boards, project boards (`t:99`). |
-| **Friends** | `user_sync_${owner_id}.db` | `db_${owner_id}` | `r:{id}` | Social | Shared itineraries, split expenses (`r:55`). |
-| **Storefront** | `user_sync_${owner_id}.db` | `db_${owner_id}` | `s:{id}` | Commerce | Retail layout configs, local menus (`s:102`). |
-| **Warehouse** | `user_sync_${owner_id}.db` | `db_${owner_id}` | `w:{id}` | Logistics / SCM | Stock quantities in shipping centers (`w:ch03`). |
-| **Client / CRM** | `user_sync_${owner_id}.db` | `db_${owner_id}` | `c:{id}` | CRM | Target customer profiles, leads, tickets (`c:vip`). |
-| **Campaigns** | `user_sync_${owner_id}.db` | `db_${owner_id}` | `m:{id}` | Marketing | Marketing campaign templates (`m:push`). |
-| **Forms / Submissions** | `user_sync_${owner_id}.db`| `db_${owner_id}` | `x:{id}` | Surveys / ERP | Form blueprints and submission logs (`x:f01`). |
-| **HR / Staff** | `user_sync_${owner_id}.db` | `db_${owner_id}` | `h:{id}` | HR / ERP | Employee rosters, recruit pipelines (`h:staff`). |
-| **Logistics** | `user_sync_${owner_id}.db` | `db_${owner_id}` | `d` | Operations | Delivery tracking, drivers, routes (`d`). |
+### Complete Opcode Directory
+| ID | Opcode | Strategy | ID | Opcode | Strategy | ID | Opcode | Strategy |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **101** | `SOLD` | Append | **301** | `STORE_VISIT` | Append | **506** | `LEAVE_REQ` | Append |
+| **102** | `CART_ADD` | Local | **302** | `REVIEW` | Append | **507** | `APPROVED` | Phase |
+| **103** | `CART_REMOVE` | Local | **303** | `LEAD_CREATED`| Append | **508** | `REJECTED` | Phase |
+| **104** | `CHECKOUT` | Phase | **304** | `CONTACTED` | Phase | **601** | `PUSH_SENT` | Append |
+| **105** | `ORDER_PLACED` | Append | **305** | `CONVERTED` | Phase | **602** | `SMS_SENT` | Append |
+| **106** | `CONFIRMED` | Phase | **306** | `TICKET_OPEN` | Append | **603** | `REFERRAL` | Append |
+| **107** | `PREPARING` | Phase | **307** | `REPLY` | Append | **604** | `FORM_SUBMIT` | Append |
+| **108** | `READY` | Phase | **308** | `RESOLVED` | Phase | **701** | `BOOKED` | Append |
+| **109** | `DELIVERED` | Phase | **309** | `B_DAY_OFFER` | Append | **702** | `COMPLETED` | Phase |
+| **110** | `INVOICE_GEN` | Append | **401** | `DISPATCHED` | Append | **703** | `CANCELLED` | Phase |
+| **111** | `REFUND` | Append | **402** | `IN_TRANSIT` | Phase | **801** | `PAY_INIT` | Append |
+| **112** | `RENEWAL_DUE` | Append | **403** | `DRIV_ASSIGN` | Phase | **802** | `PAY_SUCCESS` | Phase |
+| **113** | `COUPON_APP` | Append | **404** | `ETA_UPDATED` | Phase | **803** | `PARTIAL_PAY` | Phase |
+| **114** | `WISHLISTED` | Local | **405** | `TRANS_OUT` | Append | **804** | `PAYOUT` | Append |
+| **201** | `SALE` | Append | **406** | `TRANS_IN` | Append | **805** | `PAY_FAILED` | Phase |
+| **202** | `SHIFT_START` | Append | **407** | `RETURN_REQ` | Append | **806** | `EXPENSE_REC` | Append |
+| **203** | `BREAK` | Append | **408** | `PICKUP_SCH` | Phase | **901** | `BOOKING` | Append |
+| **204** | `SHIFT_END` | Append | **409** | `PICKED_UP` | Phase | **902** | `ASSIGNED` | Phase |
+| **205** | `CASH_CLOSE` | Append | **410** | `DELIV_ATTEMPT`| Phase | **903** | `RIDE_REQ` | Append |
+| **206** | `ORDER_FIRE` | Append | **501** | `CLOCK_IN` | Append | **904** | `DRIV_MATCH` | Phase |
+| **207** | `ITEM_READY` | Phase | **502** | `CLOCK_OUT` | Append | **905** | `IN_RIDE` | Phase |
+| **208** | `TOKEN_ISSUED` | Append | **503** | `PAYROLL` | Append | **906** | `RECRUIT_APPL`| Append |
+| **209** | `TOKEN_CALLED` | Phase | **504** | `TASK_ASSIGN` | Local | **907** | `PROCURE_REQ` | Append |
+| **210** | `TOKEN_SERVED` | Phase | **505** | `PERF_NOTE` | Append | — | — | — |
 
 ---
 
-## 3. finalized Opcode Write Matrix
+## 5. Identity & Profile Sync
 
-Opcodes enforce write behavior to minimize storage growth and synchronization transfer payloads.
-
-* **Local User**: Kept in local-only `user_${self_id}.db` (100% cost savings, never synced).
-* **Status Update**: Edits the `status` column of an existing row in-place in `user_sync_${owner_id}.db` (50%-80% cost savings).
-* **Append**: Inserts a new row in `user_sync_${owner_id}.db` (0% cost savings, reserved for ledgers and audit logs).
-
-| ID | Opcode | Write Strategy | Target DB | Use Case / Domain |
-| :--- | :--- | :--- | :--- | :--- |
-| **101** | `SOLD` | **Append** | `user_sync_${owner_id}.db` | Retail inventory deduct events. |
-| **102** | `CART_ADD` | **Local User** | `user_${self_id}.db` | Local shopping cart additions. |
-| **103** | `CART_REMOVE` | **Local User** | `user_${self_id}.db` | Local shopping cart removals. |
-| **104** | `CHECKOUT` | **Status Update** | `user_sync_${owner_id}.db` | Cart conversion progress state. |
-| **105** | `ORDER_PLACED` | **Append** | `user_sync_${owner_id}.db` | Initial order ledger entry. |
-| **106** | `CONFIRMED` | **Status Update** | `user_sync_${owner_id}.db` | Store manager accepts order 105. |
-| **107** | `PREPARING` | **Status Update** | `user_sync_${owner_id}.db` | Order is in the kitchen/assembly. |
-| **108** | `READY` | **Status Update** | `user_sync_${owner_id}.db` | Package ready for pickup/delivery. |
-| **109** | `DELIVERED` | **Status Update** | `user_sync_${owner_id}.db` | Customer received items successfully. |
-| **110** | `INVOICE_GENERATED`| **Append** | `user_sync_${owner_id}.db` | Standard tax billing invoice logs. |
-| **111** | `REFUND` | **Append** | `user_sync_${owner_id}.db` | Refund ledger entry. |
-| **112** | `RENEWAL_DUE` | **Append** | `user_sync_${owner_id}.db` | Subscription recurring billing check. |
-| **113** | `COUPON_APPLIED` | **Append** | `user_sync_${owner_id}.db` | Promotion validation tracking log. |
-| **114** | `WISHLISTED` | **Local User** | `user_${self_id}.db` | Private item watchlist state. |
-| **201** | `SALE` | **Append** | `user_sync_${owner_id}.db` | Till Point-of-Sale cash transaction. |
-| **202** | `SHIFT_START` | **Append** | `user_sync_${owner_id}.db` | Till shift log activation. |
-| **203** | `BREAK` | **Append** | `user_sync_${owner_id}.db` | Roster clock pause for staff break. |
-| **204** | `SHIFT_END` | **Append** | `user_sync_${owner_id}.db` | Till shift closure logs. |
-| **205** | `CASH_CLOSE` | **Append** | `user_sync_${owner_id}.db` | End of shift cash till auditing balance. |
-| **206** | `ORDER_FIRE` | **Append** | `user_sync_${owner_id}.db` | Sends order to Kitchen Display System. |
-| **207** | `ITEM_READY` | **Status Update** | `user_sync_${owner_id}.db` | Line cook flags item completed. |
-| **208** | `TOKEN_ISSUED` | **Append** | `user_sync_${owner_id}.db` | Ticket queue token issued (Service/POS). |
-| **209** | `TOKEN_CALLED` | **Status Update** | `user_sync_${owner_id}.db` | Counter calls token. |
-| **210** | `TOKEN_SERVED` | **Status Update** | `user_sync_${owner_id}.db` | Token served and closed. |
-| **301** | `STORE_VISIT` | **Append** | `user_sync_${owner_id}.db` | Customer brick-and-mortar visitation tag. |
-| **302** | `REVIEW` | **Append** | `user_sync_${owner_id}.db` | Customer review and rating feedback. |
-| **303** | `LEAD_CREATED` | **Append** | `user_sync_${owner_id}.db` | Initial CRM lead folder entry. |
-| **304** | `CONTACTED` | **Status Update** | `user_sync_${owner_id}.db` | Sales representative contact event. |
-| **305** | `CONVERTED` | **Status Update** | `user_sync_${owner_id}.db` | Lead converted to paying account. |
-| **306** | `TICKET_OPEN` | **Append** | `user_sync_${owner_id}.db` | Customer support ticket folder. |
-| **307** | `REPLY` | **Append** | `user_sync_${owner_id}.db` | Support chat reply log in ticket. |
-| **308** | `RESOLVED` | **Status Update** | `user_sync_${owner_id}.db` | Resolves support ticket 306. |
-| **309** | `BIRTHDAY_OFFER_SENT`|**Append**| `user_sync_${owner_id}.db` | Automatic customer promo trigger log. |
-| **401** | `DISPATCHED` | **Append** | `user_sync_${owner_id}.db` | Initial logistics delivery task. |
-| **402** | `IN_TRANSIT` | **Status Update** | `user_sync_${owner_id}.db` | Package is moving (GPS offloaded). |
-| **403** | `DRIVER_ASSIGNED` | **Status Update** | `user_sync_${owner_id}.db` | Assigns carrier/courier to order. |
-| **404** | `ETA_UPDATED` | **Status Update** | `user_sync_${owner_id}.db` | Recalculated destination ETA slot. |
-| **405** | `TRANSFER_OUT` | **Append** | `user_sync_${owner_id}.db` | SCM warehouse exit inventory log. |
-| **406** | `TRANSFER_IN` | **Append** | `user_sync_${owner_id}.db` | SCM warehouse entry inventory log. |
-| **407** | `RETURN_REQUEST` | **Append** | `user_sync_${owner_id}.db` | Customer reverse logistics request. |
-| **408** | `PICKUP_SCHEDULE` | **Status Update** | `user_sync_${owner_id}.db` | Courier scheduled pickup timing. |
-| **409** | `PICKED_UP` | **Status Update** | `user_sync_${owner_id}.db` | Courier picks up reverse shipment. |
-| **410** | `DELIVERY_ATTEMPT`| **Status Update**| `user_sync_${owner_id}.db` | Failed/reattempt delivery update. |
-| **501** | `CLOCK_IN` | **Append** | `user_sync_${owner_id}.db` | HR staff attendance check-in. |
-| **502** | `CLOCK_OUT` | **Append** | `user_sync_${owner_id}.db` | HR staff attendance check-out. |
-| **503** | `PAYROLL` | **Append** | `user_sync_${owner_id}.db` | Employee financial payout ledger logs. |
-| **504** | `TASK_ASSIGNED` | **Local User** | `user_${self_id}.db` | Private todo lists/alarms. |
-| **505** | `PERFORMANCE_NOTE`|**Append** | `user_sync_${owner_id}.db` | Internal employee review remarks. |
-| **506** | `LEAVE_REQUESTED` | **Append** | `user_sync_${owner_id}.db` | HR employee leave submission form. |
-| **507** | `APPROVED` | **Status Update** | `user_sync_${owner_id}.db` | Approves leave request 506. |
-| **508** | `REJECTED` | **Status Update** | `user_sync_${owner_id}.db` | Denies leave request 506. |
-| **601** | `PUSH_SENT` | **Append** | `user_sync_${owner_id}.db` | Marketing push campaign logs. |
-| **602** | `SMS_SENT` | **Append** | `user_sync_${owner_id}.db` | SMS dispatch analytics tracking. |
-| **603** | `REFERRAL` | **Append** | `user_sync_${owner_id}.db` | Referral promo redemption records. |
-| **604** | `FORM_SUBMIT` | **Append** | `user_sync_${owner_id}.db` | Dynamic landing page form submissions. |
-| **701** | `BOOKED` | **Append** | `user_sync_${owner_id}.db` | Service reservation creation. |
-| **702** | `COMPLETED` | **Status Update** | `user_sync_${owner_id}.db` | Service appointment concluded. |
-| **703** | `CANCELLED` | **Status Update** | `user_sync_${owner_id}.db` | Service appointment cancelled. |
-| **801** | `PAYMENT_INITIATED`|**Append** | `user_sync_${owner_id}.db` | Payment transaction registration. |
-| **802** | `PAYMENT_SUCCESS` | **Status Update** | `user_sync_${owner_id}.db` | Completes transaction 801. |
-| **803** | `PARTIAL_PAYMENT` | **Status Update** | `user_sync_${owner_id}.db` | Logs split/partial payments to 801. |
-| **804** | `PAYOUT` | **Append** | `user_sync_${owner_id}.db` | Vendor pay distribution audit logs. |
-| **805** | `PAYMENT_FAILED` | **Status Update** | `user_sync_${owner_id}.db` | Rejects/fails transaction 801. |
-| **806** | `EXPENSE_RECORD` | **Append** | `user_sync_${owner_id}.db` | General ledgers/split-bill logs. |
-| **901** | `BOOKING` | **Append** | `user_sync_${owner_id}.db` | Sourcing/rentals bookings. |
-| **902** | `ASSIGNED` | **Status Update** | `user_sync_${owner_id}.db` | Vendor assignment state. |
-| **903** | `RIDE_REQUESTED` | **Append** | `user_sync_${owner_id}.db` | Logistics ride-sharing/fleet request. |
-| **904** | `DRIVER_MATCHED` | **Status Update** | `user_sync_${owner_id}.db` | Fleet driver matched. |
-| **905** | `IN_RIDE` | **Status Update** | `user_sync_${owner_id}.db` | Fleet passenger in-transit status. |
-| **906** | `RECRUIT_APPLY` | **Append** | `user_sync_${owner_id}.db` | ERP applicant recruitment profile log. |
-| **907** | `PROCURE_REQ` | **Append** | `user_sync_${owner_id}.db` | ERP procurement request template. |
+* **Local Isolation**: Private data stays in local-only `user_${google_user_id}.db`.
+* **Profile Cache**: Public attributes cached in `matter` (`usr_${id}`, `type = 'profile'`).
+* **JWT Access Claims**: `db_url = libsql://db_owner_id.turso.io`, `scopes = ["t:99", "f:402"]` to restrict Turso sync access.
 
 ---
 
-## 4. Google Identity & Profile Sync
+## 6. Dynamic Forms
 
-| System Layer | Integration Blueprint | Purpose / Offline Benefit |
-| :--- | :--- | :--- |
-| **Local Isolation** | Private database file: `user_${google_user_id}.db` | Secures private client state offline on device. |
-| **User Profile Cache** | `matter` row: `id = usr_${google_user_id}`, `type = 'profile'`, `scope = p`, `title = displayName`, `data = {"email", "photoUrl"}` | Cached on device, syncing via shared workspaces. |
-| **Offline Rendering** | Syncs `profile` row to other members inside `user_sync_${owner_id}.db` | Renders user names and avatar image thumbnails offline. |
-| **Sync Access (JWT)** | JWT claims: `sub = google_user_id`, `db_url = libsql://db_owner_id.turso.io`, `scopes = ["t:99", "f:402"]` | Restricts background Turso syncs to authorized scopes on target database. |
+* **Definition (matter)**: `id = form_${name}`, `type = 'form'`, `data = {"fields": [...]}`.
+* **Assignment (mass)**: `id = mas_form_run_${sub_id}`, `matter = form_${name}`, `type = 'form_task'`.
+* **Submission (motion)**: `stream = mas_form_run_${sub_id}`, `seq = unixepoch_ms * 1000 + nonce`, `action = 604`, `data = values`.
 
 ---
 
-## 5. Dynamic Forms & Custom Input Management (SKIPPED FOR NOW)
+## 7. Pricing, Turso Costs & P&L
 
-| Form Phase | Target DB Table | Schema Mapping Blueprint | Purpose / Metadata |
+### Pricing Plans
+* **Free Tier**: Local only, global search, storefront browsing.
+* **Collaboration Tier**: ₹500/month per user (Turso cloud sync, real-time sharing).
+
+### Turso Chennai Scale Overage Cost (100k active DBs, 80M writes/mo)
+* **Base Plan**: Turso Scaler Plan ($24.92/mo or ₹2,081/mo).
+* **Sync Bandwidth (Overage)**: 9,600 GB @ $0.25/GB = $2,394.00/mo.
+* **Consolidated Sync Cost**: **$2,418.92/month (₹2,01,980/month)**.
+
+### Monthly P&L Projection (100k Plan 2 Users)
+| Category | Monthly Amount (USD) | Monthly Amount (INR) | Margin % / Notes |
 | :--- | :--- | :--- | :--- |
-| **A. Blueprint Definition** | `matter` | `id = form_${form_name}`, `type = 'form'`, `data = {"fields": [{"name", "type", "label", "required"}]}` | Defines form structure, fields, validation offline. |
-| **B. Assignment / Task** | `mass` | `id = mas_form_run_${submission_id}`, `matter = form_${form_name}`, `type = 'form_task'`, `active = 1` | Schedules form execution window (`start`/`end`). |
-| **C. Submission Log** | `motion` | `id = mot_form_submit_${id}`, `stream = mas_form_run_${submission_id}`, `action = 604`, `data = {"values": {}}` | Captures completed user inputs in immutable log. |
-
----
-
-## 6. Application Tiers & Pricing Plans
-
-| Plan Tier | Price (INR) | Additional AI Fees | Included Core Features |
-| :--- | :--- | :--- | :--- |
-| **Plan 1** (Free / Local Only) | **Free** | ₹0.00 | Offline-only workspace, global AI search, commerce storefront catalog browsing, and gigs matching. |
-| **Plan 2** (Paid Collaboration) | **₹500 / month** | **₹30 / million tokens** | All collaboration features (Turso cloud synchronization, real-time team sharing). |
-| **Community Plan** | **Free** *(Selected)* | **₹10 / million tokens** | Full Plan 2 collaboration features unlocked for selected accounts. |
-
----
-
-## 7. Turso Scaler Plan & Cost Optimization (Chennai Metropolitan Scale)
-
-Calculates the operational database sync costs for a full Chennai deployment (population ~12 Million, estimating 5 Million active users generating 80 Million total transactional sync writes across all business domains: CRM, POS, SCM, logistics, ERP, forms, HR, and accounting).
-
-* **Billing Base**: Turso Scaler Plan at **$24.92 / month (₹2,081 / month)**.
-* **Exchange Rate**: Converted at 1 USD = 83.5 INR.
-* **Database Licensing**: Turso allows **unlimited databases** on the paid Scaler plan with no monthly active database overage limits under their current model. Overage cost for running 100,000 distinct user/owner databases is **$0.00**.
-
-| Resource Metric | Included in Base Plan | Overage Rate (USD) | Overage Rate (INR) | Chennai Scale Usage | Overage Bill (USD) | Overage Bill (INR) | Final Consolidated Cost |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Rows Read** | 100 Billion | $0.80 / 1 Billion | ₹66.80 / 1 Billion | ~200 Billion | $0.80 | ₹66.80 | Included in final cost |
-| **Rows Written** | 100 Million | $0.80 / 1 Million | ₹66.80 / 1 Million | 80 Million | $0.00 | ₹0.00 | Included in final cost |
-| **Storage (Database)**| 24 GB | $0.50 / 1 GB | ₹41.75 / 1 GB | 18 GB | $0.00 | ₹0.00 | Included in final cost |
-| **Databases** | **Unlimited** | $0.00 | ₹0.00 | 100,000 databases | $0.00 | ₹0.00 | Included in final cost |
-| **Sync Bandwidth** | 24 GB | $0.25 / 1 GB | ₹20.88 / 1 GB | **9,600 GB** *(Double Optimized)* | $2,394.00 | ₹1,99,899.00 | **$2,418.92 / month**<br>**₹2,01,980 / month** |
-
----
-
-## 8. Profit & Cost Projection (Chennai Scale)
-
-Consolidated monthly business P&L projection for Chennai metro operations with 100,000 active collaborating users on Plan 2.
-
-| P&L Category | Item Description | Monthly Amount (USD) | Monthly Amount (INR) | Margin % / Notes |
-| :--- | :--- | :--- | :--- | :--- |
-| **Gross Revenue** | 100k Subscriptions (₹500 / user) + AI usage | $634,730.00 | ₹5,30,00,000.00 | 100.00% |
-| **Infrastructure Cost**| Turso Scaler Plan + Overage sync transfer | $2,418.92 | ₹2,01,980.00 | 0.38% of revenue |
-| **Hosting & Network** | Cloudflare Workers & Durable Objects | $500.00 | ₹41,750.00 | 0.08% of revenue |
-| **AI Token Cost** | Cloud LLM token wholesale queries | $11,976.00 | ₹10,00,000.00 | 1.89% of revenue |
-| **Total Expenses** | Database sync + Hosting + AI tokens | $14,894.92 | ₹12,43,730.00 | **2.35% Total Cost** |
-| **Net Profit** | **Operating Surplus** | **$619,835.08** | **₹5,17,56,270.00** | **97.65% Net Margin** |
+| **Gross Revenue** | $634,730.00 | ₹5,30,00,000.00 | 100.00% |
+| **Database Sync (Turso)**| $2,418.92 | ₹2,01,980.00 | 0.38% |
+| **Hosting & Network** | $500.00 | ₹41,750.00 | 0.08% |
+| **AI LLM wholesales** | $11,976.00 | ₹10,00,000.00 | 1.89% |
+| **Total Expenses** | $14,894.92 | ₹12,43,730.00 | **2.35%** |
+| **Net Operating Profit**| **$619,835.08** | **₹5,17,56,270.00** | **97.65% Net Margin** |

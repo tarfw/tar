@@ -55,22 +55,8 @@ export default function DomainSampleScreen() {
 
 
 
-  // Marketing
-  const [mktRating, setMktRating] = useState(5);
-  const [mktSubmitted, setMktSubmitted] = useState(false);
 
-  // Bookings
-  const [bookingStatus, setBookingStatus] = useState("Unscheduled");
-  const [bookingSlot, setBookingSlot] = useState("2:00 PM");
 
-  // Payments
-  const [payCategory, setPayCategory] = useState("Supplies");
-  const [payExpenses, setPayExpenses] = useState<number[]>([120, 340]);
-  const [customExpense, setCustomExpense] = useState("50");
-
-  // ERP
-  const [erpStatus, setErpStatus] = useState("Idle");
-  const [erpFuel, setErpFuel] = useState("Hybrid");
 
   // Dynamic Ledger State
   const [localMass, setLocalMass] = useState<MassRow[]>(selectedDomain.mass);
@@ -523,231 +509,13 @@ export default function DomainSampleScreen() {
 
 
 
-            {selectedDomain.id === "marketing" && (
-              <View>
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Form Net Promoter Score</Text>
-                  <View style={styles.posOptionsGrid}>
-                    {[1, 3, 5].map(rt => {
-                      const isSelected = mktRating === rt;
-                      return (
-                        <TouchableOpacity
-                          key={rt}
-                          onPress={() => setMktRating(rt)}
-                          style={[
-                            styles.posGridSelectBox,
-                            isSelected ? styles.posGridSelectBoxSelected : null
-                          ] as any}
-                        >
-                          <Text style={styles.posEmojiIconSmall}>⭐</Text>
-                          <View style={styles.posGridSelectBoxTextContainer}>
-                            <Text style={[styles.posGridBoxTitle, isSelected ? styles.posGridBoxTitleSelected : null] as any}>
-                              {rt} Stars
-                            </Text>
-                            <Text style={styles.posGridBoxSubtitle}>Form Selection</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
 
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Response Audit</Text>
-                  <View style={styles.posOptionsGrid}>
-                    <TouchableOpacity
-                      onPress={() => setMktSubmitted(!mktSubmitted)}
-                      style={[
-                        styles.posGridSelectBox,
-                        mktSubmitted ? styles.posGridSelectBoxSelected : null
-                      ] as any}
-                    >
-                      <Text style={styles.posEmojiIconSmall}>📝</Text>
-                      <View style={styles.posGridSelectBoxTextContainer}>
-                        <Text style={[styles.posGridBoxTitle, mktSubmitted ? styles.posGridBoxTitleSelected : null] as any}>
-                          {mktSubmitted ? "Submitted!" : "Submit Form"}
-                        </Text>
-                        <Text style={styles.posGridBoxSubtitle}>Append Code 604</Text>
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            )}
 
-            {selectedDomain.id === "bookings" && (
-              <View>
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Booking Status</Text>
-                  <View style={styles.posOptionsGrid}>
-                    {["Unscheduled", "Confirmed"].map(bs => {
-                      const isSelected = bookingStatus === bs;
-                      return (
-                        <TouchableOpacity
-                          key={bs}
-                          onPress={() => setBookingStatus(bs)}
-                          style={[
-                            styles.posGridSelectBox,
-                            isSelected ? styles.posGridSelectBoxSelected : null
-                          ] as any}
-                        >
-                          <Text style={styles.posEmojiIconSmall}>📅</Text>
-                          <View style={styles.posGridSelectBoxTextContainer}>
-                            <Text style={[styles.posGridBoxTitle, isSelected ? styles.posGridBoxTitleSelected : null] as any}>
-                              {bs}
-                            </Text>
-                            <Text style={styles.posGridBoxSubtitle}>Slot Allocation</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
 
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Time Slot Selection</Text>
-                  <View style={styles.posOptionsGrid}>
-                    {["2:00 PM", "3:00 PM"].map(sl => {
-                      const isSelected = bookingSlot === sl;
-                      return (
-                        <TouchableOpacity
-                          key={sl}
-                          onPress={() => setBookingSlot(sl)}
-                          style={[
-                            styles.posGridSelectBox,
-                            isSelected ? styles.posGridSelectBoxSelected : null
-                          ] as any}
-                        >
-                          <Text style={styles.posEmojiIconSmall}>⏳</Text>
-                          <View style={styles.posGridSelectBoxTextContainer}>
-                            <Text style={[styles.posGridBoxTitle, isSelected ? styles.posGridBoxTitleSelected : null] as any}>
-                              {sl}
-                            </Text>
-                            <Text style={styles.posGridBoxSubtitle}>Salon Stylist</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
-            )}
 
-            {selectedDomain.id === "payments" && (
-              <View>
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Budget Allocation Category</Text>
-                  <View style={styles.posOptionsGrid}>
-                    {["Supplies", "Travel", "Software"].map(cat => {
-                      const isSelected = payCategory === cat;
-                      return (
-                        <TouchableOpacity
-                          key={cat}
-                          onPress={() => setPayCategory(cat)}
-                          style={[
-                            styles.posGridSelectBox,
-                            isSelected ? styles.posGridSelectBoxSelected : null
-                          ] as any}
-                        >
-                          <Text style={styles.posEmojiIconSmall}>💵</Text>
-                          <View style={styles.posGridSelectBoxTextContainer}>
-                            <Text style={[styles.posGridBoxTitle, isSelected ? styles.posGridBoxTitleSelected : null] as any}>
-                              {cat}
-                            </Text>
-                            <Text style={styles.posGridBoxSubtitle}>Target Budget</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
 
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Add Ledger Expense</Text>
-                  <View style={styles.posOptionsGrid}>
-                    <View style={[styles.posGridSelectBox, { minWidth: "100%", borderWidth: 0, backgroundColor: "#f4f4f5" }]}>
-                      <Text style={styles.posEmojiIconSmall}>➕</Text>
-                      <TextInput
-                        style={{ flex: 1, fontSize: 13, fontWeight: "700", color: "#18181b", padding: 0 }}
-                        keyboardType="numeric"
-                        value={customExpense}
-                        onChangeText={setCustomExpense}
-                        placeholder="Expense amount..."
-                      />
-                      <TouchableOpacity
-                        onPress={() => {
-                          const val = parseFloat(customExpense);
-                          if (!isNaN(val)) {
-                            setPayExpenses(prev => [...prev, val]);
-                          }
-                        }}
-                        style={{ backgroundColor: selectedDomain.color, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}
-                      >
-                        <Text style={{ color: "#fff", fontWeight: "800", fontSize: 10 }}>ADD</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            )}
 
-            {selectedDomain.id === "erp" && (
-              <View>
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Ride Dispatch State</Text>
-                  <View style={styles.posOptionsGrid}>
-                    {["Idle", "In Ride", "Complete"].map(st => {
-                      const isSelected = erpStatus === st;
-                      return (
-                        <TouchableOpacity
-                          key={st}
-                          onPress={() => setErpStatus(st)}
-                          style={[
-                            styles.posGridSelectBox,
-                            isSelected ? styles.posGridSelectBoxSelected : null
-                          ] as any}
-                        >
-                          <Text style={styles.posEmojiIconSmall}>🚘</Text>
-                          <View style={styles.posGridSelectBoxTextContainer}>
-                            <Text style={[styles.posGridBoxTitle, isSelected ? styles.posGridBoxTitleSelected : null] as any}>
-                              {st}
-                            </Text>
-                            <Text style={styles.posGridBoxSubtitle}>Active Phase</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
 
-                <View style={styles.posOptionsSectionGrid}>
-                  <Text style={styles.posGridSectionLabel}>Fuel Audit</Text>
-                  <View style={styles.posOptionsGrid}>
-                    {["Hybrid", "Electric"].map(fl => {
-                      const isSelected = erpFuel === fl;
-                      return (
-                        <TouchableOpacity
-                          key={fl}
-                          onPress={() => setErpFuel(fl)}
-                          style={[
-                            styles.posGridSelectBox,
-                            isSelected ? styles.posGridSelectBoxSelected : null
-                          ] as any}
-                        >
-                          <Text style={styles.posEmojiIconSmall}>⚡</Text>
-                          <View style={styles.posGridSelectBoxTextContainer}>
-                            <Text style={[styles.posGridBoxTitle, isSelected ? styles.posGridBoxTitleSelected : null] as any}>
-                              {fl}
-                            </Text>
-                            <Text style={styles.posGridBoxSubtitle}>Battery Audit</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
-            )}
 
           </View>
 
@@ -814,19 +582,9 @@ export default function DomainSampleScreen() {
                 isSelected = item.type === "stock" && posSpice === "medium";
                 title = item.type === "slot" ? "Dining Table #4 Reservation" : "Biryani Inventory Reserve";
 
-              } else if (selectedDomain.id === "marketing") {
-                isSelected = mktSubmitted;
-                title = "Customer Feedback Form Blueprints";
-              } else if (selectedDomain.id === "bookings") {
-                isSelected = bookingStatus === "Confirmed";
-                title = `Stylist Haircut Slot: ${bookingSlot}`;
-              } else if (selectedDomain.id === "payments") {
-                isSelected = payCategory === "Supplies";
-                title = `${payCategory} Budget Pool`;
-              } else if (selectedDomain.id === "erp") {
-                isSelected = erpStatus === "In Ride";
-                title = "Prius Fleet Booking Log";
               }
+
+
 
               const isOutOfStock = item.qty !== null && Number(item.qty) <= 0;
 

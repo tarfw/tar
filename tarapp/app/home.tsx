@@ -23,21 +23,7 @@ import { getCurrentUser, UserProfile } from "../lib/auth";
 
 import { upsertMatterVector } from "../lib/vectorStore";
 
-let ExpoSpeechRecognitionModule: any = null;
-let useSpeechRecognitionEvent: (event: string, callback: (event: any) => void) => void = () => {};
 
-try {
-  const speechModule = require("expo-speech-recognition");
-  ExpoSpeechRecognitionModule = speechModule.ExpoSpeechRecognitionModule;
-  useSpeechRecognitionEvent = speechModule.useSpeechRecognitionEvent;
-} catch (err) {
-  console.warn("expo-speech-recognition native module not found, speech recognition disabled.", err);
-}
-
-
-
-const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-const MODEL = "openai/gpt-oss-120b";
 
 
 const groupOrderItems = (items: any[]) => {
@@ -113,218 +99,7 @@ export default function HomePage() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
-  // Native Voice Dictation Integration
-  const [isRecording, setIsRecording] = useState(false);
-  const [transcribedText, setTranscribedText] = useState("");
-  const [isProcessingVoiceCommand, setIsProcessingVoiceCommand] = useState(false);
 
-  // Listen for speech results
-  useSpeechRecognitionEvent("result", (event) => {
-    const text = event.results[0]?.transcript ?? "";
-    setTranscribedText(text);
-  });
-
-  useSpeechRecognitionEvent("end", () => {
-    setIsRecording(false);
-  });
-
-  useSpeechRecognitionEvent("error", (event) => {
-    console.error("Speech recognition error:", event.error, event.message);
-    setIsRecording(false);
-  });
-
-  const handleMicPress = async () => {
-    if (!ExpoSpeechRecognitionModule) {
-      Alert.alert(
-        "Speech Recognition Unavailable",
-        "Speech recognition is not compiled in this development build. Please tap on a text input and use the microphone button on your keyboard instead."
-      );
-      return;
-    }
-
-    if (isRecording) {
-      try {
-        ExpoSpeechRecognitionModule.stop();
-      } catch (err) {
-        console.error("Failed to stop recording:", err);
-      }
-      setIsRecording(false);
-      
-      // Process the transcribed text if any
-      if (transcribedText.trim()) {
-        await handleProcessVoiceCommand(transcribedText);
-      }
-    } else {
-      try {
-        const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-        if (!permission.granted) {
-          Alert.alert("Permission Denied", "Microphone and speech recognition permissions are required.");
-          return;
-        }
-
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        setTranscribedText("");
-        setIsRecording(true);
-
-        ExpoSpeechRecognitionModule.start({
-          lang: "en-US",
-          interimResults: true,
-        });
-      } catch (err) {
-        console.error("Failed to start voice recognition:", err);
-        setIsRecording(false);
-        Alert.alert("Error", "Could not start voice recognition.");
-      }
-    }
-  };
-
-  const handleProcessVoiceCommand = async (command: string) => {
-    setIsProcessingVoiceCommand(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${GROQ_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            {
-              role: "system",
-               content: `You are the TAR AI Agent. Map requests to 4 tables:
-1. matter (entities/products/tasks): id, code, type, scope, title, data
-2. mass (inventory/time/price): id, matter, type, scope, qty, value, geo, start, end, data
-3. relation (links): src, tgt, type
-4. motion (events/logs): id, stream, seq, action, status, delta, scope, data
-
-OPCODES for motion.action:
-- 201: SALE (Logged a sale/receipt)
-- 504: TASK_ASSIGNED (Simple notification, reminder, or actionable to-do item)
-- 100: SYSTEM/UPDATE (Generic inventory or system change)
-
-MODELING RULES:
-- Note (pure idea): Create only a 'matter' entry with type="note" and scope="p".
-- Task (to-do): Create a 'matter' with type="task", scope="p" and a corresponding 'motion' (stream=matter.id, action=504, status="OPEN", scope="p").
-- Reminder: Create a 'matter' with type="task", scope="p" and a corresponding 'mass' entry (matter=matter.id, type="reminder", scope="p", start="YYYY-MM-DD HH:MM:SS" when it should trigger).
-- Scheduled Task (Deadline): Create a 'matter' with type="task", scope="p", a 'mass' entry (matter=matter.id, type="deadline", scope="p", start="YYYY-MM-DD" due date), and a 'motion' (stream=matter.id, action=504, status="OPEN", scope="p").
-
-IMPORTANT: motion.delta MUST be a number (e.g. 250 or -5), NOT a JSON string or object.
-
-Output pure JSON exactly:
-{
-  "reply": "Short confirmation",
-  "matters": [],
-  "masses": [],
-  "relations": [],
-  "motions": [{ "id": "mot_1", "stream": "task_123", "seq": 1, "action": 504, "status": "OPEN", "scope": "p", "data": "{\\"task\\":\\"Sleep for 1 hour\\"}" }]
-}
-Use string IDs to link items. Omit arrays if empty. NO markdown.`
-            },
-            {
-              role: "user",
-              content: command
-            }
-          ],
-          response_format: { type: "json_object" }
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
-      }
-
-      const json = await response.json();
-      const content = json.choices[0].message.content;
-      const parsed = JSON.parse(content);
-
-      const db = getUserDb();
-      let hasChanges = false;
-
-      const idMap = new Map();
-      const mapId = (oldId: string, prefix: string) => {
-        if (!oldId) return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-        if (oldId.length < 15) {
-          if (!idMap.has(oldId)) {
-            idMap.set(oldId, `${prefix}_${Date.now()}_${Math.random().toString(36).substring(7)}`);
-          }
-          return idMap.get(oldId);
-        }
-        return oldId;
-      };
-
-      if (parsed.matters && parsed.matters.length > 0) {
-        for (const m of parsed.matters) {
-           const remappedId = mapId(m.id, 'mat');
-           await db.run(
-             "INSERT OR REPLACE INTO matter (id, code, type, scope, title, data) VALUES (?, ?, ?, ?, ?, ?)",
-             [remappedId, m.code || null, m.type || "note", m.scope || "p", m.title || null, m.data || null]
-           );
-
-           try {
-             await upsertMatterVector(remappedId, {
-               title: m.title || "",
-               type: m.type || "note",
-               scope: m.scope || "p",
-               code: m.code || null,
-               data: m.data || null
-             });
-           } catch (vectorErr) {
-             console.error("Vector sync failed in voice command:", vectorErr);
-           }
-        }
-        hasChanges = true;
-      }
-
-      if (parsed.masses && parsed.masses.length > 0) {
-        for (const m of parsed.masses) {
-           await db.run(
-             "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, start, end, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-             [mapId(m.id, 'mas'), mapId(m.matter, 'mat'), m.type || "slot", m.scope || "p", m.qty || null, m.value || null, m.start || null, m.end || null, m.data || null]
-           );
-        }
-        hasChanges = true;
-      }
-
-      if (parsed.relations && parsed.relations.length > 0) {
-        for (const r of parsed.relations) {
-           await db.run(
-             "INSERT INTO relation (src, tgt, type) VALUES (?, ?, ?)",
-             [mapId(r.src, 'mat'), mapId(r.tgt, 'mat'), r.type]
-           );
-        }
-        hasChanges = true;
-      }
-
-      if (parsed.motions && parsed.motions.length > 0) {
-        for (const m of parsed.motions) {
-          const streamId = mapId(m.stream, 'mat');
-          const seqRow = await db.all(
-            "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?",
-            [streamId]
-          );
-          const seq = seqRow[0]?.next_seq || 1;
-           await db.run(
-             "INSERT INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-             [mapId(m.id, 'mot'), streamId, seq, m.action || 504, m.status || "OPEN", m.delta || null, m.scope || "p", m.data || null]
-           );
-        }
-        hasChanges = true;
-      }
-
-
-
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Command Logged", parsed.reply || "Your voice request has been processed.");
-    } catch (error) {
-      console.error("Groq API Voice Error:", error);
-      Alert.alert("Voice Parsing Failed", "Could not understand or parse the command.");
-    } finally {
-      setIsProcessingVoiceCommand(false);
-      setRefreshTrigger(prev => prev + 1);
-    }
-  };
 
   useFocusEffect(
     useCallback(() => {
@@ -394,9 +169,42 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
               raw: s
             }));
 
-          const uPendingMotions = await db.all("SELECT *, 'user' as originDb FROM motion WHERE status != 'COMPLETED' AND action != 201 AND scope = 'p' ORDER BY time DESC LIMIT 20");
+          const deriveTimeFromSeq = (seq: number) => {
+            let ms = seq;
+            if (seq > 1000000000000000) ms = Math.floor(seq / 1000);
+            else if (seq < 1000000000000) ms = seq * 1000;
+            return new Date(ms).toISOString();
+          };
+
+          const mapMotionRow = (r: any) => {
+            let statusStr = "";
+            let dataObj: any = {};
+            try {
+              dataObj = JSON.parse(r.data) || {};
+              statusStr = dataObj.status || "";
+            } catch (_) {}
+
+            if (!statusStr) {
+              statusStr = r.phase === 308 ? "COMPLETED" : (r.phase === 306 ? "OPEN" : "PENDING");
+            }
+
+            return {
+              id: `${r.stream}_${r.seq}`,
+              stream: r.stream,
+              seq: r.seq,
+              action: r.action,
+              status: statusStr,
+              delta: r.delta,
+              data: r.data,
+              time: deriveTimeFromSeq(r.seq),
+              scope: "p",
+              originDb: r.originDb || "user"
+            };
+          };
+
+          const uPendingMotionsRaw = await db.all("SELECT stream, seq, action, phase, delta, data, 'user' as originDb FROM motion WHERE phase != 308 AND action != 201 ORDER BY seq DESC LIMIT 20");
           
-          const pendingMotions = Array.isArray(uPendingMotions) ? uPendingMotions : [];
+          const pendingMotions = (uPendingMotionsRaw || []).map(mapMotionRow);
 
           // Load pending tasks (matter records of type 'task' that do not have a COMPLETED motion log)
           const pendingTasksQuery = `
@@ -405,7 +213,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             WHERE m.type = 'task' AND m.scope = 'p'
               AND NOT EXISTS (
                 SELECT 1 FROM motion mot
-                WHERE mot.stream = m.id AND (mot.status = 'COMPLETED' OR mot.action = 504)
+                WHERE mot.stream = m.id AND mot.phase = 308
               )
           `;
 
@@ -431,9 +239,9 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
           setNowItems(groupedNow);
 
           // 3. Load Past Items (completed motions, receipts, logs)
-          const uPastMotions = await db.all("SELECT *, 'user' as originDb FROM motion WHERE (status = 'COMPLETED' OR action = 201) AND scope = 'p' ORDER BY time DESC LIMIT 30");
+          const uPastMotionsRaw = await db.all("SELECT stream, seq, action, phase, delta, data, 'user' as originDb FROM motion WHERE (phase = 308 OR action = 201) ORDER BY seq DESC LIMIT 30");
           
-          const combinedPast = Array.isArray(uPastMotions) ? uPastMotions : [];
+          const combinedPast = (uPastMotionsRaw || []).map(mapMotionRow);
           const groupedPast = groupOrderItems(combinedPast)
             .sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")))
             .slice(0, 40);
@@ -464,7 +272,7 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
     }, [massId, refreshTrigger])
   );
 
-   const handleMarkDone = async (item: any) => {
+    const handleMarkDone = async (item: any) => {
     try {
       const db = getUserDb();
       
@@ -473,45 +281,51 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         await db.run("UPDATE mass SET active = 0 WHERE id = ?", [item.id]);
         
         // Log a completed motion log
-        const motionId = `mot_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [item.raw.matter]);
-        const seq = seqRow[0]?.next_seq || 1;
+        const seq = seqRow[0]?.next_seq || (Date.now() * 1000);
         
         await db.run(
-          "INSERT INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO motion (stream, seq, action, phase, delta, data) VALUES (?, ?, ?, ?, ?, ?)",
           [
-            motionId,
             item.raw.matter,
             seq,
             504, // TASK_ASSIGNED Opcode
-            "COMPLETED",
+            308, // phase: COMPLETED
             null,
-            "p", // scope
-            JSON.stringify({ task: item.subtitle, completed_at: new Date().toISOString() })
+            JSON.stringify({ task: item.subtitle, status: "COMPLETED", completed_at: new Date().toISOString() })
           ]
         );
       } else if (item.isTaskMatter) {
         // Mark task done by inserting a completed motion log for this matter stream
-        const motionId = `mot_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [item.id]);
-        const seq = seqRow[0]?.next_seq || 1;
+        const seq = seqRow[0]?.next_seq || (Date.now() * 1000);
         
         await db.run(
-          "INSERT INTO motion (id, stream, seq, action, status, delta, scope, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO motion (stream, seq, action, phase, delta, data) VALUES (?, ?, ?, ?, ?, ?)",
           [
-            motionId,
             item.id,
             seq,
             504, // TASK_ASSIGNED Opcode
-            "COMPLETED",
+            308, // phase: COMPLETED
             null,
-            "p", // scope
-            JSON.stringify({ task: item.subtitle, completed_at: new Date().toISOString() })
+            JSON.stringify({ task: item.subtitle, status: "COMPLETED", completed_at: new Date().toISOString() })
           ]
         );
       } else {
         // Complete the motion task
-        await db.run("UPDATE motion SET status = 'COMPLETED' WHERE id = ?", [item.id]);
+        const [stream, seqStr] = item.id.split("_");
+        const seq = Number(seqStr);
+        if (stream && !isNaN(seq)) {
+          const rows = await db.all("SELECT data FROM motion WHERE stream = ? AND seq = ?", [stream, seq]);
+          let existingData = {};
+          if (rows && rows[0]) {
+            try {
+              existingData = JSON.parse((rows[0] as any).data) || {};
+            } catch (_) {}
+          }
+          const updatedData = JSON.stringify({ ...existingData, status: "COMPLETED" });
+          await db.run("UPDATE motion SET phase = 308, data = ? WHERE stream = ? AND seq = ?", [updatedData, stream, seq]);
+        }
       }
     } catch (e) {
       console.error("Failed to mark done:", e);
@@ -860,6 +674,24 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
         style={{ flex: 1 }}
       >
 
+        {/* Top Header Bar */}
+        <View style={styles.topBar}>
+          <View style={styles.topBarLeft}>
+            <TouchableOpacity 
+              style={styles.profileCircleBtn}
+              onPress={() => router.push('/profile')}
+              activeOpacity={0.8}
+            >
+              <Image 
+                source={{ uri: userProfile?.photo || "https://api.dicebear.com/7.x/notionists/png?seed=Alice&glassesProbability=100&backgroundColor=c0aede" }} 
+                style={styles.profileImage} 
+              />
+            </TouchableOpacity>
+            <Text style={styles.topBarTitle}>
+              Hello, {userProfile?.name || "Guest"}
+            </Text>
+          </View>
+        </View>
 
         <ScrollView 
           style={styles.scrollView} 
@@ -913,45 +745,13 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
           )}
         </ScrollView>
 
-        {/* Live Transcription Preview Overlay */}
-        {isRecording && (
-          <View style={styles.transcriptionOverlay}>
-            <View style={styles.recordingIndicatorContainer}>
-              <View style={styles.recordingDot} />
-              <Text style={styles.recordingText}>Listening...</Text>
-            </View>
-            <View style={{ maxHeight: 60 }}>
-              <Text style={styles.transcriptionText}>
-                {transcribedText || "..."}
-              </Text>
-            </View>
-          </View>
-        )}
 
-        {/* Processing Loader */}
-        {isProcessingVoiceCommand && (
-          <View style={styles.transcriptionOverlay}>
-            <View style={styles.recordingIndicatorContainer}>
-              <ActivityIndicator size="small" color="#6366f1" style={{ marginRight: 8 }} />
-              <Text style={[styles.recordingText, { color: '#6366f1' }]}>Processing command...</Text>
-            </View>
-          </View>
-        )}
 
         {/* Bottom Search Bar */}
         <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
 
           <View style={styles.bottomBarRow}>
             <View style={styles.leftGroup}>
-              <TouchableOpacity 
-                style={styles.circleBtn}
-                onPress={() => router.push('/profile')}
-              >
-                <Image 
-                  source={{ uri: "https://api.dicebear.com/7.x/notionists/png?seed=Alice&glassesProbability=100&backgroundColor=c0aede" }} 
-                  style={{ width: 40, height: 40, borderRadius: 20 }} 
-                />
-              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.bigWorkspaceChip}
                 onPress={() => router.push("/workspace")}
@@ -962,25 +762,8 @@ Use string IDs to link items. Omit arrays if empty. NO markdown.`
             </View>
 
             <View style={styles.rightGroup}>
-              {ExpoSpeechRecognitionModule && (
-                <TouchableOpacity 
-                  style={[
-                    styles.circleBtn,
-                    isRecording && styles.micBtnRecording
-                  ]}
-                  onPress={handleMicPress}
-                >
-                    <Ionicons 
-                      name={isRecording ? "stop" : "mic-outline"} 
-                      size={18} 
-                      color={isRecording ? "#fff" : "#1a1a1a"} 
-                      style={{ marginRight: 0 }}
-                    />
-                </TouchableOpacity>
-              )}
-              
               <TouchableOpacity 
-                style={[styles.circleBtn, { marginLeft: ExpoSpeechRecognitionModule ? 6 : 0 }]}
+                style={styles.circleBtn}
                 activeOpacity={0.8}
                 onPress={() => router.push('/aichat')}
               >
@@ -1192,7 +975,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 10,
+    marginLeft: 0,
   },
   aiText: {
     fontSize: 13,
@@ -1557,5 +1340,39 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.3,
+  },
+  topBar: {
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    paddingHorizontal: 20,
+    backgroundColor: "white",
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  topBarLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  profileCircleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: "hidden",
+    backgroundColor: "#f1f5f9",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  profileImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  topBarTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0f172a",
+    marginLeft: 12,
   }
 });

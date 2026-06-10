@@ -445,25 +445,55 @@ export default function WorkspaceScreen() {
       }
 
       // Timeline:
-      let motionRows: any[] = [];
+      let motionRowsRaw: any[] = [];
       if (customerId === "general_personal") {
-        motionRows = await db.all(
-          `SELECT id, stream, seq, action, status, delta, data, time FROM motion
-           WHERE scope = ? AND stream NOT IN (SELECT id FROM matter) AND stream NOT IN (SELECT id FROM mass)
-           ORDER BY time DESC, seq DESC LIMIT 100`,
-          [scope || "c:guest"]
+        motionRowsRaw = await db.all(
+          `SELECT stream, seq, action, phase, delta, data FROM motion
+           ORDER BY seq DESC LIMIT 100`
         );
       } else {
-        motionRows = await db.all(
-          `SELECT id, stream, seq, action, status, delta, data, time FROM motion
+        motionRowsRaw = await db.all(
+          `SELECT stream, seq, action, phase, delta, data FROM motion
            WHERE stream = ?
               OR stream IN (SELECT id FROM mass WHERE matter = ?)
               OR stream IN (SELECT tgt FROM relation WHERE src = ?)
               OR stream IN (SELECT id FROM mass WHERE matter IN (SELECT tgt FROM relation WHERE src = ?))
-           ORDER BY time DESC, seq DESC LIMIT 100`,
+           ORDER BY seq DESC LIMIT 100`,
           [customerId, customerId, customerId, customerId]
         );
       }
+
+      // Map back to CrmMotionRow structure to keep UI code intact
+      const deriveTimeFromSeq = (seq: number) => {
+        let ms = seq;
+        if (seq > 1000000000000000) ms = Math.floor(seq / 1000);
+        else if (seq < 1000000000000) ms = seq * 1000;
+        return new Date(ms).toISOString();
+      };
+
+      const motionRows = motionRowsRaw.map((r: any) => {
+        let statusStr = "";
+        let dataObj: any = {};
+        try {
+          dataObj = JSON.parse(r.data) || {};
+          statusStr = dataObj.status || "";
+        } catch (_) {}
+
+        if (!statusStr) {
+          statusStr = OPCODE_LABELS[r.phase] || OPCODE_LABELS[r.action] || String(r.phase || r.action);
+        }
+
+        return {
+          id: `${r.stream}_${r.seq}`,
+          stream: r.stream,
+          seq: r.seq,
+          action: r.action,
+          status: statusStr,
+          delta: r.delta,
+          data: r.data,
+          time: deriveTimeFromSeq(r.seq)
+        };
+      });
 
       // Derive current state
       const infoRows = await db.all(
@@ -570,12 +600,39 @@ export default function WorkspaceScreen() {
 
   // Append a motion row to a stream with monotonic seq.
   const appendMotion = async (db: any, stream: string, action: number, status: string, delta: number | null, data: Record<string, any>) => {
+    // Map legacy status strings to phase integer codes
+    const phaseMap: Record<string, number> = {
+      "DISPATCHED": 401,
+      "IN_TRANSIT": 402,
+      "DRIVER_ASSIGNED": 403,
+      "ETA_UPDATED": 404,
+      "TRANSFER_OUT": 405,
+      "TRANSFER_IN": 406,
+      "RETURN_REQUESTED": 407,
+      "DELIVERED": 109,
+      "ATTEMPT_FAILED": 410,
+      "NEW_LEAD": 303,
+      "CONTACTED": 304,
+      "CONVERTED": 305,
+      "CLOSED": 303,
+      "OPEN": 306,
+      "REPLIED": 307,
+      "RESOLVED": 308,
+      "COMPLETED": 308,
+      "VISITED": 301,
+      "OFFER_SENT": 309,
+      "REVIEWED": 302,
+    };
+    const phase = phaseMap[status] || action;
     const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [stream]);
-    const nextSeq = seqRow[0]?.next_seq || 1;
-    const motionId = `mot_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const nextSeq = seqRow[0]?.next_seq || (Date.now() * 1000);
+    
+    // Store status in data JSON so we don't lose the legacy string metadata, for backwards compatibility
+    const updatedData = { ...data, status };
+    
     await db.run(
-      "INSERT INTO motion (id, stream, seq, action, status, delta, scope, data, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [motionId, stream, nextSeq, action, status, delta, scope, JSON.stringify(data), new Date().toISOString()]
+      "INSERT INTO motion (stream, seq, action, phase, delta, data) VALUES (?, ?, ?, ?, ?, ?)",
+      [stream, nextSeq, action, phase, delta, JSON.stringify(updatedData)]
     );
   };
 

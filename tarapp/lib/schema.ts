@@ -30,6 +30,8 @@ export const SCHEMA_STATEMENTS = [
     qty REAL,
     value REAL,
     active INTEGER DEFAULT 1,
+    variant INTEGER,
+    mark INTEGER DEFAULT 0,
     geo TEXT,
     start TEXT,
     end TEXT,
@@ -37,16 +39,13 @@ export const SCHEMA_STATEMENTS = [
     time TEXT DEFAULT CURRENT_TIMESTAMP
   )`,
   `CREATE TABLE IF NOT EXISTS motion (
-    id TEXT PRIMARY KEY,
     stream TEXT NOT NULL,
     seq INTEGER NOT NULL,
     action INTEGER NOT NULL,
-    status TEXT,
+    phase INTEGER,
     delta REAL,
-    scope TEXT NOT NULL,
     data TEXT,
-    time TEXT DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(stream, seq)
+    PRIMARY KEY (stream, seq)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_matter_code ON matter(code)`,
   `CREATE INDEX IF NOT EXISTS idx_matter_public ON matter(public, type)`,
@@ -55,7 +54,5 @@ export const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_relation_type ON relation(type)`,
   `CREATE INDEX IF NOT EXISTS idx_mass_matter ON mass(matter)`,
   `CREATE INDEX IF NOT EXISTS idx_mass_geo ON mass(geo)`,
-  `CREATE INDEX IF NOT EXISTS idx_mass_scope_type ON mass(scope, type)`,
-  `CREATE INDEX IF NOT EXISTS idx_motion_stream ON motion(stream, time)`,
-  `CREATE INDEX IF NOT EXISTS idx_motion_scope ON motion(scope)`
+  `CREATE INDEX IF NOT EXISTS idx_mass_scope_type ON mass(scope, type)`
 ];

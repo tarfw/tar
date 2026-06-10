@@ -93,6 +93,34 @@ const DANGER = "#a80000";
 const PRIORITIES = ["low", "medium", "high"];
 const LEAD_SOURCES = ["referral", "web", "walk_in", "campaign"];
 
+// Maps legacy status strings to their phase integer opcode. Shared by
+// appendMotion / phaseUpdateMotion — status itself is not persisted.
+const PHASE_MAP: Record<string, number> = {
+  "DISPATCHED": 401,
+  "IN_TRANSIT": 402,
+  "DRIVER_ASSIGNED": 403,
+  "ETA_UPDATED": 404,
+  "TRANSFER_OUT": 405,
+  "TRANSFER_IN": 406,
+  "RETURN_REQUESTED": 407,
+  "DELIVERED": 109,
+  "ATTEMPT_FAILED": 410,
+  "NEW_LEAD": 303,
+  "CONTACTED": 304,
+  "CONVERTED": 305,
+  "CLOSED": 303,
+  "OPEN": 306,
+  "REPLIED": 307,
+  "RESOLVED": 308,
+  "COMPLETED": 308,
+  "VISITED": 301,
+  "OFFER_SENT": 309,
+  "REVIEWED": 302,
+  "PAY_INIT": 801,
+  "PAY_SUCCESS": 802,
+  "PAY_FAILED": 805,
+};
+
 function parseData(raw: string | null): Record<string, any> {
   if (!raw) return {};
   try {
@@ -325,107 +353,100 @@ export default function WorkspaceScreen() {
     try {
       const db = getDb(customerId);
       
-      // Leads & Tickets (Only for Customer/Business/Vehicle)
-      let leadRows: any[] = [];
-      let ticketRows: any[] = [];
-      if (typeVal === "customer" || typeVal === "business" || typeVal === "vehicle" || typeVal === "product" || typeVal === "profile") {
-        leadRows = await db.all(
+      // All reads below are independent of one another, so fire them
+      // concurrently and await the batch once. Type-gated queries resolve to
+      // an empty array when not applicable, preserving the original behavior.
+      const isLeadTicket = typeVal === "customer" || typeVal === "business" || typeVal === "vehicle" || typeVal === "product" || typeVal === "profile";
+      const isPersonFamily = typeVal === "person" || typeVal === "family";
+      const isPersonal = customerId === "general_personal";
+      const personalScope = scope || "c:guest";
+      const NONE = Promise.resolve([] as any[]);
+
+      const [
+        leadRows,
+        ticketRows,
+        slotRows,
+        stockRows,
+        tripRows,
+        budgetRows,
+        invoiceRows,
+        variantRows,
+        modifierRows,
+        profileRows,
+        publishedProductRows,
+        taskRows,
+        noteRows,
+        motionRowsRaw,
+        infoRows,
+      ] = await Promise.all([
+        // Leads & Tickets (Customer/Business/Vehicle/Product/Profile)
+        isLeadTicket ? db.all(
           "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'lead' AND active = 1 ORDER BY time DESC",
           [customerId]
-        );
-        ticketRows = await db.all(
+        ) : NONE,
+        isLeadTicket ? db.all(
           "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'ticket' AND active = 1 ORDER BY time DESC",
           [customerId]
-        );
-      }
-
-      // Schedule Slots (Only for Team/Family)
-      let slotRows: any[] = [];
-      if (typeVal === "person" || typeVal === "family") {
-        slotRows = await db.all(
+        ) : NONE,
+        // Schedule Slots (Team/Family)
+        isPersonFamily ? db.all(
           "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'slot' ORDER BY start DESC",
           [customerId]
-        );
-      }
-
-      // Warehouse Inventory Stocks (Only for Warehouse)
-      let stockRows: any[] = [];
-      if (typeVal === "warehouse") {
-        stockRows = await db.all(
+        ) : NONE,
+        // Warehouse Inventory Stocks
+        typeVal === "warehouse" ? db.all(
           "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'stock' ORDER BY time DESC",
           [customerId]
-        );
-      }
-
-      // Carrier/Vehicle Trips (Only for Carrier/Vehicle)
-      let tripRows: any[] = [];
-      if (typeVal === "carrier" || typeVal === "vehicle") {
-        tripRows = await db.all(
+        ) : NONE,
+        // Carrier/Vehicle Trips
+        (typeVal === "carrier" || typeVal === "vehicle") ? db.all(
           "SELECT id, matter, type, qty, value, active, geo, start, end, data, time FROM mass WHERE matter = ? AND type = 'trip' ORDER BY start DESC",
           [customerId]
-        );
-      }
-
-      // Finance Budgets & Invoices (Only for Finance)
-      let budgetRows: any[] = [];
-      let invoiceRows: any[] = [];
-      if (typeVal === "finance") {
-        budgetRows = await db.all(
+        ) : NONE,
+        // Finance Budgets & Invoices
+        typeVal === "finance" ? db.all(
           "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'budget' ORDER BY time DESC",
           [customerId]
-        );
-        invoiceRows = await db.all(
+        ) : NONE,
+        typeVal === "finance" ? db.all(
           "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'invoice' ORDER BY time DESC",
           [customerId]
-        );
-      }
-
-      // Product Variants & Modifiers / Profile Storefronts
-      let variantRows: any[] = [];
-      let modifierRows: any[] = [];
-      let profileRows: any[] = [];
-      let publishedProductRows: any[] = [];
-      if (typeVal === "product") {
-        variantRows = await db.all(
+        ) : NONE,
+        // Product Variants & Modifiers / Published Profiles
+        typeVal === "product" ? db.all(
           "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'variant' ORDER BY time ASC",
           [customerId]
-        );
-        modifierRows = await db.all(
+        ) : NONE,
+        typeVal === "product" ? db.all(
           `SELECT ms.id, ms.matter, ms.type, ms.qty, ms.value, ms.active, ms.start, ms.end, ms.data, ms.time
            FROM mass ms
            JOIN relation r ON r.tgt = ms.matter AND r.src = ? AND r.type = 'modifier_of'
            WHERE ms.type = 'modifier'`,
           [customerId]
-        );
-        profileRows = await db.all(
+        ) : NONE,
+        typeVal === "product" ? db.all(
           `SELECT m.id, m.code, m.type, m.title, m.owner, m.data, m.time
            FROM matter m
            JOIN relation r ON r.tgt = m.id AND r.src = ? AND r.type = 'published_to'`,
           [customerId]
-        );
-      } else if (typeVal === "profile") {
-        publishedProductRows = await db.all(
+        ) : NONE,
+        // Profile Storefront — published products
+        typeVal === "profile" ? db.all(
           `SELECT m.id, m.code, m.type, m.title, m.owner, m.data, m.time
            FROM matter m
            JOIN relation r ON r.src = m.id AND r.tgt = ? AND r.type = 'published_to'`,
           [customerId]
-        );
-      }
-
-      // Tasks:
-      let taskRows: any[] = [];
-      if (customerId === "general_personal") {
-        taskRows = await db.all(
+        ) : NONE,
+        // Tasks
+        isPersonal ? db.all(
           `SELECT m.id, m.title, m.data, m.time, ms.id AS mass_id, ms.active, ms.start, ms.end
            FROM matter m
            LEFT JOIN mass ms ON ms.matter = m.id AND ms.type = 'slot'
            WHERE m.type = 'task' AND m.scope = ?
              AND m.id NOT IN (SELECT tgt FROM relation WHERE type = 'task')
            ORDER BY ms.active DESC, m.time DESC`,
-          [scope || "c:guest"]
-        );
-      } else {
-        taskRows = await db.all(
+          [personalScope]
+        ) : db.all(
           `SELECT m.id, m.title, m.data, m.time, ms.id AS mass_id, ms.active, ms.start, ms.end
            FROM matter m
            JOIN relation r ON r.tgt = m.id AND r.src = ? AND r.type = 'task'
@@ -433,39 +454,28 @@ export default function WorkspaceScreen() {
            WHERE m.type = 'task'
            ORDER BY ms.active DESC, m.time DESC`,
           [customerId]
-        );
-      }
-      // Notes:
-      let noteRows: any[] = [];
-      if (customerId === "general_personal") {
-        noteRows = await db.all(
+        ),
+        // Notes
+        isPersonal ? db.all(
           `SELECT m.id, m.title, m.data, m.time
            FROM matter m
            WHERE m.type = 'note' AND m.scope = ?
              AND m.id NOT IN (SELECT tgt FROM relation WHERE type = 'note')
            ORDER BY m.time DESC`,
-          [scope || "c:guest"]
-        );
-      } else {
-        noteRows = await db.all(
+          [personalScope]
+        ) : db.all(
           `SELECT m.id, m.title, m.data, m.time
            FROM matter m
            JOIN relation r ON r.tgt = m.id AND r.src = ? AND r.type = 'note'
            WHERE m.type = 'note'
            ORDER BY m.time DESC`,
           [customerId]
-        );
-      }
-
-      // Timeline:
-      let motionRowsRaw: any[] = [];
-      if (customerId === "general_personal") {
-        motionRowsRaw = await db.all(
+        ),
+        // Timeline (Activity ledger)
+        isPersonal ? db.all(
           `SELECT stream, seq, action, phase, delta, data FROM motion
            ORDER BY seq DESC LIMIT 100`
-        );
-      } else {
-        motionRowsRaw = await db.all(
+        ) : db.all(
           `SELECT stream, seq, action, phase, delta, data FROM motion
            WHERE stream = ?
               OR stream IN (SELECT id FROM mass WHERE matter = ?)
@@ -473,8 +483,15 @@ export default function WorkspaceScreen() {
               OR stream IN (SELECT id FROM mass WHERE matter IN (SELECT tgt FROM relation WHERE src = ?))
            ORDER BY seq DESC LIMIT 100`,
           [customerId, customerId, customerId, customerId]
-        );
-      }
+        ),
+        // Derived per-stream state source rows
+        db.all(
+          `SELECT stream, seq, action, data FROM motion
+           WHERE stream IN (SELECT id FROM mass WHERE matter = ?)
+           ORDER BY seq ASC`,
+          [customerId]
+        ),
+      ]);
 
       // Map back to CrmMotionRow structure to keep UI code intact
       const deriveTimeFromSeq = (seq: number) => {
@@ -485,16 +502,8 @@ export default function WorkspaceScreen() {
       };
 
       const motionRows = motionRowsRaw.map((r: any) => {
-        let statusStr = "";
-        let dataObj: any = {};
-        try {
-          dataObj = JSON.parse(r.data) || {};
-          statusStr = dataObj.status || "";
-        } catch (_) {}
-
-        if (!statusStr) {
-          statusStr = OPCODE_LABELS[r.phase] || OPCODE_LABELS[r.action] || String(r.phase || r.action);
-        }
+        // Status is the opcode — derive the label from phase/action, never from data.
+        const statusStr = OPCODE_LABELS[r.phase] || OPCODE_LABELS[r.action] || String(r.phase || r.action);
 
         return {
           id: `${r.stream}_${r.seq}`,
@@ -508,13 +517,7 @@ export default function WorkspaceScreen() {
         };
       });
 
-      // Derive current state
-      const infoRows = await db.all(
-        `SELECT stream, seq, action, data FROM motion
-         WHERE stream IN (SELECT id FROM mass WHERE matter = ?)
-         ORDER BY seq ASC`,
-        [customerId]
-      );
+      // Derive current state (infoRows fetched in the batch above)
       const info: Record<string, { stage: string; source?: string; note?: string; subject?: string; desc?: string }> = {};
       ((infoRows as any[]) || []).forEach((m) => {
         const e = info[m.stream] || (info[m.stream] = { stage: "new" });
@@ -626,42 +629,14 @@ export default function WorkspaceScreen() {
 
   // Append a motion row to a stream with monotonic seq.
   const appendMotion = async (db: any, stream: string, action: number, status: string, delta: number | null, data: Record<string, any>) => {
-    // Map legacy status strings to phase integer codes
-    const phaseMap: Record<string, number> = {
-      "DISPATCHED": 401,
-      "IN_TRANSIT": 402,
-      "DRIVER_ASSIGNED": 403,
-      "ETA_UPDATED": 404,
-      "TRANSFER_OUT": 405,
-      "TRANSFER_IN": 406,
-      "RETURN_REQUESTED": 407,
-      "DELIVERED": 109,
-      "ATTEMPT_FAILED": 410,
-      "NEW_LEAD": 303,
-      "CONTACTED": 304,
-      "CONVERTED": 305,
-      "CLOSED": 303,
-      "OPEN": 306,
-      "REPLIED": 307,
-      "RESOLVED": 308,
-      "COMPLETED": 308,
-      "VISITED": 301,
-      "OFFER_SENT": 309,
-      "REVIEWED": 302,
-      "PAY_INIT": 801,
-      "PAY_SUCCESS": 802,
-      "PAY_FAILED": 805,
-    };
-    const phase = phaseMap[status] || action;
+    const phase = PHASE_MAP[status] || action;
     const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [stream]);
     const nextSeq = seqRow[0]?.next_seq || (Date.now() * 1000);
-    
-    // Store status in data JSON so we don't lose the legacy string metadata, for backwards compatibility
-    const updatedData = { ...data, status };
-    
+
+    // Status is conveyed by the action/phase opcodes — data carries only payload.
     await db.run(
       "INSERT INTO motion (stream, seq, action, phase, delta, data) VALUES (?, ?, ?, ?, ?, ?)",
-      [stream, nextSeq, action, phase, delta, JSON.stringify(updatedData)]
+      [stream, nextSeq, action, phase, delta, JSON.stringify(data)]
     );
   };
 
@@ -673,32 +648,7 @@ export default function WorkspaceScreen() {
       [stream]
     );
 
-    const phaseMap: Record<string, number> = {
-      "DISPATCHED": 401,
-      "IN_TRANSIT": 402,
-      "DRIVER_ASSIGNED": 403,
-      "ETA_UPDATED": 404,
-      "TRANSFER_OUT": 405,
-      "TRANSFER_IN": 406,
-      "RETURN_REQUESTED": 407,
-      "DELIVERED": 109,
-      "ATTEMPT_FAILED": 410,
-      "NEW_LEAD": 303,
-      "CONTACTED": 304,
-      "CONVERTED": 305,
-      "CLOSED": 303,
-      "OPEN": 306,
-      "REPLIED": 307,
-      "RESOLVED": 308,
-      "COMPLETED": 308,
-      "VISITED": 301,
-      "OFFER_SENT": 309,
-      "REVIEWED": 302,
-      "PAY_INIT": 801,
-      "PAY_SUCCESS": 802,
-      "PAY_FAILED": 805,
-    };
-    const phase = phaseMap[status] || action;
+    const phase = PHASE_MAP[status] || action;
 
     if (rows && rows.length > 0) {
       const targetSeq = rows[0].seq;
@@ -711,10 +661,10 @@ export default function WorkspaceScreen() {
       const ph = dataObj.ph || {};
       ph[String(phase)] = Date.now();
 
+      // Status is conveyed by the action/phase opcodes — data carries only payload.
       const updatedData = {
         ...dataObj,
         ...data,
-        status,
         ph
       };
 
@@ -1061,7 +1011,7 @@ export default function WorkspaceScreen() {
         "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'stock', ?, ?, ?, 1, ?, NULL, ?, ?)",
         [stockId, selectedCustomer.id, scope, qtyVal, valVal, timeStr, JSON.stringify({ name }), timeStr]
       );
-      await appendMotion(db, stockId, 406, "TRANSFER_IN", qtyVal, { name, src: "vendor" });
+      await appendMotion(db, stockId, 406, "TRANSFER_IN", qtyVal, { src: "vendor" });
       await pushIfEnabled(db);
       setStockName(""); setStockQty(""); setStockVal("");
       setSheet(null);
@@ -1087,7 +1037,7 @@ export default function WorkspaceScreen() {
         "INSERT INTO mass (id, matter, type, scope, qty, value, active, geo, start, end, data, time) VALUES (?, ?, 'trip', ?, ?, 0, 1, ?, ?, NULL, ?, ?)",
         [tripId, selectedCustomer.id, scope, qtyVal, tripGeo, timeStr, JSON.stringify({ ref, driver: driverName, driverId: tripDriver || null }), timeStr]
       );
-      await appendMotion(db, tripId, 401, "DISPATCHED", null, { ref, driver: driverName });
+      await appendMotion(db, tripId, 401, "DISPATCHED", null, { ref });
       if (tripDriver) {
         await phaseUpdateMotion(db, tripId, 403, "DRIVER_ASSIGNED", null, { driverId: tripDriver, driverName });
       }
@@ -1136,7 +1086,7 @@ export default function WorkspaceScreen() {
         "INSERT INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'variant', ?, ?, ?, 1, ?, ?)",
         [variantId, selectedCustomer.id, scope, qtyVal, priceVal, JSON.stringify({ label }), timeStr]
       );
-      await appendMotion(db, variantId, 406, "TRANSFER_IN", qtyVal, { label, src: "vendor" });
+      await appendMotion(db, variantId, 406, "TRANSFER_IN", qtyVal, { src: "vendor" });
       await pushIfEnabled(db);
       setVariantLabel(""); setVariantQty(""); setVariantPrice("");
       setSheet(null);
@@ -1153,7 +1103,7 @@ export default function WorkspaceScreen() {
       await db.run("UPDATE mass SET qty = ? WHERE id = ?", [newQty, variant.id]);
       const action = direction === "in" ? 406 : 405;
       const status = direction === "in" ? "TRANSFER_IN" : "TRANSFER_OUT";
-      await appendMotion(db, variant.id, action, status, qtyChange, { label: parseData(variant.data).label });
+      await appendMotion(db, variant.id, action, status, qtyChange, {});
       await pushIfEnabled(db);
       await loadCustomerDetail(selectedCustomer.id, "product");
     });
@@ -1409,7 +1359,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  // ---- Tasks (matter + relation + mass slot + motion 504) ----
+  // ---- Tasks (matter + relation + mass slot) ----
 
   const createTask = () => {
     if (!selectedCustomer) return;
@@ -1437,7 +1387,6 @@ export default function WorkspaceScreen() {
         "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, NULL, ?)",
         [slotId, taskId, scope, timeStr, endStr, timeStr]
       );
-      await appendMotion(db, slotId, 504, "ASSIGNED", 1, {});
       try {
         await upsertMatterVector(taskId, { title, type: "task", scope, code: null, data: null });
       } catch (vErr) {
@@ -1459,10 +1408,8 @@ export default function WorkspaceScreen() {
       const timeStr = new Date().toISOString();
       if (isDone) {
         await db.run("UPDATE mass SET active = 1 WHERE id = ?", [task.mass_id]);
-        await phaseUpdateMotion(db, task.mass_id!, 504, "REOPENED", 1, {});
       } else {
         await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [timeStr, task.mass_id]);
-        await phaseUpdateMotion(db, task.mass_id!, 504, "DONE", -1, {});
       }
       await pushIfEnabled(db);
       const t = selectedCustomer.id === "general_personal" ? "personal" : (selectedCustomer.type || "customer");
@@ -1525,7 +1472,6 @@ export default function WorkspaceScreen() {
         "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, ?, ?)",
         [slotId, selectedCustomer.id, "slot", scope, timeStr, endStr, JSON.stringify({ title }), timeStr]
       );
-      await appendMotion(db, slotId, 501, "SHIFT_START", 1, { title });
       await pushIfEnabled(db);
       setSlotTitle(""); setSlotDuration("");
       setSheet(null);
@@ -2507,7 +2453,7 @@ export default function WorkspaceScreen() {
             {sheet === "task" && (
               <>
                 <Text style={styles.modalTitle}>Add a task</Text>
-                <Text style={styles.modalSchemaHint}>matter + relation (customer → task) + mass slot + motion 504</Text>
+                <Text style={styles.modalSchemaHint}>matter + relation (customer → task) + mass slot</Text>
                 <TextInput style={styles.modalInput} value={taskTitle} onChangeText={setTaskTitle} placeholder="Task title" placeholderTextColor={TEXT_TERTIARY} autoFocus />
                 <TextInput style={styles.modalInput} value={taskDueDays} onChangeText={setTaskDueDays} placeholder="Due in (days, optional)" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
                 <TouchableOpacity style={styles.modalSubmitBtn} onPress={createTask} disabled={busy} activeOpacity={0.8}>
@@ -2530,7 +2476,7 @@ export default function WorkspaceScreen() {
             {sheet === "slot" && (
               <>
                 <Text style={styles.modalTitle}>Schedule shift / chore</Text>
-                <Text style={styles.modalSchemaHint}>mass (type: slot, scope: {scope}) + motion 501 SHIFT_START</Text>
+                <Text style={styles.modalSchemaHint}>mass (type: slot, scope: {scope})</Text>
                 <TextInput style={styles.modalInput} value={slotTitle} onChangeText={setSlotTitle} placeholder="Shift/Chore title (e.g. Cleaning)" placeholderTextColor={TEXT_TERTIARY} autoFocus />
                 <TextInput style={styles.modalInput} value={slotDuration} onChangeText={setSlotDuration} placeholder="Duration (hours, default 8)" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
                 <TouchableOpacity style={styles.modalSubmitBtn} onPress={createSlot} disabled={busy} activeOpacity={0.8}>

@@ -31,7 +31,8 @@
       "WebFetch(domain:www.notion.so)",
       "WebSearch",
       "WebFetch(domain:docs.turso.tech)",
-      "WebFetch(domain:turso.tech)"
+      "WebFetch(domain:turso.tech)",
+      "Bash(npx tsc *)"
     ]
   }
 }

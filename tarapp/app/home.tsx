@@ -1,755 +1,445 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  ScrollView, 
-  TouchableOpacity, 
+import React, { useState, useCallback } from "react";
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
   Image,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
-  Alert
+  Alert,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
-import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
-import { getUserDb } from "../lib/db";
-import { setActiveMassId } from "../lib/state";
+import { useRouter, useFocusEffect } from "expo-router";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import {
+  getSelfId,
+  cachedSelfId,
+  getPrimarySyncDb,
+  getLocalPrivateDb,
+  isCollabSyncEnabled,
+} from "../lib/db";
 import * as Haptics from "expo-haptics";
 import { getCurrentUser, UserProfile } from "../lib/auth";
 
-import { upsertMatterVector } from "../lib/vectorStore";
+// ---------------------------------------------------------------------------
+// Home = the now-slice of open worldlines.
+//
+// Every actionable thing the user creates in /workspace is a `mass` row with a
+// `start`, an `end`, and an `active` flag — a worldline that begins, persists,
+// and ends. This screen renders the present moment cutting across all of those
+// worldlines: the ones still `active = 1`. Each tap emits the next `motion`
+// event, pushing that worldline forward in time until it reaches a terminal
+// state and falls out of the slice. See docs/technical/spacetime.md.
+// ---------------------------------------------------------------------------
 
+type Kind = "task" | "schedule" | "lead" | "ticket" | "trip" | "invoice";
 
+interface Worldline {
+  id: string;
+  matter: string;
+  kind: Kind;
+  value: number | null;
+  start: string | null;
+  end: string | null;
+  time: string;
+  data: string | null;
+  rootData: string | null;
+  lastAction: number | null;
+  entityTitle: string | null;
+  entityType: string | null;
+  originSync: boolean;
+}
 
-
-const groupOrderItems = (items: any[]) => {
-  const groupedMap: { [streamId: string]: { header: any; items: any[] } } = {};
-  const ungrouped: any[] = [];
-
-  for (const item of items) {
-    if (item.stream && item.stream.startsWith("ord_")) {
-      const streamId = item.stream;
-      if (!groupedMap[streamId]) {
-        groupedMap[streamId] = { header: null, items: [] };
-      }
-      if (item.action === 201) {
-        groupedMap[streamId].header = item;
-      } else {
-        groupedMap[streamId].items.push(item);
-      }
-    } else {
-      ungrouped.push(item);
-    }
-  }
-
-  const groupedOrders = Object.entries(groupedMap).map(([streamId, group]) => {
-    const header = group.header || group.items[0];
-    const otherItems = group.header ? group.items : group.items.slice(1);
-    const sortedItems = otherItems.sort((a, b) => (a.seq || 0) - (b.seq || 0));
-    return {
-      id: streamId,
-      isOrderGroup: true,
-      header: header,
-      items: sortedItems,
-      time: header?.time || new Date().toISOString()
-    };
-  });
-
-  return [...ungrouped, ...groupedOrders];
+// Status string → phase opcode, mirroring workspace.tsx PHASE_MAP (subset used here).
+const PHASE_MAP: Record<string, number> = {
+  CONTACTED: 304,
+  CONVERTED: 305,
+  RESOLVED: 308,
+  IN_TRANSIT: 402,
+  DELIVERED: 109,
+  PAYMENT_SUCCESS: 802,
+  COMPLETED: 308,
 };
 
-const formatRelativeTime = (timeStr: string) => {
+const KIND_META: Record<Kind, { color: string; icon: any; label: string }> = {
+  task: { color: "#6366f1", icon: "checkbox-outline", label: "Task" },
+  schedule: { color: "#8764b8", icon: "calendar-outline", label: "Shift" },
+  lead: { color: "#ca5010", icon: "trending-up-outline", label: "Lead" },
+  ticket: { color: "#d13438", icon: "help-buoy-outline", label: "Ticket" },
+  trip: { color: "#2563eb", icon: "navigate-outline", label: "Trip" },
+  invoice: { color: "#107c41", icon: "card-outline", label: "Invoice" },
+};
+
+function parseData(raw: string | null): Record<string, any> {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) || {};
+  } catch (_) {
+    return {};
+  }
+}
+
+const formatRelativeTime = (timeStr: string | null) => {
+  if (!timeStr) return "";
   try {
     const date = new Date(timeStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-    
     if (isNaN(date.getTime())) return "";
-    
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays}d ago`;
-    
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+    const past = diffMs < 0;
+    const mins = Math.floor(Math.abs(diffMs) / 60000);
+    const hours = Math.floor(mins / 60);
+    const days = Math.floor(hours / 24);
+
+    let label: string;
+    if (mins < 1) label = "now";
+    else if (mins < 60) label = `${mins}m`;
+    else if (hours < 24) label = `${hours}h`;
+    else if (days < 7) label = `${days}d`;
+    else return date.toLocaleDateString([], { month: "short", day: "numeric" });
+
+    return past ? `${label} ago` : `in ${label}`;
   } catch (e) {
     return "";
   }
 };
 
+// Worldline query: every open `mass`, joined to its `matter` for a name, with
+// the latest motion action (current stage) and the root motion data (subject /
+// ref / source). Independent of relations, so it works in any user DB.
+const WORLDLINE_QUERY = `
+  SELECT m.id, m.matter, m.type AS mass_type, m.value, m.start, m.end, m.data, m.time,
+         mt.title AS entity_title, mt.type AS entity_type,
+         (SELECT action FROM motion WHERE stream = m.id ORDER BY seq DESC LIMIT 1) AS last_action,
+         (SELECT data   FROM motion WHERE stream = m.id ORDER BY seq ASC  LIMIT 1) AS root_data
+  FROM mass m
+  LEFT JOIN matter mt ON mt.id = m.matter
+  WHERE m.active = 1 AND m.type IN ('lead', 'ticket', 'trip', 'invoice', 'slot')
+`;
+
+function rowToWorldline(r: any, originSync: boolean): Worldline | null {
+  let kind: Kind;
+  if (r.mass_type === "slot") {
+    kind = r.entity_type === "person" || r.entity_type === "family" ? "schedule" : "task";
+  } else {
+    kind = r.mass_type as Kind;
+  }
+
+  // Converted leads are terminal even though the mass stays active=1 — they
+  // have left the now-slice, so drop them.
+  if (kind === "lead" && r.last_action === 305) return null;
+
+  return {
+    id: r.id,
+    matter: r.matter,
+    kind,
+    value: r.value,
+    start: r.start,
+    end: r.end,
+    time: r.time,
+    data: r.data,
+    rootData: r.root_data,
+    lastAction: r.last_action,
+    entityTitle: r.entity_title,
+    entityType: r.entity_type,
+    originSync,
+  };
+}
+
+// Title, current stage label, and the label for the next motion this row emits.
+function describe(item: Worldline): { title: string; stage?: string; next: string } {
+  const root = parseData(item.rootData);
+  const d = parseData(item.data);
+  switch (item.kind) {
+    case "task":
+      return { title: item.entityTitle || "Task", next: "Mark complete" };
+    case "schedule":
+      return { title: d.title || "Shift", next: "End shift" };
+    case "lead": {
+      const stage = item.lastAction === 304 ? "contacted" : "new";
+      const who = item.entityTitle ? ` · ${item.entityTitle}` : "";
+      return {
+        title: `$${Number(item.value || 0).toFixed(0)} lead${who}`,
+        stage,
+        next: stage === "new" ? "Mark contacted" : "Mark converted",
+      };
+    }
+    case "ticket":
+      return { title: root.subject || "Ticket", next: "Resolve" };
+    case "trip": {
+      const stage = item.lastAction === 402 ? "in_transit" : "dispatched";
+      return {
+        title: root.ref || "Delivery trip",
+        stage,
+        next: stage === "in_transit" ? "Mark delivered" : "Start transit",
+      };
+    }
+    case "invoice":
+      return { title: `Invoice $${Number(item.value || 0).toFixed(0)}`, next: "Mark paid" };
+  }
+}
+
 export default function HomePage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { massId } = useLocalSearchParams<{ massId: string }>();
-  
-  const [futureItems, setFutureItems] = useState<any[]>([]);
-  const [nowItems, setNowItems] = useState<any[]>([]);
-  const [pastItems, setPastItems] = useState<any[]>([]);
-  const [selectedMass, setSelectedMass] = useState<any>(null);
-  const [selectedItem, setSelectedItem] = useState<any>(null);
-  const [activeJob, setActiveJob] = useState<string | null>(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const [selfId, setSelfId] = useState<string | null>(cachedSelfId);
+  const [worldlines, setWorldlines] = useState<Worldline[]>([]);
+  const [selected, setSelected] = useState<Worldline | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-
-
+  const [busy, setBusy] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
+      let cancelled = false;
+
+      async function load() {
+        try {
+          const id = cachedSelfId || (await getSelfId());
+          if (!cancelled) setSelfId(id);
+
+          // Open worldlines live in two DBs: entity-bound items in the synced
+          // workspace DB, personal items in the local private DB.
+          const dbs = [
+            { db: getPrimarySyncDb(id), sync: true },
+            { db: getLocalPrivateDb(id), sync: false },
+          ];
+
+          const merged = new Map<string, Worldline>();
+          for (const { db, sync } of dbs) {
+            const rows = await db.all(WORLDLINE_QUERY).catch(() => [] as any[]);
+            for (const r of rows as any[]) {
+              const w = rowToWorldline(r, sync);
+              if (w && !merged.has(w.id)) merged.set(w.id, w);
+            }
+          }
+
+          // Sort on the time axis: soonest-due / overdue first, then by recency.
+          const list = Array.from(merged.values()).sort((a, b) => {
+            const ta = a.end || a.start || a.time || "";
+            const tb = b.end || b.start || b.time || "";
+            return String(ta).localeCompare(String(tb));
+          });
+
+          if (!cancelled) setWorldlines(list);
+        } catch (e) {
+          console.error("[Home] Failed to load worldlines:", e);
+        }
+      }
+
       async function loadProfile() {
         try {
           const user = await getCurrentUser();
-          setUserProfile(user);
+          if (!cancelled) setUserProfile(user);
         } catch (e) {
-          console.error("Failed to load user profile in Home:", e);
+          console.error("[Home] Failed to load user profile:", e);
         }
       }
+
       loadProfile();
-
-      async function loadData() {
-        try {
-          const db = getUserDb();
-          const nowStr = new Date().toISOString();
-          
-          // 1. Load Future Items (active slots in mass starting in the future)
-          const futureQuery = `
-            SELECT m.*, t.title, 'user' as originDb 
-            FROM mass m 
-            LEFT JOIN matter t ON m.matter = t.id 
-            WHERE m.active = 1 AND m.scope = 'p' AND (m.type = 'reminder' OR m.type = 'deadline') AND m.start > ?
-          `;
-          
-          let uFuture = await db.all(futureQuery, [nowStr]);
-          
-          const combinedFuture = (Array.isArray(uFuture) ? uFuture : [])
-            .sort((a, b) => String(a.start || "").localeCompare(String(b.start || "")));
-            
-          setFutureItems(combinedFuture);
-
-          // 2. Load Now Items (current slots occurring now OR active pending motions)
-          const nowSlotsQuery = `
-            SELECT m.*, t.title, 'user' as originDb
-            FROM mass m 
-            LEFT JOIN matter t ON m.matter = t.id 
-            WHERE m.active = 1 AND m.scope = 'p' AND (m.type = 'reminder' OR m.type = 'deadline') AND m.start <= ? AND (m.end IS NULL OR m.end >= ?)
-          `;
-          
-          let uNowSlots = await db.all(nowSlotsQuery, [nowStr, nowStr]);
-
-          // Determine the active job status from active slots occurring now
-          const allNowSlots = Array.isArray(uNowSlots) ? uNowSlots : [];
-          const activeSlotWithScope = allNowSlots.find(s => s.scope);
-          if (activeSlotWithScope) {
-            setActiveJob(activeSlotWithScope.scope ? String(activeSlotWithScope.scope) : null);
-          } else if (allNowSlots.length > 0) {
-            const firstSlot = allNowSlots[0];
-            const fallbackTitle = firstSlot.title || firstSlot.scope;
-            setActiveJob(fallbackTitle ? String(fallbackTitle) : "shift");
-          } else {
-            setActiveJob(null);
-          }
-          
-          const activeSlots = allNowSlots
-            .map(s => ({
-              id: s.id,
-              isMass: true,
-              originDb: s.originDb,
-              title: s.type === "reminder" ? "Reminder Active" : "Active Slot",
-              subtitle: s.title || "Active Item",
-              time: s.start,
-              action: s.type === "reminder" ? 504 : 100,
-              status: "ACTIVE",
-              raw: s
-            }));
-
-          const deriveTimeFromSeq = (seq: number) => {
-            let ms = seq;
-            if (seq > 1000000000000000) ms = Math.floor(seq / 1000);
-            else if (seq < 1000000000000) ms = seq * 1000;
-            return new Date(ms).toISOString();
-          };
-
-          const mapMotionRow = (r: any) => {
-            let statusStr = "";
-            let dataObj: any = {};
-            try {
-              dataObj = JSON.parse(r.data) || {};
-              statusStr = dataObj.status || "";
-            } catch (_) {}
-
-            if (!statusStr) {
-              statusStr = r.phase === 308 ? "COMPLETED" : (r.phase === 306 ? "OPEN" : "PENDING");
-            }
-
-            return {
-              id: `${r.stream}_${r.seq}`,
-              stream: r.stream,
-              seq: r.seq,
-              action: r.action,
-              status: statusStr,
-              delta: r.delta,
-              data: r.data,
-              time: deriveTimeFromSeq(r.seq),
-              scope: "p",
-              originDb: r.originDb || "user"
-            };
-          };
-
-          const uPendingMotionsRaw = await db.all("SELECT stream, seq, action, phase, delta, data, 'user' as originDb FROM motion WHERE phase != 308 AND action != 201 ORDER BY seq DESC LIMIT 20");
-          
-          const pendingMotions = (uPendingMotionsRaw || []).map(mapMotionRow);
-
-          // Load pending tasks (matter records of type 'task' that do not have a COMPLETED motion log)
-          const pendingTasksQuery = `
-            SELECT m.*, 'user' as originDb
-            FROM matter m
-            WHERE m.type = 'task' AND m.scope = 'p'
-              AND NOT EXISTS (
-                SELECT 1 FROM motion mot
-                WHERE mot.stream = m.id AND mot.phase = 308
-              )
-          `;
-
-          const uTasks = await db.all(pendingTasksQuery).catch(() => []);
-
-          const taskItems = (Array.isArray(uTasks) ? uTasks : [])
-            .map(t => ({
-              id: t.id,
-              isTaskMatter: true,
-              originDb: t.originDb,
-              title: "Task Pending",
-              subtitle: t.title || "Untitled Task",
-              time: t.time || nowStr,
-              action: 504,
-              status: "PENDING",
-              raw: t
-            }));
-
-          const combinedNow = [...activeSlots, ...pendingMotions, ...taskItems];
-          const groupedNow = groupOrderItems(combinedNow)
-            .sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
-            
-          setNowItems(groupedNow);
-
-          // 3. Load Past Items (completed motions, receipts, logs)
-          const uPastMotionsRaw = await db.all("SELECT stream, seq, action, phase, delta, data, 'user' as originDb FROM motion WHERE (phase = 308 OR action = 201) ORDER BY seq DESC LIMIT 30");
-          
-          const combinedPast = (uPastMotionsRaw || []).map(mapMotionRow);
-          const groupedPast = groupOrderItems(combinedPast)
-            .sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")))
-            .slice(0, 40);
-            
-          setPastItems(groupedPast);
-
-          // Load selected mass overlay if any
-          if (massId) {
-            let massRow = await db.all(
-              `SELECT m.*, t.title FROM mass m LEFT JOIN matter t ON m.matter = t.id WHERE m.id = ?`, 
-              [massId]
-            );
-            if (Array.isArray(massRow) && massRow.length > 0) {
-              setSelectedMass(massRow[0]);
-            }
-          } else {
-            setSelectedMass(null);
-            setActiveMassId(null);
-          }
-        } catch (e) {
-          console.error("Failed to load data:", e);
-        }
-      }
-      
-      loadData();
-      const intervalId = setInterval(loadData, 2000);
-      return () => clearInterval(intervalId);
-    }, [massId, refreshTrigger])
+      load();
+      const intervalId = setInterval(load, 2000);
+      return () => {
+        cancelled = true;
+        clearInterval(intervalId);
+      };
+    }, [])
   );
 
-    const handleMarkDone = async (item: any) => {
-    try {
-      const db = getUserDb();
-      
-      if (item.isMass) {
-        // Deactivate the mass scheduled reminder/slot
-        await db.run("UPDATE mass SET active = 0 WHERE id = ?", [item.id]);
-        
-        // Log a completed motion log
-        const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [item.raw.matter]);
-        const seq = seqRow[0]?.next_seq || (Date.now() * 1000);
-        
-        await db.run(
-          "INSERT INTO motion (stream, seq, action, phase, delta, data) VALUES (?, ?, ?, ?, ?, ?)",
-          [
-            item.raw.matter,
-            seq,
-            504, // TASK_ASSIGNED Opcode
-            308, // phase: COMPLETED
-            null,
-            JSON.stringify({ task: item.subtitle, status: "COMPLETED", completed_at: new Date().toISOString() })
-          ]
-        );
-      } else if (item.isTaskMatter) {
-        // Mark task done by inserting a completed motion log for this matter stream
-        const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [item.id]);
-        const seq = seqRow[0]?.next_seq || (Date.now() * 1000);
-        
-        await db.run(
-          "INSERT INTO motion (stream, seq, action, phase, delta, data) VALUES (?, ?, ?, ?, ?, ?)",
-          [
-            item.id,
-            seq,
-            504, // TASK_ASSIGNED Opcode
-            308, // phase: COMPLETED
-            null,
-            JSON.stringify({ task: item.subtitle, status: "COMPLETED", completed_at: new Date().toISOString() })
-          ]
-        );
-      } else {
-        // Complete the motion task
-        const [stream, seqStr] = item.id.split("_");
-        const seq = Number(seqStr);
-        if (stream && !isNaN(seq)) {
-          const rows = await db.all("SELECT data FROM motion WHERE stream = ? AND seq = ?", [stream, seq]);
-          let existingData = {};
-          if (rows && rows[0]) {
-            try {
-              existingData = JSON.parse((rows[0] as any).data) || {};
-            } catch (_) {}
-          }
-          const updatedData = JSON.stringify({ ...existingData, status: "COMPLETED" });
-          await db.run("UPDATE motion SET phase = 308, data = ? WHERE stream = ? AND seq = ?", [updatedData, stream, seq]);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to mark done:", e);
-    }
+  // ---- Motion writers (mirror workspace.tsx) ----
+
+  const appendMotion = async (
+    db: any,
+    stream: string,
+    action: number,
+    status: string,
+    delta: number | null,
+    data: Record<string, any>
+  ) => {
+    const phase = PHASE_MAP[status] || action;
+    const seqRow = await db.all(
+      "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?",
+      [stream]
+    );
+    const nextSeq = seqRow[0]?.next_seq || Date.now() * 1000;
+    await db.run(
+      "INSERT INTO motion (stream, seq, action, phase, delta, data) VALUES (?, ?, ?, ?, ?, ?)",
+      [stream, nextSeq, action, phase, delta, JSON.stringify(data)]
+    );
   };
 
-  const renderMassCard = (item: any) => {
-    const isReminder = item.type === 'reminder';
-    const startTime = item.start || item.time || (item.raw && item.raw.start);
-    
-    let displayTime = "";
-    let displayDate = "";
-    if (startTime) {
+  const phaseUpdateMotion = async (
+    db: any,
+    stream: string,
+    action: number,
+    status: string,
+    delta: number | null,
+    data: Record<string, any>
+  ) => {
+    const rows = await db.all(
+      "SELECT seq, data FROM motion WHERE stream = ? ORDER BY seq ASC LIMIT 1",
+      [stream]
+    );
+    const phase = PHASE_MAP[status] || action;
+    if (rows && rows.length > 0) {
+      const targetSeq = rows[0].seq;
+      let dataObj: Record<string, any> = {};
       try {
-        const d = new Date(startTime);
-        if (!isNaN(d.getTime())) {
-          displayTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          displayDate = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-        }
-      } catch (e) {}
+        dataObj = JSON.parse(rows[0].data) || {};
+      } catch (_) {}
+      const ph = dataObj.ph || {};
+      ph[String(phase)] = Date.now();
+      const updatedData = { ...dataObj, ...data, ph };
+      await db.run(
+        "UPDATE motion SET phase = ?, action = ?, delta = COALESCE(?, delta), data = ? WHERE stream = ? AND seq = ?",
+        [phase, action, delta, JSON.stringify(updatedData), stream, targetSeq]
+      );
+    } else {
+      await appendMotion(db, stream, action, status, delta, data);
     }
-
-    return (
-      <TouchableOpacity 
-        key={`${item.originDb}_${item.id}`} 
-        style={styles.motionItem}
-        activeOpacity={0.7}
-        onPress={() => setSelectedItem(item)}
-      >
-        <View style={styles.motionItemLeft}>
-          <TouchableOpacity 
-            style={styles.statusWrapper}
-            onPress={() => setSelectedItem(item)}
-          >
-            <Ionicons 
-              name="ellipse-outline" 
-              size={22} 
-              color={isReminder ? "#2563eb" : "#ea580c"} 
-            />
-          </TouchableOpacity>
-          <View style={styles.motionTextContainer}>
-            <Text style={styles.motionTitle} numberOfLines={1}>
-              {item.title || "Scheduled slot"}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.motionItemRight}>
-          {displayDate || displayTime ? (
-            <Text style={styles.futureTimeText}>{displayDate} {displayTime}</Text>
-          ) : null}
-        </View>
-      </TouchableOpacity>
-    );
   };
 
-  const renderTaskMatterCard = (item: any) => {
-    return (
-      <TouchableOpacity 
-        key={`${item.originDb}_${item.id}`} 
-        style={styles.motionItem}
-        activeOpacity={0.7}
-        onPress={() => setSelectedItem(item)}
-      >
-        <View style={styles.motionItemLeft}>
-          <TouchableOpacity 
-            style={styles.statusWrapper}
-            onPress={() => setSelectedItem(item)}
-          >
-            <Ionicons 
-              name="ellipse-outline" 
-              size={22} 
-              color="#cbd5e1" 
-            />
-          </TouchableOpacity>
-          <View style={styles.motionTextContainer}>
-            <Text style={styles.motionTitle} numberOfLines={1}>
-              {item.subtitle}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.motionItemRight}>
-          <Text style={styles.taskTimeText}>
-            {formatRelativeTime(item.time)}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderCard = (motion: any) => {
-    let parsedData: any = {};
+  // Push the worldline one step forward in time by emitting its next motion.
+  const advance = async (item: Worldline) => {
+    if (busy || !selfId) return;
+    setBusy(true);
     try {
-      if (motion.data) parsedData = JSON.parse(motion.data);
-    } catch (e) {}
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const db = item.originSync ? getPrimarySyncDb(selfId) : getLocalPrivateDb(selfId);
+      const now = new Date().toISOString();
 
-    const action = motion.action || 100;
-    const isCompleted = motion.status === 'COMPLETED';
-
-    let displayDelta = motion.delta;
-    if (typeof displayDelta === 'string' && displayDelta.startsWith('{')) {
-      try {
-        const d = JSON.parse(displayDelta);
-        displayDelta = d.total || d.amount || d.value || 0;
-      } catch(e) {
-        displayDelta = 0;
-      }
-    }
-
-    let config = {
-      icon: "flash" as any,
-      color: "#64748b",
-      title: "System Log",
-      subtitle: (motion.stream || `Action: ${action}`).trim(),
-      amount: displayDelta ? `${displayDelta > 0 ? '+' : ''}${displayDelta}` : null
-    };
-
-    if ((action >= 1 && action <= 20) || action === 201) {
-      let subtitleText = "Direct Checkout";
-      if (parsedData.items && Array.isArray(parsedData.items)) {
-        subtitleText = parsedData.items.map((it: any) => `${it.qty || 1}x ${it.title || "Item"}`).join(", ");
-      } else if (parsedData.title) {
-        subtitleText = `${parsedData.qty || 1}x ${parsedData.title}`;
-      } else if (motion.stream) {
-        subtitleText = motion.stream;
-      }
-      config = {
-        icon: "receipt",
-        color: "#16a34a",
-        title: "Sale Logged",
-        subtitle: subtitleText.trim(),
-        amount: `+₹${displayDelta || 0}`
-      };
-    } else if (action >= 51 && action <= 100) {
-      config = {
-        icon: "cube",
-        color: "#ea580c",
-        title: "Inventory",
-        subtitle: (parsedData.title || motion.stream || "").trim(),
-        amount: displayDelta !== null ? (displayDelta > 0 ? `+${displayDelta}` : displayDelta.toString()) : null
-      };
-    } else if (action === 504 || (action >= 101 && action <= 150)) {
-      const isReminder = parsedData.triggered_at || parsedData.task?.toLowerCase().includes("reminder") || action <= 150;
-      config = {
-        icon: isReminder ? "notifications" : "checkbox",
-        color: isReminder ? "#2563eb" : "#c026d3",
-        title: isReminder ? "Reminder" : "Task",
-        subtitle: (parsedData.task || parsedData.text || motion.stream || "").trim(),
-        amount: null
-      };
-    } else if (action === 200 || (action >= 151 && action <= 250)) {
-      config = {
-        icon: "checkbox",
-        color: "#c026d3",
-        title: "Task",
-        subtitle: (parsedData.task || parsedData.text || motion.stream || "").trim(),
-        amount: null
-      };
-    } else if (action >= 251 && action <= 300) {
-      config = {
-        icon: "gift",
-        color: "#e11d48",
-        title: "Growth",
-        subtitle: (parsedData.title || motion.stream || "").trim(),
-        amount: null
-      };
-    }
-
-    return (
-      <TouchableOpacity 
-        key={`${motion.originDb || 'motion'}_${motion.id}`} 
-        style={styles.motionItem}
-        activeOpacity={0.7}
-        onPress={() => setSelectedItem(motion)}
-      >
-        <View style={styles.motionItemLeft}>
-          <TouchableOpacity 
-            style={styles.statusWrapper}
-            onPress={() => setSelectedItem(motion)}
-            disabled={isCompleted}
-          >
-            <Ionicons 
-              name={isCompleted ? "checkmark-circle" : "ellipse-outline"} 
-              size={22} 
-              color={isCompleted ? config.color : "#cbd5e1"} 
-            />
-          </TouchableOpacity>
-          <View style={styles.motionTextContainer}>
-            <Text style={styles.motionTitle} numberOfLines={1}>
-              {config.subtitle}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.motionItemRight}>
-          {config.amount && <Text style={styles.itemAmount} numberOfLines={1}>{config.amount}</Text>}
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderOrderGroupCard = (group: any, index: number, total: number) => {
-    const header = group.header;
-    const items = group.items;
-    
-    let parsedHeaderData: any = {};
-    try {
-      if (header.data) parsedHeaderData = JSON.parse(header.data);
-    } catch (e) {}
-
-    const isCompleted = header.status === 'COMPLETED';
-    const totalAmount = header.delta;
-
-    return (
-      <View 
-        key={group.id} 
-        style={[
-          styles.orderGroupContainer,
-          {
-            borderTopWidth: index === 0 ? 0 : 0.5,
-            borderBottomWidth: index === total - 1 ? 0 : 0.5,
-            borderColor: '#f1f5f9'
+      switch (item.kind) {
+        case "task":
+          await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [now, item.id]);
+          await appendMotion(db, item.matter, 504, "COMPLETED", null, {
+            task: describe(item).title,
+            completed_at: now,
+          });
+          break;
+        case "schedule":
+          await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [now, item.id]);
+          break;
+        case "lead":
+          if (item.lastAction === 304) {
+            await phaseUpdateMotion(db, item.id, 305, "CONVERTED", item.value, {});
+          } else {
+            await phaseUpdateMotion(db, item.id, 304, "CONTACTED", null, { channel: "email" });
           }
-        ]}
-      >
-        {/* Order Header Row */}
-        <View style={styles.orderGroupHeader}>
-          <View style={styles.motionItemLeft}>
-            <View style={styles.motionTextContainer}>
-              <Text style={styles.orderGroupTitle}>
-                Order #{group.id.replace('ord_', '')}
-              </Text>
-            </View>
+          break;
+        case "ticket":
+          await phaseUpdateMotion(db, item.id, 308, "RESOLVED", null, { resolution: "completed" });
+          await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [now, item.id]);
+          break;
+        case "trip":
+          if (item.lastAction === 402) {
+            await phaseUpdateMotion(db, item.id, 109, "DELIVERED", null, {});
+            await db.run("UPDATE mass SET active = 0 WHERE id = ?", [item.id]);
+          } else {
+            await phaseUpdateMotion(db, item.id, 402, "IN_TRANSIT", null, {});
+          }
+          break;
+        case "invoice":
+          await db.run("UPDATE mass SET active = 0 WHERE id = ?", [item.id]);
+          await phaseUpdateMotion(db, item.id, 802, "PAYMENT_SUCCESS", item.value, {});
+          break;
+      }
+
+      if (await isCollabSyncEnabled()) {
+        await db.push().catch((err: any) => console.warn("[Home] Sync push failed:", err));
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not advance this item.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renderRow = (item: Worldline, index: number) => {
+    const meta = KIND_META[item.kind];
+    const { title, stage } = describe(item);
+    const due = item.end || item.start;
+    return (
+      <View key={item.id}>
+        <TouchableOpacity
+          style={styles.row}
+          activeOpacity={0.6}
+          onPress={() => setSelected(item)}
+        >
+          <View style={[styles.kindDot, { backgroundColor: meta.color }]}>
+            <Ionicons name={meta.icon} size={14} color="white" />
           </View>
-          <View style={styles.motionItemRight}>
-            <Text style={styles.itemAmount}>+₹{totalAmount}</Text>
+          <View style={styles.rowText}>
+            <Text style={styles.rowTitle} numberOfLines={1}>
+              {title}
+            </Text>
+            <Text style={styles.rowSub} numberOfLines={1}>
+              {meta.label}
+              {stage ? ` · ${stage.replace("_", " ")}` : ""}
+              {item.entityTitle && item.kind !== "task" ? ` · ${item.entityTitle}` : ""}
+            </Text>
           </View>
-        </View>
-
-        {/* Order Items List */}
-        <View style={styles.orderItemsList}>
-          {items.map((item: any, idx: number) => {
-            let parsedItemData: any = {};
-            try {
-              if (item.data) parsedItemData = JSON.parse(item.data);
-            } catch (e) {}
-
-            const itemTitle = parsedItemData.title || item.stream || "Item";
-            const itemStatus = item.status || "PENDING";
-            
-            // Nice text styling based on item status
-            let statusColor = "#64748b";
-            if (itemStatus === "READY") {
-              statusColor = "#16a34a";
-            } else if (itemStatus === "DELIVERED" || itemStatus === "COMPLETED") {
-              statusColor = "#2563eb";
-            } else if (itemStatus === "PENDING") {
-              statusColor = "#94a3b8"; // Neutral slate-grey, no purple
-            }
-
-            return (
-              <View key={item.id} style={[styles.orderItemRow, idx > 0 && styles.orderItemBorder]}>
-                <View style={styles.orderItemLeft}>
-                  <View style={styles.statusWrapper}>
-                    <Ionicons 
-                      name={itemStatus === "DELIVERED" || itemStatus === "COMPLETED" ? "checkmark-circle" : "ellipse-outline"} 
-                      size={22} 
-                      color={statusColor} 
-                    />
-                  </View>
-                  <Text style={styles.orderItemText}>
-                    {itemTitle} <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: 'normal' }}>x{Math.abs(item.delta || 1)}</Text>
-                  </Text>
-                </View>
-                <Text style={[styles.orderItemStatusText, { color: statusColor }]}>{itemStatus}</Text>
-              </View>
-            );
-          })}
-        </View>
+          {due ? <Text style={styles.rowTime}>{formatRelativeTime(due)}</Text> : null}
+        </TouchableOpacity>
+        {index < worldlines.length - 1 && <View style={styles.separator} />}
       </View>
     );
   };
 
-  const getJobBadgeStyles = (job: string | null) => {
-    if (!job) {
-      return {
-        text: "idle",
-        color: "#64748b",
-        bg: "#f1f5f9",
-      };
-    }
-    
-    const normalized = job.toLowerCase();
-    if (normalized.includes("restaurant")) {
-      return {
-        text: "work",
-        color: "#ea580c",
-        bg: "#ffedd5",
-      };
-    } else if (normalized.includes("retail") || normalized.includes("store")) {
-      return {
-        text: "work",
-        color: "#16a34a",
-        bg: "#dcfce7",
-      };
-    } else if (normalized.includes("delivery")) {
-      return {
-        text: "work",
-        color: "#2563eb",
-        bg: "#dbeafe",
-      };
-    } else if (normalized.includes("salon")) {
-      return {
-        text: "work",
-        color: "#c026d3",
-        bg: "#fae8ff",
-      };
-    } else if (normalized.includes("warehouse")) {
-      return {
-        text: "work",
-        color: "#4f46e5",
-        bg: "#e0e7ff",
-      };
-    } else if (normalized.includes("shift")) {
-      return {
-        text: "work",
-        color: "#4f46e5",
-        bg: "#e0e7ff",
-      };
-    }
-    
-    // Default fallback
-    return {
-      text: "work",
-      color: "#4f46e5",
-      bg: "#e0e7ff",
-    };
-  };
-
-  const badgeStyles = getJobBadgeStyles(activeJob);
-
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar style="dark" />
-      
-      <KeyboardAvoidingView 
+
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
-
         {/* Top Header Bar */}
         <View style={styles.topBar}>
           <View style={styles.topBarLeft}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.profileCircleBtn}
-              onPress={() => router.push('/profile')}
+              onPress={() => router.push("/profile")}
               activeOpacity={0.8}
             >
-              <Image 
-                source={{ uri: userProfile?.photo || "https://api.dicebear.com/7.x/notionists/png?seed=Alice&glassesProbability=100&backgroundColor=c0aede" }} 
-                style={styles.profileImage} 
+              <Image
+                source={{
+                  uri:
+                    userProfile?.photo ||
+                    "https://api.dicebear.com/7.x/notionists/png?seed=Alice&glassesProbability=100&backgroundColor=c0aede",
+                }}
+                style={styles.profileImage}
               />
             </TouchableOpacity>
-            <Text style={styles.topBarTitle}>
-              Hello, {userProfile?.name || "Guest"}
-            </Text>
+            <Text style={styles.topBarTitle}>Hello, {userProfile?.name || "Guest"}</Text>
           </View>
         </View>
 
-        <ScrollView 
-          style={styles.scrollView} 
+        <ScrollView
+          style={styles.scrollView}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingTop: 16, paddingBottom: 100 }}
         >
-          {/* Future Section */}
-          {futureItems.length > 0 && (
-            <View>
-              <Text style={styles.sectionHeader}>[ FUTURE ]</Text>
-              <View style={styles.motionList}>
-                {futureItems.map((item, index) => (
-                  <React.Fragment key={`${item.originDb}_${item.id}`}>
-                    {renderMassCard(item)}
-                    {index < futureItems.length - 1 && <View style={styles.separator} />}
-                  </React.Fragment>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* Now Section */}
-          {nowItems.length > 0 && (
-            <View style={{ marginTop: 15 }}>
-              <View style={styles.motionList}>
-                {nowItems.map((item, index) => (
-                  <React.Fragment key={`${item.originDb || 'now'}_${item.id}`}>
-                    {item.isOrderGroup ? (
-                      renderOrderGroupCard(item, index, nowItems.length)
-                    ) : (
-                      <View>
-                        {item.isMass ? renderMassCard(item) : item.isTaskMatter ? renderTaskMatterCard(item) : renderCard(item)}
-                        {index < nowItems.length - 1 && !nowItems[index + 1].isOrderGroup && <View style={styles.separator} />}
-                      </View>
-                    )}
-                  </React.Fragment>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {futureItems.length === 0 && nowItems.length === 0 && (
-            <Animated.View 
+          {worldlines.length > 0 ? (
+            <View style={styles.list}>{worldlines.map((item, i) => renderRow(item, i))}</View>
+          ) : (
+            <Animated.View
               entering={FadeInDown.delay(400).duration(800)}
               style={styles.emptyState}
             >
               <Ionicons name="layers-outline" size={48} color="#e2e8f0" />
-              <Text style={styles.emptyText}>No active slots or pending motions found.</Text>
+              <Text style={styles.emptyText}>Nothing open right now.</Text>
             </Animated.View>
           )}
         </ScrollView>
 
-
-
-        {/* Bottom Search Bar */}
+        {/* Bottom Action Bar */}
         <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-
           <View style={styles.bottomBarRow}>
             <View style={styles.leftGroup}>
               <TouchableOpacity
@@ -762,18 +452,18 @@ export default function HomePage() {
             </View>
 
             <View style={styles.rightGroup}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.circleBtn}
                 activeOpacity={0.8}
-                onPress={() => router.push('/aichat')}
+                onPress={() => router.push("/aichat")}
               >
                 <Text style={styles.aiText}>AI</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.circleBtn, { marginLeft: 6 }]}
                 activeOpacity={0.8}
-                onPress={() => router.push('/pos')}
+                onPress={() => router.push("/pos")}
               >
                 <Ionicons name="arrow-up" size={18} color="#1a1a1a" />
               </TouchableOpacity>
@@ -781,101 +471,61 @@ export default function HomePage() {
           </View>
         </View>
 
-
-        {/* Mass View Overlay */}
-        {selectedMass && (
-          <View style={[styles.massOverlay, { bottom: insets.bottom + 100 }]}>
-            <View style={styles.massCard}>
-              <View style={styles.massHeader}>
-                <View style={styles.massTitleRow}>
-                  <View style={[styles.massIndicator, { backgroundColor: '#c026d3' }]} />
-                  <Text style={styles.massTitleText}>{selectedMass.title || 'Stock Item'}</Text>
-                </View>
-                <TouchableOpacity 
-                  onPress={() => {
-                    setSelectedMass(null);
-                    setActiveMassId(null);
-                    router.setParams({ massId: undefined });
-                  }}
-                  style={styles.massCloseBtn}
-                >
-                  <Ionicons name="close-circle" size={24} color="#94a3b8" />
-                </TouchableOpacity>
-              </View>
-              
-              <View style={styles.massStats}>
-                <View style={styles.massStatItem}>
-                  <Text style={styles.massStatLabel}>Quantity</Text>
-                  <Text style={styles.massStatValue}>{selectedMass.qty || 0}</Text>
-                </View>
-                <View style={styles.massStatItem}>
-                  <Text style={styles.massStatLabel}>Total Value</Text>
-                  <Text style={styles.massStatValue}>₹{selectedMass.value || 0}</Text>
-                </View>
-                <View style={styles.massStatItem}>
-                  <Text style={styles.massStatLabel}>Type</Text>
-                  <Text style={styles.massStatValue}>{selectedMass.type || 'Mass'}</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Bottom Drawer Modal for Item Status Updates */}
-        {selectedItem && (
+        {/* Advance Drawer */}
+        {selected && (
           <>
-            <TouchableOpacity 
-              style={styles.backdrop} 
-              activeOpacity={1} 
-              onPress={() => setSelectedItem(null)} 
+            <TouchableOpacity
+              style={styles.backdrop}
+              activeOpacity={1}
+              onPress={() => setSelected(null)}
             />
             <View style={[styles.drawerOverlay, { paddingBottom: insets.bottom + 16 }]}>
               <View style={{ alignItems: "center", paddingTop: 8 }}>
-                <View style={{ width: 32, height: 4, borderRadius: 2, backgroundColor: '#e2e8f0' }} />
+                <View style={styles.drawerHandle} />
               </View>
               <View style={styles.drawerCard}>
-              <View style={styles.massHeader}>
-                <View style={styles.massTitleRow}>
-                  <View style={[styles.massIndicator, { backgroundColor: selectedItem.isMass ? '#ea580c' : selectedItem.isTaskMatter ? '#c026d3' : '#6366f1' }]} />
-                  <Text style={styles.massTitleText} numberOfLines={1}>
-                    {selectedItem.subtitle || selectedItem.title || 'Active Item'}
-                  </Text>
+                <View style={styles.drawerHeader}>
+                  <View style={styles.drawerTitleRow}>
+                    <View
+                      style={[styles.kindDot, { backgroundColor: KIND_META[selected.kind].color }]}
+                    >
+                      <Ionicons name={KIND_META[selected.kind].icon} size={14} color="white" />
+                    </View>
+                    <Text style={styles.drawerTitle} numberOfLines={1}>
+                      {describe(selected).title}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setSelected(null)} style={{ padding: 4 }}>
+                    <Ionicons name="close-circle" size={24} color="#94a3b8" />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity 
-                  onPress={() => setSelectedItem(null)}
-                  style={styles.massCloseBtn}
+
+                <Text style={styles.drawerMeta}>
+                  {KIND_META[selected.kind].label}
+                  {describe(selected).stage ? ` · ${describe(selected).stage}` : ""}
+                  {selected.end ? ` · ${formatRelativeTime(selected.end)}` : ""}
+                </Text>
+
+                <TouchableOpacity
+                  style={[styles.drawerActionBtn, { backgroundColor: KIND_META[selected.kind].color }]}
+                  activeOpacity={0.85}
+                  disabled={busy}
+                  onPress={async () => {
+                    const item = selected;
+                    setSelected(null);
+                    await advance(item);
+                  }}
                 >
-                  <Ionicons name="close-circle" size={24} color="#94a3b8" />
+                  <Ionicons
+                    name="arrow-forward-circle-outline"
+                    size={20}
+                    color="white"
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={styles.drawerActionBtnText}>{describe(selected).next}</Text>
                 </TouchableOpacity>
               </View>
-              
-              <View style={{ marginBottom: 16 }}>
-                <Text style={{ fontSize: 13, color: '#64748b', fontWeight: '600' }}>
-                  Type: <Text style={{ color: '#1e293b', fontWeight: '700' }}>{selectedItem.isMass ? 'Scheduled Slot' : selectedItem.isTaskMatter ? 'Pending Task' : 'Motion Flow'}</Text>
-                </Text>
-                {selectedItem.time && (
-                  <Text style={{ fontSize: 13, color: '#64748b', fontWeight: '600', marginTop: 4 }}>
-                    Time: <Text style={{ color: '#1e293b' }}>{formatRelativeTime(selectedItem.time)}</Text>
-                  </Text>
-                )}
-              </View>
-
-              <TouchableOpacity 
-                style={styles.drawerActionBtn} 
-                activeOpacity={0.8}
-                onPress={async () => {
-                  const dbItem = selectedItem.isMass 
-                    ? { id: selectedItem.id, isMass: true, originDb: selectedItem.originDb, subtitle: selectedItem.title || "Reminder", raw: selectedItem.raw || selectedItem } 
-                    : selectedItem;
-                  await handleMarkDone(dbItem);
-                  setSelectedItem(null);
-                }}
-              >
-                <Ionicons name="checkmark-circle-outline" size={20} color="white" style={{ marginRight: 8 }} />
-                <Text style={styles.drawerActionBtnText}>Mark as Completed</Text>
-              </TouchableOpacity>
             </View>
-          </View>
           </>
         )}
       </KeyboardAvoidingView>
@@ -888,55 +538,69 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "white",
   },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#f1f5f9",
-  },
-  userInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "#000",
-    marginRight: 10,
-  },
-  avatarPlaceholder: {
-    backgroundColor: "#f4f4f5",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  userName: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginRight: 4,
-  },
-  headerIcons: {
-    flexDirection: "row",
-  },
-  iconBtn: {
-    marginLeft: 20,
-  },
   scrollView: {
     flex: 1,
   },
-  sectionHeader: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: 1,
+  list: {
+    backgroundColor: "white",
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#f1f5f9",
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
     paddingHorizontal: 20,
-    marginTop: 25,
-    marginBottom: 10,
+    backgroundColor: "white",
+  },
+  kindDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+  rowText: {
+    flex: 1,
+  },
+  rowTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1e293b",
+  },
+  rowSub: {
+    fontSize: 12,
+    color: "#94a3b8",
+    fontWeight: "500",
+    marginTop: 2,
+    textTransform: "capitalize",
+  },
+  rowTime: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6366f1",
+    marginLeft: 12,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: "#f1f5f9",
+    marginLeft: 62,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 100,
+    paddingHorizontal: 40,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#94a3b8",
+    textAlign: "center",
   },
   footer: {
     width: "100%",
@@ -975,338 +639,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 0,
   },
   aiText: {
     fontSize: 13,
     fontWeight: "700",
     color: "#6366f1",
   },
-  motionList: {
-    backgroundColor: "white",
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: "#f1f5f9",
-  },
-  motionItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    backgroundColor: "white",
-  },
-  motionItemLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  statusWrapper: {
-    width: 32,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  motionTextContainer: {
-    flex: 1,
-  },
-  motionTitle: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: "#1e293b",
-  },
-  motionSubtitle: {
-    fontSize: 14,
-    color: "#64748b",
-    fontWeight: "500",
-  },
-  motionItemRight: {
-    alignItems: "flex-end",
-    marginLeft: 16,
-    minWidth: 50,
-    justifyContent: 'center',
-  },
-  itemAmount: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#475569",
-  },
-  futureTimeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#6366f1",
-    backgroundColor: "#e0e7ff",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  taskTimeText: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "#94a3b8",
-  },
-  separator: {
-    height: 1,
-    backgroundColor: "#f1f5f9",
-    marginLeft: 64,
-  },
-  massOverlay: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    zIndex: 100,
-  },
-  massCard: {
-    backgroundColor: 'white',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  massHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  massTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  massIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 10,
-  },
-  massTitleText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1e293b',
-  },
-  massCloseBtn: {
-    padding: 4,
-  },
-  massStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingTop: 16,
-  },
-  massStatItem: {
-    flex: 1,
-  },
-  massStatLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  massStatValue: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#1e293b',
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 100,
-    paddingHorizontal: 40,
-  },
-  emptyText: {
-    marginTop: 16,
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#94a3b8',
-    textAlign: 'center',
-  },
-  orderGroupContainer: {
-    marginHorizontal: 0,
-    marginTop: 0,
-    marginBottom: 0,
-    borderRadius: 0,
-    borderTopWidth: 0.5,
-    borderBottomWidth: 0.5,
-    borderColor: "#f1f5f9",
-    backgroundColor: "#ffffff",
-    overflow: "hidden",
-  },
-  orderGroupHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    backgroundColor: "#f8fafc",
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#f1f5f9",
-  },
-  orderGroupTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#475569",
-    letterSpacing: 0.5,
-  },
-  orderItemsList: {
-    paddingTop: 4,
-    paddingBottom: 0,
-    paddingHorizontal: 20,
-  },
-  orderItemRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 10,
-  },
-  orderItemLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  orderItemBorder: {
-    borderTopWidth: 0.5,
-    borderTopColor: "#f1f5f9",
-  },
-  orderItemText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#334155",
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  headerStatusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "transparent",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerStatusBadgeText: {
-    fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: -0.2,
-  },
-  orderItemStatusText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  transcriptionOverlay: {
-    position: 'absolute',
-    bottom: 80,
-    left: 16,
-    right: 16,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 5,
-    zIndex: 100,
-  },
-  recordingIndicatorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  recordingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ff3b30',
-    marginRight: 8,
-  },
-  recordingText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#666',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  transcriptionText: {
-    fontSize: 15,
-    color: '#0f172a',
-    lineHeight: 20,
-    fontWeight: '500',
-  },
-  nonCommittedText: {
-    color: '#94a3b8',
-  },
-  micBtnRecording: {
-    backgroundColor: '#ff3b30',
-  },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingRight: 20,
-    marginTop: 25,
-    marginBottom: 10,
-  },
-  historyBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    backgroundColor: "#f1f5f9",
-  },
-  historyBtnText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#6366f1",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
   backdrop: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.32)',
+    backgroundColor: "rgba(0,0,0,0.32)",
     zIndex: 199,
   },
-  drawerActionBtn: {
-    backgroundColor: '#6366f1',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 24,
-    marginTop: 12,
-  },
-  drawerActionBtnText: {
-    color: 'white',
-    fontSize: 15,
-    fontWeight: '600',
-  },
   drawerOverlay: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
     zIndex: 200,
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     shadowColor: "#000",
@@ -1315,31 +669,54 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 20,
   },
+  drawerHandle: {
+    width: 32,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#e2e8f0",
+  },
   drawerCard: {
     paddingHorizontal: 24,
-    paddingTop: 8,
+    paddingTop: 12,
     paddingBottom: 8,
   },
-  suggestionChipsContainer: {
+  drawerHeader: {
     flexDirection: "row",
-    gap: 8,
-    paddingBottom: 10,
-    paddingHorizontal: 4,
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
   },
-  suggestionChip: {
+  drawerTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 0.5,
-    borderColor: "rgba(0,0,0,0.05)",
+    flex: 1,
+    marginRight: 8,
   },
-  suggestionChipText: {
-    fontSize: 11,
+  drawerTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#1e293b",
+    flex: 1,
+  },
+  drawerMeta: {
+    fontSize: 13,
+    color: "#64748b",
+    fontWeight: "600",
+    marginBottom: 16,
+    textTransform: "capitalize",
+  },
+  drawerActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 24,
+    marginTop: 4,
+  },
+  drawerActionBtnText: {
+    color: "white",
+    fontSize: 15,
     fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
   },
   topBar: {
     height: 56,
@@ -1374,5 +751,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#0f172a",
     marginLeft: 12,
-  }
+  },
 });

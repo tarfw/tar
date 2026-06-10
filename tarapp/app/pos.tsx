@@ -218,17 +218,15 @@ export default function PosScreen() {
         ]
       );
 
-      // 2. motion: 105 PLACED
-      await appendMotion(db, orderId, 105, 105, cartCount, { items, channel: "pos" });
-
-      // 3. motion: 801 PAYMENT_INIT
-      await appendMotion(db, orderId, 801, 801, total, { m: payMethod });
-
-      // 4. motion: 802 PAYMENT_SUCCESS
-      await appendMotion(db, orderId, 802, 802, total, { ref: orderId, ph: { 802: Date.now() } });
-
-      // 5. motion: 101 SOLD (inventory decrement log)
+      // 2. motion: 101 SOLD (inventory decrement log)
       await appendMotion(db, orderId, 101, 101, -cartCount, null);
+
+      // 3. motion: 801 PAYMENT_INIT, phase-updated directly to 802 PAYMENT_SUCCESS
+      await appendMotion(db, orderId, 801, 802, total, { 
+        m: payMethod, 
+        ref: orderId, 
+        ph: { "802": Date.now() } 
+      });
 
       if (await isCollabSyncEnabled()) {
         await db.push().catch(() => {});

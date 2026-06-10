@@ -20,6 +20,7 @@ import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
 import { getSelfId, routeDbForEntity, isCollabSyncEnabled, cachedSelfId } from "../lib/db";
 import { upsertMatterVector } from "../lib/vectorStore";
+import { getCurrentUser, UserProfile } from "../lib/auth";
 
 // Color constants matching workspace
 const ACCENT = "#6366f1"; // Indigo
@@ -146,6 +147,7 @@ export default function EntityDirectoryScreen() {
   const insets = useSafeAreaInsets();
 
   const [selfId, setSelfId] = useState<string | null>(cachedSelfId);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const scope = selfId ? `c:${selfId}` : null;
   const [syncEnabled, setSyncEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -192,7 +194,15 @@ export default function EntityDirectoryScreen() {
         }
       }
 
-      // 2. Refresh/Verify in background
+      // 2. Load User Profile
+      try {
+        const user = await getCurrentUser();
+        if (active) setUserProfile(user);
+      } catch (e) {
+        console.warn("Failed to load user profile in Entity Directory:", e);
+      }
+
+      // 3. Refresh/Verify in background
       try {
         const id = await getSelfId();
         if (active) {
@@ -339,7 +349,11 @@ export default function EntityDirectoryScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Virtual Group: Personal Workspace (Only shown if matching search or search is empty) */}
-          {(!searchQuery || "general / personal".includes(searchQuery.toLowerCase()) || "private tasks & notes".includes(searchQuery.toLowerCase())) && (
+          {(!searchQuery || 
+            "general / personal".includes(searchQuery.toLowerCase()) || 
+            "private tasks & notes".includes(searchQuery.toLowerCase()) ||
+            (userProfile?.name && userProfile.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+            (userProfile?.email && userProfile.email.toLowerCase().includes(searchQuery.toLowerCase()))) && (
             <View style={styles.scopeItemWrapper}>
               <View style={styles.scopeHeaderRow}>
                 <View>
@@ -362,10 +376,16 @@ export default function EntityDirectoryScreen() {
                   }}
                   activeOpacity={0.6}
                 >
-                  <EntityThumbnail name="General / Personal" photoUrl={null} isProduct={false} />
+                  <EntityThumbnail 
+                    name={userProfile?.name || "General / Personal"} 
+                    photoUrl={userProfile?.photo} 
+                    isProduct={false} 
+                  />
                   <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>General / Personal</Text>
-                    <Text style={styles.memberRole}>Private tasks & notes</Text>
+                    <Text style={styles.memberName}>{userProfile?.name || "General / Personal"}</Text>
+                    <Text style={styles.memberRole}>
+                      {userProfile?.email ? `${userProfile.email} · Private tasks & notes` : "Private tasks & notes"}
+                    </Text>
                   </View>
                 </TouchableOpacity>
               </View>

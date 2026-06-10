@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -10,7 +10,8 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  Modal
+  Modal,
+  Image
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,6 +21,7 @@ import * as Haptics from "expo-haptics";
 import { getSelfId, routeDbForEntity, isCollabSyncEnabled, cachedSelfId } from "../lib/db";
 import { upsertMatterVector } from "../lib/vectorStore";
 import { OPCODE_LABELS } from "../lib/domainsData";
+import { getCurrentUser, UserProfile } from "../lib/auth";
 
 // Row shapes matching the real SQLite columns (schema.ts) — not the
 // sample-display interfaces in domainsData.ts.
@@ -175,6 +177,11 @@ export default function WorkspaceScreen() {
 
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null);
+  const selectedCustomerRef = useRef<CustomerRow | null>(selectedCustomer);
+  useEffect(() => {
+    selectedCustomerRef.current = selectedCustomer;
+  }, [selectedCustomer]);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [leads, setLeads] = useState<CrmMassRow[]>([]);
   const [tickets, setTickets] = useState<CrmMassRow[]>([]);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
@@ -293,7 +300,13 @@ export default function WorkspaceScreen() {
     setExpandedRowId((prev) => (prev === id ? null : id));
   };
 
-  const getDb = useCallback(() => routeDbForEntity("customer", scope || "c:guest"), [scope]);
+  const getDb = useCallback((customerId?: string) => {
+    const activeId = customerId || selectedCustomerRef.current?.id;
+    if (activeId === "general_personal") {
+      return routeDbForEntity("task", "p");
+    }
+    return routeDbForEntity("customer", scope || "c:guest");
+  }, [scope]);
 
   const loadCustomers = useCallback(async (activeScope: string) => {
     try {
@@ -310,7 +323,7 @@ export default function WorkspaceScreen() {
 
   const loadCustomerDetail = useCallback(async (customerId: string, typeVal: string) => {
     try {
-      const db = getDb();
+      const db = getDb(customerId);
       
       // Leads & Tickets (Only for Customer/Business/Vehicle)
       let leadRows: any[] = [];
@@ -545,6 +558,12 @@ export default function WorkspaceScreen() {
       setSelfId(id);
       setSyncEnabled(await isCollabSyncEnabled());
       await loadCustomers(`c:${id}`);
+      try {
+        const user = await getCurrentUser();
+        setUserProfile(user);
+      } catch (e) {
+        console.warn("Failed to load user profile in Workspace:", e);
+      }
     }
     if (cachedSelfId) {
       loadCustomers(`c:${cachedSelfId}`);
@@ -555,21 +574,26 @@ export default function WorkspaceScreen() {
   useEffect(() => {
     const activeEntityId = entityId || "general_personal";
     if (activeEntityId === "general_personal") {
-      const personalCust = {
-        id: "general_personal",
-        code: "personal",
-        type: "personal",
-        title: "General / Personal",
-        owner: selfId || "guest",
-        data: null,
-        time: new Date().toISOString()
-      };
-      setSelectedCustomer(personalCust);
+      const expectedTitle = userProfile?.name || "General / Personal";
+      if (selectedCustomer?.id !== "general_personal" || selectedCustomer?.title !== expectedTitle) {
+        const personalCust = {
+          id: "general_personal",
+          code: "personal",
+          type: "personal",
+          title: expectedTitle,
+          owner: selfId || "guest",
+          data: null,
+          time: new Date().toISOString()
+        };
+        setSelectedCustomer(personalCust);
+      }
       loadCustomerDetail("general_personal", "personal");
     } else {
       const found = customers.find(c => c.id === activeEntityId);
       if (found) {
-        setSelectedCustomer(found);
+        if (selectedCustomer?.id !== found.id) {
+          setSelectedCustomer(found);
+        }
         loadCustomerDetail(found.id, found.type || "customer");
       } else {
         // Fallback: Query the database directly for this specific entity!
@@ -580,7 +604,9 @@ export default function WorkspaceScreen() {
             const rows = await db.all("SELECT id, code, type, title, owner, data, time FROM matter WHERE id = ?", [activeEntityId]);
             if (rows && rows.length > 0) {
               const entity = rows[0] as any as CustomerRow;
-              setSelectedCustomer(entity);
+              if (selectedCustomer?.id !== entity.id) {
+                setSelectedCustomer(entity);
+              }
               loadCustomerDetail(entity.id, entity.type || "customer");
             }
           } catch (e) {
@@ -590,7 +616,7 @@ export default function WorkspaceScreen() {
         fetchSingleEntity();
       }
     }
-  }, [entityId, customers, selfId, scope, loadCustomerDetail]);
+  }, [entityId, customers, selfId, scope, loadCustomerDetail, selectedCustomer, userProfile]);
 
   const pushIfEnabled = async (db: any) => {
     if (await isCollabSyncEnabled()) {
@@ -622,6 +648,9 @@ export default function WorkspaceScreen() {
       "VISITED": 301,
       "OFFER_SENT": 309,
       "REVIEWED": 302,
+      "PAY_INIT": 801,
+      "PAY_SUCCESS": 802,
+      "PAY_FAILED": 805,
     };
     const phase = phaseMap[status] || action;
     const seqRow = await db.all("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM motion WHERE stream = ?", [stream]);
@@ -634,6 +663,69 @@ export default function WorkspaceScreen() {
       "INSERT INTO motion (stream, seq, action, phase, delta, data) VALUES (?, ?, ?, ?, ?, ?)",
       [stream, nextSeq, action, phase, delta, JSON.stringify(updatedData)]
     );
+  };
+
+  // Update the phase column and phase history of an existing motion stream in-place (plan.md).
+  const phaseUpdateMotion = async (db: any, stream: string, action: number, status: string, delta: number | null, data: Record<string, any>) => {
+    // Find the initial sequence record for this stream to update in-place
+    const rows = await db.all(
+      "SELECT seq, data FROM motion WHERE stream = ? ORDER BY seq ASC LIMIT 1",
+      [stream]
+    );
+
+    const phaseMap: Record<string, number> = {
+      "DISPATCHED": 401,
+      "IN_TRANSIT": 402,
+      "DRIVER_ASSIGNED": 403,
+      "ETA_UPDATED": 404,
+      "TRANSFER_OUT": 405,
+      "TRANSFER_IN": 406,
+      "RETURN_REQUESTED": 407,
+      "DELIVERED": 109,
+      "ATTEMPT_FAILED": 410,
+      "NEW_LEAD": 303,
+      "CONTACTED": 304,
+      "CONVERTED": 305,
+      "CLOSED": 303,
+      "OPEN": 306,
+      "REPLIED": 307,
+      "RESOLVED": 308,
+      "COMPLETED": 308,
+      "VISITED": 301,
+      "OFFER_SENT": 309,
+      "REVIEWED": 302,
+      "PAY_INIT": 801,
+      "PAY_SUCCESS": 802,
+      "PAY_FAILED": 805,
+    };
+    const phase = phaseMap[status] || action;
+
+    if (rows && rows.length > 0) {
+      const targetSeq = rows[0].seq;
+      let dataObj: Record<string, any> = {};
+      try {
+        dataObj = JSON.parse(rows[0].data) || {};
+      } catch (_) {}
+
+      // Keep phase transition history timestamps (ph) inside the JSON data field
+      const ph = dataObj.ph || {};
+      ph[String(phase)] = Date.now();
+
+      const updatedData = {
+        ...dataObj,
+        ...data,
+        status,
+        ph
+      };
+
+      await db.run(
+        "UPDATE motion SET phase = ?, action = ?, delta = COALESCE(?, delta), data = ? WHERE stream = ? AND seq = ?",
+        [phase, action, delta, JSON.stringify(updatedData), stream, targetSeq]
+      );
+    } else {
+      // Fallback to append if no root row exists for the stream
+      await appendMotion(db, stream, action, status, delta, data);
+    }
   };
 
   // Link two entities in the relation graph (customer → child).
@@ -717,14 +809,35 @@ export default function WorkspaceScreen() {
       ...(entityType === "profile" ? { cat: "store", cur: "USD" } : {})
     });
     const timeStr = new Date().toISOString();
-    await db.run(
-      "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, custEmail.trim() || null, entityType, scope, selfId, name, 0, dataJson, timeStr]
-    );
-    try {
-      await upsertMatterVector(id, { title: name, type: entityType, scope, code: custEmail.trim() || null, data: dataJson });
-    } catch (vErr) {
-      console.warn("[CRM] Vector sync failed:", vErr);
+    const existing = await db.all("SELECT title, code, type, scope, owner, data FROM matter WHERE id = ?", [id]);
+    const isNew = existing.length === 0;
+    const hasChanged = isNew || 
+      existing[0].title !== name || 
+      existing[0].code !== (custEmail.trim() || null) || 
+      existing[0].type !== entityType || 
+      existing[0].scope !== scope || 
+      existing[0].owner !== selfId || 
+      existing[0].data !== dataJson;
+
+    if (hasChanged) {
+      await db.run(
+        `INSERT INTO matter (id, code, type, scope, owner, title, public, data, time) 
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET 
+           code = excluded.code,
+           type = excluded.type,
+           scope = excluded.scope,
+           owner = excluded.owner,
+           title = excluded.title,
+           data = excluded.data,
+           time = excluded.time`,
+        [id, custEmail.trim() || null, entityType, scope, selfId, name, dataJson, timeStr]
+      );
+      try {
+        await upsertMatterVector(id, { title: name, type: entityType, scope, code: custEmail.trim() || null, data: dataJson });
+      } catch (vErr) {
+        console.warn("[CRM] Vector sync failed:", vErr);
+      }
     }
     await pushIfEnabled(db);
     setSheet(null);
@@ -832,9 +945,9 @@ export default function WorkspaceScreen() {
       if (stage === "dispatched" || stage === "new" || stage === "attempt_failed") {
         const d = parseData(trip.data);
         const driverName = d.driver || "Unassigned";
-        await appendMotion(db, trip.id, 402, "IN_TRANSIT", null, { driver: driverName });
+        await phaseUpdateMotion(db, trip.id, 402, "IN_TRANSIT", null, { driver: driverName });
       } else if (stage === "in_transit") {
-        await appendMotion(db, trip.id, 109, "DELIVERED", null, {});
+        await phaseUpdateMotion(db, trip.id, 109, "DELIVERED", null, {});
         await db.run("UPDATE mass SET active = 0 WHERE id = ?", [trip.id]);
       }
       await pushIfEnabled(db);
@@ -853,7 +966,7 @@ export default function WorkspaceScreen() {
           text: "Confirm Fail",
           onPress: () => runMutation(async () => {
             const db = getDb();
-            await appendMotion(db, trip.id, 410, "ATTEMPT_FAILED", null, { reason: "Customer not home / no answer" });
+            await phaseUpdateMotion(db, trip.id, 410, "ATTEMPT_FAILED", null, { reason: "Customer not home / no answer" });
             await pushIfEnabled(db);
             await loadCustomerDetail(selectedCustomer!.id, selectedCustomer!.type || "");
           })
@@ -875,7 +988,7 @@ export default function WorkspaceScreen() {
             const db = getDb();
             const timeStr = new Date().toISOString();
             await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [timeStr, trip.id]);
-            await appendMotion(db, trip.id, 407, "RETURN_REQUESTED", null, { reason: "Customer refused shipment" });
+            await phaseUpdateMotion(db, trip.id, 407, "RETURN_REQUESTED", null, { reason: "Customer refused shipment" });
             await pushIfEnabled(db);
             await loadCustomerDetail(selectedCustomer!.id, selectedCustomer!.type || "");
           })
@@ -895,7 +1008,7 @@ export default function WorkspaceScreen() {
           text: "+15 Mins",
           onPress: () => runMutation(async () => {
             const db = getDb();
-            await appendMotion(db, trip.id, 404, "ETA_UPDATED", 15, { eta_minutes: 15 });
+            await phaseUpdateMotion(db, trip.id, 404, "ETA_UPDATED", 15, { eta_minutes: 15 });
             await pushIfEnabled(db);
             await loadCustomerDetail(selectedCustomer!.id, selectedCustomer!.type || "");
           })
@@ -945,7 +1058,7 @@ export default function WorkspaceScreen() {
       const now = new Date();
       const timeStr = now.toISOString();
       await db.run(
-        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'stock', ?, ?, ?, 1, ?, NULL, ?, ?)",
+        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'stock', ?, ?, ?, 1, ?, NULL, ?, ?)",
         [stockId, selectedCustomer.id, scope, qtyVal, valVal, timeStr, JSON.stringify({ name }), timeStr]
       );
       await appendMotion(db, stockId, 406, "TRANSFER_IN", qtyVal, { name, src: "vendor" });
@@ -971,12 +1084,12 @@ export default function WorkspaceScreen() {
       const timeStr = now.toISOString();
       const driverName = customers.find(c => c.id === tripDriver)?.title || "Unassigned";
       await db.run(
-        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, geo, start, end, data, time) VALUES (?, ?, 'trip', ?, ?, 0, 1, ?, ?, NULL, ?, ?)",
+        "INSERT INTO mass (id, matter, type, scope, qty, value, active, geo, start, end, data, time) VALUES (?, ?, 'trip', ?, ?, 0, 1, ?, ?, NULL, ?, ?)",
         [tripId, selectedCustomer.id, scope, qtyVal, tripGeo, timeStr, JSON.stringify({ ref, driver: driverName, driverId: tripDriver || null }), timeStr]
       );
       await appendMotion(db, tripId, 401, "DISPATCHED", null, { ref, driver: driverName });
       if (tripDriver) {
-        await appendMotion(db, tripId, 403, "DRIVER_ASSIGNED", null, { driverId: tripDriver, driverName });
+        await phaseUpdateMotion(db, tripId, 403, "DRIVER_ASSIGNED", null, { driverId: tripDriver, driverName });
       }
       await pushIfEnabled(db);
       setTripRef(""); setTripQty(""); setTripGeo("833075fffffffff"); setTripDriver("");
@@ -997,7 +1110,7 @@ export default function WorkspaceScreen() {
       const timeStr = new Date().toISOString();
       const dataJson = JSON.stringify({ cat: productCat, base_price: Number(productBasePrice) || 0 });
       await db.run(
-        "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'product', ?, ?, ?, 1, ?, ?)",
+        "INSERT INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'product', ?, ?, ?, 1, ?, ?)",
         [productId, productCode.trim() || null, scope, selfId, title, dataJson, timeStr]
       );
       await pushIfEnabled(db);
@@ -1020,7 +1133,7 @@ export default function WorkspaceScreen() {
       const variantId = rid("var");
       const timeStr = new Date().toISOString();
       await db.run(
-        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'variant', ?, ?, ?, 1, ?, ?)",
+        "INSERT INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'variant', ?, ?, ?, 1, ?, ?)",
         [variantId, selectedCustomer.id, scope, qtyVal, priceVal, JSON.stringify({ label }), timeStr]
       );
       await appendMotion(db, variantId, 406, "TRANSFER_IN", qtyVal, { label, src: "vendor" });
@@ -1059,12 +1172,12 @@ export default function WorkspaceScreen() {
       const massId = rid("modprice");
       const timeStr = new Date().toISOString();
       await db.run(
-        "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'product', ?, ?, ?, 1, ?, ?)",
+        "INSERT INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'product', ?, ?, ?, 1, ?, ?)",
         [modId, null, scope, selfId, title, JSON.stringify({ mod: 1 }), timeStr]
       );
       await addRelation(db, selectedCustomer.id, modId, "modifier_of");
       await db.run(
-        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'modifier', ?, NULL, ?, 1, ?, ?)",
+        "INSERT INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'modifier', ?, NULL, ?, 1, ?, ?)",
         [massId, modId, scope, priceVal, JSON.stringify({ title }), timeStr]
       );
       await pushIfEnabled(db);
@@ -1132,7 +1245,7 @@ export default function WorkspaceScreen() {
       }
       const newData = JSON.stringify({ ...existingData, driver: driverName, driverId });
       await db.run("UPDATE mass SET data = ? WHERE id = ?", [newData, driverTripId]);
-      await appendMotion(db, driverTripId, 403, "DRIVER_ASSIGNED", null, { driverId, driverName });
+      await phaseUpdateMotion(db, driverTripId, 403, "DRIVER_ASSIGNED", null, { driverId, driverName });
       await pushIfEnabled(db);
       setSheet(null);
       setDriverTripId(null);
@@ -1193,7 +1306,7 @@ export default function WorkspaceScreen() {
       const closeDays = Number(leadCloseDays) || 0;
       const endStr = closeDays > 0 ? new Date(now.getTime() + closeDays * 86400000).toISOString() : null;
       await db.run(
-        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'lead', ?, 1, ?, 1, ?, ?, NULL, ?)",
+        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'lead', ?, 1, ?, 1, ?, ?, NULL, ?)",
         [leadId, selectedCustomer.id, scope, value, timeStr, endStr, timeStr]
       );
       await appendMotion(db, leadId, 303, "NEW_LEAD", null, { source: leadSource, note: leadNote.trim() });
@@ -1212,9 +1325,9 @@ export default function WorkspaceScreen() {
     runMutation(async () => {
       const db = getDb();
       if (stage === "new") {
-        await appendMotion(db, lead.id, 304, "CONTACTED", null, { channel: "email" });
+        await phaseUpdateMotion(db, lead.id, 304, "CONTACTED", null, { channel: "email" });
       } else if (stage === "contacted") {
-        await appendMotion(db, lead.id, 305, "CONVERTED", lead.value, {});
+        await phaseUpdateMotion(db, lead.id, 305, "CONVERTED", lead.value, {});
       }
       await pushIfEnabled(db);
       const t = selectedCustomer.id === "general_personal" ? "personal" : (selectedCustomer.type || "customer");
@@ -1252,7 +1365,7 @@ export default function WorkspaceScreen() {
       const slaHours = Number(ticketSlaHours) || 0;
       const endStr = slaHours > 0 ? new Date(now.getTime() + slaHours * 3600000).toISOString() : null;
       await db.run(
-        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'ticket', ?, 1, 0, 1, ?, ?, ?, ?)",
+        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'ticket', ?, 1, 0, 1, ?, ?, ?, ?)",
         [ticketId, selectedCustomer.id, scope, timeStr, endStr, JSON.stringify({ priority: ticketPriority }), timeStr]
       );
       await appendMotion(db, ticketId, 306, "OPEN", 1, { subject, desc: ticketDesc.trim() });
@@ -1287,7 +1400,7 @@ export default function WorkspaceScreen() {
     runMutation(async () => {
       const db = getDb();
       const timeStr = new Date().toISOString();
-      await appendMotion(db, ticket.id, 308, "RESOLVED", null, { resolution: "completed" });
+      await phaseUpdateMotion(db, ticket.id, 308, "RESOLVED", null, { resolution: "completed" });
       await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [timeStr, ticket.id]);
       await pushIfEnabled(db);
       if (replyTicketId === ticket.id) setReplyTicketId(null);
@@ -1314,14 +1427,14 @@ export default function WorkspaceScreen() {
       const dueDays = Number(taskDueDays) || 0;
       const endStr = dueDays > 0 ? new Date(now.getTime() + dueDays * 86400000).toISOString() : null;
       await db.run(
-        "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'task', ?, ?, ?, 0, NULL, ?)",
+        "INSERT INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'task', ?, ?, ?, 0, NULL, ?)",
         [taskId, null, scope, selfId, title, timeStr]
       );
       if (selectedCustomer.id !== "general_personal") {
         await addRelation(db, selectedCustomer.id, taskId, "task");
       }
       await db.run(
-        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, NULL, ?)",
+        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, NULL, ?)",
         [slotId, taskId, scope, timeStr, endStr, timeStr]
       );
       await appendMotion(db, slotId, 504, "ASSIGNED", 1, {});
@@ -1346,10 +1459,10 @@ export default function WorkspaceScreen() {
       const timeStr = new Date().toISOString();
       if (isDone) {
         await db.run("UPDATE mass SET active = 1 WHERE id = ?", [task.mass_id]);
-        await appendMotion(db, task.mass_id!, 504, "REOPENED", 1, {});
+        await phaseUpdateMotion(db, task.mass_id!, 504, "REOPENED", 1, {});
       } else {
         await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [timeStr, task.mass_id]);
-        await appendMotion(db, task.mass_id!, 504, "DONE", -1, {});
+        await phaseUpdateMotion(db, task.mass_id!, 504, "DONE", -1, {});
       }
       await pushIfEnabled(db);
       const t = selectedCustomer.id === "general_personal" ? "personal" : (selectedCustomer.type || "customer");
@@ -1373,7 +1486,7 @@ export default function WorkspaceScreen() {
       const title = text.length > 48 ? `${text.slice(0, 48)}…` : text;
       const dataJson = JSON.stringify({ text });
       await db.run(
-        "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'note', ?, ?, ?, 0, ?, ?)",
+        "INSERT INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'note', ?, ?, ?, 0, ?, ?)",
         [noteId, null, scope, selfId, title, dataJson, timeStr]
       );
       if (selectedCustomer.id !== "general_personal") {
@@ -1409,7 +1522,7 @@ export default function WorkspaceScreen() {
       const duration = Number(slotDuration) || 8;
       const endStr = new Date(now.getTime() + duration * 3600000).toISOString();
       await db.run(
-        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, ?, ?)",
+        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, ?, ?)",
         [slotId, selectedCustomer.id, "slot", scope, timeStr, endStr, JSON.stringify({ title }), timeStr]
       );
       await appendMotion(db, slotId, 501, "SHIFT_START", 1, { title });
@@ -1441,7 +1554,7 @@ export default function WorkspaceScreen() {
       const now = new Date();
       const timeStr = now.toISOString();
       await db.run(
-        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'budget', ?, ?, ?, 1, ?, NULL, ?, ?)",
+        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'budget', ?, ?, ?, 1, ?, NULL, ?, ?)",
         [budgetId, selectedCustomer.id, scope, limit, limit, timeStr, JSON.stringify({ name }), timeStr]
       );
       await appendMotion(db, budgetId, 806, "BUDGET_ALLOCATED", limit, { name, limit });
@@ -1493,7 +1606,7 @@ export default function WorkspaceScreen() {
       const invoiceId = rid("invoice");
       const timeStr = new Date().toISOString();
       await db.run(
-        "INSERT OR REPLACE INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'invoice', ?, 1, ?, 1, ?, NULL, ?, ?)",
+        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'invoice', ?, 1, ?, 1, ?, NULL, ?, ?)",
         [invoiceId, selectedCustomer.id, scope, amount, timeStr, JSON.stringify({ ref }), timeStr]
       );
       await appendMotion(db, invoiceId, 801, "PAYMENT_INIT", amount, { ref });
@@ -1510,7 +1623,7 @@ export default function WorkspaceScreen() {
     runMutation(async () => {
       const db = getDb();
       await db.run("UPDATE mass SET active = 0 WHERE id = ?", [invoice.id]);
-      await appendMotion(db, invoice.id, 802, "PAYMENT_SUCCESS", invoice.value, {});
+      await phaseUpdateMotion(db, invoice.id, 802, "PAYMENT_SUCCESS", invoice.value, {});
       await pushIfEnabled(db);
       await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
     });
@@ -1521,7 +1634,7 @@ export default function WorkspaceScreen() {
     runMutation(async () => {
       const db = getDb();
       await db.run("UPDATE mass SET active = 0 WHERE id = ?", [invoice.id]);
-      await appendMotion(db, invoice.id, 805, "PAYMENT_FAIL", 0, {});
+      await phaseUpdateMotion(db, invoice.id, 805, "PAYMENT_FAIL", 0, {});
       await pushIfEnabled(db);
       await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
     });
@@ -1542,6 +1655,21 @@ export default function WorkspaceScreen() {
 
   const selectedData = selectedCustomer ? parseData(selectedCustomer.data) : {};
 
+  const photoUrl = selectedCustomer?.id === "general_personal" 
+    ? userProfile?.photo 
+    : (selectedData?.photo || selectedData?.image || selectedData?.avatar || selectedData?.thumbnail);
+  
+  const displayName = selectedCustomer?.title || "General / Personal";
+  const initials = displayName
+    .replace(/\(.*\)/, "")
+    .replace(/@\w+/, "")
+    .trim()
+    .split(/\s+/)
+    .map((p: string) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right", "bottom"]}>
       <StatusBar style="dark" />
@@ -1554,11 +1682,35 @@ export default function WorkspaceScreen() {
             onPress={() => router.push("/entity")}
             activeOpacity={0.7}
           >
-            <Ionicons name="folder-open-outline" size={18} color={ACCENT} style={{ marginRight: 6 }} />
+            {photoUrl && photoUrl.trim().startsWith("http") ? (
+              <Image
+                source={{ uri: photoUrl }}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  marginRight: 8,
+                  backgroundColor: "#e2e8f0"
+                }}
+              />
+            ) : (
+              <View style={{
+                width: 24,
+                height: 24,
+                borderRadius: 12,
+                backgroundColor: "#cbd5e1",
+                justifyContent: "center",
+                alignItems: "center",
+                marginRight: 8
+              }}>
+                <Text style={{ fontSize: 10, fontWeight: "700", color: "#0f172a" }}>
+                  {initials || "?"}
+                </Text>
+              </View>
+            )}
             <Text style={styles.workspaceSelectorChipText}>
-              {selectedCustomer ? selectedCustomer.title : "General / Personal"}
+              {displayName}
             </Text>
-            <Ionicons name="chevron-down" size={14} color={ACCENT} style={{ marginLeft: 6 }} />
           </TouchableOpacity>
           <Text style={styles.bigSubtitle}>
             {selectedCustomer 
@@ -2766,17 +2918,18 @@ const styles = StyleSheet.create({
   workspaceSelectorChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f3f6fd",
+    backgroundColor: "#f1f5f9",
     alignSelf: "flex-start",
-    paddingHorizontal: 12,
+    paddingLeft: 6,
+    paddingRight: 12,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 18,
     marginBottom: 6,
   },
   workspaceSelectorChipText: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: ACCENT,
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#0f172a",
   },
   bigTitle: { fontSize: 26, fontWeight: "700", color: ACCENT },
   bigSubtitle: { fontSize: 11, color: TEXT_TERTIARY, marginTop: 2, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" },

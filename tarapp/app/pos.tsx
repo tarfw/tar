@@ -20,6 +20,7 @@ import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
 import { DOMAINS } from "../lib/domainsData";
 import { routeDbForEntity, getSelfId, isCollabSyncEnabled } from "../lib/db";
+import { activeMassId, setActiveMassId } from "../lib/state";
 
 // ── Types ──────────────────────────────────────────────────────
 interface CartItem {
@@ -31,18 +32,34 @@ interface CartItem {
   price: number;
   qty: number;
   modifiers: { title: string; price: number }[];
+  phase?: number;
 }
 
 interface ActiveOrder {
   id: string;
   items: string;
   total: number;
-  status: "PAID" | "REFUNDED";
+  status: "PAID" | "REFUNDED" | "UNPAID";
   time: string;
   method: string;
 }
 
 // ── Constants & Colors ──────────────────────────────────────────
+const ORDER_PHASES = [105, 106, 107, 108, 109];
+const ORDER_PHASE_LABEL: Record<number, string> = {
+  105: "Placed",
+  106: "Confirmed",
+  107: "Preparing",
+  108: "Ready",
+  109: "Delivered",
+};
+const ORDER_PHASE_COLOR: Record<number, string> = {
+  105: "#94a3b8",
+  106: "#2563eb",
+  107: "#ca5010",
+  108: "#16a34a",
+  109: "#475569",
+};
 const BRAND_BLACK = "#0f172a";
 const BG_LIGHT = "#ffffff";
 const SURFACE_MUTED = "#f8fafc";
@@ -74,6 +91,13 @@ export default function PosScreen() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCartSheet, setShowCartSheet] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(activeMassId);
+
+  const updateActiveOrderId = (id: string | null) => {
+    setActiveMassId(id);
+    setActiveOrderId(id);
+  };
 
   // Search and Category Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -132,10 +156,242 @@ export default function PosScreen() {
   const cartTotal = cart.reduce((s, i) => s + (i.price + i.modifiers.reduce((m, x) => m + x.price, 0)) * i.qty, 0);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
-  // Load orders from database on mount
+  // Load orders and active tab from database on mount
   useEffect(() => {
     loadOrders();
+    if (activeMassId) {
+      loadActiveOrder(activeMassId);
+    }
   }, []);
+
+  const loadActiveOrder = async (orderId: string) => {
+    setBusy(true);
+    try {
+      const selfId = await getSelfId();
+      const scope = `c:${selfId}`;
+      const db = routeDbForEntity("customer", scope);
+
+      const itemsRows = await db.all(
+        "SELECT seq, phase, data FROM motion WHERE stream = ? AND action = 105 ORDER BY seq ASC",
+        [orderId]
+      );
+
+      const loadedCart: CartItem[] = [];
+      for (const r of itemsRows) {
+        try {
+          const dataStr = typeof r.data === "string" ? r.data : String(r.data || "{}");
+          const d = JSON.parse(dataStr);
+          if (d.massId) {
+            loadedCart.push({
+              id: rid("ci"),
+              productId: d.productId || "unknown",
+              title: d.title || "",
+              variantLabel: d.variantLabel || "",
+              massId: d.massId,
+              price: d.price || 0,
+              qty: d.qty || 1,
+              modifiers: d.modifiers || [],
+              phase: typeof r.phase === "number" ? r.phase : Number(r.phase || 105)
+            });
+          }
+        } catch (_) {}
+      }
+      setCart(loadedCart);
+    } catch (e) {
+      console.warn("[POS] Failed to load active order:", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const syncCartItemToDb = async (orderId: string, item: CartItem, newQty: number) => {
+    try {
+      const selfId = await getSelfId();
+      const scope = `c:${selfId}`;
+      const db = routeDbForEntity("customer", scope);
+      
+      const rows = await db.all("SELECT seq, data FROM motion WHERE stream = ? AND action = 105", [orderId]);
+      let existingSeq: number | null = null;
+      for (const r of rows) {
+        try {
+          const dataStr = typeof r.data === "string" ? r.data : String(r.data || "{}");
+          const d = JSON.parse(dataStr);
+          if (d.massId === item.massId) {
+            existingSeq = typeof r.seq === "number" ? r.seq : Number(r.seq);
+            break;
+          }
+        } catch (_) {}
+      }
+
+      if (existingSeq !== null) {
+        if (newQty > 0) {
+          await db.run(
+            "UPDATE motion SET delta = ?, data = ? WHERE stream = ? AND seq = ?",
+            [
+              newQty,
+              JSON.stringify({
+                massId: item.massId,
+                productId: item.productId,
+                title: item.title,
+                variantLabel: item.variantLabel,
+                qty: newQty,
+                price: item.price,
+                modifiers: item.modifiers
+              }),
+              orderId,
+              existingSeq
+            ]
+          );
+        } else {
+          await db.run("DELETE FROM motion WHERE stream = ? AND seq = ?", [orderId, existingSeq]);
+        }
+      } else if (newQty > 0) {
+        await appendMotion(db, orderId, 105, 105, newQty, {
+          massId: item.massId,
+          productId: item.productId,
+          title: item.title,
+          variantLabel: item.variantLabel,
+          qty: newQty,
+          price: item.price,
+          modifiers: item.modifiers
+        });
+      }
+    } catch (err) {
+      console.warn("[POS] syncCartItemToDb failed:", err);
+    }
+  };
+
+  const syncOrderMassToDb = async (orderId: string, currentCart: CartItem[]) => {
+    try {
+      const selfId = await getSelfId();
+      const scope = `c:${selfId}`;
+      const db = routeDbForEntity("customer", scope);
+
+      if (currentCart.length === 0) {
+        await db.run("DELETE FROM mass WHERE id = ?", [orderId]);
+        await db.run("DELETE FROM motion WHERE stream = ?", [orderId]);
+        updateActiveOrderId(null);
+        return;
+      }
+
+      const totalQty = currentCart.reduce((s, c) => s + c.qty, 0);
+      const totalVal = currentCart.reduce((s, c) => s + (c.price + c.modifiers.reduce((m, x) => m + x.price, 0)) * c.qty, 0);
+      const itemsText = currentCart.map(c => `${c.qty}x ${c.title} ${c.variantLabel}`).join(", ");
+      const now = new Date().toISOString();
+
+      const existing = await db.all("SELECT id FROM mass WHERE id = ?", [orderId]);
+      if (existing.length > 0) {
+        await db.run(
+          "UPDATE mass SET qty = ?, value = ?, data = ? WHERE id = ?",
+          [
+            totalQty,
+            totalVal,
+            JSON.stringify({
+              items: itemsText,
+              method: "UNPAID",
+              cart: currentCart.map(c => ({ massId: c.massId, qty: c.qty, price: c.price }))
+            }),
+            orderId
+          ]
+        );
+      } else {
+        await db.run(
+          "INSERT INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'order', ?, ?, ?, 1, ?, ?)",
+          [
+            orderId,
+            currentCart[0].productId,
+            scope,
+            totalQty,
+            totalVal,
+            JSON.stringify({
+              items: itemsText,
+              method: "UNPAID",
+              cart: currentCart.map(c => ({ massId: c.massId, qty: c.qty, price: c.price }))
+            }),
+            now
+          ]
+        );
+      }
+
+      // Sync payment motion (action 801)
+      const paymentRows = await db.all("SELECT seq FROM motion WHERE stream = ? AND action = 801", [orderId]);
+      if (paymentRows.length > 0) {
+        await db.run(
+          "UPDATE motion SET delta = ? WHERE stream = ? AND action = 801 AND phase = 801",
+          [totalVal, orderId]
+        );
+      } else {
+        await appendMotion(db, orderId, 801, 801, totalVal, {
+          m: "CARD",
+          ref: orderId
+        });
+      }
+    } catch (err) {
+      console.warn("[POS] syncOrderMassToDb failed:", err);
+    }
+  };
+
+  const handleCancelTab = async () => {
+    Alert.alert(
+      "Discard Order",
+      "Are you sure you want to discard this order and all its items?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: async () => {
+            setBusy(true);
+            try {
+              const orderId = activeOrderId;
+              if (orderId) {
+                const selfId = await getSelfId();
+                const scope = `c:${selfId}`;
+                const db = routeDbForEntity("customer", scope);
+                await db.run("DELETE FROM mass WHERE id = ?", [orderId]);
+                await db.run("DELETE FROM motion WHERE stream = ?", [orderId]);
+                if (await isCollabSyncEnabled()) {
+                  await db.push().catch(() => {});
+                }
+              }
+              setCart([]);
+              updateActiveOrderId(null);
+              setShowCartSheet(false);
+              await loadOrders();
+            } catch (e: any) {
+              Alert.alert("Error", e.message || "Failed to discard order");
+            } finally {
+              setBusy(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleReopenOrder = async (order: ActiveOrder) => {
+    updateActiveOrderId(order.id);
+    await loadActiveOrder(order.id);
+    setShowOrders(false);
+    setSelectedOrder(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const handleIncreaseQty = async (id: string) => {
+    const orderId = activeOrderId;
+    if (!orderId) return;
+
+    const existingIdx = cart.findIndex(c => c.id === id);
+    if (existingIdx < 0) return;
+
+    const item = cart[existingIdx];
+    const updatedItem = { ...item, qty: item.qty + 1 };
+    const updatedCart = cart.map(c => c.id === id ? updatedItem : c);
+
+    setCart(updatedCart);
+    await syncCartItemToDb(orderId, updatedItem, updatedItem.qty);
+    await syncOrderMassToDb(orderId, updatedCart);
+  };
 
   // ── Database Operations ────────────────────────────────────
   const loadOrders = async () => {
@@ -145,6 +401,8 @@ export default function PosScreen() {
       const db = routeDbForEntity("customer", scope);
       const rows = await db.all(
         `SELECT m.id, m.qty, m.value, m.time, m.data AS mass_data,
+                (SELECT phase FROM motion WHERE stream = m.id AND action = 111 LIMIT 1) AS refund_phase,
+                (SELECT phase FROM motion WHERE stream = m.id AND action = 801 LIMIT 1) AS payment_phase,
                 (SELECT phase FROM motion WHERE stream = m.id ORDER BY seq DESC LIMIT 1) AS last_phase
          FROM mass m
          WHERE m.type = 'order' AND m.scope = ?
@@ -161,11 +419,18 @@ export default function PosScreen() {
           method = d.method || "CARD";
         } catch (_) {}
 
+        let status: "PAID" | "REFUNDED" | "UNPAID" = "UNPAID";
+        if (r.refund_phase === 111) {
+          status = "REFUNDED";
+        } else if (r.payment_phase === 802 || r.payment_phase === 801) {
+          status = "PAID";
+        }
+
         return {
           id: r.id,
           items,
           total: r.value || 0,
-          status: (r.last_phase === 111 ? "REFUNDED" : "PAID") as "PAID" | "REFUNDED",
+          status,
           time: r.time,
           method
         };
@@ -194,18 +459,23 @@ export default function PosScreen() {
       const selfId = await getSelfId();
       const scope = `c:${selfId}`;
       const db = routeDbForEntity("customer", scope);
-      const orderId = rid("ord");
+      const orderId = activeOrderId || rid("ord");
       const now = new Date().toISOString();
       const items = cart.map(c => `${c.qty}x ${c.title} ${c.variantLabel}`).join(", ");
       const total = cartTotal;
 
-      // 1. mass: order record
+      // 1. mass: order record (upsert)
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)",
+        `INSERT INTO mass (id, matter, type, scope, qty, value, active, data, time) 
+         VALUES (?, ?, 'order', ?, ?, ?, 1, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET 
+           qty = excluded.qty,
+           value = excluded.value,
+           data = excluded.data,
+           time = excluded.time`,
         [
           orderId,
           cart[0].productId,
-          "order",
           scope,
           cartCount,
           total,
@@ -219,14 +489,42 @@ export default function PosScreen() {
       );
 
       // 2. motion: 101 SOLD (inventory decrement log)
-      await appendMotion(db, orderId, 101, 101, -cartCount, null);
+      const soldRows = await db.all("SELECT seq FROM motion WHERE stream = ? AND action = 101", [orderId]);
+      if (soldRows.length > 0) {
+        await db.run("UPDATE motion SET delta = ? WHERE stream = ? AND seq = ?", [-cartCount, orderId, soldRows[0].seq]);
+      } else {
+        await appendMotion(db, orderId, 101, 101, -cartCount, null);
+      }
 
       // 3. motion: 801 PAYMENT_INIT, phase-updated directly to 802 PAYMENT_SUCCESS
-      await appendMotion(db, orderId, 801, 802, total, { 
-        m: payMethod, 
-        ref: orderId, 
-        ph: { "802": Date.now() } 
-      });
+      const paymentRows = await db.all("SELECT seq FROM motion WHERE stream = ? AND action = 801", [orderId]);
+      if (paymentRows.length > 0) {
+        await db.run(
+          "UPDATE motion SET delta = ?, data = ? WHERE stream = ? AND seq = ?",
+          [
+            total,
+            JSON.stringify({
+              m: payMethod,
+              ref: orderId,
+              ph: { "802": Date.now() }
+            }),
+            orderId,
+            paymentRows[0].seq
+          ]
+        );
+      } else {
+        await appendMotion(db, orderId, 801, 802, total, {
+          m: payMethod,
+          ref: orderId,
+          ph: { "802": Date.now() }
+        });
+      }
+
+      // 4. motion: items have already been synced in real-time.
+      // We run syncCartItemToDb for each item to make sure they are in sync.
+      for (const c of cart) {
+        await syncCartItemToDb(orderId, c, c.qty);
+      }
 
       if (await isCollabSyncEnabled()) {
         await db.push().catch(() => {});
@@ -234,15 +532,16 @@ export default function PosScreen() {
 
       await loadOrders();
       setCart([]);
+      updateActiveOrderId(null);
       setShowPayment(false);
       setShowCartSheet(false);
       setShowNumpad(false);
       setTypedAmount("0");
 
-      Alert.alert(
-        "✓ Sale Complete",
-        `Order #${orderId.slice(-6).toUpperCase()}\n${items}\n${fmt(total)} via ${payMethod.toUpperCase()}`
-      );
+      // The sale is paid; its fulfillment is now an open worldline. Drop the
+      // user on the Home now-slice, where they tap the order to advance its
+      // items through the phases and close it. See docs/technical/spacetime.md.
+      router.replace("/home");
     } catch (e: any) {
       Alert.alert("Error", e.message || "Checkout failed");
     } finally {
@@ -321,7 +620,7 @@ export default function PosScreen() {
     return `Option ${idx + 1}`;
   };
 
-  const addToCart = () => {
+  const addToCart = async () => {
     if (!configProduct) return;
     const mass = configProduct.mass[selectedVariantIdx];
     if (!mass) return;
@@ -331,41 +630,66 @@ export default function PosScreen() {
       return { title: mod.id, price: parseFloat(mod.value) || 0 };
     });
     const label = getVariantLabel(configProduct, selectedVariantIdx);
-    const existing = cart.findIndex(c => c.massId === mass.id);
 
-    if (existing >= 0) {
-      setCart(prev => prev.map((c, i) => i === existing ? { ...c, qty: c.qty + 1 } : c));
-    } else {
-      setCart(prev => [
-        ...prev,
-        {
-          id: rid("ci"),
-          productId: configProduct.id,
-          title: configProduct.title,
-          variantLabel: label,
-          massId: mass.id,
-          price,
-          qty: 1,
-          modifiers: mods
-        }
-      ]);
+    let orderId = activeOrderId;
+    if (!orderId) {
+      orderId = rid("ord");
+      updateActiveOrderId(orderId);
     }
 
+    const existingIdx = cart.findIndex(c => c.massId === mass.id);
+    let updatedCart: CartItem[] = [];
+    let targetItem: CartItem;
+
+    if (existingIdx >= 0) {
+      const item = cart[existingIdx];
+      targetItem = { ...item, qty: item.qty + 1 };
+      updatedCart = cart.map((c, i) => i === existingIdx ? targetItem : c);
+    } else {
+      targetItem = {
+        id: rid("ci"),
+        productId: configProduct.id,
+        title: configProduct.title,
+        variantLabel: label,
+        massId: mass.id,
+        price,
+        qty: 1,
+        modifiers: mods
+      };
+      updatedCart = [...cart, targetItem];
+    }
+
+    setCart(updatedCart);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setConfigProduct(null);
-    if (!isTablet) {
-      setShowCartSheet(true);
-    }
+
+    await syncCartItemToDb(orderId, targetItem, targetItem.qty);
+    await syncOrderMassToDb(orderId, updatedCart);
   };
 
-  const removeItem = (id: string) => {
+  const removeItem = async (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setCart(prev => {
-      const item = prev.find(c => c.id === id);
-      if (!item) return prev;
-      if (item.qty > 1) return prev.map(c => c.id === id ? { ...c, qty: c.qty - 1 } : c);
-      return prev.filter(c => c.id !== id);
-    });
+    const orderId = activeOrderId;
+    if (!orderId) return;
+
+    const existingIdx = cart.findIndex(c => c.id === id);
+    if (existingIdx < 0) return;
+
+    const item = cart[existingIdx];
+    let updatedCart: CartItem[] = [];
+
+    if (item.qty > 1) {
+      const updatedItem = { ...item, qty: item.qty - 1 };
+      updatedCart = cart.map(c => c.id === id ? updatedItem : c);
+      setCart(updatedCart);
+      await syncCartItemToDb(orderId, updatedItem, updatedItem.qty);
+    } else {
+      updatedCart = cart.filter(c => c.id !== id);
+      setCart(updatedCart);
+      await syncCartItemToDb(orderId, item, 0);
+    }
+
+    await syncOrderMassToDb(orderId, updatedCart);
   };
 
   // ── Render Helpers ─────────────────────────────────────────
@@ -438,9 +762,18 @@ export default function PosScreen() {
                   <Text style={S.cartItemName} numberOfLines={1}>
                     {item.title}
                   </Text>
-                  <Text style={S.cartItemVariant} numberOfLines={1}>
-                    {item.variantLabel}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <Text style={S.cartItemVariant} numberOfLines={1}>
+                      {item.variantLabel}
+                    </Text>
+                    {item.phase && item.phase !== 105 && (
+                      <View style={[S.miniPhaseBadge, { backgroundColor: ORDER_PHASE_COLOR[item.phase] + "20" }]}>
+                        <Text style={[S.miniPhaseBadgeText, { color: ORDER_PHASE_COLOR[item.phase] }]}>
+                          {ORDER_PHASE_LABEL[item.phase]}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                   {item.modifiers.map((m, i) => (
                     <Text key={i} style={S.cartItemMod}>
                       + {m.title} ({fmt(m.price)})
@@ -455,7 +788,7 @@ export default function PosScreen() {
                     </TouchableOpacity>
                     <Text style={S.qtyText}>{item.qty}</Text>
                     <TouchableOpacity
-                      onPress={() => setCart(prev => prev.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c))}
+                      onPress={() => handleIncreaseQty(item.id)}
                       style={S.qtyBtn}
                     >
                       <Ionicons name="add" size={14} color={BRAND_BLACK} />
@@ -474,13 +807,6 @@ export default function PosScreen() {
           <Text style={S.totalLabel}>Total</Text>
           <Text style={S.totalAmount}>{fmt(cartTotal)}</Text>
         </View>
-        <TouchableOpacity
-          style={[S.chargeBtn, cart.length === 0 && { opacity: 0.4 }]}
-          onPress={() => cart.length > 0 && setShowPayment(true)}
-          disabled={cart.length === 0}
-        >
-          <Text style={S.chargeBtnText}>Charge {fmt(cartTotal)}</Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -493,7 +819,11 @@ export default function PosScreen() {
       <View style={S.header}>
         <View style={{ flex: 1 }}>
           <Text style={S.headerTitle}>Tar Store</Text>
-          <Text style={S.headerSub}>Store Terminal · s:102</Text>
+          <Text style={S.headerSub}>
+            {activeOrderId 
+              ? `Editing Tab #${activeOrderId.slice(-6).toUpperCase()}` 
+              : "Store Terminal · s:102"}
+          </Text>
         </View>
         <TouchableOpacity style={S.ordersBtn} onPress={() => { loadOrders(); setShowOrders(true); }}>
           <Ionicons name="receipt-outline" size={22} color={BRAND_BLACK} />
@@ -841,8 +1171,8 @@ export default function PosScreen() {
                     <Text style={S.detailOrderNumber}>ORDER #{selectedOrder.id.slice(-6).toUpperCase()}</Text>
                     <Text style={S.detailOrderTime}>{new Date(selectedOrder.time).toLocaleString()}</Text>
                   </View>
-                  <View style={[S.statusBadge, selectedOrder.status === "REFUNDED" ? S.statusBadgeRefunded : S.statusBadgePaid]}>
-                    <Text style={[S.statusBadgeText, selectedOrder.status === "REFUNDED" ? S.statusBadgeTextRefunded : S.statusBadgeTextPaid]}>
+                  <View style={[S.statusBadge, selectedOrder.status === "REFUNDED" ? S.statusBadgeRefunded : selectedOrder.status === "UNPAID" ? S.statusBadgeUnpaid : S.statusBadgePaid]}>
+                    <Text style={[S.statusBadgeText, selectedOrder.status === "REFUNDED" ? S.statusBadgeTextRefunded : selectedOrder.status === "UNPAID" ? S.statusBadgeTextUnpaid : S.statusBadgeTextPaid]}>
                       {selectedOrder.status}
                     </Text>
                   </View>
@@ -864,6 +1194,18 @@ export default function PosScreen() {
                   <Text style={S.detailFieldLabel}>Total Amount</Text>
                   <Text style={S.detailFieldValueBold}>{fmt(selectedOrder.total)}</Text>
                 </View>
+
+                {selectedOrder.status !== "REFUNDED" && (
+                  <TouchableOpacity
+                    style={S.reopenBtn}
+                    onPress={() => handleReopenOrder(selectedOrder)}
+                  >
+                    <Ionicons name="create-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={S.reopenBtnText}>
+                      {selectedOrder.status === "UNPAID" ? "Open Tab / Edit" : "Reopen & Add Items"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
                 {selectedOrder.status === "PAID" && (
                   <TouchableOpacity
@@ -890,8 +1232,8 @@ export default function PosScreen() {
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                       <Text style={S.transId}>#{item.id.slice(-6).toUpperCase()}</Text>
-                      <View style={[S.miniStatusBadge, item.status === "REFUNDED" ? S.statusBadgeRefunded : S.statusBadgePaid]}>
-                        <Text style={[S.miniStatusBadgeText, item.status === "REFUNDED" ? S.statusBadgeTextRefunded : S.statusBadgeTextPaid]}>
+                      <View style={[S.miniStatusBadge, item.status === "REFUNDED" ? S.statusBadgeRefunded : item.status === "UNPAID" ? S.statusBadgeUnpaid : S.statusBadgePaid]}>
+                        <Text style={[S.miniStatusBadgeText, item.status === "REFUNDED" ? S.statusBadgeTextRefunded : item.status === "UNPAID" ? S.statusBadgeTextUnpaid : S.statusBadgeTextPaid]}>
                           {item.status}
                         </Text>
                       </View>
@@ -1574,5 +1916,36 @@ const S = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "700"
+  },
+  statusBadgeUnpaid: {
+    backgroundColor: "#fef3c7"
+  },
+  statusBadgeTextUnpaid: {
+    color: "#d97706"
+  },
+  reopenBtn: {
+    backgroundColor: ACCENT,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    paddingVertical: 12,
+    marginTop: 8
+  },
+  reopenBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700"
+  },
+  miniPhaseBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginTop: 2,
+  },
+  miniPhaseBadgeText: {
+    fontSize: 9,
+    fontWeight: "700",
+    textTransform: "uppercase",
   }
 });

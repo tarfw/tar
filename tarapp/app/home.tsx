@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Modal,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,6 +25,7 @@ import {
 } from "../lib/db";
 import * as Haptics from "expo-haptics";
 import { getCurrentUser, UserProfile } from "../lib/auth";
+import { setActiveMassId } from "../lib/state";
 
 // ---------------------------------------------------------------------------
 // Home = the now-slice of open worldlines.
@@ -36,7 +38,18 @@ import { getCurrentUser, UserProfile } from "../lib/auth";
 // state and falls out of the slice. See docs/technical/spacetime.md.
 // ---------------------------------------------------------------------------
 
-type Kind = "task" | "schedule" | "lead" | "ticket" | "trip" | "invoice";
+type Kind = "task" | "schedule" | "lead" | "ticket" | "trip" | "invoice" | "order";
+
+// A line item on an order — a single motion row (action 105) whose `phase`
+// advances 105→106→107→108→109 along the fulfillment chain.
+interface OrderItem {
+  seq: number;
+  title: string;
+  qty: number;
+  price: number;
+  phase: number;
+  isPayment?: boolean;
+}
 
 interface Worldline {
   id: string;
@@ -52,7 +65,30 @@ interface Worldline {
   entityTitle: string | null;
   entityType: string | null;
   originSync: boolean;
+  items?: OrderItem[]; // populated for kind === "order"
 }
+
+// Order fulfillment chain. The order's overall phase is the MIN across its
+// items — it is only DELIVERED once every item has been handed over.
+const ORDER_PHASES = [105, 106, 107, 108, 109];
+const ORDER_PHASE_LABEL: Record<number, string> = {
+  105: "Placed",
+  106: "Confirmed",
+  107: "Preparing",
+  108: "Ready",
+  109: "Delivered",
+};
+const nextOrderPhase = (p: number) => {
+  const i = ORDER_PHASES.indexOf(p);
+  return i < 0 || i >= ORDER_PHASES.length - 1 ? 109 : ORDER_PHASES[i + 1];
+};
+const ORDER_PHASE_COLOR: Record<number, string> = {
+  105: "#94a3b8",
+  106: "#2563eb",
+  107: "#ca5010",
+  108: "#16a34a",
+  109: "#475569",
+};
 
 // Status string → phase opcode, mirroring workspace.tsx PHASE_MAP (subset used here).
 const PHASE_MAP: Record<string, number> = {
@@ -72,6 +108,7 @@ const KIND_META: Record<Kind, { color: string; icon: any; label: string }> = {
   ticket: { color: "#d13438", icon: "help-buoy-outline", label: "Ticket" },
   trip: { color: "#2563eb", icon: "navigate-outline", label: "Trip" },
   invoice: { color: "#107c41", icon: "card-outline", label: "Invoice" },
+  order: { color: "#0066cc", icon: "receipt-outline", label: "Order" },
 };
 
 function parseData(raw: string | null): Record<string, any> {
@@ -118,7 +155,14 @@ const WORLDLINE_QUERY = `
          (SELECT data   FROM motion WHERE stream = m.id ORDER BY seq ASC  LIMIT 1) AS root_data
   FROM mass m
   LEFT JOIN matter mt ON mt.id = m.matter
-  WHERE m.active = 1 AND m.type IN ('lead', 'ticket', 'trip', 'invoice', 'slot')
+  WHERE m.active = 1 AND m.type IN ('lead', 'ticket', 'trip', 'invoice', 'slot', 'order')
+`;
+
+// Line items of an order: the action=105 fulfillment and action=801 payment motions on its stream.
+const ORDER_ITEMS_QUERY = `
+  SELECT seq, action, phase, delta, data FROM motion
+  WHERE stream = ? AND action IN (105, 801)
+  ORDER BY seq ASC
 `;
 
 function rowToWorldline(r: any, originSync: boolean): Worldline | null {
@@ -150,6 +194,13 @@ function rowToWorldline(r: any, originSync: boolean): Worldline | null {
   };
 }
 
+// An order's overall phase is the MIN across its line items — only DELIVERED
+// once every item has been handed over.
+const orderPhase = (items: OrderItem[]) => {
+  const physicalItems = items.filter(i => !i.isPayment);
+  return physicalItems.length ? Math.min(...physicalItems.map((i) => i.phase)) : 105;
+};
+
 // Title, current stage label, and the label for the next motion this row emits.
 function describe(item: Worldline): { title: string; stage?: string; next: string } {
   const root = parseData(item.rootData);
@@ -180,6 +231,14 @@ function describe(item: Worldline): { title: string; stage?: string; next: strin
     }
     case "invoice":
       return { title: `Invoice $${Number(item.value || 0).toFixed(0)}`, next: "Mark paid" };
+    case "order": {
+      const phase = orderPhase(item.items || []);
+      return {
+        title: `Order #${item.id.slice(-6).toUpperCase()}`,
+        stage: (ORDER_PHASE_LABEL[phase] || "Placed").toLowerCase(),
+        next: `Advance to ${ORDER_PHASE_LABEL[nextOrderPhase(phase)]}`,
+      };
+    }
   }
 }
 
@@ -192,43 +251,112 @@ export default function HomePage() {
   const [selected, setSelected] = useState<Worldline | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [busy, setBusy] = useState(false);
+  const [paymentTask, setPaymentTask] = useState<{ order: Worldline; item: OrderItem } | null>(null);
+
+  const loadWorldlines = async () => {
+    try {
+      const id = cachedSelfId || (await getSelfId());
+      setSelfId(id);
+
+      const dbs = [
+        { db: getPrimarySyncDb(id), sync: true },
+        { db: getLocalPrivateDb(id), sync: false },
+      ];
+
+      const merged = new Map<string, Worldline>();
+      for (const { db, sync } of dbs) {
+        const rows = await db.all(WORLDLINE_QUERY).catch(() => [] as any[]);
+        for (const r of rows as any[]) {
+          const w = rowToWorldline(r, sync);
+          if (!w || merged.has(w.id)) continue;
+
+          if (w.kind === "order") {
+            const itemRows = await db.all(ORDER_ITEMS_QUERY, [w.id]).catch(() => [] as any[]);
+            w.items = (itemRows as any[]).map((ir) => {
+              if (ir.action === 801) {
+                return {
+                  seq: ir.seq,
+                  action: ir.action,
+                  title: ir.phase === 802 ? "Payment Successful" : "Collect Payment",
+                  qty: 1,
+                  price: ir.delta || 0,
+                  phase: ir.phase || 801,
+                  isPayment: true,
+                };
+              }
+              const d = parseData(ir.data);
+              return {
+                seq: ir.seq,
+                action: ir.action || 105,
+                title: d.title || "Item",
+                qty: d.qty || 1,
+                price: d.price || 0,
+                phase: ir.phase || 105,
+                isPayment: false,
+              };
+            });
+            if (w.items.length > 0 && w.items.every((it) => it.phase >= 109)) continue;
+          }
+
+          merged.set(w.id, w);
+        }
+      }
+
+      const list = Array.from(merged.values()).sort((a, b) => {
+        const ta = a.end || a.start || a.time || "";
+        const tb = b.end || b.start || b.time || "";
+        return String(ta).localeCompare(String(tb));
+      });
+
+      setWorldlines(list);
+    } catch (e) {
+      console.error("[Home] Failed to load worldlines:", e);
+    }
+  };
+
+  const handleCompletePayment = async (method: "cash" | "card" | "upi") => {
+    if (!paymentTask || busy || !selfId) return;
+    const { order, item } = paymentTask;
+    setBusy(true);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const db = order.originSync ? getPrimarySyncDb(selfId) : getLocalPrivateDb(selfId);
+      
+      await db.run(
+        "UPDATE motion SET phase = 802, data = ? WHERE stream = ? AND seq = ?",
+        [
+          JSON.stringify({
+            m: method.toUpperCase(),
+            ref: order.id,
+            ph: { "802": Date.now() }
+          }),
+          order.id,
+          item.seq
+        ]
+      );
+      
+      setPaymentTask(null);
+      await closeOrderIfDelivered(db, order.id);
+      await loadWorldlines();
+      
+      if (await isCollabSyncEnabled()) {
+        await db.push().catch((err: any) => console.warn("[Home] Sync push failed:", err));
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not complete payment.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
 
       async function load() {
-        try {
-          const id = cachedSelfId || (await getSelfId());
-          if (!cancelled) setSelfId(id);
-
-          // Open worldlines live in two DBs: entity-bound items in the synced
-          // workspace DB, personal items in the local private DB.
-          const dbs = [
-            { db: getPrimarySyncDb(id), sync: true },
-            { db: getLocalPrivateDb(id), sync: false },
-          ];
-
-          const merged = new Map<string, Worldline>();
-          for (const { db, sync } of dbs) {
-            const rows = await db.all(WORLDLINE_QUERY).catch(() => [] as any[]);
-            for (const r of rows as any[]) {
-              const w = rowToWorldline(r, sync);
-              if (w && !merged.has(w.id)) merged.set(w.id, w);
-            }
-          }
-
-          // Sort on the time axis: soonest-due / overdue first, then by recency.
-          const list = Array.from(merged.values()).sort((a, b) => {
-            const ta = a.end || a.start || a.time || "";
-            const tb = b.end || b.start || b.time || "";
-            return String(ta).localeCompare(String(tb));
-          });
-
-          if (!cancelled) setWorldlines(list);
-        } catch (e) {
-          console.error("[Home] Failed to load worldlines:", e);
-        }
+        if (cancelled) return;
+        await loadWorldlines();
       }
 
       async function loadProfile() {
@@ -346,6 +474,24 @@ export default function HomePage() {
           await db.run("UPDATE mass SET active = 0 WHERE id = ?", [item.id]);
           await phaseUpdateMotion(db, item.id, 802, "PAYMENT_SUCCESS", item.value, {});
           break;
+        case "order": {
+          // Order-level advance: bump every item sitting at the order's current
+          // (minimum) phase up to the next phase, then close if all delivered.
+          const items = item.items || [];
+          const cur = orderPhase(items);
+          const next = nextOrderPhase(cur);
+          for (const it of items) {
+            if (it.phase <= cur && it.phase < 109) {
+              await db.run("UPDATE motion SET phase = ? WHERE stream = ? AND seq = ?", [
+                next,
+                item.id,
+                it.seq,
+              ]);
+            }
+          }
+          await closeOrderIfDelivered(db, item.id);
+          break;
+        }
       }
 
       if (await isCollabSyncEnabled()) {
@@ -359,7 +505,134 @@ export default function HomePage() {
     }
   };
 
+  // Close the order's mass once all of its line items reach 109 DELIVERED and payment is paid.
+  const closeOrderIfDelivered = async (db: any, orderId: string) => {
+    const itemsRows = await db.all(
+      "SELECT phase FROM motion WHERE stream = ? AND action = 105",
+      [orderId]
+    );
+    const paymentRows = await db.all(
+      "SELECT phase FROM motion WHERE stream = ? AND action = 801",
+      [orderId]
+    );
+    const itemsDelivered = itemsRows.length > 0 && itemsRows.every((r: any) => (r.phase || 105) >= 109);
+    const paymentPaid = paymentRows.length > 0 && paymentRows.every((r: any) => (r.phase || 801) >= 802);
+    if (itemsDelivered && paymentPaid) {
+      await db.run("UPDATE mass SET active = 0 WHERE id = ?", [orderId]);
+    }
+  };
+
+  // Per-item advance: push a single line item one step along the chain.
+  const advanceOrderItem = async (order: Worldline, it: OrderItem) => {
+    const done = it.isPayment ? it.phase >= 802 : it.phase >= 109;
+    if (busy || !selfId || done) return;
+    setBusy(true);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const db = order.originSync ? getPrimarySyncDb(selfId) : getLocalPrivateDb(selfId);
+      const next = it.isPayment ? 802 : nextOrderPhase(it.phase);
+      await db.run("UPDATE motion SET phase = ? WHERE stream = ? AND seq = ?", [
+        next,
+        order.id,
+        it.seq,
+      ]);
+      await closeOrderIfDelivered(db, order.id);
+      await loadWorldlines();
+      if (await isCollabSyncEnabled()) {
+        await db.push().catch((err: any) => console.warn("[Home] Sync push failed:", err));
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not advance this item.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Grouped order card: header (order #, total, phase, advance) + line items,
+  // each item tappable to advance its own phase along the fulfillment chain.
+  const renderOrderGroup = (item: Worldline, index: number) => {
+    const items = item.items || [];
+    const phase = orderPhase(items);
+    const phaseColor = ORDER_PHASE_COLOR[phase] || "#94a3b8";
+    return (
+      <View key={item.id} style={styles.orderGroup}>
+        <TouchableOpacity
+          style={styles.orderHeader}
+          activeOpacity={0.6}
+          onPress={() => {
+            setActiveMassId(item.id);
+            router.push("/pos");
+          }}
+        >
+          <View style={[styles.kindDot, { backgroundColor: KIND_META.order.color }]}>
+            <Ionicons name={KIND_META.order.icon} size={14} color="white" />
+          </View>
+          <View style={styles.rowText}>
+            <Text style={styles.rowTitle} numberOfLines={1}>
+              Order #{item.id.slice(-6).toUpperCase()}
+            </Text>
+            <Text style={styles.rowSub} numberOfLines={1}>
+              {items.length} item{items.length === 1 ? "" : "s"} · {ORDER_PHASE_LABEL[phase]}
+            </Text>
+          </View>
+          <Text style={styles.orderTotal}>${Number(item.value || 0).toFixed(2)}</Text>
+        </TouchableOpacity>
+
+        <View style={styles.orderItems}>
+          {items.map((it, i) => {
+            const done = it.isPayment ? it.phase >= 802 : it.phase >= 109;
+            const c = it.isPayment
+              ? (it.phase === 802 ? "#16a34a" : "#ca5010")
+              : (ORDER_PHASE_COLOR[it.phase] || "#94a3b8");
+            const iconName = it.isPayment
+              ? (done ? "card" : "card-outline")
+              : (done ? "checkmark-circle" : "ellipse-outline");
+            const label = it.isPayment
+              ? (it.phase === 802 ? "Paid" : "Unpaid")
+              : (ORDER_PHASE_LABEL[it.phase] || "Placed");
+            return (
+              <TouchableOpacity
+                key={it.seq}
+                style={[styles.orderItemRow, i > 0 && styles.orderItemBorder]}
+                activeOpacity={0.6}
+                disabled={busy || done}
+                onPress={() => {
+                  if (it.isPayment) {
+                    setPaymentTask({ order: item, item: it });
+                  } else {
+                    advanceOrderItem(item, it);
+                  }
+                }}
+              >
+                <Ionicons
+                  name={iconName}
+                  size={20}
+                  color={c}
+                  style={{ marginRight: 12 }}
+                />
+                <Text style={styles.orderItemText} numberOfLines={1}>
+                  {it.title}{" "}
+                  {it.isPayment ? (
+                    <Text style={styles.orderItemQty}>(${Number(it.price).toFixed(2)})</Text>
+                  ) : (
+                    <Text style={styles.orderItemQty}>×{it.qty}</Text>
+                  )}
+                </Text>
+                <Text style={[styles.orderItemPhase, { color: c }]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {index < worldlines.length - 1 && <View style={styles.separator} />}
+      </View>
+    );
+  };
+
   const renderRow = (item: Worldline, index: number) => {
+    if (item.kind === "order") return renderOrderGroup(item, index);
     const meta = KIND_META[item.kind];
     const { title, stage } = describe(item);
     const due = item.end || item.start;
@@ -463,7 +736,10 @@ export default function HomePage() {
               <TouchableOpacity
                 style={[styles.circleBtn, { marginLeft: 6 }]}
                 activeOpacity={0.8}
-                onPress={() => router.push("/pos")}
+                onPress={() => {
+                  setActiveMassId(null);
+                  router.push("/pos");
+                }}
               >
                 <Ionicons name="arrow-up" size={18} color="#1a1a1a" />
               </TouchableOpacity>
@@ -528,6 +804,64 @@ export default function HomePage() {
             </View>
           </>
         )}
+
+        {/* Payment Selection Modal */}
+        <Modal
+          visible={paymentTask !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPaymentTask(null)}
+        >
+          <View style={styles.modalBackdrop}>
+            <TouchableOpacity
+              style={{ flex: 1 }}
+              activeOpacity={1}
+              onPress={() => setPaymentTask(null)}
+            />
+            <View style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, 24) }]}>
+              <View style={styles.modalKnob} />
+              
+              <View style={{ alignItems: "center", marginVertical: 24 }}>
+                <Text style={styles.modalTitle}>Collect Payment</Text>
+                <Text style={styles.modalOrderSubtitle}>
+                  Order #{paymentTask?.order.id.slice(-6).toUpperCase()}
+                </Text>
+                <Text style={styles.modalAmount}>
+                  ${Number(paymentTask?.item.price || 0).toFixed(2)}
+                </Text>
+              </View>
+
+              <View style={{ gap: 12, paddingHorizontal: 4 }}>
+                {(["card", "cash", "upi"] as const).map((method) => {
+                  const labelMap = { card: "Card", cash: "Cash", upi: "UPI" };
+                  const iconMap = { card: "card-outline", cash: "cash", upi: "qr-code" } as const;
+                  const colorMap = { card: "#4f46e5", cash: "#16a34a", upi: "#ca8a04" } as const;
+                  return (
+                    <TouchableOpacity
+                      key={method}
+                      style={styles.payMethodButton}
+                      activeOpacity={0.7}
+                      onPress={() => handleCompletePayment(method)}
+                    >
+                      <View style={[styles.payMethodIconContainer, { backgroundColor: colorMap[method] + "15" }]}>
+                        <Ionicons name={iconMap[method]} size={22} color={colorMap[method]} />
+                      </View>
+                      <Text style={styles.payMethodText}>{labelMap[method]}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+
+                <TouchableOpacity
+                  style={styles.cancelPayButton}
+                  activeOpacity={0.7}
+                  onPress={() => setPaymentTask(null)}
+                >
+                  <Text style={styles.cancelPayText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -587,6 +921,50 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: "#f1f5f9",
     marginLeft: 62,
+  },
+  orderGroup: {
+    backgroundColor: "white",
+  },
+  orderHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: "#f8fafc",
+  },
+  orderTotal: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#0f172a",
+    marginLeft: 12,
+  },
+  orderItems: {
+    paddingHorizontal: 20,
+  },
+  orderItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 11,
+  },
+  orderItemBorder: {
+    borderTopWidth: 0.5,
+    borderTopColor: "#f1f5f9",
+  },
+  orderItemText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#334155",
+  },
+  orderItemQty: {
+    color: "#94a3b8",
+    fontSize: 13,
+    fontWeight: "400",
+  },
+  orderItemPhase: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginLeft: 12,
   },
   emptyState: {
     flex: 1,
@@ -751,5 +1129,76 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#0f172a",
     marginLeft: 12,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: "white",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  modalKnob: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#e2e8f0",
+    alignSelf: "center",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0f172a",
+    marginTop: 12,
+  },
+  modalOrderSubtitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#64748b",
+    marginTop: 4,
+  },
+  modalAmount: {
+    fontSize: 32,
+    fontWeight: "900",
+    color: "#0f172a",
+    marginTop: 12,
+  },
+  payMethodButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+  },
+  payMethodIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  payMethodText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0f172a",
+    marginLeft: 12,
+  },
+  cancelPayButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    marginTop: 4,
+  },
+  cancelPayText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#ef4444",
   },
 });

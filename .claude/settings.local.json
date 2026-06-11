@@ -32,7 +32,8 @@
       "WebSearch",
       "WebFetch(domain:docs.turso.tech)",
       "WebFetch(domain:turso.tech)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(echo \"---exit:$?---\")"
     ]
   }
 }

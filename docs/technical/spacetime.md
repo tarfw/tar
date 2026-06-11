@@ -120,6 +120,33 @@ identical motion ledgers. Each kind knows its next motion:
 | Ticket | `ticket` | `308 RESOLVED` + `mass.active → 0` |
 | Trip | `trip` | `402 IN TRANSIT` → `109 DELIVERED` |
 | Invoice | `invoice` | `802 PAYMENT SUCCESS` + `mass.active → 0` |
+| Order | `order` | per-item `105→106→107→108→109`; `mass.active → 0` when all items delivered |
+
+### Orders are a grouped worldline (POS → Home)
+
+A POS sale (`pos.tsx`) is **paid the instant it is created** (`801 → 802` in one
+shot), so payment is *not* an open worldline. What stays open is **fulfillment**.
+At checkout, POS emits one `motion` per cart line on the order stream:
+
+```
+action 105 PLACED, phase 105, data = { li:1, title, qty, price }
+```
+
+Each line item is a child event on the order's stream — exactly the parent/child
+grouping the old Home used. On Home an order renders as a **grouped card**: a
+header (order #, total, overall phase) over its item rows.
+
+- **Per-item phase**: tapping an item advances *just that item* one step along
+  `105 PLACED → 106 CONFIRMED → 107 PREPARING → 108 READY → 109 DELIVERED`
+  (a kitchen-ticket: mark one dish ready without touching the others).
+- **Order phase = MIN of its items**: the order is only as far along as its
+  slowest line. Tapping the header bumps every item currently at that minimum.
+- **Terminal**: when *all* items reach `109 DELIVERED`, the order's `mass.active`
+  is set to `0` and it leaves the now-slice.
+
+This is why `'order'` joins `lead`/`ticket`/`trip`/`invoice`/`slot` in the
+worldline query, with line items loaded via a second query against the order's
+`action = 105` motions.
 
 ---
 

@@ -14,3 +14,5 @@ TURSO_PLATFORM_API_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJWU1h
 TURSO_ORG = "tarframework"
 TURSO_GROUP = "default"
 
+[ai]
+binding = "AI"

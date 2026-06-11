@@ -103,7 +103,15 @@ export default function RootLayout() {
           headerShown: false,
           contentStyle: { backgroundColor: "white" },
         }}
-      />
+      >
+        <Stack.Screen
+          name="superagent"
+          options={{
+            animation: "fade",
+            animationDuration: 120,
+          }}
+        />
+      </Stack>
     </SafeAreaProvider>
   );
 }

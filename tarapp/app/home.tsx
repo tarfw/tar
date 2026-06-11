@@ -714,6 +714,7 @@ export default function HomePage() {
         {/* Bottom Action Bar */}
         <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
           <View style={styles.bottomBarRow}>
+            {/* Left: Workspace */}
             <View style={styles.leftGroup}>
               <TouchableOpacity
                 style={styles.bigWorkspaceChip}
@@ -724,6 +725,16 @@ export default function HomePage() {
               </TouchableOpacity>
             </View>
 
+            {/* Centre: Super Agent planet button */}
+            <TouchableOpacity
+              style={styles.planetBtn}
+              activeOpacity={0.8}
+              onPress={() => router.push("/superagent")}
+            >
+              <Text style={styles.planetBtnEmoji}>🪐</Text>
+            </TouchableOpacity>
+
+            {/* Right: AI + POS */}
             <View style={styles.rightGroup}>
               <TouchableOpacity
                 style={styles.circleBtn}
@@ -1000,6 +1011,17 @@ const styles = StyleSheet.create({
   rightGroup: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  planetBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#f0f4ff",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  planetBtnEmoji: {
+    fontSize: 26,
   },
   circleBtn: {
     width: 40,

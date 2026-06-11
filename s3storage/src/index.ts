@@ -11,6 +11,8 @@ export interface Env {
   TURSO_PLATFORM_API_TOKEN?: string;
   TURSO_ORG?: string;
   TURSO_GROUP?: string;
+  // Cloudflare Workers AI binding (configured in wrangler.toml)
+  AI?: any;
 }
 
 async function queryTurso(tursoUrl: string, tursoToken: string, sql: string, params: any[] = []): Promise<any> {
@@ -535,58 +537,103 @@ export default {
       }
     }
 
-    if (request.method === "GET" && url.pathname === "/api/global/search") {
+    // POST /api/global/search — Workers AI embedding + Turso vector search, LIKE fallback
+    if (request.method === "POST" && url.pathname === "/api/global/search") {
       try {
-        const queryParam = url.searchParams.get("q") || "";
-        const typeParam = url.searchParams.get("type") || "";
-        
-        const mainUrl = env.TURSO_URL || "libsql://global-tarframework.aws-eu-west-1.turso.io";
-        const mainToken = env.TURSO_AUTH_TOKEN || "";
-        
-        let sql = "SELECT * FROM matter WHERE public = 1";
-        const params: any[] = [];
-        
-        if (queryParam.trim()) {
-          sql += " AND (title LIKE ? OR code LIKE ? OR data LIKE ?)";
-          const searchTerm = `%${queryParam}%`;
-          params.push(searchTerm, searchTerm, searchTerm);
+        const body = await request.json() as any;
+        const queryText: string = (body.query || body.q || "").trim();
+        const categoryFilter: string = (body.category || "").trim();
+        const limit: number = Math.min(Number(body.limit) || 20, 50);
+
+        if (!queryText) {
+          return new Response(JSON.stringify({ matters: [], mass: [] }), {
+            status: 200,
+            headers: responseHeaders,
+          });
         }
-        
-        if (typeParam.trim()) {
-          sql += " AND type = ?";
-          params.push(typeParam);
-        }
-        
-        sql += " LIMIT 25";
-        
-        const result = await queryTurso(mainUrl, mainToken, sql, params);
-        
-        const matters: any[] = [];
-        if (result && result.rows) {
-          const cols = result.cols.map((c: any) => c.name || c);
-          for (const row of result.rows) {
-            const obj: any = {};
-            row.forEach((cell: any, idx: number) => {
-              const colName = cols[idx];
-              obj[colName] = cell?.value !== undefined ? cell.value : cell;
+
+        const tursoUrl = env.TURSO_URL || "libsql://global-tarframework.aws-eu-west-1.turso.io";
+        const tursoToken = env.TURSO_AUTH_TOKEN || "";
+        let matters: any[] = [];
+        let usedVector = false;
+
+        // ── Strategy 1: Workers AI embedding + vector_distance_cos ────────────
+        if (env.AI) {
+          try {
+            const embedRes = await env.AI.run("@cf/baai/bge-small-en-v1.5", {
+              text: [queryText],
             });
-            matters.push(obj);
+            const queryVector: number[] = embedRes?.data?.[0] ?? [];
+            if (queryVector.length > 0) {
+              const vectorLiteral = `[${queryVector.join(",")}]`;
+              const catClause = categoryFilter
+                ? `AND m.type = '${categoryFilter.replace(/'/g, "")}'`
+                : "";
+              const vectorSql = `
+                SELECT m.id, m.code, m.type, m.scope, m.title, m.data, m.time,
+                       vector_distance_cos(mem.vector, vector('${vectorLiteral}')) AS score
+                FROM matter m
+                JOIN memory mem ON mem.matter = m.id
+                WHERE m.public = 1 AND m.scope = 'g' ${catClause}
+                ORDER BY score ASC
+                LIMIT ${limit}
+              `;
+              const result = await queryTurso(tursoUrl, tursoToken, vectorSql);
+              if (result?.rows?.length > 0) {
+                const cols = result.cols.map((c: any) => c.name || c);
+                for (const row of result.rows) {
+                  const obj: any = {};
+                  row.forEach((cell: any, i: number) => {
+                    obj[cols[i]] = cell?.value !== undefined ? cell.value : cell;
+                  });
+                  matters.push(obj);
+                }
+                usedVector = true;
+              }
+            }
+          } catch (aiErr) {
+            console.warn("[Search] AI vector search failed, falling back:", aiErr);
           }
         }
-        
+
+        // ── Strategy 2: LIKE text search fallback ─────────────────────────────
+        if (!usedVector) {
+          const term = `%${queryText}%`;
+          const likeSql = categoryFilter
+            ? "SELECT id, code, type, scope, title, data, time FROM matter WHERE public = 1 AND scope = 'g' AND type = ? AND (title LIKE ? OR data LIKE ?) LIMIT ?"
+            : "SELECT id, code, type, scope, title, data, time FROM matter WHERE public = 1 AND scope = 'g' AND (title LIKE ? OR data LIKE ?) LIMIT ?";
+          const likeParams = categoryFilter
+            ? [categoryFilter, term, term, limit]
+            : [term, term, limit];
+          const result = await queryTurso(tursoUrl, tursoToken, likeSql, likeParams);
+          if (result?.rows) {
+            const cols = result.cols.map((c: any) => c.name || c);
+            for (const row of result.rows) {
+              const obj: any = {};
+              row.forEach((cell: any, i: number) => {
+                obj[cols[i]] = cell?.value !== undefined ? cell.value : cell;
+              });
+              matters.push(obj);
+            }
+          }
+        }
+
+        // ── Fetch active mass rows for matched matters ─────────────────────────
         let massRecords: any[] = [];
-        if (matters.length > 0 && mainToken) {
-          const matterIds = matters.map(m => m.id);
-          const placeholders = matterIds.map(() => "?").join(",");
-          const massSql = `SELECT * FROM mass WHERE matter IN (${placeholders}) AND active = 1`;
-          const massResult = await queryTurso(mainUrl, mainToken, massSql, matterIds);
-          if (massResult && massResult.rows) {
-            const massCols = massResult.cols.map((c: any) => c.name || c);
+        if (matters.length > 0) {
+          const ids = matters.map((m) => m.id);
+          const ph = ids.map(() => "?").join(",");
+          const massResult = await queryTurso(
+            tursoUrl, tursoToken,
+            `SELECT id, matter, type, qty, value, active, data FROM mass WHERE matter IN (${ph}) AND active = 1`,
+            ids
+          );
+          if (massResult?.rows) {
+            const cols = massResult.cols.map((c: any) => c.name || c);
             for (const row of massResult.rows) {
               const obj: any = {};
-              row.forEach((cell: any, idx: number) => {
-                const colName = massCols[idx];
-                obj[colName] = cell?.value !== undefined ? cell.value : cell;
+              row.forEach((cell: any, i: number) => {
+                obj[cols[i]] = cell?.value !== undefined ? cell.value : cell;
               });
               massRecords.push(obj);
             }
@@ -594,7 +641,7 @@ export default {
         }
 
         return new Response(
-          JSON.stringify({ matters, mass: massRecords }),
+          JSON.stringify({ matters, mass: massRecords, vectorUsed: usedVector }),
           { status: 200, headers: responseHeaders }
         );
       } catch (e: any) {
@@ -604,6 +651,7 @@ export default {
         });
       }
     }
+
 
     return new Response(JSON.stringify({ error: "Not Found" }), {
       status: 404,

@@ -734,25 +734,17 @@ export default function HomePage() {
               <Text style={styles.planetBtnEmoji}>🪐</Text>
             </TouchableOpacity>
 
-            {/* Right: AI + POS */}
+            {/* Right: POS */}
             <View style={styles.rightGroup}>
               <TouchableOpacity
-                style={styles.circleBtn}
-                activeOpacity={0.8}
-                onPress={() => router.push("/aichat")}
-              >
-                <Text style={styles.aiText}>AI</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.circleBtn, { marginLeft: 6 }]}
-                activeOpacity={0.8}
+                style={styles.bigPosChip}
+                activeOpacity={0.7}
                 onPress={() => {
                   setActiveMassId(null);
                   router.push("/pos");
                 }}
               >
-                <Ionicons name="arrow-up" size={18} color="#1a1a1a" />
+                <Text style={styles.posText}>sale</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1040,10 +1032,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  bigPosChip: {
+    width: 100,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#eef2ff",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   aiText: {
     fontSize: 13,
     fontWeight: "700",
     color: "#6366f1",
+  },
+  posText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#4f46e5",
   },
   backdrop: {
     position: "absolute",

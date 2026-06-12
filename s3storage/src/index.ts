@@ -202,18 +202,38 @@ export default {
 
         const statements: any[] = [];
         
-        // 1. Insert or replace published matter in global DB with public = 1
+        let matterDataStr = null;
+        let matterDataObj: any = {};
+        if (matter.data) {
+          if (typeof matter.data === "string") {
+            matterDataStr = matter.data;
+            try {
+              matterDataObj = JSON.parse(matter.data);
+            } catch (_) {}
+          } else {
+            matterDataStr = JSON.stringify(matter.data);
+            matterDataObj = matter.data;
+          }
+        }
+
+        const timeStr = matter.time || new Date().toISOString();
+
+        // 1. Insert or update published matter in global DB conditionally
         statements.push({
-          q: "INSERT OR REPLACE INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)",
+          q: `INSERT INTO matter (id, code, type, scope, owner, title, public, data, time)
+              VALUES (?, ?, ?, 'g', ?, ?, 1, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET
+                title = CASE WHEN json_extract(matter.data, '$.verified') IS NOT 1 THEN excluded.title ELSE matter.title END,
+                data = CASE WHEN json_extract(matter.data, '$.verified') IS NOT 1 THEN excluded.data ELSE matter.data END,
+                time = excluded.time`,
           params: [
             matter.id,
-            matter.code || null,
-            matter.type || null,
-            matter.scope || null,
-            matter.owner || null,
-            matter.title,
-            matter.data || null,
-            matter.time || new Date().toISOString()
+            matter.code || matter.id,
+            matter.type || "product",
+            matter.owner || "crowdsourced",
+            matter.title || "",
+            matterDataStr,
+            timeStr
           ]
         });
 
@@ -276,6 +296,30 @@ export default {
         }
 
         console.log(`[Worker] Successfully published matter ${matter.id} and invalidating KV cache...`);
+
+        // Generate vector embedding using Workers AI if present
+        if (env.AI) {
+          try {
+            const textToEmbed = `${matter.title || ""} ${matter.type || ""} ${matterDataObj.brand || ""}`.trim();
+            if (textToEmbed) {
+              const embedRes = await env.AI.run("@cf/baai/bge-small-en-v1.5", {
+                text: [textToEmbed],
+              });
+              const vector = embedRes?.data?.[0];
+              if (vector && vector.length > 0) {
+                const vectorLiteral = `[${vector.join(",")}]`;
+                await queryTurso(
+                  tursoUrl,
+                  tursoToken,
+                  "INSERT OR REPLACE INTO memory (matter, vector) VALUES (?, vector(?))",
+                  [matter.id, vectorLiteral]
+                );
+              }
+            }
+          } catch (aiErr) {
+            console.error("[Worker AI] Vector generation failed:", aiErr);
+          }
+        }
 
         return new Response(
           JSON.stringify({ success: true }),

@@ -18,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
-import { getSelfId, routeDbForEntity, isCollabSyncEnabled, cachedSelfId } from "../lib/db";
+import { getSelfId, routeDbForEntity, isCollabSyncEnabled, cachedSelfId, CLOUDFLARE_WORKER_URL } from "../lib/db";
 import { upsertMatterVector } from "../lib/vectorStore";
 import { OPCODE_LABELS } from "../lib/domainsData";
 import { getCurrentUser, UserProfile } from "../lib/auth";
@@ -1164,6 +1164,49 @@ export default function WorkspaceScreen() {
     });
   };
 
+  const publishToMarketplace = async (matterId: string) => {
+    runMutation(async () => {
+      const db = getDb();
+      
+      // 1. Fetch Matter definition
+      const matterRows = await db.all("SELECT * FROM matter WHERE id = ?", [matterId]);
+      if (!matterRows || matterRows.length === 0) {
+        throw new Error("Product matter definition not found locally.");
+      }
+      const matter = matterRows[0] as any;
+      
+      // 2. Fetch all active variant Mass rows
+      const massRecords = await db.all(
+        "SELECT * FROM mass WHERE matter = ? AND active = 1",
+        [matterId]
+      );
+
+      // 3. POST payload to Worker
+      const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/publish`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${selfId || "guest"}`,
+        },
+        body: JSON.stringify({
+          matter: {
+            ...matter,
+            scope: "g",
+            public: 1,
+          },
+          massRecords,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || "Failed to publish product.");
+      }
+
+      Alert.alert("Published 🎉", "Product and variants are now live on the global marketplace.");
+    });
+  };
+
   const unpublishFromProfile = (targetId: string) => {
     if (!selectedCustomer) return;
     runMutation(async () => {
@@ -2008,6 +2051,16 @@ export default function WorkspaceScreen() {
                     );
                   })}
                   <AddRow label="Publish to Storefront" onPress={() => openSheet("publish")} />
+                  <View style={styles.divider} />
+                  <TouchableOpacity
+                    style={[styles.addRow, { backgroundColor: "#f0fdf4", marginHorizontal: 20, marginTop: 10, borderRadius: 8 }]}
+                    onPress={() => publishToMarketplace(selectedCustomer.id)}
+                  >
+                    <Ionicons name="globe-outline" size={18} color="#16a34a" />
+                    <Text style={[styles.addRowText, { color: "#16a34a", fontWeight: "700" }]}>
+                      Publish to Marketplace
+                    </Text>
+                  </TouchableOpacity>
                 </>
               )}
 

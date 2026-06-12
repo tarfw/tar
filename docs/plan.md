@@ -12,6 +12,7 @@ This document defines the schemas, scope codes, event opcodes, identity model, a
 5. [Identity & Profile Sync](#5-identity--profile-sync)
 6. [Dynamic Forms](#6-dynamic-forms)
 7. [Pricing, Turso Costs & P&L](#7-pricing-turso-costs--pl)
+8. [Federated Product Space (Marketplace & Publishing)](#8-federated-product-space-marketplace--publishing)
 
 ---
 
@@ -213,3 +214,66 @@ Queries route to physical SQLite files based on scope code prefixes:
 | **AI LLM wholesales** | $11,976.00 | ₹10,00,000.00 | 1.89% |
 | **Total Expenses** | $14,894.92 | ₹12,43,730.00 | **2.35%** |
 | **Net Operating Profit**| **$619,835.08** | **₹5,17,56,270.00** | **97.65% Net Margin** |
+
+---
+
+## 8. Federated Product Space (Marketplace & Publishing)
+
+The Federated Product Space divides catalog discovery and checkout transactions into two separate flows:
+* **Global Registry (Read/Discovery):** Served at the edge using the Cloudflare Worker and `global.db` (via Turso). Searches are semantic, powered by vector embeddings.
+* **Merchant Workspaces (Write/Management):** Managed local-first on individual client devices and synchronized using standard user `collab.db` databases.
+
+### Flow Diagram
+
+```mermaid
+graph TD
+    subgraph Client App (Merchant Workspace)
+        M1[Create local Product Matter] --> M2[Create local Variant Mass]
+        M2 --> M3[Tap 'Publish to Marketplace']
+    end
+
+    subgraph Cloudflare Worker (/api/publish)
+        M3 --> W1[Receive Matter + Mass Payload]
+        W1 --> W2{Does Matter exist in Global DB?}
+        W2 -->|No| W3[Create Matter in global.db as Verified=0]
+        W2 -->|Yes & Verified=0| W4[Update Matter details if newer]
+        W2 -->|Yes & Verified=1| W5[Skip Matter update / Protect official details]
+        W3 & W4 & W5 --> W6[Upsert Merchant Mass rows in global.db]
+        W6 --> W7[Generate Vector Embedding using Workers AI]
+        W7 --> W8[Insert vector into memory table]
+    end
+
+    subgraph Client App (Super Agent Search)
+        SA1[Search query] --> SA2[POST /api/global/search]
+        SA2 --> SA3[Vector search on memory/matter in global.db]
+        SA3 --> SA4[List unique Matters + matching nearby Mass instances]
+    end
+```
+
+### Database Schema Metadata Alignments
+
+Local/collab SQLite databases and the global Turso database share the core schemas, but use specific metadata flags within `matter.data` and `mass.data`.
+
+#### 1. Matter Table (`matter`)
+Represents the abstract definition of a product or service (e.g., *Pepsi 500ml Can*).
+* `id`: Standardized product key or barcode (e.g., UPC/EAN code like `8901058002345` or standard manufacturer slug).
+* `title`: Display name of the product.
+* `type`: Category type (e.g., `product`, `service`, `restaurant`).
+* `public`: Boolean (`1` for global, `0` for private).
+* `data`: JSON string containing:
+  * `verified`: Integer (`0` = crowdsourced/provisional, `1` = verified by official manufacturer/brand).
+  * `brand`: String (e.g., `PepsiCo`).
+  * `image_url`: String (path to catalog image).
+  * `manufacturer_id`: Owner user ID if claimed.
+
+#### 2. Mass Table (`mass`)
+Represents the physical inventory instance/pricing sold by a specific merchant storefront.
+* `id`: Unique variant/store-product code (e.g., `store_101_pepsi_500ml`).
+* `matter`: Foreign key pointing to `matter.id`.
+* `qty`: Stock level currently available at this merchant.
+* `value`: Selling price of the item at this storefront.
+* `active`: Availability status (`1` = active, `0` = disabled).
+* `data`: JSON string containing:
+  * `label`: Size/color variant description (e.g., `500ml`).
+  * `store_id`: Storefront profile ID selling this item.
+  * `geo_h3`: H3 geo-coordinate for proximity matching.

@@ -558,6 +558,25 @@ export default function ProfileScreen() {
                   </View>
                 </TouchableOpacity>
               </View>
+
+              <View style={styles.scopeItemWrapper}>
+                <TouchableOpacity 
+                  style={styles.scopeHeaderRow} 
+                  onPress={() => router.push("/aichat")}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                    <IconAvatar icon="chatbubble-ellipses-outline" bgColor="#e0e7ff" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.scopeCategoryName}>AI Copilot</Text>
+                      <Text style={styles.scopeDatabaseName}>Chat with your local AI assistant</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.scopePrefixBadge, { backgroundColor: "#e0e7ff" }]}>
+                    <Text style={[styles.scopePrefixText, { color: "#4f46e5" }]}>OPEN</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* AI Models */}

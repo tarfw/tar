@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { SCHEMA_STATEMENTS } from "./schema";
 import { getCurrentUser } from "./auth";
 
-const CLOUDFLARE_WORKER_URL = "https://s3storage.tamilframework.workers.dev";
+export const CLOUDFLARE_WORKER_URL = "https://s3storage.tamilframework.workers.dev";
 
 // Cache of dynamically opened database connections and session tokens
 const dbConnections: Record<string, Database> = {};

@@ -17,12 +17,15 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GROQ_API_KEY": ""
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_TURSO_URL": "file:tar.db",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com"
+      }
     }
   },
   "submit": {

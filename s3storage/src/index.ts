@@ -189,7 +189,7 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/api/publish") {
       try {
-        const { matter, massRecords } = await request.json() as any;
+        const { matter, massRecords, relations } = await request.json() as any;
         if (!matter || !matter.id) {
           return new Response(JSON.stringify({ error: "Missing matter or matter id" }), {
             status: 400,
@@ -255,6 +255,24 @@ export default {
                 mass.end || null,
                 mass.data || null,
                 mass.time || new Date().toISOString()
+              ]
+            });
+          }
+        }
+
+        // 3. Insert or replace graph relations (e.g. product -> profile 'published_to')
+        if (Array.isArray(relations)) {
+          for (const rel of relations) {
+            if (!rel || !rel.src || !rel.tgt || !rel.type) continue;
+            statements.push({
+              q: `INSERT INTO relation (src, tgt, type, weight, time) VALUES (?, ?, ?, ?, ?)
+                  ON CONFLICT(src, tgt, type) DO UPDATE SET weight = excluded.weight, time = excluded.time`,
+              params: [
+                rel.src,
+                rel.tgt,
+                rel.type,
+                rel.weight !== null && rel.weight !== undefined ? parseFloat(rel.weight) : 1.0,
+                rel.time || new Date().toISOString()
               ]
             });
           }
@@ -590,10 +608,52 @@ export default {
         const limit: number = Math.min(Number(body.limit) || 20, 50);
 
         if (!queryText) {
-          return new Response(JSON.stringify({ matters: [], mass: [] }), {
-            status: 200,
-            headers: responseHeaders,
-          });
+          if (categoryFilter) {
+            const tursoUrl = env.TURSO_URL || "libsql://global-tarframework.aws-eu-west-1.turso.io";
+            const tursoToken = env.TURSO_AUTH_TOKEN || "";
+            const sql = "SELECT id, code, type, scope, title, data, time FROM matter WHERE public = 1 AND scope = 'g' AND type = ? LIMIT ?";
+            const result = await queryTurso(tursoUrl, tursoToken, sql, [categoryFilter, limit]);
+            let matters: any[] = [];
+            if (result?.rows) {
+              const cols = result.cols.map((c: any) => c.name || c);
+              for (const row of result.rows) {
+                const obj: any = {};
+                row.forEach((cell: any, i: number) => {
+                  obj[cols[i]] = cell?.value !== undefined ? cell.value : cell;
+                });
+                matters.push(obj);
+              }
+            }
+            let massRecords: any[] = [];
+            if (matters.length > 0) {
+              const ids = matters.map((m) => m.id);
+              const ph = ids.map(() => "?").join(",");
+              const massResult = await queryTurso(
+                tursoUrl, tursoToken,
+                `SELECT id, matter, type, qty, value, active, data FROM mass WHERE matter IN (${ph}) AND active = 1`,
+                ids
+              );
+              if (massResult?.rows) {
+                const cols = massResult.cols.map((c: any) => c.name || c);
+                for (const row of massResult.rows) {
+                  const obj: any = {};
+                  row.forEach((cell: any, i: number) => {
+                    obj[cols[i]] = cell?.value !== undefined ? cell.value : cell;
+                  });
+                  massRecords.push(obj);
+                }
+              }
+            }
+            return new Response(
+              JSON.stringify({ matters, mass: massRecords, vectorUsed: false }),
+              { status: 200, headers: responseHeaders }
+            );
+          } else {
+            return new Response(JSON.stringify({ matters: [], mass: [] }), {
+              status: 200,
+              headers: responseHeaders,
+            });
+          }
         }
 
         const tursoUrl = env.TURSO_URL || "libsql://global-tarframework.aws-eu-west-1.turso.io";

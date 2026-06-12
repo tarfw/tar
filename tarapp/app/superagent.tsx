@@ -97,7 +97,7 @@ export default function SuperAgentScreen() {
 
   const doSearch = useCallback(async (q: string, cat: Category | null) => {
     const trimmed = q.trim();
-    if (!trimmed) { setResults([]); setSearched(false); return; }
+    if (!trimmed && !cat) { setResults([]); setSearched(false); return; }
 
     setLoading(true);
     setSearched(true);
@@ -144,7 +144,7 @@ export default function SuperAgentScreen() {
   const onCategoryPress = (cat: Category) => {
     const next = activeCategory?.key === cat.key ? null : cat;
     setActiveCategory(next);
-    if (query.trim()) doSearch(query, next);
+    doSearch(query, next);
   };
 
   const onClear = () => { setQuery(""); setResults([]); setSearched(false); };
@@ -348,25 +348,22 @@ export default function SuperAgentScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={22} color="#1e293b" />
-        </TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 12 }}>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Super Agent</Text>
         </View>
         <View style={styles.planetBadge}>
-          <Text style={{ fontSize: 18 }}>🪐</Text>
+          <Ionicons name="globe" size={18} color="#4f46e5" />
         </View>
       </View>
 
       {/* Search bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={18} color="#94a3b8" style={{ marginRight: 8 }} />
+          <Ionicons name="search-outline" size={20} color="#5f6368" style={{ marginRight: 10 }} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search anything..."
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor="#747775"
             value={query}
             onChangeText={onQueryChange}
             autoCorrect={false}
@@ -375,30 +372,40 @@ export default function SuperAgentScreen() {
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={onClear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close-circle" size={18} color="#cbd5e1" />
+              <Ionicons name="close" size={20} color="#5f6368" />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* Category chips */}
-      <View style={styles.chipRow}>
+      {/* Category chips (Horizontal scrollable, flat & modern) */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.chipScroll}
+        contentContainerStyle={styles.chipScrollContent}
+      >
         {CATEGORIES.map((cat, i) => {
           const active = activeCategory?.key === cat.key;
           return (
             <Animated.View key={cat.key} entering={ZoomIn.delay(i * 50).duration(260)}>
               <TouchableOpacity
-                style={[styles.chip, active && { backgroundColor: cat.color, borderColor: cat.color }]}
+                style={[
+                  styles.chip,
+                  active ? { backgroundColor: cat.color } : { backgroundColor: "#f4f4f5" }
+                ]}
                 onPress={() => onCategoryPress(cat)}
                 activeOpacity={0.75}
               >
                 <Text style={styles.chipEmoji}>{cat.emoji}</Text>
-                <Text style={[styles.chipLabel, active && { color: "white" }]}>{cat.label}</Text>
+                <Text style={[styles.chipLabel, active ? { color: "white" } : { color: "#52525b" }]}>
+                  {cat.label}
+                </Text>
               </TouchableOpacity>
             </Animated.View>
           );
         })}
-      </View>
+      </ScrollView>
 
       {/* Results */}
       {loading ? renderSkeleton()
@@ -414,12 +421,12 @@ export default function SuperAgentScreen() {
         ) : searched ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🔍</Text>
-            <Text style={styles.emptyText}>No results for "{query}"</Text>
+            <Text style={styles.emptyText}>No results for &quot;{query}&quot;</Text>
             <Text style={styles.emptySub}>Try a different term or category</Text>
           </View>
         ) : (
           <View style={styles.idleState}>
-            <Text style={{ fontSize: 44, opacity: 0.2 }}>🪐</Text>
+            <Ionicons name="globe" size={44} color="#4f46e5" style={{ opacity: 0.2, marginBottom: 12 }} />
             <Text style={styles.idleText}>Search for anything</Text>
           </View>
         )}
@@ -445,39 +452,37 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 16, paddingVertical: 14,
+    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8,
     backgroundColor: "white",
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#e2e8f0",
   },
-  backBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: "#f8fafc", justifyContent: "center", alignItems: "center",
-  },
-  headerTitle: { fontSize: 17, fontWeight: "700", color: "#0f172a", letterSpacing: -0.3 },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: "#0f172a", letterSpacing: -0.5 },
   planetBadge: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: "#f0f4ff", justifyContent: "center", alignItems: "center",
   },
 
-  searchContainer: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "white" },
+  searchContainer: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "white" },
   searchBar: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: "#f8fafc", borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: "#e2e8f0",
-    paddingHorizontal: 14, paddingVertical: 11,
+    backgroundColor: "#f3f4f6", borderRadius: 28,
+    paddingHorizontal: 18, paddingVertical: 10,
   },
-  searchInput: { flex: 1, fontSize: 15, color: "#1e293b", fontWeight: "500" },
+  searchInput: { flex: 1, fontSize: 16, color: "#1f1f1f", fontWeight: "400" },
 
-  chipRow: {
-    flexDirection: "row", paddingHorizontal: 16, paddingBottom: 12, gap: 8, flexWrap: "wrap",
+  chipScroll: {
+    flexGrow: 0,
     backgroundColor: "white",
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#f1f5f9",
+    paddingBottom: 12,
+  },
+  chipScrollContent: {
+    paddingHorizontal: 16,
   },
   chip: {
     flexDirection: "row", alignItems: "center",
-    paddingVertical: 6, paddingHorizontal: 12,
-    borderRadius: 20, borderWidth: 1, borderColor: "#e2e8f0",
-    backgroundColor: "#f8fafc", gap: 4,
+    paddingVertical: 8, paddingHorizontal: 16,
+    borderRadius: 20,
+    marginRight: 8,
+    gap: 4,
   },
   chipEmoji: { fontSize: 13 },
   chipLabel: { fontSize: 12, fontWeight: "600", color: "#64748b" },

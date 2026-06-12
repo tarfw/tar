@@ -33,7 +33,20 @@
       "WebFetch(domain:docs.turso.tech)",
       "WebFetch(domain:turso.tech)",
       "Bash(npx tsc *)",
-      "Bash(echo \"---exit:$?---\")"
+      "Bash(echo \"---exit:$?---\")",
+      "WebFetch(domain:developers.cloudflare.com)",
+      "Bash(wrangler --version)",
+      "Bash(wrangler whoami *)",
+      "Bash(wrangler kv *)",
+      "Bash(wrangler types *)",
+      "Bash(wrangler d1 *)",
+      "Bash(wrangler deploy *)",
+      "Bash(wrangler deployments *)",
+      "Bash(wrangler triggers *)",
+      "Bash(wrangler delete *)",
+      "Bash(wrangler secret *)",
+      "Bash(nslookup anyshop.tarai.space)",
+      "Bash(CLOUDFLARE_ACCOUNT_ID=54dc15bf1f8fecfd12dac7b74149eb9a wrangler deploy)"
     ]
   }
 }

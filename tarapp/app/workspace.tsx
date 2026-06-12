@@ -340,7 +340,7 @@ export default function WorkspaceScreen() {
     try {
       const db = routeDbForEntity("customer", activeScope);
       const rows = await db.all(
-        "SELECT id, code, type, title, owner, data, time FROM matter WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier', 'vehicle', 'finance', 'product', 'profile') AND scope = ? ORDER BY time DESC",
+        "SELECT id, code, type, title, owner, data, time FROM matter WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier', 'vehicle', 'finance', 'product', 'profile') AND (scope = ? OR scope = 'g') ORDER BY time DESC",
         [activeScope]
       );
       setCustomers((rows as any[]) || []);
@@ -1207,6 +1207,63 @@ export default function WorkspaceScreen() {
     });
   };
 
+  // ---- Publish a Storefront Profile to the live web (xxx.tarai.space) ----
+  const publishStorefront = (profile: CustomerRow) => {
+    runMutation(async () => {
+      const db = getDb();
+
+      // Derive a subdomain: existing data.subdomain -> code -> id slug.
+      const data = parseData(profile.data);
+      let subdomain: string = (data.subdomain || profile.code || profile.id || "")
+        .toString()
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "-")
+        .replace(/^-+|-+$/g, "");
+      if (!subdomain) {
+        Alert.alert("Subdomain needed", "Set a code on this profile to use as its web address.");
+        return;
+      }
+
+      const newData = JSON.stringify({ ...data, subdomain });
+
+      // 1. Persist subdomain + mark public locally.
+      await db.run(
+        "UPDATE matter SET data = ?, public = 1, scope = 'g' WHERE id = ?",
+        [newData, profile.id]
+      );
+
+      // 2. Gather this storefront's curated product links (product -> profile).
+      const relations = (await db.all(
+        "SELECT src, tgt, type, weight FROM relation WHERE tgt = ? AND type = 'published_to'",
+        [profile.id]
+      )) as { src: string; tgt: string; type: string; weight: number }[];
+
+      // 3. Push the profile matter + its relations to the global Turso DB.
+      const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/publish`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${selfId || "guest"}`,
+        },
+        body: JSON.stringify({
+          matter: {
+            ...profile,
+            data: newData,
+            scope: "g",
+            public: 1,
+          },
+          massRecords: [],
+          relations,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.text()) || "Failed to publish storefront.");
+
+      await pushIfEnabled(db);
+      setSelectedCustomer({ ...profile, data: newData });
+      Alert.alert("Storefront live 🎉", `Your shop is live at:\nhttps://${subdomain}.tarai.space`);
+    });
+  };
+
   const unpublishFromProfile = (targetId: string) => {
     if (!selectedCustomer) return;
     runMutation(async () => {
@@ -2064,6 +2121,21 @@ export default function WorkspaceScreen() {
                 </>
               )}
 
+              {/* Publish this storefront live to the web — only for Profiles */}
+              {selectedCustomer.type === "profile" && (
+                <TouchableOpacity
+                  style={styles.addRow}
+                  onPress={() => publishStorefront(selectedCustomer)}
+                  disabled={busy}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="rocket-outline" size={18} color="#2563eb" />
+                  <Text style={[styles.addRowText, { color: "#2563eb", fontWeight: "700" }]}>
+                    Publish Storefront (go live on tarai.space)
+                  </Text>
+                </TouchableOpacity>
+              )}
+
               {/* Published products — only for Storefront Profiles */}
               {selectedCustomer.type === "profile" && (
                 <>
@@ -2890,16 +2962,70 @@ export default function WorkspaceScreen() {
               <>
                 <Text style={styles.modalTitle}>Publish to Storefront</Text>
                 <Text style={styles.modalSchemaHint}>relation (published_to)</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={publishTargetId}
-                  onChangeText={setPublishTargetId}
-                  placeholder="Storefront Profile ID (e.g. TAMILSHOES)"
-                  placeholderTextColor={TEXT_TERTIARY}
-                  autoFocus
-                />
-                <TouchableOpacity style={styles.modalSubmitBtn} onPress={publishToProfile} disabled={busy} activeOpacity={0.8}>
-                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Publish Product</Text>}
+                
+                <Text style={{ fontSize: 13, fontWeight: "600", color: TEXT_SECONDARY, marginBottom: 12 }}>
+                  Select Storefront Profile:
+                </Text>
+                
+                {customers.filter(c => c.type === "profile").length === 0 ? (
+                  <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                    <Text style={{ fontSize: 14, color: TEXT_TERTIARY, textAlign: "center" }}>
+                      No Storefront Profiles found.{"\n"}Create one first in the entities page.
+                    </Text>
+                  </View>
+                ) : (
+                  <ScrollView style={{ maxHeight: 200, marginBottom: 16 }} showsVerticalScrollIndicator={false}>
+                    {customers.filter(c => c.type === "profile").map((store) => {
+                      const isSelected = publishTargetId === store.id;
+                      const initialStr = (store.title || store.id).slice(0, 2).toUpperCase();
+                      
+                      return (
+                        <TouchableOpacity
+                          key={store.id}
+                          style={[
+                            styles.listRow,
+                            { 
+                              borderRadius: 12, 
+                              borderWidth: 1, 
+                              borderColor: isSelected ? ACCENT : DIVIDER,
+                              marginBottom: 8,
+                              backgroundColor: isSelected ? "#f3f6fd" : "white"
+                            }
+                          ]}
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            setPublishTargetId(store.id);
+                          }}
+                        >
+                          <View style={[styles.avatarCircle, isSelected && { backgroundColor: "#e0e7ff" }]}>
+                            <Text style={[styles.avatarInitial, isSelected && { color: ACCENT }]}>
+                              {initialStr}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.rowTitle, { fontWeight: "600" }, isSelected && { color: ACCENT }]}>
+                              {store.title}
+                            </Text>
+                            <Text style={styles.rowSub}>@{store.id}</Text>
+                          </View>
+                          <Ionicons 
+                            name={isSelected ? "checkmark-circle" : "ellipse-outline"} 
+                            size={20} 
+                            color={isSelected ? ACCENT : TEXT_TERTIARY} 
+                          />
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+                
+                <TouchableOpacity 
+                  style={[styles.modalSubmitBtn, !publishTargetId && { backgroundColor: "#e2e8f0" }]} 
+                  onPress={publishToProfile} 
+                  disabled={busy || !publishTargetId} 
+                  activeOpacity={0.8}
+                >
+                  {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={[styles.modalSubmitBtnText, !publishTargetId && { color: TEXT_TERTIARY }]}>Publish Product</Text>}
                 </TouchableOpacity>
               </>
             )}

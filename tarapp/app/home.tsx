@@ -725,13 +725,13 @@ export default function HomePage() {
               </TouchableOpacity>
             </View>
 
-            {/* Centre: Super Agent planet button */}
+            {/* Centre: Super Agent button */}
             <TouchableOpacity
               style={styles.planetBtn}
               activeOpacity={0.8}
               onPress={() => router.push("/superagent")}
             >
-              <Text style={styles.planetBtnEmoji}>🪐</Text>
+              <Ionicons name="globe" size={24} color="white" />
             </TouchableOpacity>
 
             {/* Right: POS */}
@@ -880,7 +880,6 @@ const styles = StyleSheet.create({
   },
   list: {
     backgroundColor: "white",
-    borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: "#f1f5f9",
   },
@@ -987,7 +986,7 @@ const styles = StyleSheet.create({
     width: "100%",
     paddingHorizontal: 12,
     paddingTop: 12,
-    backgroundColor: "#f9fafb",
+    backgroundColor: "white",
     borderTopWidth: 1,
     borderTopColor: "#f1f5f9",
   },
@@ -1008,12 +1007,9 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: "#f0f4ff",
+    backgroundColor: "#4f46e5",
     justifyContent: "center",
     alignItems: "center",
-  },
-  planetBtnEmoji: {
-    fontSize: 26,
   },
   circleBtn: {
     width: 40,
@@ -1131,8 +1127,6 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     paddingHorizontal: 20,
     backgroundColor: "white",
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
   },
   topBarLeft: {
     flexDirection: "row",
@@ -1153,8 +1147,8 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   topBarTitle: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 20,
+    fontWeight: "800",
     color: "#0f172a",
     marginLeft: 12,
   },

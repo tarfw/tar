@@ -166,12 +166,11 @@ export default function EntityDirectoryScreen() {
 
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load list of entities from database
   const loadCustomers = useCallback(async (activeScope: string) => {
     try {
       const db = routeDbForEntity("customer", activeScope);
       const rows = await db.all(
-        "SELECT id, code, type, title, owner, data, time FROM matter WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier', 'vehicle', 'finance', 'product', 'profile') AND scope = ? ORDER BY time DESC",
+        "SELECT id, code, type, title, owner, data, time FROM matter WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier', 'vehicle', 'finance', 'product', 'profile') AND (scope = ? OR scope = 'g') ORDER BY time DESC",
         [activeScope]
       );
       setCustomers((rows as any[]) || []);

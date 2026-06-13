@@ -1,7 +1,11 @@
 import "../global.css";
 import { Stack } from "expo-router";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
+import { KeyboardProvider } from "react-native-keyboard-controller";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as SplashScreen from "expo-splash-screen";
+
+const queryClient = new QueryClient();
 import { useEffect, useRef, useState } from "react";
 import { AppState, Alert } from "react-native";
 import { initDb, getUserDb } from "../lib/db";
@@ -97,21 +101,25 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: "white" },
-        }}
-      >
-        <Stack.Screen
-          name="superagent"
-          options={{
-            animation: "fade",
-            animationDuration: 120,
-          }}
-        />
-      </Stack>
-    </SafeAreaProvider>
+    <QueryClientProvider client={queryClient}>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <KeyboardProvider>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: "white" },
+            }}
+          >
+            <Stack.Screen
+              name="superagent"
+              options={{
+                animation: "fade",
+                animationDuration: 120,
+              }}
+            />
+          </Stack>
+        </KeyboardProvider>
+      </SafeAreaProvider>
+    </QueryClientProvider>
   );
 }

@@ -16,6 +16,7 @@ import { Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
+// eslint-disable-next-line import/no-unresolved
 import { useLLM } from "react-native-executorch";
 import * as SecureStore from "expo-secure-store";
 import { LFM_MODELS } from "./profile";

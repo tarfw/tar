@@ -2,13 +2,14 @@ import { GoogleSignin, statusCodes, User } from "@react-native-google-signin/goo
 import * as SecureStore from "expo-secure-store";
 
 const SECURE_STORE_USER_KEY = "google_auth_user";
+const SECURE_STORE_JWT_KEY = "sync_jwt";
+
+const WORKER_URL = "https://tar-worker.wetarteam.workers.dev";
 
 // Configure Google Sign-In
-// Note: webClientId is required for Android/iOS Google Sign-In to retrieve an idToken/serverAuthCode.
-// It is recommended to keep this value in your environment variables.
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "",
-  offlineAccess: true, // Set to true if you want to get a serverAuthCode for server-side verification
+  offlineAccess: true,
 });
 
 export interface UserProfile {
@@ -20,6 +21,42 @@ export interface UserProfile {
 }
 
 /**
+ * Exchange Google idToken for a custom JWT from the Worker.
+ * The JWT contains scope claims for DO access.
+ */
+export async function exchangeForJwt(idToken: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${WORKER_URL}/api/auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken })
+    });
+
+    if (!response.ok) {
+      console.warn("[Auth] JWT exchange failed:", await response.text());
+      return null;
+    }
+
+    const { token } = await response.json();
+    
+    // Store JWT securely
+    await SecureStore.setItemAsync(SECURE_STORE_JWT_KEY, token);
+    
+    return token;
+  } catch (e) {
+    console.warn("[Auth] JWT exchange error:", e);
+    return null;
+  }
+}
+
+/**
+ * Get the stored JWT token.
+ */
+export async function getJwt(): Promise<string | null> {
+  return await SecureStore.getItemAsync(SECURE_STORE_JWT_KEY);
+}
+
+/**
  * Initiates the Google Sign-In flow.
  * Returns the parsed user profile, or throws an error.
  */
@@ -28,8 +65,6 @@ export async function signInWithGoogle(): Promise<UserProfile> {
     await GoogleSignin.hasPlayServices();
     const response = await GoogleSignin.signIn();
     
-    // In newer versions, response might contain the data in the "data" field or directly.
-    // We check for both structures.
     const signInResult = response as any;
     const userData = signInResult.data ? signInResult.data : signInResult;
 
@@ -45,8 +80,13 @@ export async function signInWithGoogle(): Promise<UserProfile> {
       idToken: userData.idToken,
     };
 
-    // Save profile to Secure Store for persistent session
+    // Save profile to Secure Store
     await SecureStore.setItemAsync(SECURE_STORE_USER_KEY, JSON.stringify(profile));
+    
+    // Exchange idToken for JWT
+    if (userData.idToken) {
+      await exchangeForJwt(userData.idToken);
+    }
     
     return profile;
   } catch (error: any) {
@@ -69,10 +109,11 @@ export async function signOutGoogle(): Promise<void> {
   try {
     await GoogleSignin.signOut();
     await SecureStore.deleteItemAsync(SECURE_STORE_USER_KEY);
+    await SecureStore.deleteItemAsync(SECURE_STORE_JWT_KEY);
   } catch (error) {
     console.error("Failed to sign out from Google:", error);
-    // Even if Google sign-out fails, clear the local session to log the user out
     await SecureStore.deleteItemAsync(SECURE_STORE_USER_KEY);
+    await SecureStore.deleteItemAsync(SECURE_STORE_JWT_KEY);
   }
 }
 
@@ -85,7 +126,15 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
     // 1. Check local secure storage
     const savedUserJson = await SecureStore.getItemAsync(SECURE_STORE_USER_KEY);
     if (savedUserJson) {
-      return JSON.parse(savedUserJson) as UserProfile;
+      const profile = JSON.parse(savedUserJson) as UserProfile;
+      
+      // Check if JWT exists, if not exchange it
+      const jwt = await getJwt();
+      if (!jwt && profile.idToken) {
+        await exchangeForJwt(profile.idToken);
+      }
+      
+      return profile;
     }
 
     // 2. Fallback to silent native sign in
@@ -104,6 +153,12 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
           idToken: userData.idToken,
         };
         await SecureStore.setItemAsync(SECURE_STORE_USER_KEY, JSON.stringify(profile));
+        
+        // Exchange idToken for JWT
+        if (userData.idToken) {
+          await exchangeForJwt(userData.idToken);
+        }
+        
         return profile;
       }
     }

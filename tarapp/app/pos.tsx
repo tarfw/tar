@@ -19,8 +19,8 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
 import { DOMAINS } from "../lib/domainsData";
-import { routeDbForEntity, getSelfId, isCollabSyncEnabled } from "../lib/db";
-import { activeMassId, setActiveMassId } from "../lib/state";
+import { routeDbForEntity, getSelfId, isCollabSyncEnabled, pushLocalChanges } from "../lib/db";
+import { activeMatterId, setActiveMatterId } from "../lib/state";
 
 // ── Types ──────────────────────────────────────────────────────
 interface CartItem {
@@ -28,7 +28,7 @@ interface CartItem {
   productId: string;
   title: string;
   variantLabel: string;
-  massId: string;
+  matterId: string;
   price: number;
   qty: number;
   modifiers: { title: string; price: number }[];
@@ -92,10 +92,10 @@ export default function PosScreen() {
   const [showCartSheet, setShowCartSheet] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const [activeOrderId, setActiveOrderId] = useState<string | null>(activeMassId);
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(activeMatterId);
 
   const updateActiveOrderId = (id: string | null) => {
-    setActiveMassId(id);
+    setActiveMatterId(id);
     setActiveOrderId(id);
   };
 
@@ -181,13 +181,13 @@ export default function PosScreen() {
         try {
           const dataStr = typeof r.data === "string" ? r.data : String(r.data || "{}");
           const d = JSON.parse(dataStr);
-          if (d.massId) {
+          if (d.matterId) {
             loadedCart.push({
               id: rid("ci"),
               productId: d.productId || "unknown",
               title: d.title || "",
               variantLabel: d.variantLabel || "",
-              massId: d.massId,
+              matterId: d.matterId,
               price: d.price || 0,
               qty: d.qty || 1,
               modifiers: d.modifiers || [],
@@ -216,7 +216,7 @@ export default function PosScreen() {
         try {
           const dataStr = typeof r.data === "string" ? r.data : String(r.data || "{}");
           const d = JSON.parse(dataStr);
-          if (d.massId === item.massId) {
+          if (d.matterId === item.matterId) {
             existingSeq = typeof r.seq === "number" ? r.seq : Number(r.seq);
             break;
           }
@@ -230,7 +230,7 @@ export default function PosScreen() {
             [
               newQty,
               JSON.stringify({
-                massId: item.massId,
+                matterId: item.matterId,
                 productId: item.productId,
                 title: item.title,
                 variantLabel: item.variantLabel,
@@ -247,7 +247,7 @@ export default function PosScreen() {
         }
       } else if (newQty > 0) {
         await appendMotion(db, orderId, 105, 105, newQty, {
-          massId: item.massId,
+          matterId: item.matterId,
           productId: item.productId,
           title: item.title,
           variantLabel: item.variantLabel,
@@ -268,7 +268,7 @@ export default function PosScreen() {
       const db = routeDbForEntity("customer", scope);
 
       if (currentCart.length === 0) {
-        await db.run("DELETE FROM mass WHERE id = ?", [orderId]);
+        await db.run("DELETE FROM matter WHERE id = ?", [orderId]);
         await db.run("DELETE FROM motion WHERE stream = ?", [orderId]);
         updateActiveOrderId(null);
         return;
@@ -279,24 +279,24 @@ export default function PosScreen() {
       const itemsText = currentCart.map(c => `${c.qty}x ${c.title} ${c.variantLabel}`).join(", ");
       const now = new Date().toISOString();
 
-      const existing = await db.all("SELECT id FROM mass WHERE id = ?", [orderId]);
+      const existing = await db.all("SELECT id FROM matter WHERE id = ?", [orderId]);
       if (existing.length > 0) {
         await db.run(
-          "UPDATE mass SET qty = ?, value = ?, data = ? WHERE id = ?",
+          "UPDATE matter SET qty = ?, value = ?, data = ? WHERE id = ?",
           [
             totalQty,
             totalVal,
             JSON.stringify({
               items: itemsText,
               method: "UNPAID",
-              cart: currentCart.map(c => ({ massId: c.massId, qty: c.qty, price: c.price }))
+              cart: currentCart.map(c => ({ matterId: c.matterId, qty: c.qty, price: c.price }))
             }),
             orderId
           ]
         );
       } else {
         await db.run(
-          "INSERT INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'order', ?, ?, ?, 1, ?, ?)",
+          "INSERT INTO matter (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'order', ?, ?, ?, 1, ?, ?)",
           [
             orderId,
             currentCart[0].productId,
@@ -306,7 +306,7 @@ export default function PosScreen() {
             JSON.stringify({
               items: itemsText,
               method: "UNPAID",
-              cart: currentCart.map(c => ({ massId: c.massId, qty: c.qty, price: c.price }))
+              cart: currentCart.map(c => ({ matterId: c.matterId, qty: c.qty, price: c.price }))
             }),
             now
           ]
@@ -348,10 +348,10 @@ export default function PosScreen() {
                 const selfId = await getSelfId();
                 const scope = `c:${selfId}`;
                 const db = routeDbForEntity("customer", scope);
-                await db.run("DELETE FROM mass WHERE id = ?", [orderId]);
+                await db.run("DELETE FROM matter WHERE id = ?", [orderId]);
                 await db.run("DELETE FROM motion WHERE stream = ?", [orderId]);
                 if (await isCollabSyncEnabled()) {
-                  await db.push().catch(() => {});
+                  await pushLocalChanges(`s:${getSelfId()}`, { motion: [] }).catch(() => {});
                 }
               }
               setCart([]);
@@ -400,11 +400,11 @@ export default function PosScreen() {
       const scope = `c:${selfId}`;
       const db = routeDbForEntity("customer", scope);
       const rows = await db.all(
-        `SELECT m.id, m.qty, m.value, m.time, m.data AS mass_data,
+        `SELECT m.id, m.qty, m.value, m.time, m.data AS matter_data,
                 (SELECT phase FROM motion WHERE stream = m.id AND action = 111 LIMIT 1) AS refund_phase,
                 (SELECT phase FROM motion WHERE stream = m.id AND action = 801 LIMIT 1) AS payment_phase,
                 (SELECT phase FROM motion WHERE stream = m.id ORDER BY seq DESC LIMIT 1) AS last_phase
-         FROM mass m
+         FROM matter m
          WHERE m.type = 'order' AND m.scope = ?
          ORDER BY m.time DESC LIMIT 100`,
         [scope]
@@ -414,7 +414,7 @@ export default function PosScreen() {
         let items = "";
         let method = "CARD";
         try {
-          const d = JSON.parse(r.mass_data || "{}");
+          const d = JSON.parse(r.matter_data || "{}");
           items = d.items || "";
           method = d.method || "CARD";
         } catch (_) {}
@@ -464,9 +464,9 @@ export default function PosScreen() {
       const items = cart.map(c => `${c.qty}x ${c.title} ${c.variantLabel}`).join(", ");
       const total = cartTotal;
 
-      // 1. mass: order record (upsert)
+      // 1. matter: order record (upsert)
       await db.run(
-        `INSERT INTO mass (id, matter, type, scope, qty, value, active, data, time) 
+        `INSERT INTO matter (id, matter, type, scope, qty, value, active, data, time) 
          VALUES (?, ?, 'order', ?, ?, ?, 1, ?, ?)
          ON CONFLICT(id) DO UPDATE SET 
            qty = excluded.qty,
@@ -482,7 +482,7 @@ export default function PosScreen() {
           JSON.stringify({
             items,
             method: payMethod,
-            cart: cart.map(c => ({ massId: c.massId, qty: c.qty, price: c.price }))
+            cart: cart.map(c => ({ matterId: c.matterId, qty: c.qty, price: c.price }))
           }),
           now
         ]
@@ -527,7 +527,7 @@ export default function PosScreen() {
       }
 
       if (await isCollabSyncEnabled()) {
-        await db.push().catch(() => {});
+        await pushLocalChanges(`s:${getSelfId()}`, { motion: [] }).catch(() => {});
       }
 
       await loadOrders();
@@ -566,7 +566,7 @@ export default function PosScreen() {
               const db = routeDbForEntity("customer", scope);
 
               // Fetch target order detail
-              const orderRows = await db.all("SELECT value, qty FROM mass WHERE id = ?", [orderId]);
+              const orderRows = await db.all("SELECT value, qty FROM matter WHERE id = ?", [orderId]);
               if (orderRows.length === 0) {
                 throw new Error("Order not found");
               }
@@ -584,7 +584,7 @@ export default function PosScreen() {
               });
 
               if (await isCollabSyncEnabled()) {
-                await db.push().catch(() => {});
+                await pushLocalChanges(`s:${getSelfId()}`, { motion: [] }).catch(() => {});
               }
 
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -622,11 +622,11 @@ export default function PosScreen() {
 
   const addToCart = async () => {
     if (!configProduct) return;
-    const mass = configProduct.mass[selectedVariantIdx];
-    if (!mass) return;
-    const price = parseFloat(mass.value) || 0;
-    const mods = [...selectedMods].map(i => {
-      const mod = configProduct.mass[i];
+const matter = configProduct.matters[selectedVariantIdx];
+    if (!matter) return;
+    const price = parseFloat(matter.value) || 0;
+    if (modifiers.length > 0) {
+      const mod = configProduct.matters[i];
       return { title: mod.id, price: parseFloat(mod.value) || 0 };
     });
     const label = getVariantLabel(configProduct, selectedVariantIdx);
@@ -637,7 +637,7 @@ export default function PosScreen() {
       updateActiveOrderId(orderId);
     }
 
-    const existingIdx = cart.findIndex(c => c.massId === mass.id);
+    const existingIdx = cart.findIndex(c => c.matterId === matter.id);
     let updatedCart: CartItem[] = [];
     let targetItem: CartItem;
 
@@ -651,7 +651,7 @@ export default function PosScreen() {
         productId: configProduct.id,
         title: configProduct.title,
         variantLabel: label,
-        massId: mass.id,
+        matterId: matter.id,
         price,
         qty: 1,
         modifiers: mods
@@ -694,8 +694,8 @@ export default function PosScreen() {
 
   // ── Render Helpers ─────────────────────────────────────────
   const renderProductCard = (d: typeof DOMAINS[0]) => {
-    const outOfStock = d.mass.every(m => Number(m.qty) <= 0);
-    const inStockQty = d.mass[0]?.qty;
+    const outOfStock = d.matters.every(m => Number(m.qty) <= 0);
+    const inStockQty = d.matters[0]?.qty;
 
     return (
       <TouchableOpacity
@@ -952,7 +952,7 @@ export default function PosScreen() {
                 {/* Variants Selection */}
                 <Text style={S.modalSectionLabel}>CHOOSE SIZE / OPTION</Text>
                 <View style={S.variantGrid}>
-                  {configProduct.mass
+                  {configProduct.matters
                     .filter(m => !m.id.startsWith("price"))
                     .map((m, i) => {
                       const label = getVariantLabel(configProduct, i);
@@ -981,11 +981,11 @@ export default function PosScreen() {
                 </View>
 
                 {/* Modifiers (Add-ons) Selection */}
-                {configProduct.mass.some(m => m.id.startsWith("price")) && (
+                {configProduct.matters.some(m => m.id.startsWith("price")) && (
                   <>
                     <Text style={S.modalSectionLabel}>ADD-ONS</Text>
                     <View style={S.variantGrid}>
-                      {configProduct.mass.map((m, i) =>
+                      {configProduct.matters.map((m, i) =>
                         !m.id.startsWith("price") ? null : (
                           <TouchableOpacity
                             key={m.id}

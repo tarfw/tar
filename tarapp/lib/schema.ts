@@ -1,5 +1,5 @@
 export const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS matter (
+  `CREATE TABLE IF NOT EXISTS form (
     id TEXT PRIMARY KEY,
     code TEXT UNIQUE,
     type TEXT NOT NULL,
@@ -7,24 +7,26 @@ export const SCHEMA_STATEMENTS = [
     owner TEXT,
     title TEXT,
     public INTEGER DEFAULT 0,
+    active INTEGER DEFAULT 1,
     data TEXT,
     time TEXT DEFAULT CURRENT_TIMESTAMP
   )`,
   `CREATE TABLE IF NOT EXISTS memory (
-    matter TEXT PRIMARY KEY,
+    form TEXT PRIMARY KEY,
     vector BLOB
   )`,
-  `CREATE TABLE IF NOT EXISTS relation (
+  `CREATE TABLE IF NOT EXISTS bond (
     src TEXT NOT NULL,
     tgt TEXT NOT NULL,
     type TEXT NOT NULL,
     weight REAL DEFAULT 1.0,
+    active INTEGER DEFAULT 1,
     time TEXT DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (src, tgt, type)
   )`,
-  `CREATE TABLE IF NOT EXISTS mass (
+  `CREATE TABLE IF NOT EXISTS matter (
     id TEXT PRIMARY KEY,
-    matter TEXT NOT NULL,
+    form TEXT NOT NULL,
     type TEXT NOT NULL,
     scope TEXT NOT NULL,
     qty REAL,
@@ -44,15 +46,17 @@ export const SCHEMA_STATEMENTS = [
     action INTEGER NOT NULL,
     phase INTEGER,
     delta REAL,
+    client_ref TEXT,
     data TEXT,
+    time TEXT DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (stream, seq)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_matter_code ON matter(code)`,
-  `CREATE INDEX IF NOT EXISTS idx_matter_public ON matter(public, type)`,
-  `CREATE INDEX IF NOT EXISTS idx_matter_scope_type ON matter(scope, type)`,
-  `CREATE INDEX IF NOT EXISTS idx_relation_tgt ON relation(tgt, type)`,
-  `CREATE INDEX IF NOT EXISTS idx_relation_type ON relation(type)`,
-  `CREATE INDEX IF NOT EXISTS idx_mass_matter ON mass(matter)`,
-  `CREATE INDEX IF NOT EXISTS idx_mass_geo ON mass(geo)`,
-  `CREATE INDEX IF NOT EXISTS idx_mass_scope_type ON mass(scope, type)`
+  `CREATE INDEX IF NOT EXISTS idx_form_code ON form(code)`,
+  `CREATE INDEX IF NOT EXISTS idx_form_public ON form(public, type)`,
+  `CREATE INDEX IF NOT EXISTS idx_form_scope_type ON form(scope, type)`,
+  `CREATE INDEX IF NOT EXISTS idx_bond_tgt ON bond(tgt, type)`,
+  `CREATE INDEX IF NOT EXISTS idx_bond_type ON bond(type)`,
+  `CREATE INDEX IF NOT EXISTS idx_matter_form ON matter(form)`,
+  `CREATE INDEX IF NOT EXISTS idx_matter_geo ON matter(geo)`,
+  `CREATE INDEX IF NOT EXISTS idx_matter_scope_type ON matter(scope, type)`
 ];

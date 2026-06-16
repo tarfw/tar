@@ -1,4 +1,4 @@
-export interface MatterRow {
+export interface FormRow {
   id: string;
   code: string;
   type: string;
@@ -6,13 +6,14 @@ export interface MatterRow {
   owner: string;
   title: string;
   public: string;
+  active: string;
   data: string;
   time: string;
 }
 
-export interface MassRow {
+export interface MatterRow {
   id: string;
-  matter: string;
+  form: string;
   type: string;
   scope: string;
   qty: string | null;
@@ -22,6 +23,8 @@ export interface MassRow {
   mark: string;
   time: string;
   geo?: string;
+  start?: string;
+  end?: string;
 }
 
 export interface MotionRow {
@@ -30,6 +33,7 @@ export interface MotionRow {
   action: string;
   phase: string | null;
   delta: string;
+  client_ref?: string | null;
   data: string | null;
   isLocal?: boolean;
   time?: string;
@@ -55,7 +59,7 @@ export interface DomainDefinition {
   code: string;
   owner: string;
   priceRange: string;
-  image: any; // e.g. require(...) or null
+  image: any;
   // Specs Accordion
   technicalDetails: TechnicalDetail[];
   bullets: string[];
@@ -66,9 +70,9 @@ export interface DomainDefinition {
   profileAvatarBg: string;
   profileBadgeText: string;
   // Tables data
-  matter: MatterRow[];
-  mass: MassRow[];
-  motion: MotionRow[];
+  forms: FormRow[];
+  matters: MatterRow[];
+  motions: MotionRow[];
 }
 
 export const DOMAINS: DomainDefinition[] = [
@@ -105,20 +109,20 @@ export const DOMAINS: DomainDefinition[] = [
     profileAvatarText: "TP",
     profileAvatarBg: "#881337",
     profileBadgeText: "KDS SCREEN",
-    matter: [
-      { id: "pizza", code: "PIZZA01", type: "product", scope: "g", owner: "pizzacompany", title: "Pepperoni Pizza", public: "1", data: '{"cat":"food","p":"12.00","o":{"s":["Small","Medium","Large"]}}', time: "1780833600" },
-      { id: "extracheese", code: "MODCHEESE", type: "product", scope: "g", owner: "pizzacompany", title: "Extra Cheese", public: "1", data: '{"mod":1}', time: "1780833600" },
-      { id: "pepperoni", code: "MODPEPPERONI", type: "product", scope: "g", owner: "pizzacompany", title: "Extra Pepperoni", public: "1", data: '{"mod":1}', time: "1780833600" },
-      { id: "store102", code: "TAMILPIZZA", type: "profile", scope: "g", owner: "pizzacompany", title: "Tamil Pizza Shop", public: "1", data: '{"cat":"restaurant","cur":"INR"}', time: "1780833600" }
+    forms: [
+      { id: "pizza", code: "PIZZA01", type: "product", scope: "g", owner: "pizzacompany", title: "Pepperoni Pizza", public: "1", active: "1", data: '{"cat":"food","p":"12.00","o":{"s":["Small","Medium","Large"]}}', time: "1780833600" },
+      { id: "extracheese", code: "MODCHEESE", type: "product", scope: "g", owner: "pizzacompany", title: "Extra Cheese", public: "1", active: "1", data: '{"mod":1}', time: "1780833600" },
+      { id: "pepperoni", code: "MODPEPPERONI", type: "product", scope: "g", owner: "pizzacompany", title: "Extra Pepperoni", public: "1", active: "1", data: '{"mod":1}', time: "1780833600" },
+      { id: "store102", code: "TAMILPIZZA", type: "profile", scope: "g", owner: "pizzacompany", title: "Tamil Pizza Shop", public: "1", active: "1", data: '{"cat":"restaurant","cur":"INR"}', time: "1780833600" }
     ],
-    mass: [
-      { id: "pizza0", matter: "pizza", type: "1", scope: "s:102", qty: "50", value: "10.00", active: "1", variant: "0", mark: "0", time: "1780833600" },
-      { id: "pizza1", matter: "pizza", type: "1", scope: "s:102", qty: "50", value: "12.00", active: "1", variant: "1", mark: "0", time: "1780833600" },
-      { id: "pizza2", matter: "pizza", type: "1", scope: "s:102", qty: "50", value: "15.00", active: "1", variant: "2", mark: "0", time: "1780833600" },
-      { id: "pricecheese", matter: "extracheese", type: "1", scope: "s:102", qty: null, value: "1.50", active: "1", variant: null, mark: "0", time: "1780833600" },
-      { id: "pricepepperoni", matter: "pepperoni", type: "1", scope: "s:102", qty: null, value: "2.00", active: "1", variant: null, mark: "0", time: "1780833600" }
+    matters: [
+      { id: "pizza0", form: "pizza", type: "1", scope: "s:102", qty: "50", value: "10.00", active: "1", variant: "0", mark: "0", time: "1780833600" },
+      { id: "pizza1", form: "pizza", type: "1", scope: "s:102", qty: "50", value: "12.00", active: "1", variant: "1", mark: "0", time: "1780833600" },
+      { id: "pizza2", form: "pizza", type: "1", scope: "s:102", qty: "50", value: "15.00", active: "1", variant: "2", mark: "0", time: "1780833600" },
+      { id: "pricecheese", form: "extracheese", type: "1", scope: "s:102", qty: null, value: "1.50", active: "1", variant: null, mark: "0", time: "1780833600" },
+      { id: "pricepepperoni", form: "pepperoni", type: "1", scope: "s:102", qty: null, value: "2.00", active: "1", variant: null, mark: "0", time: "1780833600" }
     ],
-    motion: [
+    motions: [
       { stream: "pizza0", seq: "1780833900000002", action: "101", phase: null, delta: "-1.0", data: null },
       { stream: "pizza0", seq: "1780834200000002", action: "105", phase: "109", delta: "1.0", data: '{"ph":{"106":1780834320,"107":1780834500,"206":1780834560,"207":1780834800,"108":1780834920,"109":1780835100},"staff":"mgr01","kds":"kds1"}' },
       { stream: "pizza0", seq: "1780835400000002", action: "201", phase: null, delta: "10.00", data: '{"till":"till1"}' },
@@ -158,17 +162,17 @@ export const DOMAINS: DomainDefinition[] = [
     profileAvatarText: "TS",
     profileAvatarBg: "#1e293b",
     profileBadgeText: "INR STORE",
-    matter: [
-      { id: "sneakers", code: "SNEAKERS01", type: "product", scope: "g", owner: "sneakercompany", title: "Everyday Sneakers", public: "1", data: '{"cat":"retail","p":"89.00","o":{"c":["Black","Red"],"s":["S","M"]}}', time: "1780833600" },
-      { id: "store101", code: "TAMILSHOES", type: "profile", scope: "g", owner: "sneakercompany", title: "Tamil Shoes Store", public: "1", data: '{"cat":"store","cur":"INR"}', time: "1780833600" }
+    forms: [
+      { id: "sneakers", code: "SNEAKERS01", type: "product", scope: "g", owner: "sneakercompany", title: "Everyday Sneakers", public: "1", active: "1", data: '{"cat":"retail","p":"89.00","o":{"c":["Black","Red"],"s":["S","M"]}}', time: "1780833600" },
+      { id: "store101", code: "TAMILSHOES", type: "profile", scope: "g", owner: "sneakercompany", title: "Tamil Shoes Store", public: "1", active: "1", data: '{"cat":"store","cur":"INR"}', time: "1780833600" }
     ],
-    mass: [
-      { id: "sneakers0", matter: "sneakers", type: "1", scope: "s:101", qty: "10", value: "89.00", active: "1", variant: "0", mark: "0", time: "1780833600" },
-      { id: "sneakers1", matter: "sneakers", type: "1", scope: "s:101", qty: "5", value: "89.00", active: "1", variant: "1", mark: "0", time: "1780833600" },
-      { id: "sneakers2", matter: "sneakers", type: "1", scope: "s:101", qty: "8", value: "95.00", active: "1", variant: "2", mark: "0", time: "1780833600" },
-      { id: "sneakers3", matter: "sneakers", type: "1", scope: "s:101", qty: "0", value: "95.00", active: "1", variant: "3", mark: "0", time: "1780833600" }
+    matters: [
+      { id: "sneakers0", form: "sneakers", type: "1", scope: "s:101", qty: "10", value: "89.00", active: "1", variant: "0", mark: "0", time: "1780833600" },
+      { id: "sneakers1", form: "sneakers", type: "1", scope: "s:101", qty: "5", value: "89.00", active: "1", variant: "1", mark: "0", time: "1780833600" },
+      { id: "sneakers2", form: "sneakers", type: "1", scope: "s:101", qty: "8", value: "95.00", active: "1", variant: "2", mark: "0", time: "1780833600" },
+      { id: "sneakers3", form: "sneakers", type: "1", scope: "s:101", qty: "0", value: "95.00", active: "1", variant: "3", mark: "0", time: "1780833600" }
     ],
-    motion: [
+    motions: [
       { stream: "sneakers0", seq: "1780833900000001", action: "101", phase: null, delta: "-1.0", data: null },
       { stream: "sneakers0", seq: "1780834800000001", action: "105", phase: "109", delta: "1.0", data: '{"co":"web","ph":{"109":1780835100},"carrier":"express"}' },
       { stream: "sneakers0", seq: "1780835400000001", action: "110", phase: null, delta: "89.00", data: '{"tax":12.00}' },
@@ -177,7 +181,6 @@ export const DOMAINS: DomainDefinition[] = [
       { stream: "sneakers0", seq: "1780836300000001", action: "405", phase: null, delta: "-5.0", data: '{"dest":"warehouse2"}' },
       { stream: "sneakers0", seq: "1780836600000001", action: "406", phase: null, delta: "10.0", data: '{"src":"warehouse1"}' },
       { stream: "sneakers0", seq: "1780836900000001", action: "801", phase: "802", delta: "89.00", data: '{"m":"stripe","ref":"ref123","ph":{"802":1780836960}}' },
-      // Local private
       { stream: "sneakers0", seq: "1", action: "102", phase: null, delta: "1.0", data: null, isLocal: true, time: "1780834200" },
       { stream: "sneakers0", seq: "2", action: "103", phase: null, delta: "-1.0", data: null, isLocal: true, time: "1780834500" },
       { stream: "sneakers0", seq: "3", action: "104", phase: null, delta: "0.0", data: '{"step":"billing"}', isLocal: true, time: "1780834560" }
@@ -216,18 +219,18 @@ export const DOMAINS: DomainDefinition[] = [
     profileAvatarText: "GC",
     profileAvatarBg: "#065f46",
     profileBadgeText: "RETAIL STORE",
-    matter: [
-      { id: "prod_thermos_99", code: "THERMOS01", type: "product", scope: "s:101", owner: "gear_co", title: "Titanium Travel Thermos", public: "1", data: '{"price":45.00,"category":"gear","sizes":["S","M","L"]}', time: "1780833600" },
-      { id: "coupon_save50", code: "SAVE50", type: "coupon", scope: "s:101", owner: "marketing_admin", title: "50% Off Flash Coupon", public: "1", data: '{"discount":0.50}', time: "1780833600" }
+    forms: [
+      { id: "prod_thermos_99", code: "THERMOS01", type: "product", scope: "s:101", owner: "gear_co", title: "Titanium Travel Thermos", public: "1", active: "1", data: '{"price":45.00,"category":"gear","sizes":["S","M","L"]}', time: "1780833600" },
+      { id: "coupon_save50", code: "SAVE50", type: "coupon", scope: "s:101", owner: "marketing_admin", title: "50% Off Flash Coupon", public: "1", active: "1", data: '{"discount":0.50}', time: "1780833600" }
     ],
-    mass: [
-      { id: "mas_stock_thermos", matter: "prod_thermos_99", type: "stock", scope: "s:101", qty: "42", value: "45.00", active: "1", variant: "0", mark: "0", time: "1780833600" },
-      { id: "mas_cart_user1", matter: "prod_thermos_99", type: "cart", scope: "p", qty: "1", value: "45.00", active: "1", variant: "0", mark: "0", time: "1780833600" }
+    matters: [
+      { id: "matter_stock_thermos", form: "prod_thermos_99", type: "stock", scope: "s:101", qty: "42", value: "45.00", active: "1", variant: "0", mark: "0", time: "1780833600" },
+      { id: "matter_cart_user1", form: "prod_thermos_99", type: "cart", scope: "p", qty: "1", value: "45.00", active: "1", variant: "0", mark: "0", time: "1780833600" }
     ],
-    motion: [
-      { stream: "mas_stock_thermos", seq: "1780833900000001", action: "101", phase: null, delta: "-1.0", data: '{"channel":"online"}' },
-      { stream: "mas_cart_user1", seq: "1780834200000001", action: "102", phase: null, delta: "1.0", data: null, isLocal: true, time: "1780834200" },
-      { stream: "mas_cart_user1", seq: "1780834500000001", action: "104", phase: "105", delta: "0.0", data: '{"ph":{"105":1780834560},"step":"billing"}' }
+    motions: [
+      { stream: "matter_stock_thermos", seq: "1780833900000001", action: "101", phase: null, delta: "-1.0", data: '{"channel":"online"}' },
+      { stream: "matter_cart_user1", seq: "1780834200000001", action: "102", phase: null, delta: "1.0", data: null, isLocal: true, time: "1780834200" },
+      { stream: "matter_cart_user1", seq: "1780834500000001", action: "104", phase: "105", delta: "0.0", data: '{"ph":{"105":1780834560},"step":"billing"}' }
     ]
   },
   {
@@ -263,18 +266,18 @@ export const DOMAINS: DomainDefinition[] = [
     profileAvatarText: "FC",
     profileAvatarBg: "#78350f",
     profileBadgeText: "POS REGISTER",
-    matter: [
-      { id: "dish_biryani", code: "BIRYANI", type: "product", scope: "s:102", owner: "pizzacompany", title: "Hyderabadi Chicken Biryani", public: "1", data: '{"price":12.00,"spicy":"high"}', time: "1780833600" },
-      { id: "pos_terminal_1", code: "TILL_01", type: "profile", scope: "s:102", owner: "pizzacompany", title: "Front Counter Register", public: "1", data: '{"till_limit":500}', time: "1780833600" }
+    forms: [
+      { id: "dish_biryani", code: "BIRYANI", type: "product", scope: "s:102", owner: "pizzacompany", title: "Hyderabadi Chicken Biryani", public: "1", active: "1", data: '{"price":12.00,"spicy":"high"}', time: "1780833600" },
+      { id: "pos_terminal_1", code: "TILL_01", type: "profile", scope: "s:102", owner: "pizzacompany", title: "Front Counter Register", public: "1", active: "1", data: '{"till_limit":500}', time: "1780833600" }
     ],
-    mass: [
-      { id: "mas_stock_biryani", matter: "dish_biryani", type: "stock", scope: "s:102", qty: "25", value: "12.00", active: "1", variant: "0", mark: "0", time: "1780833600" },
-      { id: "mas_table_4", matter: "dish_biryani", type: "slot", scope: "s:102", qty: "4", value: "0.00", active: "1", variant: null, mark: "0", time: "1780833600" }
+    matters: [
+      { id: "matter_stock_biryani", form: "dish_biryani", type: "stock", scope: "s:102", qty: "25", value: "12.00", active: "1", variant: "0", mark: "0", time: "1780833600" },
+      { id: "matter_table_4", form: "dish_biryani", type: "slot", scope: "s:102", qty: "4", value: "0.00", active: "1", variant: null, mark: "0", time: "1780833600" }
     ],
-    motion: [
-      { stream: "mas_table_4", seq: "1780833900000002", action: "206", phase: "207", delta: "1.0", data: '{"ph":{"207":1780834100},"kds":"kitchen_kds_01"}' },
+    motions: [
+      { stream: "matter_table_4", seq: "1780833900000002", action: "206", phase: "207", delta: "1.0", data: '{"ph":{"207":1780834100},"kds":"kitchen_kds_01"}' },
       { stream: "pos_terminal_1", seq: "1780834200000002", action: "202", phase: null, delta: "100.0", data: '{"session":"shift_am"}' },
-      { stream: "mas_table_4", seq: "1780834500000002", action: "201", phase: null, delta: "12.00", data: '{"pay":"cash"}' }
+      { stream: "matter_table_4", seq: "1780834500000002", action: "201", phase: null, delta: "12.00", data: '{"pay":"cash"}' }
     ]
   }
 ];

@@ -18,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
-import { getSelfId, routeDbForEntity, isCollabSyncEnabled, cachedSelfId, CLOUDFLARE_WORKER_URL } from "../lib/db";
+import { getSelfId, routeDbForEntity, isCollabSyncEnabled, cachedSelfId, CLOUDFLARE_WORKER_URL, pushLocalChanges } from "../lib/db";
 import { upsertMatterVector } from "../lib/vectorStore";
 import { OPCODE_LABELS } from "../lib/domainsData";
 import { getCurrentUser, UserProfile } from "../lib/auth";
@@ -35,9 +35,9 @@ interface CustomerRow {
   time: string;
 }
 
-interface CrmMassRow {
+interface CrmMatterRow {
   id: string;
-  matter: string;
+  form: string;
   type: string;
   qty: number | null;
   value: number | null;
@@ -60,19 +60,19 @@ interface CrmMotionRow {
   time: string;
 }
 
-// Task = matter (type 'task') + relation (customer → task) + mass slot (due window)
+// Task = form (type 'task') + bond (customer → task) + matter slot (due window)
 interface TaskRow {
   id: string;
   title: string;
   data: string | null;
   time: string;
-  mass_id: string | null;
+  matter_id: string | null;
   active: number | null;
   start: string | null;
   end: string | null;
 }
 
-// Note = matter (type 'note') + relation (customer → note)
+// Note = form (type 'note') + bond (customer → note)
 interface NoteRow {
   id: string;
   title: string;
@@ -210,23 +210,23 @@ export default function WorkspaceScreen() {
     selectedCustomerRef.current = selectedCustomer;
   }, [selectedCustomer]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [leads, setLeads] = useState<CrmMassRow[]>([]);
-  const [tickets, setTickets] = useState<CrmMassRow[]>([]);
+  const [leads, setLeads] = useState<CrmMatterRow[]>([]);
+  const [tickets, setTickets] = useState<CrmMatterRow[]>([]);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [notes, setNotes] = useState<NoteRow[]>([]);
-  const [scheduleSlots, setScheduleSlots] = useState<CrmMassRow[]>([]);
-  const [stocks, setStocks] = useState<CrmMassRow[]>([]);
-  const [trips, setTrips] = useState<CrmMassRow[]>([]);
-  const [budgets, setBudgets] = useState<CrmMassRow[]>([]);
-  const [invoices, setInvoices] = useState<CrmMassRow[]>([]);
+  const [scheduleSlots, setScheduleSlots] = useState<CrmMatterRow[]>([]);
+  const [stocks, setStocks] = useState<CrmMatterRow[]>([]);
+  const [trips, setTrips] = useState<CrmMatterRow[]>([]);
+  const [budgets, setBudgets] = useState<CrmMatterRow[]>([]);
+  const [invoices, setInvoices] = useState<CrmMatterRow[]>([]);
   const [timeline, setTimeline] = useState<CrmMotionRow[]>([]);
   // Product entity state
-  const [variants, setVariants] = useState<CrmMassRow[]>([]);
-  const [modifiers, setModifiers] = useState<CrmMassRow[]>([]);
+  const [variants, setVariants] = useState<CrmMatterRow[]>([]);
+  const [modifiers, setModifiers] = useState<CrmMatterRow[]>([]);
   const [publishedProfiles, setPublishedProfiles] = useState<CustomerRow[]>([]);
   const [publishedProducts, setPublishedProducts] = useState<CustomerRow[]>([]);
   // Derived per-stream state (plan2.md): stage/source/subject come from the
-  // motion ledger — single source of truth, no mass.data mirror.
+  // motion ledger — single source of truth, no matter.data mirror.
   const [streamInfo, setStreamInfo] = useState<Record<string, { stage: string; source?: string; note?: string; subject?: string; desc?: string }>>({});
 
   // Bottom sheet drawer state — one drawer, multiple kinds
@@ -240,7 +240,7 @@ export default function WorkspaceScreen() {
   const [expenseDesc, setExpenseDesc] = useState("");
   const [invoiceAmount, setInvoiceAmount] = useState("");
   const [invoiceRef, setInvoiceRef] = useState("");
-  const [selectedBudgetPool, setSelectedBudgetPool] = useState<CrmMassRow | null>(null);
+  const [selectedBudgetPool, setSelectedBudgetPool] = useState<CrmMatterRow | null>(null);
 
   // Entity / Customer form
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
@@ -291,7 +291,7 @@ export default function WorkspaceScreen() {
   const [variantLabel, setVariantLabel] = useState("");
   const [variantQty, setVariantQty] = useState("");
   const [variantPrice, setVariantPrice] = useState("");
-  const [editingVariant, setEditingVariant] = useState<CrmMassRow | null>(null);
+  const [editingVariant, setEditingVariant] = useState<CrmMatterRow | null>(null);
 
   // Modifier form
   const [modifierTitle, setModifierTitle] = useState("");
@@ -308,7 +308,7 @@ export default function WorkspaceScreen() {
   const [driverTripId, setDriverTripId] = useState<string | null>(null);
 
   // Transfer states
-  const [transferStock, setTransferStock] = useState<CrmMassRow | null>(null);
+  const [transferStock, setTransferStock] = useState<CrmMatterRow | null>(null);
   const [transferDirection, setTransferDirection] = useState<"in" | "out">("in");
   const [transferQty, setTransferQty] = useState("10");
   const [transferStorefront, setTransferStorefront] = useState("");
@@ -340,7 +340,7 @@ export default function WorkspaceScreen() {
     try {
       const db = routeDbForEntity("customer", activeScope);
       const rows = await db.all(
-        "SELECT id, code, type, title, owner, data, time FROM matter WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier', 'vehicle', 'finance', 'product', 'profile') AND (scope = ? OR scope = 'g') ORDER BY time DESC",
+        "SELECT id, code, type, title, owner, data, time FROM form WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier', 'vehicle', 'finance', 'product', 'profile') AND (scope = ? OR scope = 'g') ORDER BY time DESC",
         [activeScope]
       );
       setCustomers((rows as any[]) || []);
@@ -381,94 +381,94 @@ export default function WorkspaceScreen() {
       ] = await Promise.all([
         // Leads & Tickets (Customer/Business/Vehicle/Product/Profile)
         isLeadTicket ? db.all(
-          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'lead' AND active = 1 ORDER BY time DESC",
+          "SELECT id, form, type, qty, value, active, start, end, data, time FROM matter WHERE form = ? AND type = 'lead' AND active = 1 ORDER BY time DESC",
           [customerId]
         ) : NONE,
         isLeadTicket ? db.all(
-          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'ticket' AND active = 1 ORDER BY time DESC",
+          "SELECT id, form, type, qty, value, active, start, end, data, time FROM matter WHERE form = ? AND type = 'ticket' AND active = 1 ORDER BY time DESC",
           [customerId]
         ) : NONE,
         // Schedule Slots (Team/Family)
         isPersonFamily ? db.all(
-          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'slot' ORDER BY start DESC",
+          "SELECT id, form, type, qty, value, active, start, end, data, time FROM matter WHERE form = ? AND type = 'slot' ORDER BY start DESC",
           [customerId]
         ) : NONE,
         // Warehouse Inventory Stocks
         typeVal === "warehouse" ? db.all(
-          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'stock' ORDER BY time DESC",
+          "SELECT id, form, type, qty, value, active, start, end, data, time FROM matter WHERE form = ? AND type = 'stock' ORDER BY time DESC",
           [customerId]
         ) : NONE,
         // Carrier/Vehicle Trips
         (typeVal === "carrier" || typeVal === "vehicle") ? db.all(
-          "SELECT id, matter, type, qty, value, active, geo, start, end, data, time FROM mass WHERE matter = ? AND type = 'trip' ORDER BY start DESC",
+          "SELECT id, form, type, qty, value, active, geo, start, end, data, time FROM matter WHERE form = ? AND type = 'trip' ORDER BY start DESC",
           [customerId]
         ) : NONE,
         // Finance Budgets & Invoices
         typeVal === "finance" ? db.all(
-          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'budget' ORDER BY time DESC",
+          "SELECT id, form, type, qty, value, active, start, end, data, time FROM matter WHERE form = ? AND type = 'budget' ORDER BY time DESC",
           [customerId]
         ) : NONE,
         typeVal === "finance" ? db.all(
-          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'invoice' ORDER BY time DESC",
+          "SELECT id, form, type, qty, value, active, start, end, data, time FROM matter WHERE form = ? AND type = 'invoice' ORDER BY time DESC",
           [customerId]
         ) : NONE,
         // Product Variants & Modifiers / Published Profiles
         typeVal === "product" ? db.all(
-          "SELECT id, matter, type, qty, value, active, start, end, data, time FROM mass WHERE matter = ? AND type = 'variant' ORDER BY time ASC",
+          "SELECT id, form, type, qty, value, active, start, end, data, time FROM matter WHERE form = ? AND type = 'variant' ORDER BY time ASC",
           [customerId]
         ) : NONE,
         typeVal === "product" ? db.all(
-          `SELECT ms.id, ms.matter, ms.type, ms.qty, ms.value, ms.active, ms.start, ms.end, ms.data, ms.time
-           FROM mass ms
-           JOIN relation r ON r.tgt = ms.matter AND r.src = ? AND r.type = 'modifier_of'
-           WHERE ms.type = 'modifier'`,
+          `SELECT mv.id, mv.form, mv.type, mv.qty, mv.value, mv.active, mv.start, mv.end, mv.data, mv.time
+           FROM matter mv
+           JOIN bond b ON b.tgt = mv.form AND b.src = ? AND b.type = 'modifier_of'
+           WHERE mv.type = 'modifier'`,
           [customerId]
         ) : NONE,
         typeVal === "product" ? db.all(
-          `SELECT m.id, m.code, m.type, m.title, m.owner, m.data, m.time
-           FROM matter m
-           JOIN relation r ON r.tgt = m.id AND r.src = ? AND r.type = 'published_to'`,
+          `SELECT f.id, f.code, f.type, f.title, f.owner, f.data, f.time
+           FROM form f
+           JOIN bond b ON b.tgt = f.id AND b.src = ? AND b.type = 'published_to'`,
           [customerId]
         ) : NONE,
         // Profile Storefront — published products
         typeVal === "profile" ? db.all(
-          `SELECT m.id, m.code, m.type, m.title, m.owner, m.data, m.time
-           FROM matter m
-           JOIN relation r ON r.src = m.id AND r.tgt = ? AND r.type = 'published_to'`,
+          `SELECT f.id, f.code, f.type, f.title, f.owner, f.data, f.time
+           FROM form f
+           JOIN bond b ON b.src = f.id AND b.tgt = ? AND b.type = 'published_to'`,
           [customerId]
         ) : NONE,
         // Tasks
         isPersonal ? db.all(
-          `SELECT m.id, m.title, m.data, m.time, ms.id AS mass_id, ms.active, ms.start, ms.end
-           FROM matter m
-           LEFT JOIN mass ms ON ms.matter = m.id AND ms.type = 'slot'
-           WHERE m.type = 'task' AND m.scope = ?
-             AND m.id NOT IN (SELECT tgt FROM relation WHERE type = 'task')
-           ORDER BY ms.active DESC, m.time DESC`,
+          `SELECT f.id, f.title, f.data, f.time, mv.id AS matter_id, mv.active, mv.start, mv.end
+           FROM form f
+           LEFT JOIN matter mv ON mv.form = f.id AND mv.type = 'slot'
+           WHERE f.type = 'task' AND f.scope = ?
+             AND f.id NOT IN (SELECT tgt FROM bond WHERE type = 'task')
+           ORDER BY mv.active DESC, f.time DESC`,
           [personalScope]
         ) : db.all(
-          `SELECT m.id, m.title, m.data, m.time, ms.id AS mass_id, ms.active, ms.start, ms.end
-           FROM matter m
-           JOIN relation r ON r.tgt = m.id AND r.src = ? AND r.type = 'task'
-           LEFT JOIN mass ms ON ms.matter = m.id AND ms.type = 'slot'
-           WHERE m.type = 'task'
-           ORDER BY ms.active DESC, m.time DESC`,
+          `SELECT f.id, f.title, f.data, f.time, mv.id AS matter_id, mv.active, mv.start, mv.end
+           FROM form f
+           JOIN bond b ON b.tgt = f.id AND b.src = ? AND b.type = 'task'
+           LEFT JOIN matter mv ON mv.form = f.id AND mv.type = 'slot'
+           WHERE f.type = 'task'
+           ORDER BY mv.active DESC, f.time DESC`,
           [customerId]
         ),
         // Notes
         isPersonal ? db.all(
-          `SELECT m.id, m.title, m.data, m.time
-           FROM matter m
-           WHERE m.type = 'note' AND m.scope = ?
-             AND m.id NOT IN (SELECT tgt FROM relation WHERE type = 'note')
-           ORDER BY m.time DESC`,
+          `SELECT f.id, f.title, f.data, f.time
+           FROM form f
+           WHERE f.type = 'note' AND f.scope = ?
+             AND f.id NOT IN (SELECT tgt FROM bond WHERE type = 'note')
+           ORDER BY f.time DESC`,
           [personalScope]
         ) : db.all(
-          `SELECT m.id, m.title, m.data, m.time
-           FROM matter m
-           JOIN relation r ON r.tgt = m.id AND r.src = ? AND r.type = 'note'
-           WHERE m.type = 'note'
-           ORDER BY m.time DESC`,
+          `SELECT f.id, f.title, f.data, f.time
+           FROM form f
+           JOIN bond b ON b.tgt = f.id AND b.src = ? AND b.type = 'note'
+           WHERE f.type = 'note'
+           ORDER BY f.time DESC`,
           [customerId]
         ),
         // Timeline (Activity ledger)
@@ -478,16 +478,16 @@ export default function WorkspaceScreen() {
         ) : db.all(
           `SELECT stream, seq, action, phase, delta, data FROM motion
            WHERE stream = ?
-              OR stream IN (SELECT id FROM mass WHERE matter = ?)
-              OR stream IN (SELECT tgt FROM relation WHERE src = ?)
-              OR stream IN (SELECT id FROM mass WHERE matter IN (SELECT tgt FROM relation WHERE src = ?))
+              OR stream IN (SELECT id FROM matter WHERE form = ?)
+              OR stream IN (SELECT tgt FROM bond WHERE src = ?)
+              OR stream IN (SELECT id FROM matter WHERE form IN (SELECT tgt FROM bond WHERE src = ?))
            ORDER BY seq DESC LIMIT 100`,
           [customerId, customerId, customerId, customerId]
         ),
         // Derived per-stream state source rows
         db.all(
           `SELECT stream, seq, action, data FROM motion
-           WHERE stream IN (SELECT id FROM mass WHERE matter = ?)
+           WHERE stream IN (SELECT id FROM matter WHERE form = ?)
            ORDER BY seq ASC`,
           [customerId]
         ),
@@ -623,7 +623,7 @@ export default function WorkspaceScreen() {
 
   const pushIfEnabled = async (db: any) => {
     if (await isCollabSyncEnabled()) {
-      await db.push().catch((err: any) => console.warn("[CRM] Sync push failed:", err));
+      await pushLocalChanges(scope || `s:${cachedSelfId || "guest"}`, { motion: [] }).catch((err: any) => console.warn("[CRM] Sync push failed:", err));
     }
   };
 
@@ -678,10 +678,10 @@ export default function WorkspaceScreen() {
     }
   };
 
-  // Link two entities in the relation graph (customer → child).
-  const addRelation = async (db: any, src: string, tgt: string, type: string) => {
+  // Link two entities in the bond graph (customer → child).
+  const addBond = async (db: any, src: string, tgt: string, type: string) => {
     await db.run(
-      "INSERT OR REPLACE INTO relation (src, tgt, type, weight, time) VALUES (?, ?, ?, 1.0, ?)",
+      "INSERT OR REPLACE INTO bond (src, tgt, type, weight, time) VALUES (?, ?, ?, 1.0, ?)",
       [src, tgt, type, new Date().toISOString()]
     );
   };
@@ -833,7 +833,7 @@ export default function WorkspaceScreen() {
       // -- Part 4: Warehouse Capacity Constraints check --
       if (transferDirection === "in") {
         // Calculate sum of all stock quantities in this warehouse
-        const stocksResult = await db.all("SELECT SUM(qty) AS total_qty FROM mass WHERE matter = ? AND type = 'stock'", [selectedCustomer.id]);
+        const stocksResult = await db.all("SELECT SUM(qty) AS total_qty FROM matter WHERE matter = ? AND type = 'stock'", [selectedCustomer.id]);
         const currentTotal = Number(stocksResult[0]?.total_qty || 0);
         // Find capacity from warehouse matter data
         const whRows = await db.all("SELECT data FROM matter WHERE id = ?", [selectedCustomer.id]);
@@ -855,7 +855,7 @@ export default function WorkspaceScreen() {
         }
       }
 
-      await db.run("UPDATE mass SET qty = ? WHERE id = ?", [newQty, transferStock.id]);
+      await db.run("UPDATE matter SET qty = ? WHERE id = ?", [newQty, transferStock.id]);
       
       const action = transferDirection === "in" ? 406 : 405;
       const actionLabel = transferDirection === "in" ? "TRANSFER_IN" : "TRANSFER_OUT";
@@ -873,7 +873,7 @@ export default function WorkspaceScreen() {
 
       // Write relation if storefront is selected
       if (transferStorefront) {
-        await addRelation(db, transferStock.id, transferStorefront, "storefront_transfer");
+        await addBond(db, transferStock.id, transferStorefront, "storefront_transfer");
       }
       
       await pushIfEnabled(db);
@@ -898,7 +898,7 @@ export default function WorkspaceScreen() {
         await phaseUpdateMotion(db, trip.id, 402, "IN_TRANSIT", null, { driver: driverName });
       } else if (stage === "in_transit") {
         await phaseUpdateMotion(db, trip.id, 109, "DELIVERED", null, {});
-        await db.run("UPDATE mass SET active = 0 WHERE id = ?", [trip.id]);
+        await db.run("UPDATE matter SET active = 0 WHERE id = ?", [trip.id]);
       }
       await pushIfEnabled(db);
       await loadCustomerDetail(selectedCustomer!.id, selectedCustomer!.type || "");
@@ -937,7 +937,7 @@ export default function WorkspaceScreen() {
           onPress: () => runMutation(async () => {
             const db = getDb();
             const timeStr = new Date().toISOString();
-            await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [timeStr, trip.id]);
+            await db.run("UPDATE matter SET active = 0, end = ? WHERE id = ?", [timeStr, trip.id]);
             await phaseUpdateMotion(db, trip.id, 407, "RETURN_REQUESTED", null, { reason: "Customer refused shipment" });
             await pushIfEnabled(db);
             await loadCustomerDetail(selectedCustomer!.id, selectedCustomer!.type || "");
@@ -984,7 +984,7 @@ export default function WorkspaceScreen() {
       const db = getDb();
       
       // Calculate capacity check
-      const stocksResult = await db.all("SELECT SUM(qty) AS total_qty FROM mass WHERE matter = ? AND type = 'stock'", [selectedCustomer.id]);
+      const stocksResult = await db.all("SELECT SUM(qty) AS total_qty FROM matter WHERE matter = ? AND type = 'stock'", [selectedCustomer.id]);
       const currentTotal = Number(stocksResult[0]?.total_qty || 0);
       // Get capacity from selectedCustomer.data
       const whRows = await db.all("SELECT data FROM matter WHERE id = ?", [selectedCustomer.id]);
@@ -1008,7 +1008,7 @@ export default function WorkspaceScreen() {
       const now = new Date();
       const timeStr = now.toISOString();
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'stock', ?, ?, ?, 1, ?, NULL, ?, ?)",
+        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'stock', ?, ?, ?, 1, ?, NULL, ?, ?)",
         [stockId, selectedCustomer.id, scope, qtyVal, valVal, timeStr, JSON.stringify({ name }), timeStr]
       );
       await appendMotion(db, stockId, 406, "TRANSFER_IN", qtyVal, { src: "vendor" });
@@ -1034,7 +1034,7 @@ export default function WorkspaceScreen() {
       const timeStr = now.toISOString();
       const driverName = customers.find(c => c.id === tripDriver)?.title || "Unassigned";
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, geo, start, end, data, time) VALUES (?, ?, 'trip', ?, ?, 0, 1, ?, ?, NULL, ?, ?)",
+        "INSERT INTO matter (id, matter, type, scope, qty, value, active, geo, start, end, data, time) VALUES (?, ?, 'trip', ?, ?, 0, 1, ?, ?, NULL, ?, ?)",
         [tripId, selectedCustomer.id, scope, qtyVal, tripGeo, timeStr, JSON.stringify({ ref, driver: driverName, driverId: tripDriver || null }), timeStr]
       );
       await appendMotion(db, tripId, 401, "DISPATCHED", null, { ref });
@@ -1070,7 +1070,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  // ---- Variant Inventory (mass type=variant) ----
+  // ---- Variant Inventory (matter type=variant) ----
 
   const createVariant = () => {
     if (!selectedCustomer) return;
@@ -1083,7 +1083,7 @@ export default function WorkspaceScreen() {
       const variantId = rid("var");
       const timeStr = new Date().toISOString();
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'variant', ?, ?, ?, 1, ?, ?)",
+        "INSERT INTO matter (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'variant', ?, ?, ?, 1, ?, ?)",
         [variantId, selectedCustomer.id, scope, qtyVal, priceVal, JSON.stringify({ label }), timeStr]
       );
       await appendMotion(db, variantId, 406, "TRANSFER_IN", qtyVal, { src: "vendor" });
@@ -1100,7 +1100,7 @@ export default function WorkspaceScreen() {
     const newQty = Math.max(0, (variant.qty || 0) + qtyChange);
     runMutation(async () => {
       const db = getDb();
-      await db.run("UPDATE mass SET qty = ? WHERE id = ?", [newQty, variant.id]);
+      await db.run("UPDATE matter SET qty = ? WHERE id = ?", [newQty, variant.id]);
       const action = direction === "in" ? 406 : 405;
       const status = direction === "in" ? "TRANSFER_IN" : "TRANSFER_OUT";
       await appendMotion(db, variant.id, action, status, qtyChange, {});
@@ -1119,16 +1119,16 @@ export default function WorkspaceScreen() {
     runMutation(async () => {
       const db = getDb();
       const modId = rid("mod");
-      const massId = rid("modprice");
+      const matterId = rid("modprice");
       const timeStr = new Date().toISOString();
       await db.run(
-        "INSERT INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'product', ?, ?, ?, 1, ?, ?)",
+        "INSERT INTO form (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'product', ?, ?, ?, 1, ?, ?)",
         [modId, null, scope, selfId, title, JSON.stringify({ mod: 1 }), timeStr]
       );
-      await addRelation(db, selectedCustomer.id, modId, "modifier_of");
+      await addBond(db, selectedCustomer.id, modId, "modifier_of");
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'modifier', ?, NULL, ?, 1, ?, ?)",
-        [massId, modId, scope, priceVal, JSON.stringify({ title }), timeStr]
+        "INSERT INTO matter (id, form, type, scope, qty, value, active, data, time) VALUES (?, ?, 'modifier', ?, NULL, ?, 1, ?, ?)",
+        [matterId, modId, scope, priceVal, JSON.stringify({ title }), timeStr]
       );
       await pushIfEnabled(db);
       setModifierTitle(""); setModifierPrice("");
@@ -1141,7 +1141,7 @@ export default function WorkspaceScreen() {
     if (!selectedCustomer) return;
     runMutation(async () => {
       const db = getDb();
-      await db.run("UPDATE mass SET active = 0 WHERE id = ?", [modifier.id]);
+      await db.run("UPDATE matter SET active = 0 WHERE id = ?", [modifier.id]);
       await pushIfEnabled(db);
       await loadCustomerDetail(selectedCustomer.id, "product");
     });
@@ -1156,7 +1156,7 @@ export default function WorkspaceScreen() {
     }
     runMutation(async () => {
       const db = getDb();
-      await addRelation(db, selectedCustomer.id, publishTargetId.trim(), "published_to");
+      await addBond(db, selectedCustomer.id, publishTargetId.trim(), "published_to");
       await pushIfEnabled(db);
       setPublishTargetId("");
       setSheet(null);
@@ -1175,9 +1175,9 @@ export default function WorkspaceScreen() {
       }
       const matter = matterRows[0] as any;
       
-      // 2. Fetch all active variant Mass rows
-      const massRecords = await db.all(
-        "SELECT * FROM mass WHERE matter = ? AND active = 1",
+      // 2. Fetch all active variant Matter rows
+      const matterRecords = await db.all(
+        "SELECT * FROM matter WHERE form = ? AND active = 1",
         [matterId]
       );
 
@@ -1189,12 +1189,12 @@ export default function WorkspaceScreen() {
           "Authorization": `Bearer ${selfId || "guest"}`,
         },
         body: JSON.stringify({
-          matter: {
-            ...matter,
+          form: {
+            ...form,
             scope: "g",
             public: 1,
           },
-          massRecords,
+          matterRecords,
         }),
       });
 
@@ -1233,12 +1233,12 @@ export default function WorkspaceScreen() {
       );
 
       // 2. Gather this storefront's curated product links (product -> profile).
-      const relations = (await db.all(
-        "SELECT src, tgt, type, weight FROM relation WHERE tgt = ? AND type = 'published_to'",
+      const bonds = (await db.all(
+        "SELECT src, tgt, type, weight FROM bond WHERE tgt = ? AND type = 'published_to'",
         [profile.id]
       )) as { src: string; tgt: string; type: string; weight: number }[];
 
-      // 3. Push the profile matter + its relations to the global Turso DB.
+      // 3. Push the profile form + its bonds to the global Turso DB.
       const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/publish`, {
         method: "POST",
         headers: {
@@ -1246,14 +1246,14 @@ export default function WorkspaceScreen() {
           "Authorization": `Bearer ${selfId || "guest"}`,
         },
         body: JSON.stringify({
-          matter: {
+          form: {
             ...profile,
             data: newData,
             scope: "g",
             public: 1,
           },
-          massRecords: [],
-          relations,
+          matterRecords: [],
+          bonds,
         }),
       });
       if (!res.ok) throw new Error((await res.text()) || "Failed to publish storefront.");
@@ -1269,11 +1269,11 @@ export default function WorkspaceScreen() {
     runMutation(async () => {
       const db = getDb();
       if (selectedCustomer.type === "profile") {
-        await db.run("DELETE FROM relation WHERE src = ? AND tgt = ? AND type = 'published_to'", [targetId, selectedCustomer.id]);
+        await db.run("DELETE FROM bond WHERE src = ? AND tgt = ? AND type = 'published_to'", [targetId, selectedCustomer.id]);
         await pushIfEnabled(db);
         await loadCustomerDetail(selectedCustomer.id, "profile");
       } else {
-        await db.run("DELETE FROM relation WHERE src = ? AND tgt = ? AND type = 'published_to'", [selectedCustomer.id, targetId]);
+        await db.run("DELETE FROM bond WHERE src = ? AND tgt = ? AND type = 'published_to'", [selectedCustomer.id, targetId]);
         await pushIfEnabled(db);
         await loadCustomerDetail(selectedCustomer.id, "product");
       }
@@ -1288,13 +1288,13 @@ export default function WorkspaceScreen() {
     if (!driverTripId || !selectedCustomer) return;
     runMutation(async () => {
       const db = getDb();
-      const rows = await db.all("SELECT data FROM mass WHERE id = ?", [driverTripId]);
+      const rows = await db.all("SELECT data FROM matter WHERE id = ?", [driverTripId]);
       let existingData = {};
       if (rows && rows[0]) {
         existingData = parseData(rows[0].data as string | null);
       }
       const newData = JSON.stringify({ ...existingData, driver: driverName, driverId });
-      await db.run("UPDATE mass SET data = ? WHERE id = ?", [newData, driverTripId]);
+      await db.run("UPDATE matter SET data = ? WHERE id = ?", [newData, driverTripId]);
       await phaseUpdateMotion(db, driverTripId, 403, "DRIVER_ASSIGNED", null, { driverId, driverName });
       await pushIfEnabled(db);
       setSheet(null);
@@ -1343,7 +1343,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  // ---- Leads pipeline (mass + 303 → 304 → 305) ----
+  // ---- Leads pipeline (matter + 303 → 304 → 305) ----
 
   const createLead = () => {
     if (!selectedCustomer) return;
@@ -1356,7 +1356,7 @@ export default function WorkspaceScreen() {
       const closeDays = Number(leadCloseDays) || 0;
       const endStr = closeDays > 0 ? new Date(now.getTime() + closeDays * 86400000).toISOString() : null;
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'lead', ?, 1, ?, 1, ?, ?, NULL, ?)",
+        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'lead', ?, 1, ?, 1, ?, ?, NULL, ?)",
         [leadId, selectedCustomer.id, scope, value, timeStr, endStr, timeStr]
       );
       await appendMotion(db, leadId, 303, "NEW_LEAD", null, { source: leadSource, note: leadNote.trim() });
@@ -1390,7 +1390,7 @@ export default function WorkspaceScreen() {
     runMutation(async () => {
       const db = getDb();
       const timeStr = new Date().toISOString();
-      await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [timeStr, lead.id]);
+      await db.run("UPDATE matter SET active = 0, end = ? WHERE id = ?", [timeStr, lead.id]);
       await appendMotion(db, lead.id, 303, "CLOSED", null, { reason: "deleted" });
       await pushIfEnabled(db);
       const t = selectedCustomer.id === "general_personal" ? "personal" : (selectedCustomer.type || "customer");
@@ -1398,7 +1398,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  // ---- Support tickets (mass + 306 → 307 → 308) ----
+  // ---- Support tickets (matter + 306 → 307 → 308) ----
 
   const createTicket = () => {
     if (!selectedCustomer) return;
@@ -1415,7 +1415,7 @@ export default function WorkspaceScreen() {
       const slaHours = Number(ticketSlaHours) || 0;
       const endStr = slaHours > 0 ? new Date(now.getTime() + slaHours * 3600000).toISOString() : null;
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'ticket', ?, 1, 0, 1, ?, ?, ?, ?)",
+        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'ticket', ?, 1, 0, 1, ?, ?, ?, ?)",
         [ticketId, selectedCustomer.id, scope, timeStr, endStr, JSON.stringify({ priority: ticketPriority }), timeStr]
       );
       await appendMotion(db, ticketId, 306, "OPEN", 1, { subject, desc: ticketDesc.trim() });
@@ -1451,7 +1451,7 @@ export default function WorkspaceScreen() {
       const db = getDb();
       const timeStr = new Date().toISOString();
       await phaseUpdateMotion(db, ticket.id, 308, "RESOLVED", null, { resolution: "completed" });
-      await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [timeStr, ticket.id]);
+      await db.run("UPDATE matter SET active = 0, end = ? WHERE id = ?", [timeStr, ticket.id]);
       await pushIfEnabled(db);
       if (replyTicketId === ticket.id) setReplyTicketId(null);
       const t = selectedCustomer.id === "general_personal" ? "personal" : (selectedCustomer.type || "customer");
@@ -1459,7 +1459,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  // ---- Tasks (matter + relation + mass slot) ----
+  // ---- Tasks (form + bond + matter slot) ----
 
   const createTask = () => {
     if (!selectedCustomer) return;
@@ -1481,10 +1481,10 @@ export default function WorkspaceScreen() {
         [taskId, null, scope, selfId, title, timeStr]
       );
       if (selectedCustomer.id !== "general_personal") {
-        await addRelation(db, selectedCustomer.id, taskId, "task");
+        await addBond(db, selectedCustomer.id, taskId, "task");
       }
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, NULL, ?)",
+        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, NULL, ?)",
         [slotId, taskId, scope, timeStr, endStr, timeStr]
       );
       try {
@@ -1501,15 +1501,15 @@ export default function WorkspaceScreen() {
   };
 
   const toggleTask = (task: TaskRow) => {
-    if (!selectedCustomer || !task.mass_id) return;
+    if (!selectedCustomer || !task.matter_id) return;
     const isDone = task.active === 0;
     runMutation(async () => {
       const db = getDb();
       const timeStr = new Date().toISOString();
       if (isDone) {
-        await db.run("UPDATE mass SET active = 1 WHERE id = ?", [task.mass_id]);
+        await db.run("UPDATE matter SET active = 1 WHERE id = ?", [task.matter_id]);
       } else {
-        await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [timeStr, task.mass_id]);
+        await db.run("UPDATE matter SET active = 0, end = ? WHERE id = ?", [timeStr, task.matter_id]);
       }
       await pushIfEnabled(db);
       const t = selectedCustomer.id === "general_personal" ? "personal" : (selectedCustomer.type || "customer");
@@ -1517,7 +1517,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  // ---- Notes (matter + relation, vector-indexed) ----
+  // ---- Notes (form + bond, vector-indexed) ----
 
   const createNote = () => {
     if (!selectedCustomer) return;
@@ -1537,7 +1537,7 @@ export default function WorkspaceScreen() {
         [noteId, null, scope, selfId, title, dataJson, timeStr]
       );
       if (selectedCustomer.id !== "general_personal") {
-        await addRelation(db, selectedCustomer.id, noteId, "note");
+        await addBond(db, selectedCustomer.id, noteId, "note");
       }
       try {
         await upsertMatterVector(noteId, { title, type: "note", scope, code: null, data: dataJson });
@@ -1552,7 +1552,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  // ---- Schedule Slots (mass slot, for team/family) ----
+  // ---- Schedule Slots (matter slot, for team/family) ----
 
   const createSlot = () => {
     if (!selectedCustomer) return;
@@ -1569,7 +1569,7 @@ export default function WorkspaceScreen() {
       const duration = Number(slotDuration) || 8;
       const endStr = new Date(now.getTime() + duration * 3600000).toISOString();
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, ?, ?)",
+        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, ?, ?)",
         [slotId, selectedCustomer.id, "slot", scope, timeStr, endStr, JSON.stringify({ title }), timeStr]
       );
       await pushIfEnabled(db);
@@ -1600,7 +1600,7 @@ export default function WorkspaceScreen() {
       const now = new Date();
       const timeStr = now.toISOString();
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'budget', ?, ?, ?, 1, ?, NULL, ?, ?)",
+        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'budget', ?, ?, ?, 1, ?, NULL, ?, ?)",
         [budgetId, selectedCustomer.id, scope, limit, limit, timeStr, JSON.stringify({ name }), timeStr]
       );
       await appendMotion(db, budgetId, 806, "BUDGET_ALLOCATED", limit, { name, limit });
@@ -1623,7 +1623,7 @@ export default function WorkspaceScreen() {
     runMutation(async () => {
       const db = getDb();
       const newQty = Math.max(0, currentQty - amount);
-      await db.run("UPDATE mass SET qty = ? WHERE id = ?", [newQty, selectedBudgetPool.id]);
+      await db.run("UPDATE matter SET qty = ? WHERE id = ?", [newQty, selectedBudgetPool.id]);
       
       await appendMotion(db, selectedBudgetPool.id, 806, "EXPENSE_REC", -amount, {
         category: expenseCategory,
@@ -1652,7 +1652,7 @@ export default function WorkspaceScreen() {
       const invoiceId = rid("invoice");
       const timeStr = new Date().toISOString();
       await db.run(
-        "INSERT INTO mass (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'invoice', ?, 1, ?, 1, ?, NULL, ?, ?)",
+        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'invoice', ?, 1, ?, 1, ?, NULL, ?, ?)",
         [invoiceId, selectedCustomer.id, scope, amount, timeStr, JSON.stringify({ ref }), timeStr]
       );
       await appendMotion(db, invoiceId, 801, "PAYMENT_INIT", amount, { ref });
@@ -1668,7 +1668,7 @@ export default function WorkspaceScreen() {
     if (!selectedCustomer) return;
     runMutation(async () => {
       const db = getDb();
-      await db.run("UPDATE mass SET active = 0 WHERE id = ?", [invoice.id]);
+      await db.run("UPDATE matter SET active = 0 WHERE id = ?", [invoice.id]);
       await phaseUpdateMotion(db, invoice.id, 802, "PAYMENT_SUCCESS", invoice.value, {});
       await pushIfEnabled(db);
       await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
@@ -1679,7 +1679,7 @@ export default function WorkspaceScreen() {
     if (!selectedCustomer) return;
     runMutation(async () => {
       const db = getDb();
-      await db.run("UPDATE mass SET active = 0 WHERE id = ?", [invoice.id]);
+      await db.run("UPDATE matter SET active = 0 WHERE id = ?", [invoice.id]);
       await phaseUpdateMotion(db, invoice.id, 805, "PAYMENT_FAIL", 0, {});
       await pushIfEnabled(db);
       await loadCustomerDetail(selectedCustomer.id, selectedCustomer.type || "");
@@ -1761,7 +1761,7 @@ export default function WorkspaceScreen() {
           <Text style={styles.bigSubtitle}>
             {selectedCustomer 
               ? `${(selectedCustomer.type || "").toUpperCase()} · ${scope}` 
-              : `${scope} · matter / mass / motion / relation`}
+              : `${scope} · form / matter / motion / bond`}
           </Text>
         </View>
 
@@ -1802,7 +1802,7 @@ export default function WorkspaceScreen() {
               {/* Leads — only for Customer/Business */}
               {(selectedCustomer.type === "customer" || selectedCustomer.type === "business") && (
                 <>
-                  <SectionHeader title="Leads" tables="mass + motion" />
+                   <SectionHeader title="Leads" tables="matter + motion" />
                   {leads.map((lead) => {
                     const info = streamInfo[lead.id] || { stage: "new" };
                     const stage = info.stage;
@@ -1834,7 +1834,7 @@ export default function WorkspaceScreen() {
                         {expandedRowId === lead.id && (
                           <RowData rows={[
                             {
-                              table: "mass",
+                               table: "matter",
                               cols: [["id", lead.id], ["matter", lead.matter], ["type", "lead"], ["scope", scope], ["qty", lead.qty], ["value", lead.value], ["active", lead.active], ["start", lead.start], ["end", lead.end], ["data", lead.data]]
                             },
                             {
@@ -1857,7 +1857,7 @@ export default function WorkspaceScreen() {
               {/* Tickets — only for Customer/Business/Vehicle */}
               {(selectedCustomer.type === "customer" || selectedCustomer.type === "business" || selectedCustomer.type === "vehicle" || selectedCustomer.type === "product" || selectedCustomer.type === "profile") && (
                 <>
-                  <SectionHeader title={selectedCustomer.type === "vehicle" ? "Maintenance & Sourcing" : "Tickets"} tables="mass + motion" />
+                   <SectionHeader title={selectedCustomer.type === "vehicle" ? "Maintenance & Sourcing" : "Tickets"} tables="matter + motion" />
                   {tickets.map((ticket) => {
                     const priority = parseData(ticket.data).priority || "medium";
                     const subject = streamInfo[ticket.id]?.subject;
@@ -1892,7 +1892,7 @@ export default function WorkspaceScreen() {
                         {expandedRowId === ticket.id && (
                           <RowData rows={[
                             {
-                              table: "mass",
+                               table: "matter",
                               cols: [["id", ticket.id], ["matter", ticket.matter], ["type", "ticket"], ["scope", scope], ["qty", ticket.qty], ["value", ticket.value], ["active", ticket.active], ["start", ticket.start], ["end", ticket.end], ["data", ticket.data]]
                             },
                             {
@@ -1930,7 +1930,7 @@ export default function WorkspaceScreen() {
               {/* Schedule Slots — only for Team/Family */}
               {(selectedCustomer.type === "person" || selectedCustomer.type === "family") && (
                 <>
-                  <SectionHeader title="Schedule & Shifts" tables="mass (slot)" />
+                   <SectionHeader title="Schedule & Shifts" tables="matter (slot)" />
                   {scheduleSlots.map((slot) => {
                     const dataObj = parseData(slot.data);
                     const titleStr = dataObj.title || "Scheduled Slot";
@@ -1952,7 +1952,7 @@ export default function WorkspaceScreen() {
                         {expandedRowId === slot.id && (
                           <RowData rows={[
                             {
-                              table: "mass",
+                               table: "matter",
                               cols: [["id", slot.id], ["matter", slot.matter], ["type", "slot"], ["scope", scope], ["qty", slot.qty], ["active", slot.active], ["start", slot.start], ["end", slot.end], ["data", slot.data]]
                             }
                           ]} />
@@ -1968,7 +1968,7 @@ export default function WorkspaceScreen() {
               {/* Warehouse Inventory Stock — only for Warehouse */}
               {selectedCustomer.type === "warehouse" && (
                 <>
-                  <SectionHeader title="Inventory Stock" tables="mass (stock)" />
+                   <SectionHeader title="Inventory Stock" tables="matter (stock)" />
                   {stocks.map((stock) => {
                     const d = parseData(stock.data);
                     return (
@@ -1992,7 +1992,7 @@ export default function WorkspaceScreen() {
                         {expandedRowId === stock.id && (
                           <RowData rows={[
                             {
-                              table: "mass",
+                               table: "matter",
                               cols: [["id", stock.id], ["matter", stock.matter], ["type", "stock"], ["scope", scope], ["qty", stock.qty], ["value", stock.value], ["active", stock.active], ["start", stock.start], ["end", stock.end], ["data", stock.data]]
                             },
                             {
@@ -2017,7 +2017,7 @@ export default function WorkspaceScreen() {
               {selectedCustomer.type === "product" && (
                 <>
                   {/* Variants */}
-                  <SectionHeader title="Variants (mass type=variant)" tables="mass (variant)" />
+                   <SectionHeader title="Variants (matter type=variant)" tables="matter (variant)" />
                   {variants.map((v) => {
                     const dataObj = parseData(v.data);
                     const qtyVal = v.qty ?? 0;
@@ -2056,7 +2056,7 @@ export default function WorkspaceScreen() {
                   <AddRow label="Add Variant" onPress={() => openSheet("variant")} />
 
                   {/* Modifiers */}
-                  <SectionHeader title="Modifiers & Add-ons (mass type=modifier)" tables="mass (modifier)" />
+                   <SectionHeader title="Modifiers & Add-ons (matter type=modifier)" tables="matter (modifier)" />
                   {modifiers.map((m) => {
                     return (
                       <View key={m.id}>
@@ -2085,7 +2085,7 @@ export default function WorkspaceScreen() {
                   <AddRow label="Add Modifier / Add-on" onPress={() => openSheet("modifier")} />
 
                   {/* Published to Storefront Profiles */}
-                  <SectionHeader title="Published to Storefront Profiles" tables="relation (published_to)" />
+                   <SectionHeader title="Published to Storefront Profiles" tables="bond (published_to)" />
                   {publishedProfiles.map((p) => {
                     return (
                       <View key={p.id}>
@@ -2139,7 +2139,7 @@ export default function WorkspaceScreen() {
               {/* Published products — only for Storefront Profiles */}
               {selectedCustomer.type === "profile" && (
                 <>
-                  <SectionHeader title="Published Products" tables="relation (published_to) + matter (product)" />
+                   <SectionHeader title="Published Products" tables="bond (published_to) + form (product)" />
                   {publishedProducts.map((p) => {
                     return (
                       <View key={p.id}>
@@ -2167,7 +2167,7 @@ export default function WorkspaceScreen() {
               {/* Carrier/Vehicle Trips / Shipments — only for Carrier/Vehicle */}
               {(selectedCustomer.type === "carrier" || selectedCustomer.type === "vehicle") && (
                 <>
-                  <SectionHeader title={selectedCustomer.type === "vehicle" ? "Active Rides & Dispatches" : "Active Trips & Shipments"} tables="mass (trip)" />
+                   <SectionHeader title={selectedCustomer.type === "vehicle" ? "Active Rides & Dispatches" : "Active Trips & Shipments"} tables="matter (trip)" />
                   {trips.map((trip) => {
                     const info = streamInfo[trip.id] || { stage: "dispatched" };
                     const isDelivered = info.stage === "delivered";
@@ -2210,7 +2210,7 @@ export default function WorkspaceScreen() {
                         {expandedRowId === trip.id && (
                           <RowData rows={[
                             {
-                              table: "mass",
+                               table: "matter",
                               cols: [["id", trip.id], ["matter", trip.matter], ["type", "trip"], ["scope", scope], ["qty", trip.qty], ["value", trip.value], ["active", trip.active], ["geo", trip.geo], ["start", trip.start], ["end", trip.end], ["data", trip.data]]
                             },
                             {
@@ -2234,7 +2234,7 @@ export default function WorkspaceScreen() {
               {/* Finance Budgets & Invoices — only for Finance Account */}
               {selectedCustomer.type === "finance" && (
                 <>
-                  <SectionHeader title="Budget Pools & Allocations" tables="mass (budget)" />
+                   <SectionHeader title="Budget Pools & Allocations" tables="matter (budget)" />
                   {budgets.map((budget) => {
                     const d = parseData(budget.data);
                     const name = d.name || budget.id;
@@ -2277,7 +2277,7 @@ export default function WorkspaceScreen() {
                         {expandedRowId === budget.id && (
                           <RowData rows={[
                             {
-                              table: "mass",
+                               table: "matter",
                               cols: [["id", budget.id], ["matter", budget.matter], ["type", "budget"], ["scope", scope], ["qty (remaining)", budget.qty], ["value (limit)", budget.value], ["active", budget.active], ["start", budget.start], ["end", budget.end], ["data", budget.data]]
                             },
                             {
@@ -2296,7 +2296,7 @@ export default function WorkspaceScreen() {
                   {budgets.length === 0 && <Text style={styles.emptyText}>No budget allocations found.</Text>}
                   <AddRow label="Allocate budget pool" onPress={() => openSheet("budget")} />
 
-                  <SectionHeader title="Payment Gateway Invoices" tables="mass (invoice)" />
+                   <SectionHeader title="Payment Gateway Invoices" tables="matter (invoice)" />
                   {invoices.map((invoice) => {
                     const d = parseData(invoice.data);
                     const ref = d.ref || invoice.id;
@@ -2337,7 +2337,7 @@ export default function WorkspaceScreen() {
                         {expandedRowId === invoice.id && (
                           <RowData rows={[
                             {
-                              table: "mass",
+                               table: "matter",
                               cols: [["id", invoice.id], ["matter", invoice.matter], ["type", "invoice"], ["scope", scope], ["qty", invoice.qty], ["value", invoice.value], ["active", invoice.active], ["start", invoice.start], ["end", invoice.end], ["data", invoice.data]]
                             },
                             {
@@ -2359,7 +2359,7 @@ export default function WorkspaceScreen() {
               )}
 
               {/* Tasks — for all contexts */}
-              <SectionHeader title="Tasks" tables="matter + relation + mass + motion" />
+               <SectionHeader title="Tasks" tables="form + bond + matter + motion" />
               {tasks.map((task) => {
                 const isDone = task.active === 0;
                 return (
@@ -2385,16 +2385,16 @@ export default function WorkspaceScreen() {
                           cols: [["id", task.id], ["type", "task"], ["scope", scope], ["title", task.title], ["data", task.data], ["time", task.time]] as [string, any][]
                         },
                         ...(selectedCustomer.id !== "general_personal" ? [{
-                          table: "relation",
+                           table: "bond",
                           cols: [["src", selectedCustomer.id], ["tgt", task.id], ["type", "task"], ["weight", 1.0]] as [string, any][]
                         }] : []),
                         {
-                          table: "mass (slot)",
-                          cols: [["id", task.mass_id], ["matter", task.id], ["type", "slot"], ["scope", scope], ["active", task.active], ["start", task.start], ["end", task.end]] as [string, any][]
+                           table: "matter (slot)",
+                           cols: [["id", task.matter_id], ["form", task.id], ["type", "slot"], ["scope", scope], ["active", task.active], ["start", task.start], ["end", task.end]] as [string, any][]
                         },
                         {
-                          table: `motion (stream = ${task.mass_id})`,
-                          cols: timeline.filter((m) => m.stream === task.mass_id).map((m) => [
+                           table: `motion (stream = ${task.matter_id})`,
+                           cols: timeline.filter((m) => m.stream === task.matter_id).map((m) => [
                             `seq ${m.seq}`,
                             `${OPCODE_LABELS[m.action] || m.action} · ${m.status || ""} · Δ${m.delta ?? "—"}`
                           ] as [string, any])
@@ -2408,7 +2408,7 @@ export default function WorkspaceScreen() {
               <AddRow label="Add a task" onPress={() => openSheet("task")} />
 
               {/* Notes — for all contexts */}
-              <SectionHeader title="Notes" tables="matter + relation" />
+               <SectionHeader title="Notes" tables="form + bond" />
               {notes.map((note) => {
                 const d = parseData(note.data);
                 return (
@@ -2430,7 +2430,7 @@ export default function WorkspaceScreen() {
                           cols: [["id", note.id], ["type", "note"], ["scope", scope], ["title", note.title], ["data", note.data], ["time", note.time]] as [string, any][]
                         },
                         ...(selectedCustomer.id !== "general_personal" ? [{
-                          table: "relation",
+                           table: "bond",
                           cols: [["src", selectedCustomer.id], ["tgt", note.id], ["type", "note"], ["weight", 1.0]] as [string, any][]
                         }] : []),
                         {
@@ -2528,7 +2528,7 @@ export default function WorkspaceScreen() {
             {sheet === "lead" && (
               <>
                 <Text style={styles.modalTitle}>Add a lead</Text>
-                <Text style={styles.modalSchemaHint}>mass (value, end = expected close) + motion 303 NEW_LEAD</Text>
+                <Text style={styles.modalSchemaHint}>matter (value, end = expected close) + motion 303 NEW_LEAD</Text>
                 <TextInput style={styles.modalInput} value={leadValue} onChangeText={setLeadValue} placeholder="Deal value" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" autoFocus />
                 <View style={styles.segmentRow}>
                   {LEAD_SOURCES.map((s) => (
@@ -2553,7 +2553,7 @@ export default function WorkspaceScreen() {
             {sheet === "ticket" && (
               <>
                 <Text style={styles.modalTitle}>Add a ticket</Text>
-                <Text style={styles.modalSchemaHint}>mass (end = SLA deadline) + motion 306 TICKET OPEN</Text>
+                <Text style={styles.modalSchemaHint}>matter (end = SLA deadline) + motion 306 TICKET OPEN</Text>
                 <TextInput style={styles.modalInput} value={ticketSubject} onChangeText={setTicketSubject} placeholder="Subject" placeholderTextColor={TEXT_TERTIARY} autoFocus />
                 <View style={styles.segmentRow}>
                   {PRIORITIES.map((p) => (
@@ -2578,7 +2578,7 @@ export default function WorkspaceScreen() {
             {sheet === "task" && (
               <>
                 <Text style={styles.modalTitle}>Add a task</Text>
-                <Text style={styles.modalSchemaHint}>matter + relation (customer → task) + mass slot</Text>
+                <Text style={styles.modalSchemaHint}>form + bond (customer → task) + matter slot</Text>
                 <TextInput style={styles.modalInput} value={taskTitle} onChangeText={setTaskTitle} placeholder="Task title" placeholderTextColor={TEXT_TERTIARY} autoFocus />
                 <TextInput style={styles.modalInput} value={taskDueDays} onChangeText={setTaskDueDays} placeholder="Due in (days, optional)" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
                 <TouchableOpacity style={styles.modalSubmitBtn} onPress={createTask} disabled={busy} activeOpacity={0.8}>
@@ -2590,7 +2590,7 @@ export default function WorkspaceScreen() {
             {sheet === "note" && (
               <>
                 <Text style={styles.modalTitle}>Add a note</Text>
-                <Text style={styles.modalSchemaHint}>matter + relation (customer → note) → vector index</Text>
+                <Text style={styles.modalSchemaHint}>form + bond (customer → note) → vector index</Text>
                 <TextInput style={[styles.modalInput, { height: 90 }]} value={noteText} onChangeText={setNoteText} placeholder="Write a note…" placeholderTextColor={TEXT_TERTIARY} multiline autoFocus />
                 <TouchableOpacity style={styles.modalSubmitBtn} onPress={createNote} disabled={busy} activeOpacity={0.8}>
                   {busy ? <ActivityIndicator color="white" size="small" /> : <Text style={styles.modalSubmitBtnText}>Add note</Text>}
@@ -2601,7 +2601,7 @@ export default function WorkspaceScreen() {
             {sheet === "slot" && (
               <>
                 <Text style={styles.modalTitle}>Schedule shift / chore</Text>
-                <Text style={styles.modalSchemaHint}>mass (type: slot, scope: {scope})</Text>
+                <Text style={styles.modalSchemaHint}>matter (type: slot, scope: {scope})</Text>
                 <TextInput style={styles.modalInput} value={slotTitle} onChangeText={setSlotTitle} placeholder="Shift/Chore title (e.g. Cleaning)" placeholderTextColor={TEXT_TERTIARY} autoFocus />
                 <TextInput style={styles.modalInput} value={slotDuration} onChangeText={setSlotDuration} placeholder="Duration (hours, default 8)" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
                 <TouchableOpacity style={styles.modalSubmitBtn} onPress={createSlot} disabled={busy} activeOpacity={0.8}>
@@ -2635,7 +2635,7 @@ export default function WorkspaceScreen() {
             {sheet === "stock" && (
               <>
                 <Text style={styles.modalTitle}>Add stock item</Text>
-                <Text style={styles.modalSchemaHint}>mass (type: stock, scope: {scope}) + motion 406 TRANSFER_IN</Text>
+                <Text style={styles.modalSchemaHint}>matter (type: stock, scope: {scope}) + motion 406 TRANSFER_IN</Text>
                 <TextInput style={styles.modalInput} value={stockName} onChangeText={setStockName} placeholder="Item SKU / Name" placeholderTextColor={TEXT_TERTIARY} autoFocus />
                 <TextInput style={styles.modalInput} value={stockQty} onChangeText={setStockQty} placeholder="Initial Qty" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
                 <TextInput style={styles.modalInput} value={stockVal} onChangeText={setStockVal} placeholder="Unit Value" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
@@ -2648,7 +2648,7 @@ export default function WorkspaceScreen() {
             {sheet === "trip" && (
               <>
                 <Text style={styles.modalTitle}>{selectedCustomer?.type === "vehicle" ? "Dispatch new ride" : "Dispatch new trip"}</Text>
-                <Text style={styles.modalSchemaHint}>mass (type: trip, scope: {scope}) + motion 401 DISPATCHED</Text>
+                <Text style={styles.modalSchemaHint}>matter (type: trip, scope: {scope}) + motion 401 DISPATCHED</Text>
                 <TextInput style={styles.modalInput} value={tripRef} onChangeText={setTripRef} placeholder="Trip Reference / Details" placeholderTextColor={TEXT_TERTIARY} autoFocus />
                 <TextInput style={styles.modalInput} value={tripQty} onChangeText={setTripQty} placeholder="Onboard Qty" placeholderTextColor={TEXT_TERTIARY} keyboardType="numeric" />
                 <TextInput style={styles.modalInput} value={tripGeo} onChangeText={setTripGeo} placeholder="H3 Geo Coordinate" placeholderTextColor={TEXT_TERTIARY} />
@@ -2716,7 +2716,7 @@ export default function WorkspaceScreen() {
                   {transferDirection === "in" ? "Log Inventory Transfer In" : "Log Inventory Transfer Out"}
                 </Text>
                 <Text style={styles.modalSchemaHint}>
-                  mass + motion ({transferDirection === "in" ? "406 TRANSFER_IN" : "405 TRANSFER_OUT"}) + relation
+                  matter + motion ({transferDirection === "in" ? "406 TRANSFER_IN" : "405 TRANSFER_OUT"}) + bond
                 </Text>
                 
                 <Text style={{ fontSize: 13, color: TEXT_SECONDARY, marginBottom: 8 }}>
@@ -2763,7 +2763,7 @@ export default function WorkspaceScreen() {
             {sheet === "budget" && (
               <>
                 <Text style={styles.modalTitle}>Allocate Budget Pool</Text>
-                <Text style={styles.modalSchemaHint}>mass (type: budget, value = limit) + motion 806</Text>
+                <Text style={styles.modalSchemaHint}>matter (type: budget, value = limit) + motion 806</Text>
                 <TextInput
                   style={styles.modalInput}
                   value={budgetName}
@@ -2835,7 +2835,7 @@ export default function WorkspaceScreen() {
             {sheet === "invoice" && (
               <>
                 <Text style={styles.modalTitle}>Create Checkout Invoice</Text>
-                <Text style={styles.modalSchemaHint}>mass (type: invoice, value = price) + motion 801 PAYMENT_INIT</Text>
+                <Text style={styles.modalSchemaHint}>matter (type: invoice, value = price) + motion 801 PAYMENT_INIT</Text>
                 <TextInput
                   style={styles.modalInput}
                   value={invoiceAmount}
@@ -2901,7 +2901,7 @@ export default function WorkspaceScreen() {
             {sheet === "variant" && (
               <>
                 <Text style={styles.modalTitle}>Add Variant Stock</Text>
-                <Text style={styles.modalSchemaHint}>mass (type: variant) + motion 406 TRANSFER_IN</Text>
+                <Text style={styles.modalSchemaHint}>matter (type: variant) + motion 406 TRANSFER_IN</Text>
                 <TextInput
                   style={styles.modalInput}
                   value={variantLabel}
@@ -2935,7 +2935,7 @@ export default function WorkspaceScreen() {
             {sheet === "modifier" && (
               <>
                 <Text style={styles.modalTitle}>Add Modifier / Add-on</Text>
-                <Text style={styles.modalSchemaHint}>matter (modifier product) + relation + mass (price)</Text>
+                <Text style={styles.modalSchemaHint}>form (modifier product) + bond + matter (price)</Text>
                 <TextInput
                   style={styles.modalInput}
                   value={modifierTitle}
@@ -2961,7 +2961,7 @@ export default function WorkspaceScreen() {
             {sheet === "publish" && (
               <>
                 <Text style={styles.modalTitle}>Publish to Storefront</Text>
-                <Text style={styles.modalSchemaHint}>relation (published_to)</Text>
+                <Text style={styles.modalSchemaHint}>bond (published_to)</Text>
                 
                 <Text style={{ fontSize: 13, fontWeight: "600", color: TEXT_SECONDARY, marginBottom: 12 }}>
                   Select Storefront Profile:

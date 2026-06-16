@@ -22,15 +22,16 @@ import {
   getPrimarySyncDb,
   getLocalPrivateDb,
   isCollabSyncEnabled,
+  pushLocalChanges,
 } from "../lib/db";
 import * as Haptics from "expo-haptics";
 import { getCurrentUser, UserProfile } from "../lib/auth";
-import { setActiveMassId } from "../lib/state";
+import { setActiveMatterId } from "../lib/state";
 
 // ---------------------------------------------------------------------------
 // Home = the now-slice of open worldlines.
 //
-// Every actionable thing the user creates in /workspace is a `mass` row with a
+// Every actionable thing the user creates in /workspace is a `matter` row with a
 // `start`, an `end`, and an `active` flag — a worldline that begins, persists,
 // and ends. This screen renders the present moment cutting across all of those
 // worldlines: the ones still `active = 1`. Each tap emits the next `motion`
@@ -145,16 +146,16 @@ const formatRelativeTime = (timeStr: string | null) => {
   }
 };
 
-// Worldline query: every open `mass`, joined to its `matter` for a name, with
+// Worldline query: every open `matter`, joined to its `form` for a name, with
 // the latest motion action (current stage) and the root motion data (subject /
-// ref / source). Independent of relations, so it works in any user DB.
+// ref / source). Independent of bonds, so it works in any user DB.
 const WORLDLINE_QUERY = `
-  SELECT m.id, m.matter, m.type AS mass_type, m.value, m.start, m.end, m.data, m.time,
-         mt.title AS entity_title, mt.type AS entity_type,
+  SELECT m.id, m.form, m.type AS matter_type, m.value, m.start, m.end, m.data, m.time,
+         f.title AS entity_title, f.type AS entity_type,
          (SELECT action FROM motion WHERE stream = m.id ORDER BY seq DESC LIMIT 1) AS last_action,
          (SELECT data   FROM motion WHERE stream = m.id ORDER BY seq ASC  LIMIT 1) AS root_data
-  FROM mass m
-  LEFT JOIN matter mt ON mt.id = m.matter
+  FROM matter m
+  LEFT JOIN form f ON f.id = m.form
   WHERE m.active = 1 AND m.type IN ('lead', 'ticket', 'trip', 'invoice', 'slot', 'order')
 `;
 
@@ -167,19 +168,19 @@ const ORDER_ITEMS_QUERY = `
 
 function rowToWorldline(r: any, originSync: boolean): Worldline | null {
   let kind: Kind;
-  if (r.mass_type === "slot") {
+  if (r.matter_type === "slot") {
     kind = r.entity_type === "person" || r.entity_type === "family" ? "schedule" : "task";
   } else {
-    kind = r.mass_type as Kind;
+    kind = r.matter_type as Kind;
   }
 
-  // Converted leads are terminal even though the mass stays active=1 — they
+  // Converted leads are terminal even though the matter stays active=1 — they
   // have left the now-slice, so drop them.
   if (kind === "lead" && r.last_action === 305) return null;
 
   return {
     id: r.id,
-    matter: r.matter,
+    matter: r.form,
     kind,
     value: r.value,
     start: r.start,
@@ -340,7 +341,7 @@ export default function HomePage() {
       await loadWorldlines();
       
       if (await isCollabSyncEnabled()) {
-        await db.push().catch((err: any) => console.warn("[Home] Sync push failed:", err));
+        await pushLocalChanges(`s:${selfId}`, { motion: [] }).catch((err: any) => console.warn("[Home] Sync push failed:", err));
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err: any) {
@@ -442,14 +443,14 @@ export default function HomePage() {
 
       switch (item.kind) {
         case "task":
-          await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [now, item.id]);
+          await db.run("UPDATE matter SET active = 0, end = ? WHERE id = ?", [now, item.id]);
           await appendMotion(db, item.matter, 504, "COMPLETED", null, {
             task: describe(item).title,
             completed_at: now,
           });
           break;
         case "schedule":
-          await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [now, item.id]);
+          await db.run("UPDATE matter SET active = 0, end = ? WHERE id = ?", [now, item.id]);
           break;
         case "lead":
           if (item.lastAction === 304) {
@@ -460,18 +461,18 @@ export default function HomePage() {
           break;
         case "ticket":
           await phaseUpdateMotion(db, item.id, 308, "RESOLVED", null, { resolution: "completed" });
-          await db.run("UPDATE mass SET active = 0, end = ? WHERE id = ?", [now, item.id]);
+          await db.run("UPDATE matter SET active = 0, end = ? WHERE id = ?", [now, item.id]);
           break;
         case "trip":
           if (item.lastAction === 402) {
             await phaseUpdateMotion(db, item.id, 109, "DELIVERED", null, {});
-            await db.run("UPDATE mass SET active = 0 WHERE id = ?", [item.id]);
+            await db.run("UPDATE matter SET active = 0 WHERE id = ?", [item.id]);
           } else {
             await phaseUpdateMotion(db, item.id, 402, "IN_TRANSIT", null, {});
           }
           break;
         case "invoice":
-          await db.run("UPDATE mass SET active = 0 WHERE id = ?", [item.id]);
+          await db.run("UPDATE matter SET active = 0 WHERE id = ?", [item.id]);
           await phaseUpdateMotion(db, item.id, 802, "PAYMENT_SUCCESS", item.value, {});
           break;
         case "order": {
@@ -495,7 +496,7 @@ export default function HomePage() {
       }
 
       if (await isCollabSyncEnabled()) {
-        await db.push().catch((err: any) => console.warn("[Home] Sync push failed:", err));
+        await pushLocalChanges(`s:${selfId}`, { motion: [] }).catch((err: any) => console.warn("[Home] Sync push failed:", err));
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err: any) {
@@ -505,7 +506,7 @@ export default function HomePage() {
     }
   };
 
-  // Close the order's mass once all of its line items reach 109 DELIVERED and payment is paid.
+  // Close the order's matter once all of its line items reach 109 DELIVERED and payment is paid.
   const closeOrderIfDelivered = async (db: any, orderId: string) => {
     const itemsRows = await db.all(
       "SELECT phase FROM motion WHERE stream = ? AND action = 105",
@@ -518,7 +519,7 @@ export default function HomePage() {
     const itemsDelivered = itemsRows.length > 0 && itemsRows.every((r: any) => (r.phase || 105) >= 109);
     const paymentPaid = paymentRows.length > 0 && paymentRows.every((r: any) => (r.phase || 801) >= 802);
     if (itemsDelivered && paymentPaid) {
-      await db.run("UPDATE mass SET active = 0 WHERE id = ?", [orderId]);
+      await db.run("UPDATE matter SET active = 0 WHERE id = ?", [orderId]);
     }
   };
 
@@ -539,7 +540,7 @@ export default function HomePage() {
       await closeOrderIfDelivered(db, order.id);
       await loadWorldlines();
       if (await isCollabSyncEnabled()) {
-        await db.push().catch((err: any) => console.warn("[Home] Sync push failed:", err));
+        await pushLocalChanges(`s:${selfId}`, { motion: [] }).catch((err: any) => console.warn("[Home] Sync push failed:", err));
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err: any) {
@@ -561,7 +562,7 @@ export default function HomePage() {
           style={styles.orderHeader}
           activeOpacity={0.6}
           onPress={() => {
-            setActiveMassId(item.id);
+            setActiveMatterId(item.id);
             router.push("/pos");
           }}
         >
@@ -739,10 +740,10 @@ export default function HomePage() {
               <TouchableOpacity
                 style={styles.bigPosChip}
                 activeOpacity={0.7}
-                onPress={() => {
-                  setActiveMassId(null);
-                  router.push("/pos");
-                }}
+                  onPress={() => {
+                    setActiveMatterId(null);
+                    router.push("/pos");
+                  }}
               >
                 <Text style={styles.posText}>sale</Text>
               </TouchableOpacity>

@@ -1,6 +1,6 @@
-// Simple shared state for the active mass
-export let activeMassId: string | null = null;
+// Simple shared state for the active matter
+export let activeMatterId: string | null = null;
 
-export const setActiveMassId = (id: string | null) => {
-  activeMassId = id;
+export const setActiveMatterId = (id: string | null) => {
+  activeMatterId = id;
 };

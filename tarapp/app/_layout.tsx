@@ -42,8 +42,8 @@ export default function RootLayout() {
             
             const findRemindersQuery = `
               SELECT m.*, t.title 
-              FROM mass m 
-              LEFT JOIN matter t ON m.matter = t.id 
+              FROM matter m 
+              LEFT JOIN form t ON m.form = t.id 
               WHERE m.active = 1 AND m.type = 'reminder' AND m.scope = 'p' AND m.start <= ?
             `;
             
@@ -52,7 +52,7 @@ export default function RootLayout() {
             if (Array.isArray(reminders)) {
               for (const reminder of reminders) {
                 // Mark inactive immediately to prevent repeated alert triggers
-                await db.run("UPDATE mass SET active = 0 WHERE id = ?", [reminder.id]);
+                await db.run("UPDATE matter SET active = 0 WHERE id = ?", [reminder.id]);
                 
                 // Insert completion/triggered log entry
                 const motionId = `mot_${Date.now()}_${Math.random().toString(36).substring(7)}`;

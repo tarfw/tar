@@ -87,11 +87,11 @@ export default function SuperAgentScreen() {
   const [query, setQuery]                         = useState("");
   const [activeCategory, setActiveCategory]       = useState<Category | null>(null);
   const [results, setResults]                     = useState<ResultItem[]>([]);
-  const [massMap, setMassMap]                     = useState<Record<string, MassRow[]>>({});
+  const [matterMap, setMassMap]                     = useState<Record<string, MassRow[]>>({});
   const [loading, setLoading]                     = useState(false);
   const [searched, setSearched]                   = useState(false);
   const [selectedItem, setSelectedItem]           = useState<ResultItem | null>(null);
-  const [selectedMass, setSelectedMass]           = useState<MassRow | null>(null);
+  const [selectedMatter, setSelectedMass]           = useState<MassRow | null>(null);
 
   // ── Search ──────────────────────────────────────────────────────────────────
 
@@ -114,12 +114,12 @@ export default function SuperAgentScreen() {
       console.log("[SuperAgent] ←", res.status, text.slice(0, 300));
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
 
-      const data = JSON.parse(text) as { matters: any[]; mass: any[]; vectorUsed?: boolean };
-      console.log(`[SuperAgent] ${data.matters?.length ?? 0} matters, ${data.mass?.length ?? 0} mass rows, vector=${data.vectorUsed}`);
+      const data = JSON.parse(text) as { forms: any[]; matters: any[]; vectorUsed?: boolean };
+      console.log(`[SuperAgent] ${data.forms?.length ?? 0} forms, ${data.matters?.length ?? 0} matter rows, vector=${data.vectorUsed}`);
 
-      // Index mass rows by matter id
-      const mMap: Record<string, MassRow[]> = {};
-      for (const m of (data.mass || [])) {
+      // Index matter rows by form id
+      const newMap: Record<string, MatterRow[]> = {};
+      for (const m of (data.matters || [])) {
         const key = m.matter;
         if (!mMap[key]) mMap[key] = [];
         mMap[key].push(m as MassRow);
@@ -157,11 +157,11 @@ export default function SuperAgentScreen() {
   const closeDetail = () => { setSelectedItem(null); setSelectedMass(null); };
 
   const handleBook = () => {
-    if (!selectedItem || !selectedMass) return;
-    const massD = parseData(selectedMass.data);
+    if (!selectedItem || !selectedMatter) return;
+    const matterD = parseData(selectedMatter.data);
     Alert.alert(
       "Booking Confirmed 🎉",
-      `${selectedItem.title}\n${massD.label ?? ""}\n₹${Number(selectedMass.value ?? 0).toLocaleString()}`,
+      `${selectedItem.title}\n${matterD.label ?? ""}\n₹${Number(selectedMatter.value ?? 0).toLocaleString()}`,
       [{ text: "OK", onPress: closeDetail }]
     );
     // TODO: write motion record to user's collab DB
@@ -174,7 +174,7 @@ export default function SuperAgentScreen() {
     const d     = parseData(item.data);
     const price = d.price ?? d.base_price ?? null;
     const sub   = d.subtitle ?? d.description ?? d.address ?? d.cuisine ?? "";
-    const massRows = massMap[item.id] ?? [];
+    const matterRows = matterMap[item.id] ?? [];
 
     return (
       <Animated.View entering={FadeInDown.delay(index * 40).duration(260)}>
@@ -186,7 +186,7 @@ export default function SuperAgentScreen() {
             <Text style={styles.resultTitle} numberOfLines={1}>{item.title}</Text>
             <Text style={styles.resultSub} numberOfLines={1}>
               {sub || meta.label}
-              {massRows.length > 0 ? `  ·  ${massRows.length} option${massRows.length > 1 ? "s" : ""}` : ""}
+              {matterRows.length > 0 ? `  ·  ${matterRows.length} option${matterRows.length > 1 ? "s" : ""}` : ""}
             </Text>
           </View>
           {price !== null && (
@@ -219,7 +219,7 @@ export default function SuperAgentScreen() {
     if (!selectedItem) return null;
     const meta      = categoryMeta(selectedItem.type);
     const d         = parseData(selectedItem.data);
-    const massRows  = massMap[selectedItem.id] ?? [];
+    const matterRows  = matterMap[selectedItem.id] ?? [];
     const desc      = d.subtitle ?? d.description ?? d.address ?? d.cuisine ?? "";
 
     // Label for the "select" section header by category
@@ -253,50 +253,50 @@ export default function SuperAgentScreen() {
         {desc ? <Text style={styles.sheetDesc}>{desc}</Text> : null}
 
         {/* Mass selection */}
-        {massRows.length > 0 && (
+        {matterRows.length > 0 && (
           <>
-            <Text style={styles.massLabel}>{sectionLabel[selectedItem.type] ?? "Options"}</Text>
+            <Text style={styles.matterLabel}>{sectionLabel[selectedItem.type] ?? "Options"}</Text>
             <ScrollView
-              style={styles.massScroll}
+              style={styles.matterScroll}
               showsVerticalScrollIndicator={false}
               nestedScrollEnabled
             >
-              {massRows.map((m) => {
+              {matterRows.map((m) => {
                 const md       = parseData(m.data);
                 const label    = md.label ?? m.type;
-                const isActive = selectedMass?.id === m.id;
+                const isActive = selectedMatter?.id === m.id;
                 const outOfStock = (m.qty !== null && m.qty <= 0) || m.active === 0;
 
                 return (
                   <TouchableOpacity
                     key={m.id}
                     style={[
-                      styles.massRow,
+                      styles.matterRow,
                       isActive && { borderColor: meta.color, backgroundColor: meta.bg },
-                      outOfStock && styles.massRowDisabled,
+                      outOfStock && styles.matterRowDisabled,
                     ]}
                     activeOpacity={outOfStock ? 1 : 0.7}
                     disabled={outOfStock}
                     onPress={() => setSelectedMass(isActive ? null : m)}
                   >
                     {/* Selection indicator */}
-                    <View style={[styles.massCheck, isActive && { backgroundColor: meta.color, borderColor: meta.color }]}>
+                    <View style={[styles.matterCheck, isActive && { backgroundColor: meta.color, borderColor: meta.color }]}>
                       {isActive && <Ionicons name="checkmark" size={12} color="white" />}
                     </View>
 
                     {/* Label + sub info */}
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.massRowLabel, outOfStock && { color: "#cbd5e1" }]}>{label}</Text>
+                      <Text style={[styles.matterRowLabel, outOfStock && { color: "#cbd5e1" }]}>{label}</Text>
                       {md.eta_mins != null && (
-                        <Text style={styles.massRowSub}>ETA {md.eta_mins} min</Text>
+                        <Text style={styles.matterRowSub}>ETA {md.eta_mins} min</Text>
                       )}
                       {md.rating != null && (
-                        <Text style={styles.massRowSub}>⭐ {md.rating}</Text>
+                        <Text style={styles.matterRowSub}>⭐ {md.rating}</Text>
                       )}
                       {md.class != null && (
-                        <Text style={styles.massRowSub}>Class: {md.class}</Text>
+                        <Text style={styles.matterRowSub}>Class: {md.class}</Text>
                       )}
-                      {outOfStock && <Text style={[styles.massRowSub, { color: "#f87171" }]}>Unavailable</Text>}
+                      {outOfStock && <Text style={[styles.matterRowSub, { color: "#f87171" }]}>Unavailable</Text>}
                     </View>
 
                     {/* Qty badge */}
@@ -321,20 +321,20 @@ export default function SuperAgentScreen() {
         <TouchableOpacity
           style={[
             styles.bookBtn,
-            { backgroundColor: selectedMass ? meta.color : "#e2e8f0" },
+            { backgroundColor: selectedMatter ? meta.color : "#e2e8f0" },
           ]}
-          activeOpacity={selectedMass ? 0.8 : 1}
-          disabled={!selectedMass}
+          activeOpacity={selectedMatter ? 0.8 : 1}
+          disabled={!selectedMatter}
           onPress={handleBook}
         >
-          <Text style={[styles.bookBtnText, !selectedMass && { color: "#94a3b8" }]}>
-            {selectedMass
-              ? `Book · ₹${Number(selectedMass.value ?? 0).toLocaleString()}`
-              : massRows.length > 0
+          <Text style={[styles.bookBtnText, !selectedMatter && { color: "#94a3b8" }]}>
+            {selectedMatter
+              ? `Book · ₹${Number(selectedMatter.value ?? 0).toLocaleString()}`
+              : matterRows.length > 0
                 ? "Select an option above"
                 : "Coming Soon"}
           </Text>
-          {selectedMass && <Ionicons name="arrow-forward" size={16} color="white" style={{ marginLeft: 6 }} />}
+          {selectedMatter && <Ionicons name="arrow-forward" size={16} color="white" style={{ marginLeft: 6 }} />}
         </TouchableOpacity>
       </View>
     );
@@ -528,24 +528,24 @@ const styles = StyleSheet.create({
   sheetDesc: { fontSize: 13, color: "#64748b", lineHeight: 19, marginBottom: 14 },
 
   // Mass rows
-  massLabel: { fontSize: 12, fontWeight: "700", color: "#94a3b8", letterSpacing: 0.5, marginBottom: 10, textTransform: "uppercase" },
-  massScroll: { maxHeight: 260, marginBottom: 14 },
-  massRow: {
+  matterLabel: { fontSize: 12, fontWeight: "700", color: "#94a3b8", letterSpacing: 0.5, marginBottom: 10, textTransform: "uppercase" },
+  matterScroll: { maxHeight: 260, marginBottom: 14 },
+  matterRow: {
     flexDirection: "row", alignItems: "center",
     paddingVertical: 13, paddingHorizontal: 14,
     borderRadius: 14, borderWidth: 1.5, borderColor: "#f1f5f9",
     backgroundColor: "#fafafa", marginBottom: 8, gap: 12,
   },
-  massRowDisabled: { opacity: 0.45 },
-  massCheck: {
+  matterRowDisabled: { opacity: 0.45 },
+  matterCheck: {
     width: 20, height: 20, borderRadius: 10,
     borderWidth: 1.5, borderColor: "#e2e8f0",
     justifyContent: "center", alignItems: "center",
   },
-  massRowLabel: { fontSize: 14, fontWeight: "600", color: "#1e293b" },
-  massRowSub: { fontSize: 11, color: "#94a3b8", fontWeight: "500", marginTop: 2 },
-  massQty: { fontSize: 11, color: "#94a3b8", fontWeight: "600" },
-  massPrice: { fontSize: 15, fontWeight: "800", color: "#1e293b", marginLeft: 4 },
+  matterRowLabel: { fontSize: 14, fontWeight: "600", color: "#1e293b" },
+  matterRowSub: { fontSize: 11, color: "#94a3b8", fontWeight: "500", marginTop: 2 },
+  matterQty: { fontSize: 11, color: "#94a3b8", fontWeight: "600" },
+  matterPrice: { fontSize: 15, fontWeight: "800", color: "#1e293b", marginLeft: 4 },
 
   // Book CTA
   bookBtn: {

@@ -2,22 +2,18 @@ import { Database, getDbPath } from "@tursodatabase/sync-react-native";
 import * as SecureStore from "expo-secure-store";
 import { SCHEMA_STATEMENTS } from "./schema";
 import { getCurrentUser } from "./auth";
+import { connectToScope, onSync, pushChanges } from "./sync";
 
-export const CLOUDFLARE_WORKER_URL = "https://s3storage.tar-54d.workers.dev";
+export const CLOUDFLARE_WORKER_URL = "https://tar-worker.wetarteam.workers.dev";
 
-// Cache of dynamically opened database connections and session tokens
+// Cache of dynamically opened database connections
 const dbConnections: Record<string, Database> = {};
 export let cachedSelfId: string | null = null;
-let cachedSyncUrl: string = "";
-let cachedSyncToken: string = "";
-
-export function setCustomCollabCredentials(url: string, token: string) {
-  cachedSyncUrl = url;
-  cachedSyncToken = token;
-}
+let initialized = false;
 
 export async function isCollabSyncEnabled(): Promise<boolean> {
-  return !!(cachedSyncUrl || process.env.EXPO_PUBLIC_TURSO_SYNC_URL);
+  // Always enabled with DO-based sync
+  return true;
 }
 
 /**
@@ -48,7 +44,7 @@ export function getLocalPrivateDb(userId: string): Database {
     const config = { path: getDbPath(dbName) };
     const db = new Database(config);
     
-    // Enforce strictly offline/local-only behavior by making sync methods no-ops
+    // Enforce strictly offline/local-only behavior
     (db as any).push = async () => {};
     (db as any).pull = async () => {};
     (db as any).sync = async () => {};
@@ -60,34 +56,20 @@ export function getLocalPrivateDb(userId: string): Database {
 
 /**
  * Returns the primary synced database for a specific user
+ * Now uses local SQLite + WebSocket sync via DO
  */
 export function getPrimarySyncDb(userId: string): Database {
   const key = `sync_${userId}`;
   if (!dbConnections[key]) {
     const dbName = `user_sync_${userId}.db`;
-    
-    // Choose dynamic session credentials if we are matching the active user, fallback to env variables
-    const remoteUrl = (userId === cachedSelfId && cachedSyncUrl) 
-      ? cachedSyncUrl 
-      : (process.env.EXPO_PUBLIC_TURSO_SYNC_URL || "");
-      
-    const token = (userId === cachedSelfId && cachedSyncToken) 
-      ? cachedSyncToken 
-      : (process.env.EXPO_PUBLIC_TURSO_AUTH_TOKEN || "");
-    
-    const config: any = {
-      path: getDbPath(dbName),
-    };
-    
-    if (remoteUrl && token) {
-      config.url = remoteUrl;
-      config.authToken = token;
-      console.log(`[DB:Sync] Initialized remote sync config for ${userId} to ${remoteUrl}`);
-    } else {
-      console.log(`[DB:Sync] Initialized local-only fallback sync for ${userId} (no remote credentials)`);
-    }
-    
+    const config = { path: getDbPath(dbName) };
     const db = new Database(config);
+    
+    // Local SQLite only - sync happens via WebSocket
+    (db as any).push = async () => {};
+    (db as any).pull = async () => {};
+    (db as any).sync = async () => {};
+    
     dbConnections[key] = db;
   }
   return dbConnections[key];
@@ -100,18 +82,14 @@ export function getCollaboratorSyncDb(ownerId: string, delegatedToken?: string):
   const key = `sync_${ownerId}`;
   if (!dbConnections[key]) {
     const dbName = `user_sync_${ownerId}.db`;
-    const remoteUrl = `libsql://db-${ownerId}.turso.io`;
-    
-    const config: any = {
-      path: getDbPath(dbName),
-    };
-    
-    if (delegatedToken) {
-      config.url = remoteUrl;
-      config.authToken = delegatedToken;
-    }
-    
+    const config = { path: getDbPath(dbName) };
     const db = new Database(config);
+    
+    // Local SQLite only - sync happens via WebSocket
+    (db as any).push = async () => {};
+    (db as any).pull = async () => {};
+    (db as any).sync = async () => {};
+    
     dbConnections[key] = db;
   }
   return dbConnections[key];
@@ -125,7 +103,9 @@ export function getGlobalDb(): Database {
   if (!dbConnections[key]) {
     const config = { path: getDbPath("global.db") };
     const db = new Database(config);
-    (db as any).push = async () => {}; // Read-only global cache
+    (db as any).push = async () => {};
+    (db as any).pull = async () => {};
+    (db as any).sync = async () => {};
     dbConnections[key] = db;
   }
   return dbConnections[key];
@@ -139,7 +119,7 @@ export function getUserDb(): Database {
   return getLocalPrivateDb(userId);
 }
 
-// Map standard legacy getters to the dynamic architecture
+// Map standard getters to the dynamic architecture
 export const getCollabDb = () => getPrimarySyncDb(cachedSelfId || "guest");
 export const getTenantDb = () => getPrimarySyncDb(cachedSelfId || "guest");
 export const getDbClient = getUserDb;
@@ -170,75 +150,31 @@ export function routeDbForEntity(type: string | null, scope: string | null, scop
 }
 
 /**
+ * Push local changes to the DO via WebSocket
+ */
+export async function pushLocalChanges(scope: string, changes: {
+  motion?: any[];
+  form?: any[];
+  matter?: any[];
+  bond?: any[];
+}): Promise<void> {
+  await pushChanges(scope, changes);
+}
+
+/**
+ * Subscribe to sync events from the DO
+ */
+export function subscribeToSync(callback: (data: any) => void): () => void {
+  return onSync(callback);
+}
+
+/**
  * Initialization function called during app boot and session switches
  */
 export async function initDb() {
   cachedSelfId = null;
   const selfId = await getSelfId();
   console.log(`[DB] Initializing database files for user: ${selfId}`);
-  
-  // Clean up cached dynamic credentials on session switch
-  cachedSyncUrl = "";
-  cachedSyncToken = "";
-
-  // If user is logged in, attempt to fetch/restore remote sync credentials from Cloudflare Worker
-  if (selfId && selfId !== "guest") {
-    try {
-      let storedUrl = await SecureStore.getItemAsync(`user_sync_url_${selfId}`);
-      let storedToken = await SecureStore.getItemAsync(`user_sync_token_${selfId}`);
-
-      // Clear legacy database name prefixes (db-usr- or usr-) from SecureStore cache to force recreation/refresh
-      if (storedUrl && (storedUrl.includes("/db-usr-") || storedUrl.includes("/usr-"))) {
-        console.log(`[DB] Clearing legacy cached URL: ${storedUrl}`);
-        await SecureStore.deleteItemAsync(`user_sync_url_${selfId}`);
-        await SecureStore.deleteItemAsync(`user_sync_token_${selfId}`);
-        storedUrl = null;
-        storedToken = null;
-      }
-
-      if (!storedUrl || !storedToken) {
-        console.log(`[DB] Requesting database creation/token from Worker for user: ${selfId}`);
-        const response = await fetch(`${CLOUDFLARE_WORKER_URL}/api/user/get-or-create-db`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${selfId}`
-          },
-          body: JSON.stringify({ userId: selfId })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          storedUrl = data.syncUrl;
-          storedToken = data.authToken;
-
-          if (storedUrl && storedToken) {
-            await SecureStore.setItemAsync(`user_sync_url_${selfId}`, storedUrl);
-            await SecureStore.setItemAsync(`user_sync_token_${selfId}`, storedToken);
-            console.log(`[DB] Remote sync credentials saved securely for user: ${selfId}`);
-          }
-        } else {
-          const errText = await response.text();
-          console.warn(`[DB] Worker rejected get-or-create-db request: ${errText}`);
-          try {
-            const { Alert } = require("react-native");
-            Alert.alert("Database Error", `Worker rejected database creation: ${errText}`);
-          } catch (_) {}
-        }
-      }
-
-      if (storedUrl && storedToken) {
-        cachedSyncUrl = storedUrl;
-        cachedSyncToken = storedToken;
-      }
-    } catch (err: any) {
-      console.warn("[DB] Error loading/fetching sync credentials from worker:", err);
-      try {
-        const { Alert } = require("react-native");
-        Alert.alert("Sync Network Error", `Failed to contact database provisioning service: ${err.message || String(err)}`);
-      } catch (_) {}
-    }
-  }
 
   // 1. Initialize & migrate private database
   const privateDb = getLocalPrivateDb(selfId);
@@ -256,40 +192,13 @@ export async function initDb() {
   // 2. Initialize & migrate primary sync database
   const syncDb = getPrimarySyncDb(selfId);
   try {
-    // If the database connection was already opened under a mock configuration, we close it so it reconnects with the fetched sync credentials
-    const connKey = `sync_${selfId}`;
-    if (dbConnections[connKey]) {
-      try {
-        await dbConnections[connKey].close();
-      } catch (_) {}
-      delete dbConnections[connKey];
-    }
-    
-    const reSyncDb = getPrimarySyncDb(selfId);
-    await reSyncDb.connect();
+    await syncDb.connect();
     for (const sql of SCHEMA_STATEMENTS) {
-      await reSyncDb.exec(sql);
+      await syncDb.exec(sql);
     }
-    
-    const syncEnabled = await isCollabSyncEnabled();
-    if (syncEnabled) {
-      console.log(`[DB:Sync] Synchronizing schema with remote Turso...`);
-      try {
-        await reSyncDb.push();
-        await reSyncDb.pull();
-        console.log(`[DB:Sync] Schema synchronized with remote Turso successfully`);
-      } catch (syncErr) {
-        console.warn(`[DB:Sync] Initial schema sync warning:`, syncErr);
-      }
-    }
-    
     console.log(`[DB:Sync] Connected & Verified for ${selfId}`);
   } catch (e) {
     console.error(`[DB:Sync] Initialization failed:`, e);
-    try {
-      await SecureStore.deleteItemAsync(`user_sync_url_${selfId}`);
-      await SecureStore.deleteItemAsync(`user_sync_token_${selfId}`);
-    } catch (_) {}
   }
 
   // 3. Initialize & migrate global database
@@ -304,4 +213,16 @@ export async function initDb() {
     console.error(`[DB:Global] Initialization failed:`, e);
   }
 
+  // 4. Connect to WebSocket sync for user's scope
+  if (selfId && selfId !== "guest") {
+    try {
+      const scope = `s:${selfId}`;
+      await connectToScope(scope);
+      console.log(`[DB:Sync] WebSocket connected for scope ${scope}`);
+    } catch (e) {
+      console.warn(`[DB:Sync] WebSocket connection failed:`, e);
+    }
+  }
+
+  initialized = true;
 }

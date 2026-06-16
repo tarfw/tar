@@ -46,7 +46,8 @@
       "Bash(wrangler delete *)",
       "Bash(wrangler secret *)",
       "Bash(nslookup anyshop.tarai.space)",
-      "Bash(CLOUDFLARE_ACCOUNT_ID=54dc15bf1f8fecfd12dac7b74149eb9a wrangler deploy)"
+      "Bash(CLOUDFLARE_ACCOUNT_ID=54dc15bf1f8fecfd12dac7b74149eb9a wrangler deploy)",
+      "PowerShell(npm *)"
     ]
   }
 }

@@ -56,7 +56,12 @@
       "Bash(node /tmp/scope-test.mjs)",
       "Bash(echo \"\")",
       "Bash(echo \"=== Live: OLD token from log should still 403 \\(proves old scopes rejected\\) ===\")",
-      "Bash(grep -vE \"^$\")"
+      "Bash(grep -vE \"^$\")",
+      "Bash(cd 'C:\\\\tarfwk\\\\tar\\\\docs\\\\solution')",
+      "Bash(echo '=== __TRACKED_VAR__ ===')",
+      "Bash(head -5 __TRACKED_VAR__.md)",
+      "Bash(echo)",
+      "Bash(claude mcp *)"
     ]
   }
 }

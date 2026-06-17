@@ -1,0 +1,70 @@
+---
+const steps = [
+  { num: "01", title: "Find it", desc: "Search in plain words or browse what's open near you." },
+  { num: "02", title: "Tap it", desc: "Add to cart, pick a ride, or book a service. One checkout." },
+  { num: "03", title: "Track it", desc: "Watch it move on the map in real time. Live ETA." },
+  { num: "04", title: "Done", desc: "It arrives. Rate it and move on. Simple as that." },
+];
+---
+
+<section id="how-it-works" class="steps">
+  <div class="page-container">
+    <div class="section-header">
+      <h2>How it works</h2>
+      <p>Four simple steps. Zero friction.</p>
+    </div>
+    <div class="steps__list">
+      {steps.map((s) => (
+        <div class="step">
+          <span class="step__num">{s.num}</span>
+          <div class="step__body">
+            <h3 class="step__title">{s.title}</h3>
+            <p class="step__desc">{s.desc}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .steps {
+    padding: var(--space-20) 0;
+    background: var(--color-bg-secondary);
+  }
+  .steps__list {
+    max-width: 560px;
+    margin: 0 auto;
+  }
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-5);
+    padding: var(--space-5) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .step:last-child {
+    border-bottom: none;
+  }
+  .step__num {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-tertiary);
+    font-variant-numeric: tabular-nums;
+    min-width: 32px;
+    padding-top: 1px;
+  }
+  .step__body {
+    flex: 1;
+  }
+  .step__title {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    margin-bottom: var(--space-1);
+    color: var(--color-text);
+  }
+  .step__desc {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+</style>

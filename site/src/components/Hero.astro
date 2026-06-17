@@ -1,0 +1,212 @@
+---
+---
+
+<section class="hero">
+  <div class="hero__container">
+    <!-- Left column -->
+    <div class="hero__left">
+      <div class="hero__console">
+        <svg class="hero__console-icon" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Body -->
+          <rect x="2" y="2" width="76" height="76" rx="18" fill="#2563eb"/>
+          <!-- Screen - top aligned, max space -->
+          <rect x="10" y="10" width="56" height="56" rx="8" fill="#e2e8f0"/>
+          <!-- Camera -->
+          <circle cx="70" cy="14" r="2.5" fill="#93c5fd"/>
+          <!-- Scroll wheel -->
+          <rect x="72" y="30" width="4" height="20" rx="2" fill="#93c5fd"/>
+          <!-- Speaker -->
+          <circle cx="22" cy="72" r="1.5" fill="#93c5fd"/>
+          <circle cx="28" cy="72" r="1.5" fill="#93c5fd"/>
+          <circle cx="34" cy="72" r="1.5" fill="#93c5fd"/>
+        </svg>
+      </div>
+
+      <div class="hero__heading">
+        <h1 class="hero__title">
+          <span class="hero__tar">tar</span><span class="hero__dot">.</span>
+        </h1>
+        <h1 class="hero__title hero__title--solution">
+          <span class="hero__solution-text" id="solutionsText" aria-live="polite"></span>
+        </h1>
+      </div>
+
+      <p class="hero__subtitle">Everything app</p>
+
+      <a href="#" class="hero__btn hero__btn--download">Download</a>
+    </div>
+
+    <!-- Right column: Video -->
+    <div class="hero__right">
+      <video class="hero__video" autoplay muted loop playsinline>
+        <source src="/videos/hero-video.mp4" type="video/mp4" />
+      </video>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    background: #fff;
+    min-height: 100vh;
+    display: flex;
+    align-items: stretch;
+  }
+
+  .hero__container {
+    display: flex;
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 60px;
+  }
+
+  /* Left column */
+  .hero__left {
+    flex: 0 0 42%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 80px 60px 60px 0;
+  }
+
+  .hero__console-icon {
+    width: 80px;
+    height: 100px;
+  }
+
+  .hero__heading {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .hero__title {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: clamp(3rem, 5.5vw, 5rem);
+    font-weight: 800;
+    line-height: 1.05;
+    color: #000;
+    margin: 0;
+    letter-spacing: -0.03em;
+  }
+
+  .hero__solution-text {
+    display: inline-block;
+    min-width: 2em;
+    white-space: nowrap;
+    font-size: clamp(2.8rem, 5vw, 4.5rem);
+    font-weight: 600;
+  }
+
+  .hero__subtitle {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: #666;
+    margin: 0;
+  }
+
+  .hero__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    padding: 14px 32px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 600;
+    font-size: 16px;
+    transition: background 0.2s, transform 0.1s;
+  }
+
+  .hero__btn--download {
+    background: #2563eb;
+    color: #fff;
+  }
+
+  .hero__btn--download:hover {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+  }
+
+  /* Right column */
+  .hero__right {
+    flex: 0 0 58%;
+    display: flex;
+    align-items: stretch;
+    justify-content: flex-end;
+    padding: 60px 0 60px 60px;
+  }
+
+  .hero__video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 12px;
+    background: #f5f5f5;
+  }
+
+  @media (max-width: 900px) {
+    .hero__container {
+      padding: 0 24px;
+      flex-direction: column;
+      gap: 40px;
+    }
+
+    .hero__left,
+    .hero__right {
+      flex: 1 1 auto;
+      width: 100%;
+      padding: 60px 0;
+    }
+
+    .hero__right {
+      padding-left: 0;
+    }
+  }
+</style>
+
+<script is:inline>
+(function () {
+  const solutions = ["Food", "Taxi", "E-Commerce", "Payments", "Marketplace", "Logistics", "Services", "POS", "HR & Staff", "Marketing", "CRM", "Projects"];
+  let i = 0;
+  const el = document.getElementById("solutionsText");
+  if (!el) return;
+
+  function cycle() {
+    const t = solutions[i];
+    let j = 0;
+    el.textContent = "";
+
+    function type() {
+      if (j < t.length) {
+        el.textContent = t.slice(0, ++j);
+        setTimeout(type, 100);
+      } else {
+        setTimeout(clear, 2200);
+      }
+    }
+
+    function clear() {
+      let k = t.length;
+      function step() {
+        if (k >= 0) {
+          el.textContent = t.slice(0, k--);
+          setTimeout(step, 60);
+        } else {
+          i = (i + 1) % solutions.length;
+          setTimeout(cycle, 400);
+        }
+      }
+      step();
+    }
+
+    type();
+  }
+
+  cycle();
+})();
+</script>

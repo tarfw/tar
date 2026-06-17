@@ -1,0 +1,75 @@
+---
+const features = [
+  { icon: "🍕", title: "Food", desc: "Order from any kitchen, track from kitchen to door." },
+  { icon: "🚗", title: "Rides", desc: "Cabs and autos near you with a live ETA." },
+  { icon: "🛒", title: "Shop", desc: "Find any product in stock near you, delivered same day." },
+  { icon: "💳", title: "Pay", desc: "Scan, send, or split a bill. No card details needed." },
+  { icon: "📦", title: "Parcels", desc: "Send or receive parcels across the city, tracked live." },
+  { icon: "💇", title: "Services", desc: "Salons, repairs, cleaners — book trusted local services." },
+];
+---
+
+<section id="features" class="features">
+  <div class="page-container">
+    <div class="section-header">
+      <h2>All your city needs</h2>
+      <p>One app. Every service. No switching.</p>
+    </div>
+    <div class="features__grid">
+      {features.map((f) => (
+        <div class="feature-card">
+          <span class="feature-card__icon">{f.icon}</span>
+          <h3 class="feature-card__title">{f.title}</h3>
+          <p class="feature-card__desc">{f.desc}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .features {
+    padding: var(--space-20) 0;
+  }
+  .features__grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-4);
+  }
+  .feature-card {
+    padding: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .feature-card:hover {
+    border-color: var(--color-border-hover);
+    box-shadow: var(--shadow-sm);
+  }
+  .feature-card__icon {
+    font-size: 1.75rem;
+    display: block;
+    margin-bottom: var(--space-3);
+  }
+  .feature-card__title {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    margin-bottom: var(--space-1);
+    color: var(--color-text);
+  }
+  .feature-card__desc {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+  }
+  @media (max-width: 768px) {
+    .features__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 480px) {
+    .features__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

@@ -16,19 +16,23 @@ export default function SettingsScreen() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.background }]}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 }}>
 
-      {/* Profile Card */}
-      <Pressable style={[styles.profileCard, { backgroundColor: theme.backgroundElement }]}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>T</Text>
-        </View>
-        <View style={styles.profileInfo}>
-          <Text style={[styles.profileName, { color: theme.text }]}>Tarai User</Text>
-          <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>user@tarai.app</Text>
-        </View>
-        <Text style={[styles.chevron, { color: theme.textSecondary }]}>{'>'}</Text>
+      {/* Back Button */}
+      <Pressable
+        style={({ pressed }) => [styles.backButton, pressed && { opacity: 0.6 }]}
+        onPress={() => router.back()}>
+        <Text style={[styles.backText, { color: '#007AFF' }]}>‹</Text>
       </Pressable>
+
+      {/* Profile Section */}
+      <View style={styles.profileSection}>
+        <View style={styles.profileAvatar}>
+          <Text style={styles.profileAvatarText}>T</Text>
+        </View>
+        <Text style={[styles.profileName, { color: theme.text }]}>Tarai User</Text>
+        <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>user@tarai.app</Text>
+      </View>
 
       {/* Appearance */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>APPEARANCE</Text>
@@ -108,11 +112,14 @@ export default function SettingsScreen() {
       </View>
 
       {/* Sign Out */}
-      <Pressable
-        style={({ pressed }) => [styles.signOut, pressed && { opacity: 0.6 }]}
-        onPress={() => router.back()}>
-        <Text style={styles.signOutText}>Sign Out</Text>
-      </Pressable>
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ACCOUNT</Text>
+      <View style={[styles.section, { backgroundColor: theme.backgroundElement }]}>
+        <Pressable
+          style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+          onPress={() => router.back()}>
+          <Text style={[styles.rowLabel, { color: '#FF3B30' }]}>Sign Out</Text>
+        </Pressable>
+      </View>
     </ScrollView>
   );
 }
@@ -141,38 +148,38 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 16,
-    borderRadius: 12,
+  backButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  backText: {
+    fontSize: 28,
+  },
+  profileSection: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  profileAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: '#007AFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarText: {
+  profileAvatarText: {
     color: '#FFFFFF',
-    fontSize: 26,
+    fontSize: 34,
     fontWeight: '600',
-  },
-  profileInfo: {
-    flex: 1,
-    marginLeft: 14,
   },
   profileName: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '600',
+    marginTop: 12,
   },
   profileEmail: {
-    fontSize: 14,
-    marginTop: 2,
+    fontSize: 15,
+    marginTop: 4,
   },
   sectionTitle: {
     fontSize: 13,
@@ -216,19 +223,6 @@ const styles = StyleSheet.create({
   },
   chevron: {
     fontSize: 16,
-    fontWeight: '600',
-  },
-  signOut: {
-    backgroundColor: '#FF3B30',
-    marginHorizontal: 16,
-    marginTop: 32,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  signOutText: {
-    color: '#FFFFFF',
-    fontSize: 17,
     fontWeight: '600',
   },
 });

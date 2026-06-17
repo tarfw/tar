@@ -1,19 +1,15 @@
-import { Stack, useRouter, DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import { Pressable } from 'react-native';
-import { SymbolView } from 'expo-symbols';
+import { View } from 'react-native';
+import { Stack } from 'expo-router';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import { ThemeProvider as CustomThemeProvider, useThemeMode } from '@/hooks/use-theme-context';
+import { ThemeProvider, useThemeMode } from '@/hooks/use-theme-context';
 import { Colors } from '@/constants/theme';
 
 function RootLayoutInner() {
   const { resolvedScheme } = useThemeMode();
   const colors = Colors[resolvedScheme];
-  const router = useRouter();
 
   return (
-    <ThemeProvider value={resolvedScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack
         screenOptions={{
           headerStyle: {
@@ -21,6 +17,7 @@ function RootLayoutInner() {
           },
           headerTintColor: colors.text,
           headerShadowVisible: false,
+          contentStyle: { backgroundColor: colors.background },
         }}>
         <Stack.Screen
           name="(tabs)"
@@ -31,30 +28,20 @@ function RootLayoutInner() {
         <Stack.Screen
           name="settings"
           options={{
-            title: 'Settings',
-            presentation: 'modal',
-            headerLeft: () => (
-              <Pressable
-                onPress={() => router.back()}
-                style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}>
-                <SymbolView
-                  name="chevron.left"
-                  size={24}
-                  tintColor={colors.text}
-                />
-              </Pressable>
-            ),
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.background },
+            animation: 'slide_from_right',
           }}
         />
       </Stack>
-    </ThemeProvider>
+    </View>
   );
 }
 
 export default function RootLayout() {
   return (
-    <CustomThemeProvider>
+    <ThemeProvider>
       <RootLayoutInner />
-    </CustomThemeProvider>
+    </ThemeProvider>
   );
 }

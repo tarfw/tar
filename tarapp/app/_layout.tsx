@@ -110,6 +110,8 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: "white" },
             }}
           >
+            <Stack.Screen name="index" options={{ animation: "fade" }} />
+            <Stack.Screen name="home" options={{ animation: "fade" }} />
             <Stack.Screen
               name="superagent"
               options={{

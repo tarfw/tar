@@ -2,7 +2,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { FileSystemUploadType } from "expo-file-system/legacy";
 
 // Hardcoded deployed worker fallback for easy testing
-const CLOUDFLARE_WORKER_URL = "https://s3storage.tamilframework.workers.dev";
+const CLOUDFLARE_WORKER_URL = "https://s3storage.tar-54d.workers.dev";
 
 async function getAuthHeaders() {
   // Mock authentication header for now (used to route files under private/test-user-123/)

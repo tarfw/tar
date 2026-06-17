@@ -170,7 +170,7 @@ export default function EntityDirectoryScreen() {
     try {
       const db = routeDbForEntity("customer", activeScope);
       const rows = await db.all(
-        "SELECT id, code, type, title, owner, data, time FROM matter WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier', 'vehicle', 'finance', 'product', 'profile') AND (scope = ? OR scope = 'g') ORDER BY time DESC",
+        "SELECT id, code, type, title, owner, data, time FROM form WHERE type IN ('customer', 'business', 'person', 'family', 'warehouse', 'carrier', 'vehicle', 'finance', 'product', 'profile') AND (scope = ? OR scope = 'g') ORDER BY time DESC",
         [activeScope]
       );
       setCustomers((rows as any[]) || []);
@@ -263,7 +263,7 @@ export default function EntityDirectoryScreen() {
       const jsonStr = JSON.stringify(payload);
 
       await db.run(
-        `INSERT INTO matter (id, code, type, scope, owner, title, public, data, time)
+        `INSERT INTO form (id, code, type, scope, owner, title, public, data, time)
          VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            type=excluded.type,

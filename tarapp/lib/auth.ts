@@ -4,7 +4,7 @@ import * as SecureStore from "expo-secure-store";
 const SECURE_STORE_USER_KEY = "google_auth_user";
 const SECURE_STORE_JWT_KEY = "sync_jwt";
 
-const WORKER_URL = "https://tar-worker.wetarteam.workers.dev";
+const WORKER_URL = "https://tar-sync.tar-54d.workers.dev";
 
 // Configure Google Sign-In
 GoogleSignin.configure({

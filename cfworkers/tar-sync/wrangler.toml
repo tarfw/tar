@@ -1,10 +1,12 @@
-name = "tar-worker"
+name = "tar-sync"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
+account_id = "54dc15bf1f8fecfd12dac7b74149eb9a"
 
-# Secrets are set via: npx wrangler secret put JWT_SECRET
-# Do NOT put secrets in [vars] - they would be visible in plaintext
+# Secrets (set via `wrangler secret put <NAME>`):
+#   JWT_SECRET        — JWT signing key
+#   GOOGLE_CLIENT_ID  — Google OAuth client ID
 
 [[durable_objects.bindings]]
 name = "SYNC_DO"

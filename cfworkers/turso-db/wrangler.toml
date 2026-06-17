@@ -1,0 +1,22 @@
+name = "turso-db"
+main = "src/index.ts"
+compatibility_date = "2024-04-03"
+account_id = "54dc15bf1f8fecfd12dac7b74149eb9a"
+
+# Secrets (set via `wrangler secret put <NAME>`):
+#   TURSO_URL              — libsql://global-tarframework... (Turso DB URL)
+#   TURSO_AUTH_TOKEN       — Turso auth token (read/write)
+#   TURSO_PLATFORM_API_TOKEN — Turso Platform API token (for DB creation)
+#   TURSO_ORG              — Turso organization (default: tarframework)
+#   TURSO_GROUP            — Turso group (default: default)
+
+[vars]
+TURSO_ORG = "tarframework"
+TURSO_GROUP = "default"
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "tar-archive"
+
+[ai]
+binding = "AI"

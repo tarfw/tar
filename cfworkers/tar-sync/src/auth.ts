@@ -50,11 +50,21 @@ export async function mintJwt(payload: Omit<JwtPayload, "exp">, secret: string, 
     ["sign"]
   );
 
-  const headerB64 = bufferToBase64url(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(JSON.stringify(header))));
-  const payloadB64 = bufferToBase64url(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(JSON.stringify(fullPayload))));
+  const headerB64 = jsonToBase64url(header);
+  const payloadB64 = jsonToBase64url(fullPayload);
   const signature = bufferToBase64url(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${headerB64}.${payloadB64}`)));
 
   return `${headerB64}.${payloadB64}.${signature}`;
+}
+
+function jsonToBase64url(obj: unknown): string {
+  const json = JSON.stringify(obj);
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
 function base64urlToBuffer(str: string): ArrayBuffer {

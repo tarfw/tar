@@ -93,7 +93,7 @@ export async function upsertMatterVector(
     const blob = float32ArrayToBlob(vector);
     
     const db = getUserDb();
-    await db.run("INSERT OR REPLACE INTO memory (matter, vector) VALUES (?, ?)", [id, blob as any]);
+    await db.run("INSERT OR REPLACE INTO memory (form, vector) VALUES (?, ?)", [id, blob as any]);
     console.log(`[VectorStore] Indexed vector for matter ${id} in Local User DB`);
   } catch (e) {
     console.error(`[VectorStore] Failed to upsert vector for matter ${id}:`, e);
@@ -103,7 +103,7 @@ export async function upsertMatterVector(
 export async function deleteMatterVector(id: string, type: string | null, scope: string | null) {
   try {
     const db = getUserDb();
-    await db.run("DELETE FROM memory WHERE matter = ?", [id]);
+    await db.run("DELETE FROM memory WHERE form = ?", [id]);
     console.log(`[VectorStore] Deleted vector for matter ${id} from Local User DB`);
   } catch (e) {
     console.error(`[VectorStore] Failed to delete vector for matter ${id}:`, e);
@@ -119,18 +119,18 @@ export async function searchMatterVectors(
     const queryFloat32 = new Float32Array(queryVector);
 
     const db = getUserDb();
-    const rows = await db.all("SELECT matter, vector FROM memory").catch(() => []);
+    const rows = await db.all("SELECT form, vector FROM memory").catch(() => []);
 
     const results: Array<{ matterId: string; similarity: number }> = [];
 
     for (const row of rows) {
-      if (row.matter && row.vector) {
+      if (row.form && row.vector) {
         try {
           const vectorFloat32 = blobToFloat32Array(row.vector);
           const sim = cosineSimilarity(queryFloat32, vectorFloat32);
-          results.push({ matterId: String(row.matter), similarity: sim });
+          results.push({ matterId: String(row.form), similarity: sim });
         } catch (err) {
-          console.warn(`[VectorStore] Failed calculating similarity for ${row.matter}:`, err);
+          console.warn(`[VectorStore] Failed calculating similarity for ${row.form}:`, err);
         }
       }
     }
@@ -150,9 +150,9 @@ export async function checkAndSyncExistingMatters() {
     if (!isSynced) {
       console.log("[VectorStore] Initial sync flag not found. Re-indexing all existing matters...");
       const db = getUserDb();
-      const matters = await db.all("SELECT * FROM matter").catch(() => []);
+      const matters = await db.all("SELECT * FROM form").catch(() => []);
 
-      console.log(`[VectorStore] Found ${matters.length} matters to index`);
+      console.log(`[VectorStore] Found ${matters.length} forms to index`);
       
       for (const m of matters) {
         await upsertMatterVector(String(m.id), {

@@ -47,7 +47,16 @@
       "Bash(wrangler secret *)",
       "Bash(nslookup anyshop.tarai.space)",
       "Bash(CLOUDFLARE_ACCOUNT_ID=54dc15bf1f8fecfd12dac7b74149eb9a wrangler deploy)",
-      "PowerShell(npm *)"
+      "PowerShell(npm *)",
+      "Bash(cat)",
+      "Bash(node /tmp/jwt-test.mjs)",
+      "Bash(echo \"=== payload decoded ===\")",
+      "Bash(echo \"eyJ1c2VySWQiOiJ1c3JfMTE3MTc4MTUwOTg0MDEyODEwNDQ1Iiwic2NvcGVzIjpbInA6dXNyXzExNzE3ODE1MDk4NDAxMjgxMDQ0NSIsInM6dXNyXzExNzE3ODE1MDk4NDAxMjgxMDQ0NSIsInQ6dXNyXzExNzE3ODE1MDk4NDAxMjgxMDQ0NSJdLCJleHAiOjE3ODE2NDIyNjR9\")",
+      "Bash(grep -nE \"s:\\\\$\\\\{|connectToScope|getSelfId|selfId =|scope = \" lib/db.ts)",
+      "Bash(node /tmp/scope-test.mjs)",
+      "Bash(echo \"\")",
+      "Bash(echo \"=== Live: OLD token from log should still 403 \\(proves old scopes rejected\\) ===\")",
+      "Bash(grep -vE \"^$\")"
     ]
   }
 }

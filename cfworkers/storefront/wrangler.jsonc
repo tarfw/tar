@@ -1,12 +1,13 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "storefront",
+  "name": "tar-storefront",
   "main": "src/index.ts",
+  "account_id": "54dc15bf1f8fecfd12dac7b74149eb9a",
   "compatibility_date": "2026-06-01",
   "observability": { "enabled": true },
 
-  // Reads come straight from the shared global Turso DB (same one the app's
-  // s3storage /api/publish writes to). Set as secrets:
+  // Reads come straight from the shared global Turso DB (same one turso-worker
+  // /api/publish writes to). Set as secrets:
   //   wrangler secret put TURSO_URL
   //   wrangler secret put TURSO_AUTH_TOKEN
 

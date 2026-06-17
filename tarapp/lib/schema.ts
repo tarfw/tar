@@ -51,12 +51,4 @@ export const SCHEMA_STATEMENTS = [
     time TEXT DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (stream, seq)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_form_code ON form(code)`,
-  `CREATE INDEX IF NOT EXISTS idx_form_public ON form(public, type)`,
-  `CREATE INDEX IF NOT EXISTS idx_form_scope_type ON form(scope, type)`,
-  `CREATE INDEX IF NOT EXISTS idx_bond_tgt ON bond(tgt, type)`,
-  `CREATE INDEX IF NOT EXISTS idx_bond_type ON bond(type)`,
-  `CREATE INDEX IF NOT EXISTS idx_matter_form ON matter(form)`,
-  `CREATE INDEX IF NOT EXISTS idx_matter_geo ON matter(geo)`,
-  `CREATE INDEX IF NOT EXISTS idx_matter_scope_type ON matter(scope, type)`
 ];

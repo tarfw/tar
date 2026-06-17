@@ -247,7 +247,7 @@ export default function RealizationScreen() {
       const parsedValue = value.trim() !== "" ? parseFloat(value) : null;
 
       await db.run(
-        `INSERT INTO mass (id, matter, type, scope, qty, value, active, geo, start, end, data, time)
+        `INSERT INTO matter (id, form, type, scope, qty, value, active, geo, start, end, data, time)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,

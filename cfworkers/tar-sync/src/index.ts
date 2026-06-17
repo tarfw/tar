@@ -7,8 +7,6 @@ export interface Env {
   SYNC_DO: DurableObjectNamespace;
   JWT_SECRET: string;
   GOOGLE_CLIENT_ID: string;
-  TURSO_URL?: string;
-  TURSO_AUTH_TOKEN?: string;
 }
 
 export default {
@@ -36,12 +34,6 @@ export default {
       }
       if (url.pathname === "/api/query") {
         return this.handleQueryProxy(request, env, corsHeaders);
-      }
-      if (url.pathname === "/api/publish") {
-        return this.handlePublish(request, env, corsHeaders);
-      }
-      if (url.pathname === "/api/search") {
-        return this.handleSearch(request, env, corsHeaders);
       }
       if (url.pathname === "/api/kick") {
         return this.handleKickProxy(request, env, corsHeaders);
@@ -78,11 +70,13 @@ export default {
     }
 
     const googleData = await googleResponse.json();
-    const userId = `usr_${googleData.sub}`;
+    const sub = googleData.sub;
+    const userId = `usr_${sub}`;
 
     // Get user's permitted scopes from your database
-    // For now, we'll use a simple mapping
-    const scopes = [`p:${userId}`, `s:${userId}`, `t:${userId}`];
+    // Scopes are keyed by the raw Google subject id — matching the app's
+    // getSelfId() (user.id) and scope construction (`s:${selfId}`).
+    const scopes = [`p:${sub}`, `s:${sub}`, `t:${sub}`];
 
     // Mint custom JWT
     const token = await mintJwt(
@@ -95,12 +89,10 @@ export default {
   },
 
   async handleSyncProxy(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-    // Check for WebSocket upgrade
     const url = new URL(request.url);
     const upgradeHeader = request.headers.get("Upgrade");
 
     if (upgradeHeader === "websocket") {
-      // WebSocket connection - get JWT from query params
       const token = url.searchParams.get("token");
       const scopeCode = url.searchParams.get("scope");
 
@@ -108,7 +100,6 @@ export default {
         return new Response("Missing token or scope", { status: 400, headers: corsHeaders });
       }
 
-      // Verify JWT
       let payload;
       try {
         payload = await verifyJwt(token, env.JWT_SECRET);
@@ -116,12 +107,11 @@ export default {
         return new Response("Invalid token", { status: 401, headers: corsHeaders });
       }
 
-      // Check scope access
       if (!payload.scopes.includes(scopeCode) && !payload.scopes.some(s => scopeCode.startsWith(s))) {
         return new Response("Unauthorized scope", { status: 403, headers: corsHeaders });
       }
 
-      // Get DO and upgrade WebSocket
+      // Forward original request to DO — DO handles WebSocket via hibernation
       const doId = env.SYNC_DO.idFromName(scopeCode);
       const doStub = env.SYNC_DO.get(doId);
       return doStub.fetch(request);
@@ -223,51 +213,6 @@ export default {
       status: response.status,
       headers: { ...corsHeaders, ...Object.fromEntries(response.headers) }
     });
-  },
-
-  async handlePublish(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-    if (request.method !== "POST") {
-      return new Response("Method not allowed", { status: 405, headers: corsHeaders });
-    }
-
-    // Verify JWT
-    const authHeader = request.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response("Unauthorized", { status: 401, headers: corsHeaders });
-    }
-
-    const token = authHeader.slice(7);
-    let payload;
-    try {
-      payload = await verifyJwt(token, env.JWT_SECRET);
-    } catch (e) {
-      return new Response("Invalid token", { status: 401, headers: corsHeaders });
-    }
-
-    const { form, matterRecords = [], bonds = [] } = await request.json();
-
-    // TODO: Publish to Turso (global database)
-    // This is a placeholder for the actual Turso publish logic
-    console.log("[Publish] Form:", form);
-    console.log("[Publish] Matter records:", matterRecords.length);
-    console.log("[Publish] Bonds:", bonds.length);
-
-    return Response.json({ success: true, message: "Published to global marketplace" }, { headers: corsHeaders });
-  },
-
-  async handleSearch(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-    if (request.method !== "POST") {
-      return new Response("Method not allowed", { status: 405, headers: corsHeaders });
-    }
-
-    const { query, filters } = await request.json();
-
-    // TODO: Implement vector search via Turso
-    // This is a placeholder for the actual search logic
-    console.log("[Search] Query:", query);
-    console.log("[Search] Filters:", filters);
-
-    return Response.json({ results: [], message: "Search not yet implemented" }, { headers: corsHeaders });
   },
 
   async handleKickProxy(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {

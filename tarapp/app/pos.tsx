@@ -159,8 +159,8 @@ export default function PosScreen() {
   // Load orders and active tab from database on mount
   useEffect(() => {
     loadOrders();
-    if (activeMassId) {
-      loadActiveOrder(activeMassId);
+    if (activeMatterId) {
+      loadActiveOrder(activeMatterId);
     }
   }, []);
 
@@ -296,7 +296,7 @@ export default function PosScreen() {
         );
       } else {
         await db.run(
-          "INSERT INTO matter (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'order', ?, ?, ?, 1, ?, ?)",
+          "INSERT INTO matter (id, form, type, scope, qty, value, active, data, time) VALUES (?, ?, 'order', ?, ?, ?, 1, ?, ?)",
           [
             orderId,
             currentCart[0].productId,
@@ -466,7 +466,7 @@ export default function PosScreen() {
 
       // 1. matter: order record (upsert)
       await db.run(
-        `INSERT INTO matter (id, matter, type, scope, qty, value, active, data, time) 
+        `INSERT INTO matter (id, form, type, scope, qty, value, active, data, time)
          VALUES (?, ?, 'order', ?, ?, ?, 1, ?, ?)
          ON CONFLICT(id) DO UPDATE SET 
            qty = excluded.qty,
@@ -622,13 +622,10 @@ export default function PosScreen() {
 
   const addToCart = async () => {
     if (!configProduct) return;
-const matter = configProduct.matters[selectedVariantIdx];
+    const matter = configProduct.matters[selectedVariantIdx];
     if (!matter) return;
     const price = parseFloat(matter.value) || 0;
-    if (modifiers.length > 0) {
-      const mod = configProduct.matters[i];
-      return { title: mod.id, price: parseFloat(mod.value) || 0 };
-    });
+    const mods: { title: string; price: number }[] = [];
     const label = getVariantLabel(configProduct, selectedVariantIdx);
 
     let orderId = activeOrderId;

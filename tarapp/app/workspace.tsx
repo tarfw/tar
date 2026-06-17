@@ -18,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
-import { getSelfId, routeDbForEntity, isCollabSyncEnabled, cachedSelfId, CLOUDFLARE_WORKER_URL, pushLocalChanges } from "../lib/db";
+import { getSelfId, routeDbForEntity, isCollabSyncEnabled, cachedSelfId, CLOUDFLARE_WORKER_URL, TURSO_WORKER_URL, pushLocalChanges, queryPendingChanges } from "../lib/db";
 import { upsertMatterVector } from "../lib/vectorStore";
 import { OPCODE_LABELS } from "../lib/domainsData";
 import { getCurrentUser, UserProfile } from "../lib/auth";
@@ -604,7 +604,7 @@ export default function WorkspaceScreen() {
         async function fetchSingleEntity() {
           try {
             const db = routeDbForEntity("customer", scope || `c:${cachedSelfId || "guest"}`);
-            const rows = await db.all("SELECT id, code, type, title, owner, data, time FROM matter WHERE id = ?", [activeEntityId]);
+            const rows = await db.all("SELECT id, code, type, title, owner, data, time FROM form WHERE id = ?", [activeEntityId]);
             if (rows && rows.length > 0) {
               const entity = rows[0] as any as CustomerRow;
               if (selectedCustomer?.id !== entity.id) {
@@ -623,7 +623,19 @@ export default function WorkspaceScreen() {
 
   const pushIfEnabled = async (db: any) => {
     if (await isCollabSyncEnabled()) {
-      await pushLocalChanges(scope || `s:${cachedSelfId || "guest"}`, { motion: [] }).catch((err: any) => console.warn("[CRM] Sync push failed:", err));
+      try {
+        const changes = await queryPendingChanges(db);
+        const total = changes.form.length + changes.matter.length + changes.bond.length + changes.motion.length;
+        console.log(`[Sync] pushIfEnabled: found ${total} pending rows (form=${changes.form.length}, matter=${changes.matter.length}, bond=${changes.bond.length}, motion=${changes.motion.length})`);
+        if (total > 0) {
+          const syncScope = scope || `s:${cachedSelfId || "guest"}`;
+          console.log(`[Sync] Pushing to scope: ${syncScope}`);
+          await pushLocalChanges(syncScope, changes);
+          console.log(`[Sync] Push completed`);
+        }
+      } catch (err: any) {
+        console.warn("[CRM] Sync push failed:", err);
+      }
     }
   };
 
@@ -759,7 +771,7 @@ export default function WorkspaceScreen() {
       ...(entityType === "profile" ? { cat: "store", cur: "USD" } : {})
     });
     const timeStr = new Date().toISOString();
-    const existing = await db.all("SELECT title, code, type, scope, owner, data FROM matter WHERE id = ?", [id]);
+    const existing = await db.all("SELECT title, code, type, scope, owner, data FROM form WHERE id = ?", [id]);
     const isNew = existing.length === 0;
     const hasChanged = isNew || 
       existing[0].title !== name || 
@@ -771,7 +783,7 @@ export default function WorkspaceScreen() {
 
     if (hasChanged) {
       await db.run(
-        `INSERT INTO matter (id, code, type, scope, owner, title, public, data, time) 
+        `INSERT INTO form (id, code, type, scope, owner, title, public, data, time) 
          VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
          ON CONFLICT(id) DO UPDATE SET 
            code = excluded.code,
@@ -809,7 +821,7 @@ export default function WorkspaceScreen() {
     await loadCustomerDetail(customer.id, t);
   };
 
-  const startStockTransfer = (stock: CrmMassRow, direction: "in" | "out") => {
+  const startStockTransfer = (stock: CrmMatterRow, direction: "in" | "out") => {
     setTransferStock(stock);
     setTransferDirection(direction);
     setTransferQty("10");
@@ -833,10 +845,10 @@ export default function WorkspaceScreen() {
       // -- Part 4: Warehouse Capacity Constraints check --
       if (transferDirection === "in") {
         // Calculate sum of all stock quantities in this warehouse
-        const stocksResult = await db.all("SELECT SUM(qty) AS total_qty FROM matter WHERE matter = ? AND type = 'stock'", [selectedCustomer.id]);
+        const stocksResult = await db.all("SELECT SUM(qty) AS total_qty FROM matter WHERE form = ? AND type = 'stock'", [selectedCustomer.id]);
         const currentTotal = Number(stocksResult[0]?.total_qty || 0);
         // Find capacity from warehouse matter data
-        const whRows = await db.all("SELECT data FROM matter WHERE id = ?", [selectedCustomer.id]);
+        const whRows = await db.all("SELECT data FROM form WHERE id = ?", [selectedCustomer.id]);
         let capacity = 10000;
         if (whRows && whRows[0]) {
           const parsedWh = parseData(whRows[0].data as string | null);
@@ -884,7 +896,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  const advanceTrip = (trip: CrmMassRow) => {
+  const advanceTrip = (trip: CrmMatterRow) => {
     if (!selectedCustomer) return;
     const info = streamInfo[trip.id] || { stage: "dispatched" };
     const stage = info.stage;
@@ -905,7 +917,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  const logDeliveryAttempt = (trip: CrmMassRow) => {
+  const logDeliveryAttempt = (trip: CrmMatterRow) => {
     if (!selectedCustomer) return;
     Alert.alert(
       "Failed Delivery Attempt",
@@ -925,7 +937,7 @@ export default function WorkspaceScreen() {
     );
   };
 
-  const logReturnRequest = (trip: CrmMassRow) => {
+  const logReturnRequest = (trip: CrmMatterRow) => {
     if (!selectedCustomer) return;
     Alert.alert(
       "Return Request",
@@ -947,7 +959,7 @@ export default function WorkspaceScreen() {
     );
   };
 
-  const updateTripEta = (trip: CrmMassRow) => {
+  const updateTripEta = (trip: CrmMatterRow) => {
     if (!selectedCustomer) return;
     Alert.alert(
       "Update ETA",
@@ -984,10 +996,10 @@ export default function WorkspaceScreen() {
       const db = getDb();
       
       // Calculate capacity check
-      const stocksResult = await db.all("SELECT SUM(qty) AS total_qty FROM matter WHERE matter = ? AND type = 'stock'", [selectedCustomer.id]);
+      const stocksResult = await db.all("SELECT SUM(qty) AS total_qty FROM matter WHERE form = ? AND type = 'stock'", [selectedCustomer.id]);
       const currentTotal = Number(stocksResult[0]?.total_qty || 0);
       // Get capacity from selectedCustomer.data
-      const whRows = await db.all("SELECT data FROM matter WHERE id = ?", [selectedCustomer.id]);
+      const whRows = await db.all("SELECT data FROM form WHERE id = ?", [selectedCustomer.id]);
       let capacity = 10000;
       if (whRows && whRows[0]) {
         const parsedWh = parseData(whRows[0].data as string | null);
@@ -1008,7 +1020,7 @@ export default function WorkspaceScreen() {
       const now = new Date();
       const timeStr = now.toISOString();
       await db.run(
-        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'stock', ?, ?, ?, 1, ?, NULL, ?, ?)",
+        "INSERT INTO matter (id, form, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'stock', ?, ?, ?, 1, ?, NULL, ?, ?)",
         [stockId, selectedCustomer.id, scope, qtyVal, valVal, timeStr, JSON.stringify({ name }), timeStr]
       );
       await appendMotion(db, stockId, 406, "TRANSFER_IN", qtyVal, { src: "vendor" });
@@ -1034,7 +1046,7 @@ export default function WorkspaceScreen() {
       const timeStr = now.toISOString();
       const driverName = customers.find(c => c.id === tripDriver)?.title || "Unassigned";
       await db.run(
-        "INSERT INTO matter (id, matter, type, scope, qty, value, active, geo, start, end, data, time) VALUES (?, ?, 'trip', ?, ?, 0, 1, ?, ?, NULL, ?, ?)",
+        "INSERT INTO matter (id, form, type, scope, qty, value, active, geo, start, end, data, time) VALUES (?, ?, 'trip', ?, ?, 0, 1, ?, ?, NULL, ?, ?)",
         [tripId, selectedCustomer.id, scope, qtyVal, tripGeo, timeStr, JSON.stringify({ ref, driver: driverName, driverId: tripDriver || null }), timeStr]
       );
       await appendMotion(db, tripId, 401, "DISPATCHED", null, { ref });
@@ -1060,7 +1072,7 @@ export default function WorkspaceScreen() {
       const timeStr = new Date().toISOString();
       const dataJson = JSON.stringify({ cat: productCat, base_price: Number(productBasePrice) || 0 });
       await db.run(
-        "INSERT INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'product', ?, ?, ?, 1, ?, ?)",
+        "INSERT INTO form (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'product', ?, ?, ?, 1, ?, ?)",
         [productId, productCode.trim() || null, scope, selfId, title, dataJson, timeStr]
       );
       await pushIfEnabled(db);
@@ -1083,7 +1095,7 @@ export default function WorkspaceScreen() {
       const variantId = rid("var");
       const timeStr = new Date().toISOString();
       await db.run(
-        "INSERT INTO matter (id, matter, type, scope, qty, value, active, data, time) VALUES (?, ?, 'variant', ?, ?, ?, 1, ?, ?)",
+        "INSERT INTO matter (id, form, type, scope, qty, value, active, data, time) VALUES (?, ?, 'variant', ?, ?, ?, 1, ?, ?)",
         [variantId, selectedCustomer.id, scope, qtyVal, priceVal, JSON.stringify({ label }), timeStr]
       );
       await appendMotion(db, variantId, 406, "TRANSFER_IN", qtyVal, { src: "vendor" });
@@ -1094,7 +1106,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  const adjustVariantStock = (variant: CrmMassRow, direction: "in" | "out") => {
+  const adjustVariantStock = (variant: CrmMatterRow, direction: "in" | "out") => {
     if (!selectedCustomer) return;
     const qtyChange = direction === "in" ? 10 : -10;
     const newQty = Math.max(0, (variant.qty || 0) + qtyChange);
@@ -1137,7 +1149,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  const deactivateModifier = (modifier: CrmMassRow) => {
+  const deactivateModifier = (modifier: CrmMatterRow) => {
     if (!selectedCustomer) return;
     runMutation(async () => {
       const db = getDb();
@@ -1169,7 +1181,7 @@ export default function WorkspaceScreen() {
       const db = getDb();
       
       // 1. Fetch Matter definition
-      const matterRows = await db.all("SELECT * FROM matter WHERE id = ?", [matterId]);
+      const matterRows = await db.all("SELECT * FROM form WHERE id = ?", [matterId]);
       if (!matterRows || matterRows.length === 0) {
         throw new Error("Product matter definition not found locally.");
       }
@@ -1182,7 +1194,7 @@ export default function WorkspaceScreen() {
       );
 
       // 3. POST payload to Worker
-      const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/publish`, {
+      const res = await fetch(`${TURSO_WORKER_URL}/api/publish`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1190,7 +1202,7 @@ export default function WorkspaceScreen() {
         },
         body: JSON.stringify({
           form: {
-            ...form,
+            ...matter,
             scope: "g",
             public: 1,
           },
@@ -1228,7 +1240,7 @@ export default function WorkspaceScreen() {
 
       // 1. Persist subdomain + mark public locally.
       await db.run(
-        "UPDATE matter SET data = ?, public = 1, scope = 'g' WHERE id = ?",
+        "UPDATE form SET data = ?, public = 1, scope = 'g' WHERE id = ?",
         [newData, profile.id]
       );
 
@@ -1239,7 +1251,7 @@ export default function WorkspaceScreen() {
       )) as { src: string; tgt: string; type: string; weight: number }[];
 
       // 3. Push the profile form + its bonds to the global Turso DB.
-      const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/publish`, {
+      const res = await fetch(`${TURSO_WORKER_URL}/api/publish`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1279,7 +1291,7 @@ export default function WorkspaceScreen() {
       }
     });
   };
-  const openDriverSelector = (trip: CrmMassRow) => {
+  const openDriverSelector = (trip: CrmMatterRow) => {
     setDriverTripId(trip.id);
     openSheet("driver");
   };
@@ -1356,7 +1368,7 @@ export default function WorkspaceScreen() {
       const closeDays = Number(leadCloseDays) || 0;
       const endStr = closeDays > 0 ? new Date(now.getTime() + closeDays * 86400000).toISOString() : null;
       await db.run(
-        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'lead', ?, 1, ?, 1, ?, ?, NULL, ?)",
+        "INSERT INTO matter (id, form, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'lead', ?, 1, ?, 1, ?, ?, NULL, ?)",
         [leadId, selectedCustomer.id, scope, value, timeStr, endStr, timeStr]
       );
       await appendMotion(db, leadId, 303, "NEW_LEAD", null, { source: leadSource, note: leadNote.trim() });
@@ -1368,7 +1380,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  const advanceLead = (lead: CrmMassRow) => {
+  const advanceLead = (lead: CrmMatterRow) => {
     if (!selectedCustomer) return;
     const stage = streamInfo[lead.id]?.stage || "new";
     if (stage === "converted") return;
@@ -1385,7 +1397,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  const closeLead = (lead: CrmMassRow) => {
+  const closeLead = (lead: CrmMatterRow) => {
     if (!selectedCustomer) return;
     runMutation(async () => {
       const db = getDb();
@@ -1415,7 +1427,7 @@ export default function WorkspaceScreen() {
       const slaHours = Number(ticketSlaHours) || 0;
       const endStr = slaHours > 0 ? new Date(now.getTime() + slaHours * 3600000).toISOString() : null;
       await db.run(
-        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'ticket', ?, 1, 0, 1, ?, ?, ?, ?)",
+        "INSERT INTO matter (id, form, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'ticket', ?, 1, 0, 1, ?, ?, ?, ?)",
         [ticketId, selectedCustomer.id, scope, timeStr, endStr, JSON.stringify({ priority: ticketPriority }), timeStr]
       );
       await appendMotion(db, ticketId, 306, "OPEN", 1, { subject, desc: ticketDesc.trim() });
@@ -1427,7 +1439,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  const submitReply = (ticket: CrmMassRow) => {
+  const submitReply = (ticket: CrmMatterRow) => {
     if (!selectedCustomer) return;
     const message = replyText.trim();
     if (!message) {
@@ -1445,7 +1457,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  const resolveTicket = (ticket: CrmMassRow) => {
+  const resolveTicket = (ticket: CrmMatterRow) => {
     if (!selectedCustomer) return;
     runMutation(async () => {
       const db = getDb();
@@ -1477,14 +1489,14 @@ export default function WorkspaceScreen() {
       const dueDays = Number(taskDueDays) || 0;
       const endStr = dueDays > 0 ? new Date(now.getTime() + dueDays * 86400000).toISOString() : null;
       await db.run(
-        "INSERT INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'task', ?, ?, ?, 0, NULL, ?)",
+        "INSERT INTO form (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'task', ?, ?, ?, 0, NULL, ?)",
         [taskId, null, scope, selfId, title, timeStr]
       );
       if (selectedCustomer.id !== "general_personal") {
         await addBond(db, selectedCustomer.id, taskId, "task");
       }
       await db.run(
-        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, NULL, ?)",
+        "INSERT INTO matter (id, form, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, NULL, ?)",
         [slotId, taskId, scope, timeStr, endStr, timeStr]
       );
       try {
@@ -1533,7 +1545,7 @@ export default function WorkspaceScreen() {
       const title = text.length > 48 ? `${text.slice(0, 48)}…` : text;
       const dataJson = JSON.stringify({ text });
       await db.run(
-        "INSERT INTO matter (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'note', ?, ?, ?, 0, ?, ?)",
+        "INSERT INTO form (id, code, type, scope, owner, title, public, data, time) VALUES (?, ?, 'note', ?, ?, ?, 0, ?, ?)",
         [noteId, null, scope, selfId, title, dataJson, timeStr]
       );
       if (selectedCustomer.id !== "general_personal") {
@@ -1569,7 +1581,7 @@ export default function WorkspaceScreen() {
       const duration = Number(slotDuration) || 8;
       const endStr = new Date(now.getTime() + duration * 3600000).toISOString();
       await db.run(
-        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, ?, ?)",
+        "INSERT INTO matter (id, form, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'slot', ?, 1, 0, 1, ?, ?, ?, ?)",
         [slotId, selectedCustomer.id, "slot", scope, timeStr, endStr, JSON.stringify({ title }), timeStr]
       );
       await pushIfEnabled(db);
@@ -1600,7 +1612,7 @@ export default function WorkspaceScreen() {
       const now = new Date();
       const timeStr = now.toISOString();
       await db.run(
-        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'budget', ?, ?, ?, 1, ?, NULL, ?, ?)",
+        "INSERT INTO matter (id, form, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'budget', ?, ?, ?, 1, ?, NULL, ?, ?)",
         [budgetId, selectedCustomer.id, scope, limit, limit, timeStr, JSON.stringify({ name }), timeStr]
       );
       await appendMotion(db, budgetId, 806, "BUDGET_ALLOCATED", limit, { name, limit });
@@ -1652,7 +1664,7 @@ export default function WorkspaceScreen() {
       const invoiceId = rid("invoice");
       const timeStr = new Date().toISOString();
       await db.run(
-        "INSERT INTO matter (id, matter, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'invoice', ?, 1, ?, 1, ?, NULL, ?, ?)",
+        "INSERT INTO matter (id, form, type, scope, qty, value, active, start, end, data, time) VALUES (?, ?, 'invoice', ?, 1, ?, 1, ?, NULL, ?, ?)",
         [invoiceId, selectedCustomer.id, scope, amount, timeStr, JSON.stringify({ ref }), timeStr]
       );
       await appendMotion(db, invoiceId, 801, "PAYMENT_INIT", amount, { ref });
@@ -1664,7 +1676,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  const resolveInvoiceSuccess = (invoice: CrmMassRow) => {
+  const resolveInvoiceSuccess = (invoice: CrmMatterRow) => {
     if (!selectedCustomer) return;
     runMutation(async () => {
       const db = getDb();
@@ -1675,7 +1687,7 @@ export default function WorkspaceScreen() {
     });
   };
 
-  const resolveInvoiceFailure = (invoice: CrmMassRow) => {
+  const resolveInvoiceFailure = (invoice: CrmMatterRow) => {
     if (!selectedCustomer) return;
     runMutation(async () => {
       const db = getDb();
@@ -1835,7 +1847,7 @@ export default function WorkspaceScreen() {
                           <RowData rows={[
                             {
                                table: "matter",
-                              cols: [["id", lead.id], ["matter", lead.matter], ["type", "lead"], ["scope", scope], ["qty", lead.qty], ["value", lead.value], ["active", lead.active], ["start", lead.start], ["end", lead.end], ["data", lead.data]]
+                              cols: [["id", lead.id], ["form", lead.form], ["type", "lead"], ["scope", scope], ["qty", lead.qty], ["value", lead.value], ["active", lead.active], ["start", lead.start], ["end", lead.end], ["data", lead.data]]
                             },
                             {
                               table: `motion (stream = ${lead.id})`,
@@ -1893,7 +1905,7 @@ export default function WorkspaceScreen() {
                           <RowData rows={[
                             {
                                table: "matter",
-                              cols: [["id", ticket.id], ["matter", ticket.matter], ["type", "ticket"], ["scope", scope], ["qty", ticket.qty], ["value", ticket.value], ["active", ticket.active], ["start", ticket.start], ["end", ticket.end], ["data", ticket.data]]
+                              cols: [["id", ticket.id], ["form", ticket.form], ["type", "ticket"], ["scope", scope], ["qty", ticket.qty], ["value", ticket.value], ["active", ticket.active], ["start", ticket.start], ["end", ticket.end], ["data", ticket.data]]
                             },
                             {
                               table: `motion (stream = ${ticket.id})`,
@@ -1953,7 +1965,7 @@ export default function WorkspaceScreen() {
                           <RowData rows={[
                             {
                                table: "matter",
-                              cols: [["id", slot.id], ["matter", slot.matter], ["type", "slot"], ["scope", scope], ["qty", slot.qty], ["active", slot.active], ["start", slot.start], ["end", slot.end], ["data", slot.data]]
+                              cols: [["id", slot.id], ["form", slot.form], ["type", "slot"], ["scope", scope], ["qty", slot.qty], ["active", slot.active], ["start", slot.start], ["end", slot.end], ["data", slot.data]]
                             }
                           ]} />
                         )}
@@ -1993,7 +2005,7 @@ export default function WorkspaceScreen() {
                           <RowData rows={[
                             {
                                table: "matter",
-                              cols: [["id", stock.id], ["matter", stock.matter], ["type", "stock"], ["scope", scope], ["qty", stock.qty], ["value", stock.value], ["active", stock.active], ["start", stock.start], ["end", stock.end], ["data", stock.data]]
+                              cols: [["id", stock.id], ["form", stock.form], ["type", "stock"], ["scope", scope], ["qty", stock.qty], ["value", stock.value], ["active", stock.active], ["start", stock.start], ["end", stock.end], ["data", stock.data]]
                             },
                             {
                               table: `motion (stream = ${stock.id})`,
@@ -2211,7 +2223,7 @@ export default function WorkspaceScreen() {
                           <RowData rows={[
                             {
                                table: "matter",
-                              cols: [["id", trip.id], ["matter", trip.matter], ["type", "trip"], ["scope", scope], ["qty", trip.qty], ["value", trip.value], ["active", trip.active], ["geo", trip.geo], ["start", trip.start], ["end", trip.end], ["data", trip.data]]
+                              cols: [["id", trip.id], ["form", trip.form], ["type", "trip"], ["scope", scope], ["qty", trip.qty], ["value", trip.value], ["active", trip.active], ["geo", trip.geo], ["start", trip.start], ["end", trip.end], ["data", trip.data]]
                             },
                             {
                               table: `motion (stream = ${trip.id})`,
@@ -2278,7 +2290,7 @@ export default function WorkspaceScreen() {
                           <RowData rows={[
                             {
                                table: "matter",
-                              cols: [["id", budget.id], ["matter", budget.matter], ["type", "budget"], ["scope", scope], ["qty (remaining)", budget.qty], ["value (limit)", budget.value], ["active", budget.active], ["start", budget.start], ["end", budget.end], ["data", budget.data]]
+                              cols: [["id", budget.id], ["form", budget.form], ["type", "budget"], ["scope", scope], ["qty (remaining)", budget.qty], ["value (limit)", budget.value], ["active", budget.active], ["start", budget.start], ["end", budget.end], ["data", budget.data]]
                             },
                             {
                               table: `motion (stream = ${budget.id})`,
@@ -2338,7 +2350,7 @@ export default function WorkspaceScreen() {
                           <RowData rows={[
                             {
                                table: "matter",
-                              cols: [["id", invoice.id], ["matter", invoice.matter], ["type", "invoice"], ["scope", scope], ["qty", invoice.qty], ["value", invoice.value], ["active", invoice.active], ["start", invoice.start], ["end", invoice.end], ["data", invoice.data]]
+                              cols: [["id", invoice.id], ["form", invoice.form], ["type", "invoice"], ["scope", scope], ["qty", invoice.qty], ["value", invoice.value], ["active", invoice.active], ["start", invoice.start], ["end", invoice.end], ["data", invoice.data]]
                             },
                             {
                               table: `motion (stream = ${invoice.id})`,

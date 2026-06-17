@@ -16,7 +16,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown, ZoomIn } from "react-native-reanimated";
 
-const WORKER_URL = "https://s3storage.tamilframework.workers.dev";
+const TURSO_WORKER_URL = "https://turso-db.tar-54d.workers.dev";
 
 // ── Category map ─────────────────────────────────────────────────────────────
 
@@ -105,7 +105,7 @@ export default function SuperAgentScreen() {
     console.log("[SuperAgent] →", JSON.stringify(payload));
 
     try {
-      const res  = await fetch(`${WORKER_URL}/api/global/search`, {
+      const res  = await fetch(`${TURSO_WORKER_URL}/api/global/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -118,13 +118,13 @@ export default function SuperAgentScreen() {
       console.log(`[SuperAgent] ${data.forms?.length ?? 0} forms, ${data.matters?.length ?? 0} matter rows, vector=${data.vectorUsed}`);
 
       // Index matter rows by form id
-      const newMap: Record<string, MatterRow[]> = {};
+      const newMap: Record<string, MassRow[]> = {};
       for (const m of (data.matters || [])) {
         const key = m.matter;
-        if (!mMap[key]) mMap[key] = [];
-        mMap[key].push(m as MassRow);
+        if (!newMap[key]) newMap[key] = [];
+        newMap[key].push(m as MassRow);
       }
-      setMassMap(mMap);
+      setMassMap(newMap);
 
       setResults((data.matters || []).map((m: any) => ({
         id: m.id, title: m.title, type: m.type, data: m.data, score: m.score,
@@ -301,12 +301,12 @@ export default function SuperAgentScreen() {
 
                     {/* Qty badge */}
                     {m.qty !== null && !outOfStock && (
-                      <Text style={styles.massQty}>{m.qty} left</Text>
+                      <Text style={styles.matterQty}>{m.qty} left</Text>
                     )}
 
                     {/* Price */}
                     {m.value !== null && (
-                      <Text style={[styles.massPrice, isActive && { color: meta.color }]}>
+                      <Text style={[styles.matterPrice, isActive && { color: meta.color }]}>
                         {m.value === 0 ? "Free" : `₹${Number(m.value).toLocaleString()}`}
                       </Text>
                     )}

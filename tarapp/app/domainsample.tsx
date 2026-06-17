@@ -17,7 +17,6 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
   MatterRow,
-  MassRow,
   MotionRow,
   TechnicalDetail,
   DomainDefinition,
@@ -59,15 +58,15 @@ export default function DomainSampleScreen() {
 
 
   // Dynamic Ledger State
-  const [localMass, setLocalMass] = useState<MassRow[]>(selectedDomain.mass);
-  const [localMotion, setLocalMotion] = useState<MotionRow[]>(selectedDomain.motion);
+  const [localMass, setLocalMass] = useState<MatterRow[]>(selectedDomain.matters);
+  const [localMotion, setLocalMotion] = useState<MotionRow[]>(selectedDomain.motions);
 
   // Reset expandable whenever active domain changes, and synchronize local motion list
   useEffect(() => {
     setExpanded(false);
     setViewMode("pos");
-    setLocalMass(selectedDomain.mass);
-    setLocalMotion(selectedDomain.motion);
+    setLocalMass(selectedDomain.matters);
+    setLocalMotion(selectedDomain.motions);
   }, [selectedDomain]);
 
   const selectDomain = (domain: DomainDefinition) => {

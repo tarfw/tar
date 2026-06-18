@@ -61,7 +61,8 @@
       "Bash(echo '=== __TRACKED_VAR__ ===')",
       "Bash(head -5 __TRACKED_VAR__.md)",
       "Bash(echo)",
-      "Bash(claude mcp *)"
+      "Bash(claude mcp *)",
+      "WebFetch(domain:tanstack.com)"
     ]
   }
 }

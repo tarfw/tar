@@ -1,17 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, ScrollView, Pressable, Switch, View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useThemeMode } from '@/hooks/use-theme-context';
 import { useTheme } from '@/hooks/use-theme';
+import { useDb } from '@/db/provider';
+import { type FormRow } from '@/hooks/use-form';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const db = useDb();
   const { themeMode, setThemeMode } = useThemeMode();
   const [notifications, setNotifications] = useState(true);
+  const [teams, setTeams] = useState<FormRow[]>([]);
+
+  const loadTeams = useCallback(async () => {
+    const rows = await db.getAllAsync<FormRow>(
+      "SELECT * FROM form WHERE type = 'team' AND active = 1 ORDER BY time DESC"
+    );
+    setTeams(rows);
+  }, [db]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { loadTeams(); }, [loadTeams]);
 
   return (
     <ScrollView
@@ -32,6 +46,28 @@ export default function SettingsScreen() {
         </View>
         <Text style={[styles.profileName, { color: theme.text }]}>Tarai User</Text>
         <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>user@tarai.app</Text>
+      </View>
+
+      {/* Teams */}
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>TEAMS</Text>
+      <View style={[styles.section, { backgroundColor: theme.backgroundElement }]}>
+        {teams.length === 0 ? (
+          <View style={styles.row}>
+            <Text style={[styles.rowLabel, { color: theme.textSecondary }]}>No teams yet</Text>
+          </View>
+        ) : (
+          teams.map((team, i) => (
+            <View key={team.id}>
+              <Pressable
+                style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+                onPress={() => { router.back(); router.push({ pathname: '/team', params: { id: team.id } }); }}>
+                <Text style={[styles.rowLabel, { color: theme.text }]}>{team.title}</Text>
+                <Text style={[styles.chevron, { color: theme.textSecondary }]}>{'>'}</Text>
+              </Pressable>
+              {i < teams.length - 1 && <View style={[styles.separator, { backgroundColor: theme.background }]} />}
+            </View>
+          ))
+        )}
       </View>
 
       {/* Appearance */}

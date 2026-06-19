@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { useLocalSearchParams, Stack } from 'expo-router';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
@@ -14,7 +14,6 @@ function parseData(data: string): Record<string, any> {
 export default function TeamScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const router = useRouter();
   const db = useDb();
   const params = useLocalSearchParams<{ id: string }>();
   const { row: team, loading: teamLoading } = useFormById(params.id);
@@ -81,13 +80,7 @@ export default function TeamScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={{ color: '#007AFF', fontSize: 18 }}>{'\u2039'} Back</Text>
-          </Pressable>
-          <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>Team not found</Text>
-          <View style={{ width: 50 }} />
-        </View>
+        <Text style={{ color: theme.text, fontSize: 16, paddingTop: insets.top + 16, paddingHorizontal: 16 }}>Team not found</Text>
       </View>
     );
   }
@@ -96,25 +89,15 @@ export default function TeamScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: theme.backgroundElement }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={{ color: '#007AFF', fontSize: 18 }}>{'\u2039'} Back</Text>
-        </Pressable>
-        <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>Team</Text>
-        <View style={{ width: 50 }} />
-      </View>
-
-      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
-        {/* Team Info */}
-        <View style={styles.teamCard}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 80 }}>
+        {/* Team Title with Icon */}
+        <View style={styles.teamHeader}>
           <View style={[styles.teamIcon, { backgroundColor: '#5E6AD2' }]}>
             <Text style={styles.teamIconText}>t</Text>
           </View>
-          <View style={styles.teamInfo}>
-            <Text style={[styles.teamName, { color: theme.text }]}>{team.title}</Text>
-            <Text style={[styles.teamScope, { color: theme.textSecondary }]}>{team.scope}</Text>
-          </View>
+          <Text style={[styles.teamTitle, { color: theme.text }]}>{team.title}</Text>
         </View>
+        <Text style={[styles.teamScope, { color: theme.textSecondary }]}>{team.scope}</Text>
 
         {/* Members Section */}
         <View style={styles.sectionHeader}>
@@ -140,37 +123,35 @@ export default function TeamScreen() {
           </View>
         )}
 
-        <View style={[styles.membersCard, { backgroundColor: theme.backgroundElement }]}>
-          {members.length === 0 ? (
-            <Text style={[styles.emptyMembers, { color: theme.textSecondary }]}>No members yet</Text>
-          ) : (
-            members.map((m, i) => {
-              const d = parseData(m.data);
-              return (
-                <View key={m.id}>
-                  <View style={styles.memberRow}>
-                    <View style={[styles.memberAvatar, { backgroundColor: d.color || '#5E6AD2' }]}>
-                      <Text style={styles.memberAvatarText}>{d.initials || m.title.charAt(0)}</Text>
-                    </View>
-                    <View style={styles.memberInfo}>
-                      <Text style={[styles.memberName, { color: theme.text }]}>{m.title}</Text>
-                      <Text style={[styles.memberRole, { color: theme.textSecondary }]}>{d.role || 'Member'}</Text>
-                    </View>
-                    <Pressable onPress={() => {
-                      Alert.alert('Remove Member', `Remove ${m.title}?`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Remove', style: 'destructive', onPress: () => handleRemoveMember(m.id) },
-                      ]);
-                    }}>
-                      <Text style={{ color: '#FF3B30', fontSize: 13 }}>Remove</Text>
-                    </Pressable>
+        {members.length === 0 ? (
+          <Text style={[styles.emptyMembers, { color: theme.textSecondary }]}>No members yet</Text>
+        ) : (
+          members.map((m, i) => {
+            const d = parseData(m.data);
+            return (
+              <View key={m.id}>
+                <View style={styles.memberRow}>
+                  <View style={[styles.memberAvatar, { backgroundColor: d.color || '#5E6AD2' }]}>
+                    <Text style={styles.memberAvatarText}>{d.initials || m.title.charAt(0)}</Text>
                   </View>
-                  {i < members.length - 1 && <View style={[styles.separator, { backgroundColor: theme.background }]} />}
+                  <View style={styles.memberInfo}>
+                    <Text style={[styles.memberName, { color: theme.text }]}>{m.title}</Text>
+                    <Text style={[styles.memberRole, { color: theme.textSecondary }]}>{d.role || 'Member'}</Text>
+                  </View>
+                  <Pressable onPress={() => {
+                    Alert.alert('Remove Member', `Remove ${m.title}?`, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Remove', style: 'destructive', onPress: () => handleRemoveMember(m.id) },
+                    ]);
+                  }}>
+                    <Text style={{ color: '#FF3B30', fontSize: 13 }}>Remove</Text>
+                  </Pressable>
                 </View>
-              );
-            })
-          )}
-        </View>
+                {i < members.length - 1 && <View style={[styles.separator, { backgroundColor: theme.backgroundElement }]} />}
+              </View>
+            );
+          })
+        )}
       </ScrollView>
     </View>
   );
@@ -178,15 +159,12 @@ export default function TeamScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  backBtn: { paddingVertical: 8 },
   scrollView: { flex: 1 },
-  teamCard: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 16, padding: 14, borderRadius: 12, gap: 12, backgroundColor: '#212225' },
-  teamIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  teamIconText: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
-  teamInfo: { flex: 1 },
-  teamName: { fontSize: 16, fontWeight: '600' },
-  teamScope: { fontSize: 13, marginTop: 2 },
+  teamHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 12 },
+  teamIcon: { width: 48, height: 48, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  teamIconText: { color: '#FFFFFF', fontSize: 20, fontWeight: '700' },
+  teamTitle: { fontSize: 28, fontWeight: '700' },
+  teamScope: { fontSize: 14, paddingHorizontal: 16, paddingBottom: 8, marginTop: 4 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 24, paddingBottom: 8 },
   sectionTitle: { fontSize: 12, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5 },
   addBtn: { fontSize: 14, fontWeight: '500' },
@@ -194,7 +172,6 @@ const styles = StyleSheet.create({
   addMemberInput: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15 },
   addMemberBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, justifyContent: 'center' },
   addMemberBtnText: { color: '#ffffff', fontSize: 14, fontWeight: '600' },
-  membersCard: { marginHorizontal: 16, borderRadius: 12, overflow: 'hidden' },
   emptyMembers: { padding: 20, textAlign: 'center', fontSize: 14 },
   memberRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
   memberAvatar: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },

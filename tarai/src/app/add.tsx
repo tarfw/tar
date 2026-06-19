@@ -1,15 +1,14 @@
 import { useState } from 'react';
 import { StyleSheet, Pressable, View, TextInput, Text, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
-import { useMotion } from '@/hooks/use-motion';
 
 type FormType = 'team' | 'product' | 'project' | 'task' | 'note' | 'template' | 'profile' | 'ticket';
 
-const TYPES: { type: FormType; label: string }[] = [
+const FORM_TYPES: { type: FormType; label: string }[] = [
   { type: 'team', label: 'Team' },
   { type: 'product', label: 'Product' },
   { type: 'project', label: 'Project' },
@@ -24,9 +23,11 @@ export default function AddScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
+  const params = useLocalSearchParams<{ type?: string }>();
   const db = useDb();
-  const { emit } = useMotion();
-  const [selectedType, setSelectedType] = useState<FormType>('note');
+  const initialType = (params.type as FormType) || 'note';
+
+  const [selectedType, setSelectedType] = useState<FormType>(initialType);
   const [title, setTitle] = useState('');
 
   const handleSave = async () => {
@@ -34,35 +35,52 @@ export default function AddScreen() {
     const id = `form_${selectedType}_${Date.now()}`;
     const now = new Date().toISOString();
 
-    // Teams get their own scope; members get the selected team's scope
+    // Determine scope
     let scope = 'p';
     if (selectedType === 'team') {
       scope = `t:team_${Date.now()}`;
     } else if (selectedType === 'profile') {
-      scope = 'p'; // default, workspace screen will assign proper scope
+      const team = await db.getFirstAsync<{ scope: string }>(
+        "SELECT scope FROM form WHERE type = 'team' AND active = 1 ORDER BY time DESC LIMIT 1"
+      );
+      scope = team?.scope || 't:team_default';
     }
 
     console.log(`[ADD] Creating ${selectedType}: "${title.trim()}" scope=${scope}`);
 
-    // Insert form
+    // Create form record
     await db.runAsync(
       'INSERT INTO form (id, type, title, scope, data, time, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
       id, selectedType, title.trim(), scope, '{}', now
     );
     console.log(`[ADD] Form created: ${id}`);
 
-    // Emit motion entry
-    const actionCode = selectedType === 'task' ? 100
-      : selectedType === 'ticket' ? 306
-      : 100; // ENTITY_CREATED
-    await emit(id, actionCode, {
-      title: title.trim(),
-      vertical: selectedType.charAt(0).toUpperCase() + selectedType.slice(1),
-      scope: title.trim(),
-      urgency: 'Now',
-    });
+    // For tasks: also create matter record (task state)
+    if (selectedType === 'task') {
+      const matterId = `matter_task_${Date.now()}`;
+      await db.runAsync(
+        'INSERT INTO matter (id, form, type, qty, value, data, time, active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
+        matterId, id, 'task_state', 0, 0,
+        JSON.stringify({ status: 'todo', progress: 0, priority: 'medium' }),
+        now
+      );
+      console.log(`[ADD] Matter created: ${matterId} (task state)`);
+    }
 
-    console.log(`[ADD] Motion emitted for ${id}`);
+    // Link member to team via graph
+    if (selectedType === 'profile' && scope !== 'p') {
+      const team = await db.getFirstAsync<{ id: string }>(
+        "SELECT id FROM form WHERE type = 'team' AND scope = ? AND active = 1 LIMIT 1", scope
+      );
+      if (team) {
+        await db.runAsync(
+          'INSERT OR REPLACE INTO graph (src, tgt, type, weight, active) VALUES (?, ?, ?, ?, 1)',
+          team.id, id, 'has_member', 0
+        );
+        console.log(`[ADD] Linked member ${id} to team ${team.id}`);
+      }
+    }
+
     router.back();
   };
 
@@ -74,7 +92,7 @@ export default function AddScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Text style={{ color: '#007AFF', fontSize: 18 }}>{'\u2039'} Back</Text>
         </Pressable>
-        <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>New</Text>
+        <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>New {selectedType}</Text>
         <Pressable style={styles.saveBtn} onPress={handleSave}>
           <Text style={{ color: title.trim() ? '#007AFF' : theme.textSecondary, fontSize: 16, fontWeight: '600' }}>Save</Text>
         </Pressable>
@@ -84,7 +102,7 @@ export default function AddScreen() {
         <View style={styles.fieldGroup}>
           <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Type</Text>
           <View style={styles.typeGrid}>
-            {TYPES.map((t) => (
+            {FORM_TYPES.map((t) => (
               <Pressable
                 key={t.type}
                 style={[styles.typeChip, { backgroundColor: selectedType === t.type ? '#5E6AD2' : theme.backgroundElement }]}

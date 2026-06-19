@@ -7,7 +7,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
 import { type FormRow } from '@/hooks/use-form';
 
-type Filter = 'All' | 'Teams' | 'People' | 'Products' | 'Projects' | 'Templates' | 'Notes' | 'Orders' | 'Tickets';
+type Filter = 'All' | 'Teams' | 'People' | 'Products' | 'Projects' | 'Tasks' | 'Templates' | 'Notes' | 'Orders' | 'Tickets';
 
 function parseData(data: string): Record<string, any> {
   try { return JSON.parse(data); } catch { return {}; }
@@ -24,6 +24,7 @@ export default function BrowseScreen() {
   const [agents, setAgents] = useState<FormRow[]>([]);
   const [products, setProducts] = useState<FormRow[]>([]);
   const [projects, setProjects] = useState<FormRow[]>([]);
+  const [tasks, setTasks] = useState<FormRow[]>([]);
   const [templates, setTemplates] = useState<FormRow[]>([]);
   const [notes, setNotes] = useState<FormRow[]>([]);
   const [orders, setOrders] = useState<FormRow[]>([]);
@@ -38,6 +39,7 @@ export default function BrowseScreen() {
     setAgents(all.filter(r => r.type === 'agent'));
     setProducts(all.filter(r => r.type === 'product'));
     setProjects(all.filter(r => r.type === 'project'));
+    setTasks(all.filter(r => r.type === 'task'));
     setTemplates(all.filter(r => r.type === 'template'));
     setNotes(all.filter(r => r.type === 'note'));
     setOrders(all.filter(r => r.type === 'order'));
@@ -59,12 +61,13 @@ export default function BrowseScreen() {
     }, [load])
   );
 
-  const filters: Filter[] = ['All', 'Teams', 'People', 'Products', 'Projects', 'Templates', 'Notes', 'Orders', 'Tickets'];
+  const filters: Filter[] = ['All', 'Teams', 'People', 'Products', 'Projects', 'Tasks', 'Templates', 'Notes', 'Orders', 'Tickets'];
 
   const showTeams = activeFilter === 'All' || activeFilter === 'Teams';
   const showPeople = activeFilter === 'All' || activeFilter === 'People';
   const showProducts = activeFilter === 'All' || activeFilter === 'Products';
   const showProjects = activeFilter === 'All' || activeFilter === 'Projects';
+  const showTasks = activeFilter === 'All' || activeFilter === 'Tasks';
   const showTemplates = activeFilter === 'All' || activeFilter === 'Templates';
   const showNotes = activeFilter === 'All' || activeFilter === 'Notes';
   const showOrders = activeFilter === 'All' || activeFilter === 'Orders';
@@ -80,12 +83,8 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Fixed header + filters */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Text style={[styles.title, { color: theme.text }]}>Browse</Text>
-      </View>
 
-      <View style={styles.filters}>
+      <View style={[styles.filters, { paddingTop: insets.top + 4 }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersContent}>
           {filters.map((filter) => (
             <Pressable key={filter} style={[styles.filterTab, activeFilter === filter && [styles.filterTabActive, { borderColor: theme.text }]]} onPress={() => setActiveFilter(filter)}>
@@ -106,10 +105,7 @@ export default function BrowseScreen() {
                   <View style={[styles.teamIcon, { backgroundColor: '#5E6AD2' }]}>
                     <Text style={styles.teamIconText}>t</Text>
                   </View>
-                  <View style={styles.listItemContent}>
-                    <Text style={[styles.listItemTitle, { color: theme.text }]}>{t.title}</Text>
-                    <Text style={[styles.listItemSubtitle, { color: theme.textSecondary }]}>{t.scope}</Text>
-                  </View>
+                  <Text style={[styles.listItemTitle, { color: theme.text }]}>{t.title}</Text>
                 </Pressable>
               );
             })}
@@ -157,9 +153,17 @@ export default function BrowseScreen() {
               const d = parseData(p.data);
               return (
                 <Pressable key={p.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/detail', params: { type: 'product', id: p.id, title: p.title } })}>
-                  <View style={[styles.checkbox, { borderColor: theme.textSecondary }]} />
-                  <Text style={[styles.listItemTitle, { color: theme.text }]}>{p.title}</Text>
-                  <Text style={[styles.listItemMeta, { color: theme.textSecondary }]}>{d.price ? `₹${d.price.toLocaleString()}` : ''}</Text>
+                  <View style={[styles.productThumb, { backgroundColor: theme.backgroundElement }]}>
+                    {d.image ? (
+                      <Text style={[styles.productThumbText, { color: theme.textSecondary }]}>🖼</Text>
+                    ) : (
+                      <Text style={[styles.productThumbText, { color: theme.textSecondary }]}>P</Text>
+                    )}
+                  </View>
+                  <View style={styles.listItemContent}>
+                    <Text style={[styles.listItemTitle, { color: theme.text }]}>{p.title}</Text>
+                    {d.price ? <Text style={[styles.listItemSubtitle, { color: theme.textSecondary }]}>₹{d.price.toLocaleString()}</Text> : null}
+                  </View>
                 </Pressable>
               );
             })}
@@ -173,11 +177,27 @@ export default function BrowseScreen() {
               const d = parseData(p.data);
               return (
                 <Pressable key={p.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/detail', params: { type: 'project', id: p.id, title: p.title } })}>
-                  <View style={[styles.diamond, { backgroundColor: d.color || '#5E6AD2' }]} />
-                  <Text style={[styles.listItemTitle, { color: theme.text }]}>{p.title}</Text>
+                  <View style={[styles.productThumb, { backgroundColor: d.color || theme.backgroundElement }]}>
+                    <Text style={[styles.productThumbText, { color: '#fff' }]}>{p.title.charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={styles.listItemContent}>
+                    <Text style={[styles.listItemTitle, { color: theme.text }]}>{p.title}</Text>
+                  </View>
                 </Pressable>
               );
             })}
+          </>
+        )}
+
+        {showTasks && tasks.length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Tasks</Text>
+            {tasks.map((t) => (
+              <Pressable key={t.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/task', params: { id: t.id } })}>
+                <View style={[styles.checkbox, { borderColor: theme.textSecondary }]} />
+                <Text style={[styles.listItemTitle, { color: theme.text }]}>{t.title}</Text>
+              </Pressable>
+            ))}
           </>
         )}
 
@@ -198,7 +218,7 @@ export default function BrowseScreen() {
             <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Notes</Text>
             {notes.map((n) => (
               <Pressable key={n.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/detail', params: { type: 'note', id: n.id, title: n.title } })}>
-                <Text style={[styles.listItemTitle, { color: theme.text, paddingLeft: 30 }]}>{n.title}</Text>
+                <Text style={[styles.listItemTitle, { color: theme.text }]}>{n.title}</Text>
               </Pressable>
             ))}
           </>
@@ -250,6 +270,7 @@ export default function BrowseScreen() {
           (showPeople && members.length + agents.length === 0) ||
           (showProducts && products.length === 0) ||
           (showProjects && projects.length === 0) ||
+          (showTasks && tasks.length === 0) ||
           (showTemplates && templates.length === 0) ||
           (showNotes && notes.length === 0) ||
           (showOrders && orders.length === 0) ||
@@ -275,7 +296,7 @@ const styles = StyleSheet.create({
   addBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
   chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24, alignSelf: 'flex-start' },
   chipText: { fontSize: 15, fontWeight: '600' },
-  filters: { paddingBottom: 8 },
+  filters: { paddingTop: 4, paddingBottom: 8 },
   filtersContent: { paddingHorizontal: 16, gap: 4 },
   filterTab: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
   filterTabActive: { borderBottomWidth: 2 },
@@ -297,6 +318,8 @@ const styles = StyleSheet.create({
   listItemContent: { flex: 1 },
   listItemSubtitle: { fontSize: 13, marginTop: 2 },
   listItemMeta: { fontSize: 13 },
+  productThumb: { width: 36, height: 36, borderRadius: 6, justifyContent: 'center', alignItems: 'center', marginLeft: 6 },
+  productThumbText: { fontSize: 14, fontWeight: '600' },
   ticketIcon: { width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   ticketIconText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
 });

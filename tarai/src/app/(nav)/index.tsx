@@ -90,6 +90,9 @@ export default function HomeScreen() {
 
       <View style={[styles.actionBar, { paddingBottom: insets.bottom - 4, backgroundColor: theme.background, borderColor: theme.backgroundElement }]}>
         <View style={styles.chipRow}>
+          <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push({ pathname: '/add', params: { type: 'task' } })}>
+            <Text style={[styles.chipText, { color: theme.text }]}>+ Task</Text>
+          </Pressable>
           <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse')}>
             <Text style={[styles.chipText, { color: theme.text }]}>Browse</Text>
           </Pressable>

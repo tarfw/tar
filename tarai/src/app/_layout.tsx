@@ -23,8 +23,9 @@ function RootLayoutInner() {
         <Stack.Screen name="workspace" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="detail" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="add" options={{ headerShown: false, animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="browse" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="browse" options={{ headerShown: false, animation: 'fade', animationDuration: 150 }} />
         <Stack.Screen name="team" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="task" options={{ headerShown: false, animation: 'slide_from_right' }} />
       </Stack>
     </View>
   );

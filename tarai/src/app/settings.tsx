@@ -60,7 +60,7 @@ export default function SettingsScreen() {
             <View key={team.id}>
               <Pressable
                 style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-                onPress={() => { router.back(); router.push({ pathname: '/team', params: { id: team.id } }); }}>
+                onPress={() => { router.back(); router.push({ pathname: '/entity', params: { id: team.id } }); }}>
                 <Text style={[styles.rowLabel, { color: theme.text }]}>{team.title}</Text>
                 <Text style={[styles.chevron, { color: theme.textSecondary }]}>{'>'}</Text>
               </Pressable>

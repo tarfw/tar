@@ -4,31 +4,76 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 
 import { useTheme } from '@/hooks/use-theme';
-import { useMotion, type ActionItem } from '@/hooks/use-motion';
+import { useMotion, type ActionGroup, type ActionItem } from '@/hooks/use-motion';
 
 type Urgency = 'Now' | 'Next' | 'Later' | 'Done';
 
-function StatusCircle({ status, color }: { status: 'todo' | 'in_progress' | 'done'; color: string }) {
+function StatusDot({ status, color, size = 8 }: { status: 'todo' | 'in_progress' | 'done'; color: string; size?: number }) {
   if (status === 'todo') {
-    return <View style={[styles.circle, { borderColor: color, borderStyle: 'dotted' }]} />;
+    return <View style={[styles.dot, { width: size, height: size, borderRadius: size / 2, borderColor: color, borderStyle: 'dotted' }]} />;
   }
-  return <View style={[styles.circleFilled, { backgroundColor: color }]} />;
+  if (status === 'in_progress') {
+    return <View style={[styles.dot, { width: size, height: size, borderRadius: size / 2, backgroundColor: color, borderColor: color }]} />;
+  }
+  return <View style={[styles.dot, { width: size, height: size, borderRadius: size / 2, backgroundColor: '#34C759', borderColor: '#34C759' }]} />;
 }
 
-function ActionRow({ action, theme }: { action: ActionItem; theme: any }) {
+function GroupSection({ group, theme, onPressGroup, onPressAction }: {
+  group: ActionGroup;
+  theme: any;
+  onPressGroup: () => void;
+  onPressAction: (action: ActionItem) => void;
+}) {
+  const tasks = group.actions.filter(a => a.vertical === 'task');
+  const others = group.actions.filter(a => a.vertical !== 'task');
+  const isTask = group.type === 'task';
+
   return (
-    <View style={styles.actionContainer}>
-      <Pressable style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.6 }]}>
-        <View style={styles.circleColumn}>
-          <StatusCircle status={action.status} color={theme.textSecondary} />
+    <View style={styles.groupSection}>
+      <Pressable style={styles.groupHeader} onPress={onPressGroup}>
+        <View style={[styles.groupAvatar, { backgroundColor: group.color }]}>
+          <Text style={styles.groupAvatarText}>{group.name.charAt(0).toUpperCase()}</Text>
         </View>
-        <View style={styles.actionContent}>
-          <Text style={[styles.actionTitle, { color: theme.text }]}>{action.title}</Text>
-          <Text style={[styles.actionSubtitle, { color: theme.textSecondary }]}>
-            {action.vertical} · {action.scope}
+        <View style={styles.groupInfo}>
+          <Text style={[styles.groupName, { color: theme.text }]}>{group.name}</Text>
+          <Text style={[styles.groupMeta, { color: theme.textSecondary }]}>
+            {isTask ? `${tasks.length} task${tasks.length !== 1 ? 's' : ''}` : `${group.actions.length} action${group.actions.length !== 1 ? 's' : ''}`}
           </Text>
         </View>
       </Pressable>
+
+      {isTask ? (
+        tasks.map((action) => {
+          const subs = group.actions.filter(a => a.vertical === 'subtask' && a.routeParams.id === action.routeParams.id);
+          return (
+            <View key={action.id}>
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.6 }]} onPress={() => onPressAction(action)}>
+                <StatusDot status={action.status} color={theme.textSecondary} />
+                <View style={styles.actionContent}>
+                  <Text style={[styles.actionTitle, { color: theme.text }]}>{action.title}</Text>
+                  {action.subtitle ? <Text style={[styles.actionSubtitle, { color: theme.textSecondary }]}>{action.subtitle}</Text> : null}
+                </View>
+              </Pressable>
+              {subs.map((sub) => (
+                <Pressable key={sub.id} style={({ pressed }) => [styles.subtaskRow, pressed && { opacity: 0.6 }]} onPress={() => onPressAction(sub)}>
+                  <StatusDot status={sub.status} color={theme.textSecondary} size={6} />
+                  <Text style={[styles.subtaskTitle, { color: sub.status === 'done' ? theme.textSecondary : theme.text, textDecorationLine: sub.status === 'done' ? 'line-through' : 'none' }]}>{sub.title}</Text>
+                </Pressable>
+              ))}
+            </View>
+          );
+        })
+      ) : (
+        others.map((action) => (
+          <Pressable key={action.id} style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.6 }]} onPress={() => onPressAction(action)}>
+            <StatusDot status={action.status} color={theme.textSecondary} />
+            <View style={styles.actionContent}>
+              <Text style={[styles.actionTitle, { color: theme.text }]}>{action.title}</Text>
+              {action.subtitle ? <Text style={[styles.actionSubtitle, { color: theme.textSecondary }]}>{action.subtitle}</Text> : null}
+            </View>
+          </Pressable>
+        ))
+      )}
     </View>
   );
 }
@@ -38,22 +83,25 @@ export default function HomeScreen() {
   const theme = useTheme();
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<Urgency>('Now');
-  const { actions, loading, refresh } = useMotion();
+  const { groups, loading, refresh } = useMotion();
 
   const filters: Urgency[] = ['Now', 'Next', 'Later', 'Done'];
 
-  const filtered = actions.filter(a => a.urgency === activeFilter);
-
-  // Reload only when returning to this screen (skip initial mount)
   const isMounted = useRef(false);
   useFocusEffect(
     useCallback(() => {
-      if (isMounted.current) {
-        refresh();
-      }
+      if (isMounted.current) refresh();
       isMounted.current = true;
     }, [refresh])
   );
+
+  const handlePressGroup = (group: ActionGroup) => {
+    router.push({ pathname: '/entity', params: { id: group.id } });
+  };
+
+  const handlePressAction = (action: ActionItem) => {
+    router.push({ pathname: action.route as any, params: action.routeParams as any });
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -78,11 +126,17 @@ export default function HomeScreen() {
         <ActivityIndicator style={{ flex: 1 }} color={theme.textSecondary} />
       ) : (
         <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: insets.bottom + 160 }}>
-          {filtered.length === 0 ? (
+          {groups.length === 0 ? (
             <Text style={[styles.empty, { color: theme.textSecondary }]}>No actions</Text>
           ) : (
-            filtered.map((action) => (
-              <ActionRow key={action.id} action={action} theme={theme} />
+            groups.map((group) => (
+              <GroupSection
+                key={group.id}
+                group={group}
+                theme={theme}
+                onPressGroup={() => handlePressGroup(group)}
+                onPressAction={handlePressAction}
+              />
             ))
           )}
         </ScrollView>
@@ -113,14 +167,20 @@ const styles = StyleSheet.create({
   filterTextActive: { fontWeight: '600' },
   scrollView: { flex: 1 },
   empty: { textAlign: 'center', paddingTop: 60, fontSize: 15 },
-  actionRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
-  actionContainer: { marginBottom: 4 },
-  circleColumn: { width: 20, alignItems: 'center', paddingTop: 2 },
+  groupSection: { marginBottom: 8 },
+  groupHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
+  groupAvatar: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  groupAvatarText: { color: '#ffffff', fontSize: 13, fontWeight: '600' },
+  groupInfo: { flex: 1 },
+  groupName: { fontSize: 15, fontWeight: '600' },
+  groupMeta: { fontSize: 12, marginTop: 2 },
+  actionRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, paddingLeft: 60, gap: 10 },
   actionContent: { flex: 1 },
-  actionTitle: { fontSize: 15, fontWeight: '500' },
-  actionSubtitle: { fontSize: 13, marginTop: 2 },
-  circle: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
-  circleFilled: { width: 18, height: 18, borderRadius: 9 },
+  actionTitle: { fontSize: 14, fontWeight: '400' },
+  actionSubtitle: { fontSize: 12, marginTop: 1 },
+  subtaskRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 6, paddingLeft: 84, gap: 8 },
+  subtaskTitle: { fontSize: 13, fontWeight: '400', flex: 1 },
+  dot: { borderWidth: 1.5 },
   actionBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
   chipRow: { flexDirection: 'row', gap: 12 },
   chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24 },

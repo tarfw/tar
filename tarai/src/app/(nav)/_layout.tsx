@@ -31,7 +31,7 @@ export default function TabLayout() {
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="pos">
-        <NativeTabs.Trigger.Label>POS</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>Sale</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/home.png')}
           renderingMode="template"

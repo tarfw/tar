@@ -18,14 +18,18 @@ function RootLayoutInner() {
           headerShadowVisible: false,
           contentStyle: { backgroundColor: colors.background },
         }}>
+        <Stack.Screen name="auth" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="(nav)" options={{ headerShown: false }} />
         <Stack.Screen name="settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="workspace" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="detail" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="add" options={{ headerShown: false, animation: 'slide_from_bottom' }} />
         <Stack.Screen name="browse" options={{ headerShown: false, animation: 'fade', animationDuration: 150 }} />
+        <Stack.Screen name="entity" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="crm" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="team" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="task" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="products" options={{ headerShown: false, animation: 'slide_from_right' }} />
       </Stack>
     </View>
   );

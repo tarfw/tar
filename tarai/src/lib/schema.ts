@@ -12,9 +12,11 @@ export const SCHEMA_STATEMENTS = [
     time TEXT DEFAULT CURRENT_TIMESTAMP
   )`,
   `CREATE TABLE IF NOT EXISTS memory (
-    form TEXT PRIMARY KEY,
+    form TEXT NOT NULL,
+    chunk INTEGER NOT NULL DEFAULT 0,
     vector BLOB,
-    embedding BLOB
+    embedding BLOB,
+    PRIMARY KEY (form, chunk)
   )`,
   `CREATE TABLE IF NOT EXISTS bond (
     src TEXT NOT NULL,

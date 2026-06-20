@@ -69,6 +69,33 @@ export function routeDbForEntity(type: string | null, scope: string | null): Dat
   return getLocalPrivateDb(selfId);
 }
 
+/**
+ * One-time migration of the `memory` table from the old single-vector-per-form
+ * schema (PK `form`) to the chunked schema (composite PK `(form, chunk)`).
+ *
+ * `CREATE TABLE IF NOT EXISTS` can't alter an existing table, and
+ * `ALTER TABLE ADD COLUMN` can't add `chunk` to the PRIMARY KEY — so we detect
+ * the old shape via PRAGMA and DROP+recreate. This only discards cached
+ * vectors; the source `form` rows are untouched and re-embed automatically
+ * (the bumped sync flags in vectorStore/skills force a full re-index).
+ */
+async function migrateMemoryTable(db: Database, label: string) {
+  try {
+    const cols = await db.all(`PRAGMA table_info(memory)`).catch(() => [] as any[]);
+    if (!Array.isArray(cols) || cols.length === 0) return; // fresh DB — CREATE handles it
+    const hasChunk = cols.some((c: any) => c.name === 'chunk');
+    if (hasChunk) return;
+    console.log(`[DB] migrating memory table (${label}) → chunked schema`);
+    await db.exec(`DROP TABLE IF EXISTS memory`);
+    await db.exec(
+      `CREATE TABLE IF NOT EXISTS memory (form TEXT NOT NULL, chunk INTEGER NOT NULL DEFAULT 0, vector BLOB, embedding BLOB, PRIMARY KEY (form, chunk))`
+    );
+    console.log(`[DB] memory table migrated (${label})`);
+  } catch (e) {
+    console.warn(`[DB] memory migration failed (${label}):`, e);
+  }
+}
+
 export async function initDb() {
   const t0 = Date.now();
   console.log(`[DB] ${Date.now() - t0}ms — initDb START`);
@@ -78,6 +105,7 @@ export async function initDb() {
     console.log(`[DB] ${Date.now() - t0}ms — privateDb.connect() START`);
     await privateDb.connect();
     console.log(`[DB] ${Date.now() - t0}ms — privateDb.connect() DONE`);
+    await migrateMemoryTable(privateDb, "guest");
     for (const sql of SCHEMA_STATEMENTS) {
       try { await privateDb.exec(sql); } catch (_) {}
     }
@@ -92,6 +120,7 @@ export async function initDb() {
     console.log(`[DB] ${Date.now() - t0}ms — globalDb.connect() START`);
     await globalDb.connect();
     console.log(`[DB] ${Date.now() - t0}ms — globalDb.connect() DONE`);
+    await migrateMemoryTable(globalDb, "global");
     for (const sql of SCHEMA_STATEMENTS) {
       try { await globalDb.exec(sql); } catch (_) {}
     }
@@ -106,7 +135,8 @@ export async function initDb() {
     if (userId !== "guest") {
       console.log(`[DB] — getSelfId resolved: ${userId}, upgrading DB`);
       const userDb = getLocalPrivateDb(userId);
-      userDb.connect().then(() => {
+      userDb.connect().then(async () => {
+        await migrateMemoryTable(userDb, userId);
         for (const sql of SCHEMA_STATEMENTS) {
           userDb.exec(sql).catch(() => {});
         }

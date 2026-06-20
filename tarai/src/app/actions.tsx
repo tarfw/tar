@@ -1,10 +1,12 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { StyleSheet, ScrollView, Pressable, View, Text, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { Image } from 'expo-image';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useMotion, type ActionGroup, type ActionItem } from '@/hooks/use-motion';
+import { getCurrentUser, type UserProfile } from '@/lib/auth';
 
 type Urgency = 'Now' | 'Next' | 'Later' | 'Done';
 
@@ -84,8 +86,13 @@ export default function ActionsScreen() {
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<Urgency>('Now');
   const { groups, loading, refresh } = useMotion();
+  const [user, setUser] = useState<UserProfile | null>(null);
 
   const filters: Urgency[] = ['Now', 'Next', 'Later', 'Done'];
+
+  useEffect(() => {
+    getCurrentUser().then(setUser).catch(() => {});
+  }, []);
 
   const isMounted = useRef(false);
   useFocusEffect(
@@ -143,16 +150,21 @@ export default function ActionsScreen() {
       )}
 
       <View style={[styles.actionBar, { paddingBottom: insets.bottom + 12, backgroundColor: theme.background, borderColor: theme.backgroundElement }]}>
-        <View style={styles.chipRow}>
-          <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push({ pathname: '/add', params: { type: 'task' } })}>
-            <Text style={[styles.chipText, { color: theme.text }]}>+ Task</Text>
+        <View style={styles.actionBarRow}>
+          <Pressable style={styles.profileButton} onPress={() => router.push('/settings')}>
+            <Image source={{ uri: user?.photo || '' }} style={styles.profileImage} contentFit="cover" />
           </Pressable>
-          <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse')}>
-            <Text style={[styles.chipText, { color: theme.text }]}>Browse</Text>
-          </Pressable>
-          <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/aisearch')}>
-            <Text style={[styles.chipText, { color: theme.text }]}>AI Search</Text>
-          </Pressable>
+          <View style={styles.chipRow}>
+            <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push({ pathname: '/add', params: { type: 'task' } })}>
+              <Text style={[styles.chipText, { color: theme.text }]}>+ Task</Text>
+            </Pressable>
+            <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse')}>
+              <Text style={[styles.chipText, { color: theme.text }]}>Browse</Text>
+            </Pressable>
+            <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/skills')}>
+              <Text style={[styles.chipText, { color: theme.text }]}>Skills</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </View>
@@ -185,7 +197,10 @@ const styles = StyleSheet.create({
   subtaskTitle: { fontSize: 13, fontWeight: '400', flex: 1 },
   dot: { borderWidth: 1.5 },
   actionBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
-  chipRow: { flexDirection: 'row', gap: 12 },
+  actionBarRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  profileButton: { padding: 2 },
+  profileImage: { width: 38, height: 38, borderRadius: 19 },
+  chipRow: { flexDirection: 'row', gap: 8 },
   chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24 },
   chipText: { fontSize: 15, fontWeight: '600' },
 });

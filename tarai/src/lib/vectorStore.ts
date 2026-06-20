@@ -1,7 +1,10 @@
 import { getUserDb } from "./db";
 import * as SecureStore from "expo-secure-store";
+import { splitText } from "./textSplitter";
 
-const SYNC_FLAG_KEY = "tar_vector_store_initial_sync_done";
+// v5: chunked embeddings — one vector per text chunk (500/100 overlap). Bumping
+// the key forces a one-time re-index of all forms with the corrected encoding.
+const SYNC_FLAG_KEY = "tar_vector_store_initial_sync_done_v5_chunked";
 
 let embeddingFn: ((text: string) => Promise<number[]>) | null = null;
 
@@ -15,7 +18,6 @@ function now() {
   return Date.now();
 }
 
-/** Compact preview of a vector: dims, magnitude, first few values. */
 function previewVector(v: number[] | Float32Array): string {
   const len = v.length;
   let sumSq = 0;
@@ -32,23 +34,33 @@ function clip(text: string, n = 60): string {
   return t.length > n ? `${t.slice(0, n)}…` : t;
 }
 
-export function float32ArrayToBlob(vector: number[]): ArrayBuffer {
+export function float32ArrayToBlob(vector: number[]): Uint8Array {
   const floatArray = new Float32Array(vector);
-  return floatArray.buffer;
+  return new Uint8Array(floatArray.buffer, floatArray.byteOffset, floatArray.byteLength);
+}
+
+export function vectorToText(vector: number[]): string {
+  return `[${vector.join(',')}]`;
 }
 
 export function blobToFloat32Array(blob: any): Float32Array {
   if (blob instanceof ArrayBuffer) {
     return new Float32Array(blob);
   }
+  let bytes: Uint8Array;
   if (blob instanceof Uint8Array) {
-    return new Float32Array(blob.buffer, blob.byteOffset, blob.byteLength / 4);
+    bytes = blob;
+  } else if (blob && blob.buffer instanceof ArrayBuffer) {
+    bytes = new Uint8Array(blob.buffer, blob.byteOffset || 0, blob.byteLength ?? blob.length ?? 0);
+  } else {
+    bytes = new Uint8Array(blob);
   }
-  if (blob && blob.buffer instanceof ArrayBuffer) {
-    return new Float32Array(blob.buffer, blob.byteOffset || 0, (blob.byteLength || blob.length || 0) / 4);
+  if (bytes.byteOffset % 4 === 0) {
+    return new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4));
   }
-  const uint8 = new Uint8Array(blob);
-  return new Float32Array(uint8.buffer, uint8.byteOffset, uint8.byteLength / 4);
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return new Float32Array(copy.buffer, 0, Math.floor(copy.byteLength / 4));
 }
 
 export function dotProduct(a: Float32Array, b: Float32Array): number {
@@ -83,9 +95,6 @@ export function formToString(form: {
   code?: string | null;
   data?: string | null;
 }): string {
-  // Embed ONLY real content (title + body). Metadata like Type/Scope/Code is
-  // constant across rows and absent from search queries, so including it adds a
-  // shared offset vector that compresses cosine scores and drowns the signal.
   const parts: string[] = [];
   if (form.title) parts.push(form.title);
   if (form.code) parts.push(form.code);
@@ -99,7 +108,7 @@ export function formToString(form: {
       parts.push(form.data);
     }
   }
-  return parts.join('. ').substring(0, 1000);
+  return parts.join('\n\n');
 }
 
 export async function upsertFormVector(
@@ -118,20 +127,27 @@ export async function upsertFormVector(
     return;
   }
   try {
-    const textToEmbed = formToString(form);
-    console.log(`[VEC] │  text→embed (${textToEmbed.length} chars): "${clip(textToEmbed, 80)}"`);
+    const text = formToString(form);
+    const chunks = splitText(text);
+    console.log(`[VEC] │  text (${text.length} chars) → ${chunks.length} chunk(s)`);
 
-    const tEmb = now();
-    const vector = await embeddingFn(textToEmbed);
-    console.log(`[VEC] │  vectorized in ${now() - tEmb}ms → ${previewVector(vector)}`);
-
-    const blob = float32ArrayToBlob(vector);
-    console.log(`[VEC] │  blob ${blob.byteLength} bytes (${vector.length}×f32)`);
-
-    const tDb = now();
     const db = getUserDb();
-    const res = await db.run("INSERT OR REPLACE INTO memory (form, vector, embedding) VALUES (?, ?, ?)", [id, blob as any, blob as any]);
-    console.log(`[VEC] └─ STORED in memory table in ${now() - tDb}ms (changes=${res?.changes ?? '?'})`);
+    await db.run("DELETE FROM memory WHERE form = ?", [id]);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const tEmb = now();
+      const vector = await embeddingFn(chunk);
+      console.log(`[VEC] │  chunk ${i}/${chunks.length} (${chunk.length} chars) → vectorized in ${now() - tEmb}ms → ${previewVector(vector)}`);
+
+      const vecText = vectorToText(vector);
+      await db.run(
+        "INSERT INTO memory (form, chunk, vector, embedding) VALUES (?, ?, vector32(?), vector32(?))",
+        [id, i, vecText, vecText]
+      );
+    }
+
+    console.log(`[VEC] └─ STORED ${chunks.length} chunk(s) for form=${id}`);
   } catch (e) {
     console.error(`[VEC] └─ FAILED upsert form=${id}:`, e);
   }
@@ -151,7 +167,7 @@ export async function deleteFormVector(id: string) {
 export async function searchFormVectors(
   query: string,
   limit: number = 10
-): Promise<Array<{ formId: string; similarity: number }>> {
+): Promise<{ formId: string; similarity: number }[]> {
   console.log(`[VEC] ╔═ SEARCH q="${clip(query)}" limit=${limit}`);
   if (!embeddingFn) {
     console.warn('[VEC] ╚═ ABORT: embedding function not set (model not loaded)');
@@ -160,33 +176,32 @@ export async function searchFormVectors(
   try {
     const tEmb = now();
     const queryVector = await embeddingFn(query);
-    const queryFloat32 = new Float32Array(queryVector);
-    console.log(`[VEC] ║  query vectorized in ${now() - tEmb}ms → ${previewVector(queryFloat32)}`);
+    console.log(`[VEC] ║  query vectorized in ${now() - tEmb}ms → ${previewVector(queryVector)}`);
 
     const tScan = now();
     const db = getUserDb();
-    const rows = await db.all("SELECT form, vector FROM memory").catch(() => []);
-    console.log(`[VEC] ║  scanning ${rows.length} stored vector(s)…`);
+    const rows = await db.all(
+      `SELECT form, MIN(vector_distance_cos(vector, vector32(?))) AS dist
+         FROM memory GROUP BY form ORDER BY dist LIMIT ?`,
+      [vectorToText(queryVector), limit]
+    ).catch((err) => {
+      console.warn('[VEC] ║  ! native distance query failed:', err);
+      return [];
+    });
 
-    const results: Array<{ formId: string; similarity: number }> = [];
+    const ranked = rows
+      .filter((r: any) => r.form != null && r.dist != null)
+      .map((r: any) => ({ formId: String(r.form), similarity: 1 - Number(r.dist) }));
 
-    for (const row of rows) {
-      if (row.form && row.vector) {
-        try {
-          const vectorFloat32 = blobToFloat32Array(row.vector);
-          const sim = cosineSimilarity(queryFloat32, vectorFloat32);
-          results.push({ formId: String(row.form), similarity: sim });
-        } catch (err) {
-          console.warn(`[VEC] ║  ! similarity failed for ${row.form}:`, err);
-        }
-      }
+    if (ranked.length > 0) {
+      const sims = ranked.map((r) => r.similarity).sort((a, b) => a - b);
+      const min = sims[0];
+      const max = sims[sims.length - 1];
+      const median = sims[Math.floor(sims.length / 2)];
+      console.log(`[VEC] ║  score distribution: min=${(min * 100).toFixed(1)}% median=${(median * 100).toFixed(1)}% max=${(max * 100).toFixed(1)}%`);
     }
 
-    const ranked = results
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, limit);
-
-    console.log(`[VEC] ║  scored ${results.length} in ${now() - tScan}ms — top ${ranked.length}:`);
+    console.log(`[VEC] ║  scored ${ranked.length} in ${now() - tScan}ms — top ${ranked.length}:`);
     ranked.forEach((r, i) =>
       console.log(`[VEC] ║    ${String(i + 1).padStart(2)}. ${(r.similarity * 100).toFixed(1)}%  ${r.formId}`)
     );
@@ -207,15 +222,10 @@ export interface VectorSearchResult {
   data: string | null;
 }
 
-/**
- * Semantic search that joins vector hits back to their `form` rows so the UI
- * can render real titles/types. `minSimilarity` filters out weak matches
- * (cosine ≥ 0.3 is a sensible floor for normalized embeddings).
- */
 export async function searchFormVectorsDetailed(
   query: string,
   limit: number = 20,
-  minSimilarity: number = 0.2
+  minSimilarity: number = 0.3
 ): Promise<VectorSearchResult[]> {
   const hits = await searchFormVectors(query, limit);
   if (hits.length === 0) return [];
@@ -231,7 +241,7 @@ export async function searchFormVectorsDetailed(
     }
     try {
       const row = await db.get(
-        "SELECT id, title, type, scope, data FROM form WHERE id = ? AND active = 1",
+        "SELECT id, title, type, scope, data FROM form WHERE id = ? AND active = 1 AND type != 'tool'",
         [hit.formId]
       );
       if (row) {
@@ -270,7 +280,9 @@ export async function checkAndSyncExistingForms() {
 
       console.log(`[VectorStore] Found ${forms.length} forms to index`);
 
-      for (const f of forms) {
+      for (let i = 0; i < forms.length; i++) {
+        const f = forms[i];
+        console.log(`[VEC] re-index ${i + 1}/${forms.length} form=${f.id}`);
         await upsertFormVector(String(f.id), {
           title: f.title ? String(f.title) : "",
           type: f.type ? String(f.type) : null,

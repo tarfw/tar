@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useMemo } from 'react';
 import { getUserDb } from '@/lib/db';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -20,7 +20,7 @@ interface CompatDb {
 
 export function useDb(): CompatDb {
   const db = getUserDb();
-  return {
+  return useMemo(() => ({
     async getAllAsync<T = any>(query: string, ...params: any[]): Promise<T[]> {
       try {
         const result = await db.all(query, params.length === 1 && Array.isArray(params[0]) ? params[0] : params);
@@ -46,5 +46,5 @@ export function useDb(): CompatDb {
         console.warn('[DB] runAsync error:', e);
       }
     },
-  };
+  }), [db]);
 }

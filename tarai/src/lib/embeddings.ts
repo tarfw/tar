@@ -1,8 +1,28 @@
-import { useRef, useCallback } from 'react';
-import { useTextEmbeddings, initExecutorch } from 'react-native-executorch';
+import { useCallback } from 'react';
+import { useTextEmbeddings, initExecutorch, models } from 'react-native-executorch';
 import { ExpoResourceFetcher } from 'react-native-executorch-expo-resource-fetcher';
 
 let initialized = false;
+
+/**
+ * Global inference mutex. The native ExecuTorch model rejects concurrent
+ * forward() calls (RnExecutorchError code 104, ModelGenerating). Every
+ * embedding request in the app — boot-time vector sync, tool seeding, live
+ * search — funnels through this single chain so they can never overlap,
+ * regardless of which component, closure, or render cycle issued them.
+ */
+let inferenceChain: Promise<unknown> = Promise.resolve();
+
+function enqueueInference<T>(task: () => Promise<T>): Promise<T> {
+  const run = inferenceChain.then(task, task);
+  // Keep the chain alive whether the task resolves or rejects, so one failed
+  // inference doesn't wedge every subsequent call.
+  inferenceChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
 
 export function initEmbeddings() {
   if (initialized) return;
@@ -10,25 +30,18 @@ export function initEmbeddings() {
   initialized = true;
 }
 
-// LFM2.5 350M embedding model — 1024-dim, quantized (8da4w), XNNPACK backend.
-export const EMBEDDING_MODEL = {
-  modelName: 'all-minilm-l6-v2' as const, // registry slot; real weights come from the sources below
-  modelSource:
-    'https://huggingface.co/software-mansion/react-native-executorch-lfm2.5-embedding-350m/resolve/main/xnnpack/lfm_2_5_embedding_350m_xnnpack_8da4w.pte',
-  tokenizerSource:
-    'https://huggingface.co/software-mansion/react-native-executorch-lfm2.5-embedding-350m/resolve/main/tokenizer.json',
-};
+// all-MiniLM-L6-v2 — 384-dim, tuned for semantic search, fast inference.
+export const EMBEDDING_MODEL = models.text_embedding.all_minilm_l6_v2();
 
-export const EMBEDDING_DIM = 1024;
+export const EMBEDDING_DIM = 384;
 
 /**
  * True once the model + tokenizer have been downloaded to the on-device cache.
- * Lets us auto-load on app start without re-triggering a download.
  */
 export async function isModelCached(): Promise<boolean> {
   try {
     const files = await ExpoResourceFetcher.listDownloadedFiles();
-    const hasModel = files.some((f) => f.includes('lfm_2_5_embedding_350m'));
+    const hasModel = files.some((f) => f.includes('minilm'));
     const hasTokenizer = files.some((f) => f.includes('tokenizer'));
     return hasModel && hasTokenizer;
   } catch (e) {
@@ -47,12 +60,9 @@ export async function clearEmbeddingModel(): Promise<void> {
 
 export function useEmbeddingsModule(preventLoad = true) {
   const model = useTextEmbeddings({
-    model: EMBEDDING_MODEL as any,
+    model: EMBEDDING_MODEL,
     preventLoad,
   });
-
-  // Serialize inference — the native module rejects concurrent forward() calls.
-  const inferenceLock = useRef(Promise.resolve());
 
   const generateEmbedding = useCallback(
     async (text: string): Promise<number[]> => {
@@ -64,19 +74,12 @@ export function useEmbeddingsModule(preventLoad = true) {
         throw new Error('[embeddings] Model not ready yet');
       }
 
-      const previous = inferenceLock.current;
-      let release!: () => void;
-      inferenceLock.current = new Promise((resolve) => {
-        release = resolve;
-      });
-
-      try {
-        await previous;
+      // Funnel through the global inference mutex so this forward() can never
+      // overlap another (boot sync, tool seeding, search) and trip code 104.
+      return enqueueInference(async () => {
         const vector = await model.forward(trimmed);
         return Array.from(vector);
-      } finally {
-        release();
-      }
+      });
     },
     [model.isReady, model.forward]
   );
@@ -92,9 +95,6 @@ export function useEmbeddingsModule(preventLoad = true) {
     [generateEmbedding]
   );
 
-  // `useTextEmbeddings` exposes downloadProgress but no explicit "loading" flag.
-  // Loading = a download is in flight (0 < progress < 1) OR we've started but
-  // the model isn't ready yet and there's no error.
   const isLoading =
     !model.isReady &&
     !model.error &&

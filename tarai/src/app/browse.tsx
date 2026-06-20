@@ -4,12 +4,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Image } from 'expo-image';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
 import { type FormRow } from '@/hooks/use-form';
-import { getCurrentUser, type UserProfile } from '@/lib/auth';
 
 type Filter = 'All' | 'People' | 'Work';
 
@@ -26,8 +24,6 @@ export default function BrowseScreen() {
   const [people, setPeople] = useState<FormRow[]>([]);
   const [work, setWork] = useState<FormRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [userReady, setUserReady] = useState(false);
-  const [user, setUser] = useState<UserProfile | null>(null);
   const dbRef = useRef(db);
   dbRef.current = db;
 
@@ -44,14 +40,6 @@ export default function BrowseScreen() {
   useEffect(() => {
     if (didInit.current) return;
     didInit.current = true;
-
-    getCurrentUser().then((u) => {
-      setUser(u);
-      setUserReady(true);
-    }).catch(() => {
-      setUserReady(true);
-    });
-
     loadData();
   }, []);
 
@@ -68,7 +56,7 @@ export default function BrowseScreen() {
   const showPeople = activeFilter === 'All' || activeFilter === 'People';
   const showWork = activeFilter === 'All' || activeFilter === 'Work';
 
-  if (loading || !userReady) {
+  if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <ActivityIndicator style={{ flex: 1 }} color={theme.textSecondary} />
@@ -137,11 +125,6 @@ export default function BrowseScreen() {
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12, backgroundColor: theme.background, borderTopColor: theme.backgroundElement }]}>
-        <Pressable style={styles.profileButton} onPress={() => router.push('/settings')}>
-          <Image source={{ uri: user?.photo || '' }} style={styles.profileImage} contentFit="cover" />
-          <Text style={[styles.profileName, { color: theme.text }]}>{user?.name || ''}</Text>
-        </Pressable>
-
         <Pressable style={[styles.addButton, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/add')}>
           <Ionicons name="add" size={20} color={theme.text} />
           <Text style={[styles.addButtonText, { color: theme.text }]}>Add</Text>
@@ -153,7 +136,7 @@ export default function BrowseScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  bottomBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
+  bottomBar: { alignItems: 'flex-end', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
   profileButton: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   profileImage: { width: 32, height: 32, borderRadius: 16 },
   profileName: { fontSize: 15, fontWeight: '600' },

@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { useEmbeddingsModule, clearEmbeddingModel, isModelCached, EMBEDDING_DIM } from '@/lib/embeddings';
 import { setEmbeddingFunction } from '@/lib/vectorStore';
+import { setSkillEmbeddingFunction, seedSkills } from '@/skills/store';
 
 interface EmbeddingsContextType {
   isReady: boolean;
@@ -69,15 +70,28 @@ function ModelRunner({
     });
   }, [mod.isReady, mod.isLoading, mod.downloadProgress, mod.error, onState]);
 
+  // Keep the provider's callable refs pointed at the latest hook fns. Cheap, so
+  // it's fine for this to run whenever the fn identities change.
   useEffect(() => {
     onFns({
       generateEmbedding: mod.generateEmbedding,
       generateEmbeddings: mod.generateEmbeddings,
     });
-    if (mod.isReady) {
-      setEmbeddingFunction(mod.generateEmbedding);
-    }
-  }, [mod.isReady, mod.generateEmbedding, mod.generateEmbeddings, onFns]);
+  }, [mod.generateEmbedding, mod.generateEmbeddings, onFns]);
+
+  // Register the embedding fn with the stores + seed tools — but only on the
+  // ready transition, not on every render. The stores call through the
+  // provider's stable ref (set above), so they always reach the live model.
+  useEffect(() => {
+    if (!mod.isReady) return;
+    // Both the form vector store and the tool store share the same model, hence
+    // the same global inference mutex (see lib/embeddings) — they can't collide.
+    setEmbeddingFunction(mod.generateEmbedding);
+    setSkillEmbeddingFunction(mod.generateEmbedding);
+    // Idempotent: SecureStore flag + in-flight guard make repeat calls no-ops.
+    seedSkills();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mod.isReady]);
 
   return null;
 }

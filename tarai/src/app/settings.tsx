@@ -97,7 +97,7 @@ export default function SettingsScreen() {
         <View style={[styles.separator, { backgroundColor: theme.background }]} />
         <View style={styles.row}>
           <Text style={[styles.rowLabel, { color: theme.text }]}>Model Info</Text>
-          <Text style={[styles.rowValue, { color: theme.textSecondary }]}>1024-dim • Cosine • Quantized</Text>
+          <Text style={[styles.rowValue, { color: theme.textSecondary }]}>384-dim • Cosine • MiniLM</Text>
         </View>
       </View>
 

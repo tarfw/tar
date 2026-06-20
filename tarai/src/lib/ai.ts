@@ -144,3 +144,118 @@ export async function generateVariants(title: string, instruction: string): Prom
   }
   return out;
 }
+
+const SKILL_SYSTEM_PROMPT = `You are a skill generator for a business app. Given a natural-language description of what the user wants to do, generate a skill definition.
+
+Respond with ONLY a JSON object (no markdown, no prose) of this exact shape:
+{
+  "name": string,
+  "description": string,
+  "vertical": string,
+  "icon": string,           // a valid Ionicons outline icon name, e.g. "document-text-outline"
+  "keywords": string[],     // 2-5 natural-language search phrases
+  "fields": [               // 1-6 fields the user must fill
+    {
+      "name": string,       // camelCase identifier
+      "label": string,      // human-readable label
+      "type": "text"|"number"|"select"|"textarea"|"date"|"phone"|"email"|"rating",
+      "required": boolean,
+      "placeholder": string,
+      "options": string[]   // only for type="select"
+    }
+  ],
+  "creates": {
+    "table": "form",
+    "formType": string,     // short slug, e.g. "feedback", "attendance"
+    "formScope": "p",
+    "titleTemplate": string, // e.g. "Visit: {person}" — use {fieldName} placeholders
+    "dataFields": string[]  // field names to save into form.data JSON
+  }
+}
+
+Rules:
+- icon must be a real Ionicons outline icon name
+- formType should be a short lowercase slug derived from the description
+- titleTemplate uses {fieldName} placeholders referencing your field names
+- dataFields lists which fields get saved (exclude title-only fields if titleTemplate covers them)
+- Return ONLY the JSON object, nothing else`;
+
+/**
+ * Ask the model to generate a skill definition from a user's natural-language
+ * description. Returns a normalized SkillDef (with `custom: true`, timestamped
+ * id, and forced creates.table='form').
+ * Throws on network / parse errors so the caller can show a retry.
+ */
+export async function generateSkillDefinition(userInput: string): Promise<import('@/skills/definitions').SkillDef> {
+  console.log(`[AI] generateSkillDefinition: "${userInput}"`);
+
+  const res = await fetch(ASI_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${ASI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: ASI_MODEL,
+      messages: [
+        { role: 'system', content: SKILL_SYSTEM_PROMPT },
+        { role: 'user', content: userInput },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.log(`[AI] HTTP ${res.status}: ${body.slice(0, 200)}`);
+    throw new Error(`AI request failed (${res.status})`);
+  }
+
+  const json = await res.json();
+  const content: string = json?.choices?.[0]?.message?.content ?? '';
+  if (!content) throw new Error('Empty AI response');
+
+  const parsed = extractJson(content);
+
+  // Normalize and validate
+  const VALID_TYPES = new Set(['text', 'number', 'select', 'textarea', 'date', 'phone', 'email', 'rating']);
+  const slug = String(parsed.name || 'custom-skill')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+
+  const fields = Array.isArray(parsed.fields)
+    ? parsed.fields.map((f: any) => ({
+        name: String(f.name || 'field'),
+        type: VALID_TYPES.has(f.type) ? f.type : 'text',
+        label: String(f.label || f.name || 'Field'),
+        required: Boolean(f.required),
+        placeholder: String(f.placeholder || ''),
+        options: f.type === 'select' && Array.isArray(f.options) ? f.options.map(String) : undefined,
+      }))
+    : [];
+
+  const titleTemplate = String(parsed.creates?.titleTemplate || '{title}');
+  const dataFields = Array.isArray(parsed.creates?.dataFields)
+    ? parsed.creates.dataFields.map(String)
+    : fields.map((f: any) => f.name);
+
+  const id = `tool_${slug}_${Date.now()}`;
+
+  return {
+    id,
+    name: String(parsed.name || 'Custom Skill'),
+    description: String(parsed.description || ''),
+    vertical: String(parsed.vertical || 'general'),
+    icon: String(parsed.icon || 'document-text-outline'),
+    keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(String).slice(0, 5) : [],
+    fields,
+    creates: {
+      table: 'form',
+      formType: String(parsed.creates?.formType || slug),
+      formScope: 'p',
+      titleTemplate,
+      dataFields,
+    },
+    custom: true,
+  };
+}

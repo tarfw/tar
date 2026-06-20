@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, ScrollView, Pressable, Switch, View, Text, ActivityIndicator, Alert } from 'react-native';
+import { useState, useEffect } from 'react';
+import { StyleSheet, ScrollView, Pressable, Switch, View, Text, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,7 +13,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { themeMode, setThemeMode } = useThemeMode();
-  const { isReady, isLoading, error, generateEmbedding } = useEmbeddings();
+  const { isReady, isLoading, downloadProgress, error, loadModel, clearModel } = useEmbeddings();
   const [notifications, setNotifications] = useState(true);
   const [user, setUser] = useState<UserProfile | null>(null);
 
@@ -56,12 +56,42 @@ export default function SettingsScreen() {
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>AI MODELS</Text>
       <View style={[styles.section, { backgroundColor: theme.backgroundElement }]}>
         <View style={styles.row}>
-          <Text style={[styles.rowLabel, { color: theme.text }]}>LFM2.5 Embedding (350M)</Text>
+          <Text style={[styles.rowLabel, { color: theme.text }]}>Embedding (350M)</Text>
           <View style={styles.rowRight}>
-            {isLoading && <ActivityIndicator size="small" color="#007AFF" />}
-            {isReady && <Text style={{ color: '#34C759', fontSize: 15 }}>✓ Ready</Text>}
-            {error && <Text style={{ color: '#FF3B30', fontSize: 15 }}>!</Text>}
-            {!isLoading && !isReady && !error && <Text style={[styles.rowValue, { color: theme.textSecondary }]}>Loading</Text>}
+            {isReady && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ color: '#34C759', fontSize: 13, fontWeight: '500' }}>Ready</Text>
+                <Pressable
+                  style={({ pressed }) => [styles.downloadBtn, { backgroundColor: theme.background }, pressed && { opacity: 0.6 }]}
+                  onPress={() => {
+                    console.log('[SETTINGS] Clear button pressed');
+                    clearModel();
+                  }}>
+                  <Text style={{ color: '#FF3B30', fontSize: 13, fontWeight: '500' }}>Clear</Text>
+                </Pressable>
+              </View>
+            )}
+            {isLoading && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${Math.round(downloadProgress * 100)}%` }]} />
+                </View>
+                <Text style={{ color: theme.textSecondary, fontSize: 12, minWidth: 32, textAlign: 'right' }}>
+                  {Math.round(downloadProgress * 100)}%
+                </Text>
+              </View>
+            )}
+            {error && <Text style={{ color: '#FF3B30', fontSize: 13 }}>Failed</Text>}
+            {!isReady && !isLoading && !error && (
+              <Pressable
+                style={({ pressed }) => [styles.downloadBtn, { backgroundColor: theme.background }, pressed && { opacity: 0.6 }]}
+                onPress={() => {
+                  console.log('[SETTINGS] Download button pressed — calling loadModel()');
+                  loadModel();
+                }}>
+                <Text style={{ color: theme.text, fontSize: 13, fontWeight: '500' }}>Download</Text>
+              </Pressable>
+            )}
           </View>
         </View>
         <View style={[styles.separator, { backgroundColor: theme.background }]} />
@@ -238,5 +268,22 @@ const styles = StyleSheet.create({
   chevron: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  downloadBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  progressTrack: {
+    width: 60,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E5E5EA',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: '#007AFF',
   },
 });

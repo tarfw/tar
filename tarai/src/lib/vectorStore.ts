@@ -7,6 +7,29 @@ let embeddingFn: ((text: string) => Promise<number[]>) | null = null;
 
 export function setEmbeddingFunction(fn: (text: string) => Promise<number[]>) {
   embeddingFn = fn;
+  console.log('[VEC] embedding function registered → search/index now LIVE');
+}
+
+// ── logging helpers ────────────────────────────────────────────────────────
+function now() {
+  return Date.now();
+}
+
+/** Compact preview of a vector: dims, magnitude, first few values. */
+function previewVector(v: number[] | Float32Array): string {
+  const len = v.length;
+  let sumSq = 0;
+  for (let i = 0; i < len; i++) sumSq += v[i] * v[i];
+  const mag = Math.sqrt(sumSq);
+  const head = Array.from(v.slice(0, 4))
+    .map((x) => x.toFixed(4))
+    .join(', ');
+  return `dims=${len} |v|=${mag.toFixed(4)} head=[${head}…]`;
+}
+
+function clip(text: string, n = 60): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
 }
 
 export function float32ArrayToBlob(vector: number[]): ArrayBuffer {
@@ -60,25 +83,23 @@ export function formToString(form: {
   code?: string | null;
   data?: string | null;
 }): string {
-  let text = `Title: ${form.title}`;
-  if (form.type) text += `\nType: ${form.type}`;
-  if (form.scope) text += `\nScope: ${form.scope}`;
-  if (form.code) text += `\nCode: ${form.code}`;
+  // Embed ONLY real content (title + body). Metadata like Type/Scope/Code is
+  // constant across rows and absent from search queries, so including it adds a
+  // shared offset vector that compresses cosine scores and drowns the signal.
+  const parts: string[] = [];
+  if (form.title) parts.push(form.title);
+  if (form.code) parts.push(form.code);
   if (form.data) {
     try {
       const parsed = JSON.parse(form.data);
-      if (parsed.body) {
-        text += `\nBody: ${parsed.body}`;
-      } else if (parsed.description) {
-        text += `\nDescription: ${parsed.description}`;
-      } else {
-        text += `\nData: ${JSON.stringify(parsed)}`;
-      }
+      const body = parsed.body || parsed.description || parsed.note;
+      if (body) parts.push(String(body));
+      else parts.push(JSON.stringify(parsed));
     } catch {
-      text += `\nData: ${form.data}`;
+      parts.push(form.data);
     }
   }
-  return text.substring(0, 1000);
+  return parts.join('. ').substring(0, 1000);
 }
 
 export async function upsertFormVector(
@@ -91,30 +112,39 @@ export async function upsertFormVector(
     data?: string | null;
   }
 ) {
+  console.log(`[VEC] ┌─ UPSERT form=${id} title="${clip(form.title)}" type=${form.type ?? '-'} scope=${form.scope ?? '-'}`);
   if (!embeddingFn) {
-    console.warn('[VectorStore] Embedding function not set');
+    console.warn('[VEC] └─ ABORT: embedding function not set (model not loaded)');
     return;
   }
   try {
     const textToEmbed = formToString(form);
-    const vector = await embeddingFn(textToEmbed);
-    const blob = float32ArrayToBlob(vector);
+    console.log(`[VEC] │  text→embed (${textToEmbed.length} chars): "${clip(textToEmbed, 80)}"`);
 
+    const tEmb = now();
+    const vector = await embeddingFn(textToEmbed);
+    console.log(`[VEC] │  vectorized in ${now() - tEmb}ms → ${previewVector(vector)}`);
+
+    const blob = float32ArrayToBlob(vector);
+    console.log(`[VEC] │  blob ${blob.byteLength} bytes (${vector.length}×f32)`);
+
+    const tDb = now();
     const db = getUserDb();
-    await db.run("INSERT OR REPLACE INTO memory (form, vector, embedding) VALUES (?, ?, ?)", [id, blob as any, blob as any]);
-    console.log(`[VectorStore] Indexed vector for form ${id}`);
+    const res = await db.run("INSERT OR REPLACE INTO memory (form, vector, embedding) VALUES (?, ?, ?)", [id, blob as any, blob as any]);
+    console.log(`[VEC] └─ STORED in memory table in ${now() - tDb}ms (changes=${res?.changes ?? '?'})`);
   } catch (e) {
-    console.error(`[VectorStore] Failed to upsert vector for form ${id}:`, e);
+    console.error(`[VEC] └─ FAILED upsert form=${id}:`, e);
   }
 }
 
 export async function deleteFormVector(id: string) {
+  console.log(`[VEC] ┌─ DELETE vector form=${id}`);
   try {
     const db = getUserDb();
-    await db.run("DELETE FROM memory WHERE form = ?", [id]);
-    console.log(`[VectorStore] Deleted vector for form ${id}`);
+    const res = await db.run("DELETE FROM memory WHERE form = ?", [id]);
+    console.log(`[VEC] └─ removed from memory table (changes=${res?.changes ?? '?'})`);
   } catch (e) {
-    console.error(`[VectorStore] Failed to delete vector for form ${id}:`, e);
+    console.error(`[VEC] └─ FAILED delete form=${id}:`, e);
   }
 }
 
@@ -122,16 +152,21 @@ export async function searchFormVectors(
   query: string,
   limit: number = 10
 ): Promise<Array<{ formId: string; similarity: number }>> {
+  console.log(`[VEC] ╔═ SEARCH q="${clip(query)}" limit=${limit}`);
   if (!embeddingFn) {
-    console.warn('[VectorStore] Embedding function not set');
+    console.warn('[VEC] ╚═ ABORT: embedding function not set (model not loaded)');
     return [];
   }
   try {
+    const tEmb = now();
     const queryVector = await embeddingFn(query);
     const queryFloat32 = new Float32Array(queryVector);
+    console.log(`[VEC] ║  query vectorized in ${now() - tEmb}ms → ${previewVector(queryFloat32)}`);
 
+    const tScan = now();
     const db = getUserDb();
     const rows = await db.all("SELECT form, vector FROM memory").catch(() => []);
+    console.log(`[VEC] ║  scanning ${rows.length} stored vector(s)…`);
 
     const results: Array<{ formId: string; similarity: number }> = [];
 
@@ -142,18 +177,83 @@ export async function searchFormVectors(
           const sim = cosineSimilarity(queryFloat32, vectorFloat32);
           results.push({ formId: String(row.form), similarity: sim });
         } catch (err) {
-          console.warn(`[VectorStore] Failed calculating similarity for ${row.form}:`, err);
+          console.warn(`[VEC] ║  ! similarity failed for ${row.form}:`, err);
         }
       }
     }
 
-    return results
+    const ranked = results
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, limit);
+
+    console.log(`[VEC] ║  scored ${results.length} in ${now() - tScan}ms — top ${ranked.length}:`);
+    ranked.forEach((r, i) =>
+      console.log(`[VEC] ║    ${String(i + 1).padStart(2)}. ${(r.similarity * 100).toFixed(1)}%  ${r.formId}`)
+    );
+    console.log(`[VEC] ╚═ SEARCH done → ${ranked.length} hit(s)`);
+    return ranked;
   } catch (e) {
-    console.error("[VectorStore] Search failed:", e);
+    console.error("[VEC] ╚═ SEARCH FAILED:", e);
     return [];
   }
+}
+
+export interface VectorSearchResult {
+  formId: string;
+  similarity: number;
+  title: string;
+  type: string | null;
+  scope: string | null;
+  data: string | null;
+}
+
+/**
+ * Semantic search that joins vector hits back to their `form` rows so the UI
+ * can render real titles/types. `minSimilarity` filters out weak matches
+ * (cosine ≥ 0.3 is a sensible floor for normalized embeddings).
+ */
+export async function searchFormVectorsDetailed(
+  query: string,
+  limit: number = 20,
+  minSimilarity: number = 0.2
+): Promise<VectorSearchResult[]> {
+  const hits = await searchFormVectors(query, limit);
+  if (hits.length === 0) return [];
+
+  console.log(`[VEC] ┄ JOIN+FILTER ${hits.length} hit(s) (minSimilarity=${minSimilarity})`);
+  const db = getUserDb();
+  const results: VectorSearchResult[] = [];
+
+  for (const hit of hits) {
+    if (hit.similarity < minSimilarity) {
+      console.log(`[VEC] ┄   drop ${hit.formId} (${(hit.similarity * 100).toFixed(1)}% < threshold)`);
+      continue;
+    }
+    try {
+      const row = await db.get(
+        "SELECT id, title, type, scope, data FROM form WHERE id = ? AND active = 1",
+        [hit.formId]
+      );
+      if (row) {
+        console.log(`[VEC] ┄   keep ${hit.formId} (${(hit.similarity * 100).toFixed(1)}%) title="${clip(String(row.title ?? ''))}"`);
+        results.push({
+          formId: hit.formId,
+          similarity: hit.similarity,
+          title: row.title ? String(row.title) : "(untitled)",
+          type: row.type ? String(row.type) : null,
+          scope: row.scope ? String(row.scope) : null,
+          data: row.data ? String(row.data) : null,
+        });
+      } else {
+        console.log(`[VEC] ┄   skip ${hit.formId} (no active form row — orphan vector)`);
+      }
+    } catch (e) {
+      console.warn(`[VEC] ┄   ! join failed for ${hit.formId}:`, e);
+    }
+  }
+
+  console.log(`[VEC] ┄ RESULTS → ${results.length} row(s) to UI`);
+  return results;
 }
 
 export async function checkAndSyncExistingForms() {

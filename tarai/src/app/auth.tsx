@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
-import { signInWithGoogle, getCurrentUser } from '@/lib/auth';
+import { signInWithGoogle, getCurrentUser, trySilentSignIn } from '@/lib/auth';
 
 const SOLUTIONS = [
   { icon: 'ellipse-outline' as const, label: 'Projects & Tasks' },
@@ -15,26 +15,40 @@ const SOLUTIONS = [
   { icon: 'bulb-outline' as const, label: 'AI' },
 ];
 
+const T0 = Date.now();
+function ms() { return `${Date.now() - T0}ms`; }
+
 export default function AuthScreen() {
-  console.log('[AUTH] Component rendered');
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    console.log('[AUTH] useEffect - checking current user');
+    console.log(`[AUTH] ${ms()} — useEffect START (checking user)`);
     (async () => {
       try {
+        const t = Date.now();
         const user = await getCurrentUser();
-        console.log('[AUTH] getCurrentUser result:', user ? user.email : 'null');
+        console.log(`[AUTH] ${Date.now() - t}ms — getCurrentUser: ${user ? user.email : 'null'}`);
         if (user) {
-          console.log('[AUTH] User found, navigating to /(nav)');
-          router.replace('/(nav)');
-        } else {
-          console.log('[AUTH] No user, staying on auth screen');
+          console.log(`[AUTH] ${ms()} — navigating to /(nav)`);
+          router.replace('/actions');
+          return;
         }
-      } catch (_e) { /* ignore */ }
+        console.log(`[AUTH] ${ms()} — no user, trying silent sign-in...`);
+        const t2 = Date.now();
+        const silent = await trySilentSignIn();
+        console.log(`[AUTH] ${Date.now() - t2}ms — trySilentSignIn: ${silent ? silent.email : 'null'}`);
+        if (silent) {
+          console.log(`[AUTH] ${ms()} — navigating to /actions via silent sign-in`);
+          router.replace('/actions');
+        } else {
+          console.log(`[AUTH] ${ms()} — no silent sign-in, staying on auth screen`);
+        }
+      } catch (_e) {
+        console.log(`[AUTH] ${ms()} — catch:`, _e);
+      }
     })();
   }, [router]);
 
@@ -43,7 +57,7 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       await signInWithGoogle();
-      router.replace('/(nav)');
+      router.replace('/actions');
     } catch (e: any) {
       console.warn('[Auth] Google sign-in failed:', e.message);
     } finally {

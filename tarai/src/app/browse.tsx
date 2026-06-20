@@ -26,26 +26,41 @@ export default function BrowseScreen() {
   const [people, setPeople] = useState<FormRow[]>([]);
   const [work, setWork] = useState<FormRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userReady, setUserReady] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
+  const dbRef = useRef(db);
+  dbRef.current = db;
 
-  const load = useCallback(async () => {
-    const all = await db.getAllAsync<FormRow>('SELECT * FROM form WHERE active = 1 ORDER BY time DESC');
-    setPeople(all.filter(r => r.type === 'profile'));
-    setWork(all.filter(r => r.type === 'team'));
+  const loadData = useCallback(async () => {
+    const all = await dbRef.current.getAllAsync<FormRow>('SELECT * FROM form WHERE active = 1 ORDER BY time DESC');
+    const p = all.filter(r => r.type === 'profile');
+    const w = all.filter(r => r.type === 'team');
+    setPeople(p);
+    setWork(w);
     setLoading(false);
-  }, [db]);
+  }, []);
 
+  const didInit = useRef(false);
   useEffect(() => {
-    getCurrentUser().then(setUser);
-    load();
-  }, [load]);
+    if (didInit.current) return;
+    didInit.current = true;
+
+    getCurrentUser().then((u) => {
+      setUser(u);
+      setUserReady(true);
+    }).catch(() => {
+      setUserReady(true);
+    });
+
+    loadData();
+  }, []);
 
   const isMounted = useRef(false);
   useFocusEffect(
     useCallback(() => {
-      if (isMounted.current) load();
+      if (isMounted.current) loadData();
       isMounted.current = true;
-    }, [load])
+    }, [loadData])
   );
 
   const filters: Filter[] = ['All', 'People', 'Work'];
@@ -53,7 +68,7 @@ export default function BrowseScreen() {
   const showPeople = activeFilter === 'All' || activeFilter === 'People';
   const showWork = activeFilter === 'All' || activeFilter === 'Work';
 
-  if (loading) {
+  if (loading || !userReady) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <ActivityIndicator style={{ flex: 1 }} color={theme.textSecondary} />

@@ -62,7 +62,9 @@
       "Bash(head -5 __TRACKED_VAR__.md)",
       "Bash(echo)",
       "Bash(claude mcp *)",
-      "WebFetch(domain:tanstack.com)"
+      "WebFetch(domain:tanstack.com)",
+      "Bash(echo \"---EXIT $?---\")",
+      "Bash(echo \"---exit $?---\")"
     ]
   }
 }

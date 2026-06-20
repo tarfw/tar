@@ -1,9 +1,11 @@
-import { StyleSheet, View, Text, Pressable } from 'react-native';
+import { StyleSheet, View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useState, useEffect } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
+import { signInWithGoogle, getCurrentUser } from '@/lib/auth';
 
 const SOLUTIONS = [
   { icon: 'ellipse-outline' as const, label: 'Projects & Tasks' },
@@ -14,12 +16,39 @@ const SOLUTIONS = [
 ];
 
 export default function AuthScreen() {
+  console.log('[AUTH] Component rendered');
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
 
-  const handleGoogleAuth = () => {
-    router.replace('/(nav)');
+  useEffect(() => {
+    console.log('[AUTH] useEffect - checking current user');
+    (async () => {
+      try {
+        const user = await getCurrentUser();
+        console.log('[AUTH] getCurrentUser result:', user ? user.email : 'null');
+        if (user) {
+          console.log('[AUTH] User found, navigating to /(nav)');
+          router.replace('/(nav)');
+        } else {
+          console.log('[AUTH] No user, staying on auth screen');
+        }
+      } catch (_e) { /* ignore */ }
+    })();
+  }, [router]);
+
+  const handleGoogleAuth = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await signInWithGoogle();
+      router.replace('/(nav)');
+    } catch (e: any) {
+      console.warn('[Auth] Google sign-in failed:', e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -43,9 +72,18 @@ export default function AuthScreen() {
 
         <View style={{ height: 32 }} />
 
-        <Pressable style={[styles.authButton, { backgroundColor: theme.backgroundElement }]} onPress={handleGoogleAuth}>
-          <Ionicons name="logo-google" size={20} color={theme.text} />
-          <Text style={[styles.authButtonText, { color: theme.text }]}>Continue with Google</Text>
+        <Pressable
+          style={[styles.authButton, { backgroundColor: theme.backgroundElement }]}
+          onPress={handleGoogleAuth}
+          disabled={loading}>
+          {loading ? (
+            <ActivityIndicator size="small" color={theme.text} />
+          ) : (
+            <>
+              <Ionicons name="logo-google" size={20} color={theme.text} />
+              <Text style={[styles.authButtonText, { color: theme.text }]}>Continue with Google</Text>
+            </>
+          )}
         </Pressable>
       </View>
     </View>

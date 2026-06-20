@@ -1,102 +1,83 @@
 import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, ScrollView, Pressable, Switch, View, Text } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, Switch, View, Text, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useThemeMode } from '@/hooks/use-theme-context';
 import { useTheme } from '@/hooks/use-theme';
-import { useDb } from '@/db/provider';
-import { type FormRow } from '@/hooks/use-form';
+import { getCurrentUser, signOutGoogle, type UserProfile } from '@/lib/auth';
+import { useEmbeddings } from '@/db/embeddings-provider';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const db = useDb();
   const { themeMode, setThemeMode } = useThemeMode();
+  const { isReady, isLoading, error, generateEmbedding } = useEmbeddings();
   const [notifications, setNotifications] = useState(true);
-  const [teams, setTeams] = useState<FormRow[]>([]);
+  const [user, setUser] = useState<UserProfile | null>(null);
 
-  const loadTeams = useCallback(async () => {
-    const rows = await db.getAllAsync<FormRow>(
-      "SELECT * FROM form WHERE type = 'team' AND active = 1 ORDER BY time DESC"
-    );
-    setTeams(rows);
-  }, [db]);
+  useEffect(() => {
+    getCurrentUser().then(setUser);
+  }, []);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { loadTeams(); }, [loadTeams]);
+  const handleSignOut = async () => {
+    try {
+      await signOutGoogle();
+      router.replace('/auth');
+    } catch (_) {
+      router.replace('/auth');
+    }
+  };
+
+  const initials = user?.name
+    ? user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+    : 'T';
 
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.background }]}
       contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 }}>
 
-      {/* Back Button */}
       <Pressable
         style={({ pressed }) => [styles.backButton, pressed && { opacity: 0.6 }]}
         onPress={() => router.back()}>
         <Text style={[styles.backText, { color: '#007AFF' }]}>‹</Text>
       </Pressable>
 
-      {/* Profile Section */}
       <View style={styles.profileSection}>
         <View style={styles.profileAvatar}>
-          <Text style={styles.profileAvatarText}>T</Text>
+          <Text style={styles.profileAvatarText}>{initials}</Text>
         </View>
-        <Text style={[styles.profileName, { color: theme.text }]}>Tarai User</Text>
-        <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>user@tarai.app</Text>
+        <Text style={[styles.profileName, { color: theme.text }]}>{user?.name || 'Tarai User'}</Text>
+        <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>{user?.email || 'user@tarai.app'}</Text>
       </View>
 
-      {/* Teams */}
-      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>TEAMS</Text>
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>AI MODELS</Text>
       <View style={[styles.section, { backgroundColor: theme.backgroundElement }]}>
-        {teams.length === 0 ? (
-          <View style={styles.row}>
-            <Text style={[styles.rowLabel, { color: theme.textSecondary }]}>No teams yet</Text>
+        <View style={styles.row}>
+          <Text style={[styles.rowLabel, { color: theme.text }]}>LFM2.5 Embedding (350M)</Text>
+          <View style={styles.rowRight}>
+            {isLoading && <ActivityIndicator size="small" color="#007AFF" />}
+            {isReady && <Text style={{ color: '#34C759', fontSize: 15 }}>✓ Ready</Text>}
+            {error && <Text style={{ color: '#FF3B30', fontSize: 15 }}>!</Text>}
+            {!isLoading && !isReady && !error && <Text style={[styles.rowValue, { color: theme.textSecondary }]}>Loading</Text>}
           </View>
-        ) : (
-          teams.map((team, i) => (
-            <View key={team.id}>
-              <Pressable
-                style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-                onPress={() => { router.back(); router.push({ pathname: '/entity', params: { id: team.id } }); }}>
-                <Text style={[styles.rowLabel, { color: theme.text }]}>{team.title}</Text>
-                <Text style={[styles.chevron, { color: theme.textSecondary }]}>{'>'}</Text>
-              </Pressable>
-              {i < teams.length - 1 && <View style={[styles.separator, { backgroundColor: theme.background }]} />}
-            </View>
-          ))
-        )}
+        </View>
+        <View style={[styles.separator, { backgroundColor: theme.background }]} />
+        <View style={styles.row}>
+          <Text style={[styles.rowLabel, { color: theme.text }]}>Model Info</Text>
+          <Text style={[styles.rowValue, { color: theme.textSecondary }]}>1024-dim • Cosine • Quantized</Text>
+        </View>
       </View>
 
-      {/* Appearance */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>APPEARANCE</Text>
       <View style={[styles.section, { backgroundColor: theme.backgroundElement }]}>
-        <OptionRow
-          label="Light"
-          theme={theme}
-          checked={themeMode === 'light'}
-          onPress={() => setThemeMode('light')}
-          isLast={false}
-        />
-        <OptionRow
-          label="Dark"
-          theme={theme}
-          checked={themeMode === 'dark'}
-          onPress={() => setThemeMode('dark')}
-          isLast={false}
-        />
-        <OptionRow
-          label="System"
-          theme={theme}
-          checked={themeMode === 'system'}
-          onPress={() => setThemeMode('system')}
-          isLast={true}
-        />
+        <OptionRow label="Light" theme={theme} checked={themeMode === 'light'} onPress={() => setThemeMode('light')} isLast={false} />
+        <OptionRow label="Dark" theme={theme} checked={themeMode === 'dark'} onPress={() => setThemeMode('dark')} isLast={false} />
+        <OptionRow label="System" theme={theme} checked={themeMode === 'system'} onPress={() => setThemeMode('system')} isLast={true} />
       </View>
 
-      {/* Notifications */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>NOTIFICATIONS</Text>
       <View style={[styles.section, { backgroundColor: theme.backgroundElement }]}>
         <View style={styles.row}>
@@ -110,7 +91,6 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* General */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>GENERAL</Text>
       <View style={[styles.section, { backgroundColor: theme.backgroundElement }]}>
         <View style={styles.row}>
@@ -128,7 +108,6 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* About */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ABOUT</Text>
       <View style={[styles.section, { backgroundColor: theme.backgroundElement }]}>
         <View style={styles.row}>
@@ -147,12 +126,11 @@ export default function SettingsScreen() {
         </Pressable>
       </View>
 
-      {/* Sign Out */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ACCOUNT</Text>
       <View style={[styles.section, { backgroundColor: theme.backgroundElement }]}>
         <Pressable
           style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-          onPress={() => router.back()}>
+          onPress={handleSignOut}>
           <Text style={[styles.rowLabel, { color: '#FF3B30' }]}>Sign Out</Text>
         </Pressable>
       </View>

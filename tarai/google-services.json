@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "291840005173",
+    "project_id": "tarframework-35ar",
+    "storage_bucket": "tarframework-35ar.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:291840005173:android:1897086f25cf1885670d7c",
+        "android_client_info": {
+          "package_name": "com.tarai.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDk9HZz5yZ6poLi5ez2wJnyxL8zWRHREOU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

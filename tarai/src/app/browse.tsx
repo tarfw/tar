@@ -4,10 +4,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Image } from 'expo-image';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
 import { type FormRow } from '@/hooks/use-form';
+import { getCurrentUser, type UserProfile } from '@/lib/auth';
 
 type Filter = 'All' | 'People' | 'Work';
 
@@ -24,6 +26,7 @@ export default function BrowseScreen() {
   const [people, setPeople] = useState<FormRow[]>([]);
   const [work, setWork] = useState<FormRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<UserProfile | null>(null);
 
   const load = useCallback(async () => {
     const all = await db.getAllAsync<FormRow>('SELECT * FROM form WHERE active = 1 ORDER BY time DESC');
@@ -32,8 +35,10 @@ export default function BrowseScreen() {
     setLoading(false);
   }, [db]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    getCurrentUser().then(setUser);
+    load();
+  }, [load]);
 
   const isMounted = useRef(false);
   useFocusEffect(
@@ -116,9 +121,15 @@ export default function BrowseScreen() {
         )}
       </ScrollView>
 
-      <View style={[styles.addBar, { paddingBottom: insets.bottom + 8, backgroundColor: theme.background, borderTopColor: theme.backgroundElement }]}>
-        <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/add')}>
-          <Text style={[styles.chipText, { color: theme.text }]}>+ Add</Text>
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12, backgroundColor: theme.background, borderTopColor: theme.backgroundElement }]}>
+        <Pressable style={styles.profileButton} onPress={() => router.push('/settings')}>
+          <Image source={{ uri: user?.photo || '' }} style={styles.profileImage} contentFit="cover" />
+          <Text style={[styles.profileName, { color: theme.text }]}>{user?.name || ''}</Text>
+        </Pressable>
+
+        <Pressable style={[styles.addButton, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/add')}>
+          <Ionicons name="add" size={20} color={theme.text} />
+          <Text style={[styles.addButtonText, { color: theme.text }]}>Add</Text>
         </Pressable>
       </View>
     </View>
@@ -127,9 +138,12 @@ export default function BrowseScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  addBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
-  chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24, alignSelf: 'flex-start' },
-  chipText: { fontSize: 15, fontWeight: '600' },
+  bottomBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
+  profileButton: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  profileImage: { width: 32, height: 32, borderRadius: 16 },
+  profileName: { fontSize: 15, fontWeight: '600' },
+  addButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, gap: 4 },
+  addButtonText: { fontSize: 15, fontWeight: '600' },
   filters: { paddingTop: 4, paddingBottom: 8 },
   filtersContent: { paddingHorizontal: 16, gap: 4 },
   filterTab: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },

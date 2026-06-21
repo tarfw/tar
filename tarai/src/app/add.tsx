@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { StyleSheet, Pressable, View, TextInput, Text, ScrollView } from 'react-native';
+import { StyleSheet, Pressable, View, TextInput, Text } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -67,7 +68,7 @@ export default function AddScreen() {
         </Pressable>
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
+      <KeyboardAwareScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
 
         {/* Type Selection */}
         <View style={styles.typeRow}>
@@ -107,7 +108,7 @@ export default function AddScreen() {
           </Text>
         </View>
 
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }

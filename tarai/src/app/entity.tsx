@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
-import { Host, BottomSheet } from '@expo/ui';
+import { StyleSheet, Pressable, View, TextInput, Text, ActivityIndicator, Modal, FlatList, BackHandler } from 'react-native';
+import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
-import { useFormById } from '@/hooks/use-form';
+import { useFormById, type FormRow } from '@/hooks/use-form';
 import { type MatterRow } from '@/hooks/use-matter';
 import { searchSkills, type SkillSearchResult } from '@/skills/store';
 import type { SkillDef } from '@/skills/definitions';
@@ -34,11 +34,15 @@ export default function EntityScreen() {
   const [storeItems, setStoreItems] = useState<any[]>([]);
   const [storeTransactions, setStoreTransactions] = useState<any[]>([]);
   const [storeTab, setStoreTab] = useState<'items' | 'transactions'>('items');
+  const [detailTab, setDetailTab] = useState<'activity' | 'details' | 'members'>('activity');
   const [skillQuery, setSkillQuery] = useState('');
   const [skillResults, setSkillResults] = useState<SkillSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<SkillDef | null>(null);
   const [showSkillForm, setShowSkillForm] = useState(false);
+  const [members, setMembers] = useState<FormRow[]>([]);
+  const [showPickMember, setShowPickMember] = useState(false);
+  const [allPeople, setAllPeople] = useState<FormRow[]>([]);
 
   const loadMatter = useCallback(async () => {
     if (!row) return;
@@ -84,6 +88,25 @@ export default function EntityScreen() {
         setStoreTransactions(txns);
       } else {
         setStoreTransactions([]);
+      }
+    }
+
+    // Load members for team/work entities
+    if (row.type === 'team') {
+      const memberLinks = await db.getAllAsync<{ tgt: string }>(
+        "SELECT tgt FROM graph WHERE src = ? AND type = 'has_member' AND active = 1",
+        row.id
+      );
+      const memberIds = memberLinks.map(l => l.tgt);
+      if (memberIds.length > 0) {
+        const placeholders = memberIds.map(() => '?').join(',');
+        const membersList = await db.getAllAsync<FormRow>(
+          `SELECT * FROM form WHERE id IN (${placeholders}) AND active = 1`,
+          ...memberIds
+        );
+        setMembers(membersList);
+      } else {
+        setMembers([]);
       }
     }
   }, [db, row]);
@@ -139,6 +162,15 @@ export default function EntityScreen() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [skillQuery]);
 
+  useEffect(() => {
+    if (!showPickMember) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setShowPickMember(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [showPickMember]);
+
   const handleSelectSkill = (skill: SkillDef) => {
     setSelectedSkill(skill);
     setShowSkillForm(true);
@@ -167,6 +199,33 @@ export default function EntityScreen() {
     await db.runAsync('UPDATE matter SET active = 0 WHERE form = ?', row.id);
     await db.runAsync('DELETE FROM motion WHERE stream = ?', row.id);
     setShowMenu(false);
+  };
+
+  const loadAllPeople = async () => {
+    const people = await db.getAllAsync<FormRow>(
+      "SELECT * FROM form WHERE type = 'profile' AND active = 1 ORDER BY time DESC"
+    );
+    setAllPeople(people);
+    setShowPickMember(true);
+  };
+
+  const handleAddMember = async (personId: string) => {
+    if (!row) return;
+    await db.runAsync(
+      'INSERT OR REPLACE INTO graph (src, tgt, type, weight, active) VALUES (?, ?, ?, ?, 1)',
+      row.id, personId, 'has_member', 0
+    );
+    setShowPickMember(false);
+    loadMatter();
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!row) return;
+    await db.runAsync(
+      'UPDATE graph SET active = 0 WHERE src = ? AND tgt = ? AND type = ?',
+      row.id, memberId, 'has_member'
+    );
+    loadMatter();
   };
 
   const formatTime = (time: string) => {
@@ -220,17 +279,17 @@ export default function EntityScreen() {
   const isStore = row.type === 'store';
 
   return (
-    <Host style={[styles.container, { backgroundColor: theme.background }]}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.scrollView}
         contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: 100 }}
         keyboardShouldPersistTaps="handled">
 
         {/* Header */}
         <View style={styles.titleRow}>
-          <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
+          <View style={[styles.avatar, { backgroundColor: avatarColor, borderRadius: isPerson ? 20 : 8 }]}>
             <Text style={styles.avatarText}>{row.title.charAt(0).toUpperCase()}</Text>
           </View>
           <TextInput
@@ -246,7 +305,7 @@ export default function EntityScreen() {
           </Pressable>
         </View>
 
-        {/* Contact chips */}
+        {/* Contact chips — shown above tabs, same as store */}
         {(isPerson || isBusiness) && (
           <View style={styles.chipsRow}>
             {data.phone ? (
@@ -268,6 +327,116 @@ export default function EntityScreen() {
               </View>
             ) : null}
           </View>
+        )}
+
+        {/* People/Work Tabs — same pattern as store tabs */}
+        {(isPerson || isBusiness) && (
+          <>
+            <View style={styles.storeTabs}>
+              <Pressable
+                style={[styles.storeTab, detailTab === 'activity' && { borderBottomColor: '#5E6AD2' }]}
+                onPress={() => setDetailTab('activity')}>
+                <Text style={[styles.storeTabText, { color: detailTab === 'activity' ? '#5E6AD2' : theme.textSecondary }]}>
+                  Activity ({motions.length})
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.storeTab, detailTab === 'details' && { borderBottomColor: '#5E6AD2' }]}
+                onPress={() => setDetailTab('details')}>
+                <Text style={[styles.storeTabText, { color: detailTab === 'details' ? '#5E6AD2' : theme.textSecondary }]}>
+                  Details
+                </Text>
+              </Pressable>
+              {isBusiness && (
+                <Pressable
+                  style={[styles.storeTab, detailTab === 'members' && { borderBottomColor: '#5E6AD2' }]}
+                  onPress={() => setDetailTab('members')}>
+                  <Text style={[styles.storeTabText, { color: detailTab === 'members' ? '#5E6AD2' : theme.textSecondary }]}>
+                    Members ({members.length})
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+
+            {/* Activity Tab */}
+            {detailTab === 'activity' && (
+              <>
+                {motions.map((m, i) => {
+                  const md = parseData(m.data);
+                  return (
+                    <View key={i} style={styles.timelineRow}>
+                      <View style={[styles.timelineDot, { backgroundColor: theme.textSecondary }]} />
+                      <View style={styles.timelineContent}>
+                        <Text style={[styles.timelineTitle, { color: theme.text }]}>{motionLabel(m.action)}</Text>
+                        <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
+                          {formatTime(m.time)}
+                          {md.skill ? ` · ${md.skill}` : ''}
+                          {md.title ? ` · ${md.title}` : ''}
+                          {md.text ? ` · ${md.text}` : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Details Tab */}
+            {detailTab === 'details' && (
+              <>
+                {data.phone ? (
+                  <View style={styles.timelineRow}>
+                    <View style={[styles.timelineDot, { backgroundColor: '#5E6AD2' }]} />
+                    <View style={styles.timelineContent}>
+                      <Text style={[styles.timelineTitle, { color: theme.textSecondary }]}>Phone</Text>
+                      <Text style={[styles.timelineMeta, { color: theme.text }]}>{data.phone}</Text>
+                    </View>
+                  </View>
+                ) : null}
+                {data.email ? (
+                  <View style={styles.timelineRow}>
+                    <View style={[styles.timelineDot, { backgroundColor: '#5E6AD2' }]} />
+                    <View style={styles.timelineContent}>
+                      <Text style={[styles.timelineTitle, { color: theme.textSecondary }]}>Email</Text>
+                      <Text style={[styles.timelineMeta, { color: theme.text }]}>{data.email}</Text>
+                    </View>
+                  </View>
+                ) : null}
+                {data.role ? (
+                  <View style={styles.timelineRow}>
+                    <View style={[styles.timelineDot, { backgroundColor: '#5E6AD2' }]} />
+                    <View style={styles.timelineContent}>
+                      <Text style={[styles.timelineTitle, { color: theme.textSecondary }]}>Role</Text>
+                      <Text style={[styles.timelineMeta, { color: theme.text }]}>{data.role}</Text>
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            )}
+
+            {/* Members Tab — only for business/work */}
+            {isBusiness && detailTab === 'members' && (
+              <>
+                {members.map((m) => {
+                  const md = parseData(m.data);
+                  return (
+                    <Pressable
+                      key={m.id}
+                      style={({ pressed }) => [styles.timelineRow, pressed && { opacity: 0.7 }]}
+                      onPress={() => router.push({ pathname: '/entity', params: { id: m.id } })}>
+                      <View style={[styles.timelineDot, { backgroundColor: md.color || '#5E6AD2' }]} />
+                      <View style={styles.timelineContent}>
+                        <Text style={[styles.timelineTitle, { color: theme.text }]}>{m.title}</Text>
+                      </View>
+                      <Pressable onPress={() => handleRemoveMember(m.id)} style={{ padding: 4 }}>
+                        <Ionicons name="close" size={18} color={theme.textSecondary} />
+                      </Pressable>
+                    </Pressable>
+                  );
+                })}
+              </>
+            )}
+          </>
         )}
 
         {/* Store info */}
@@ -303,113 +472,63 @@ export default function EntityScreen() {
             {/* Items Tab */}
             {storeTab === 'items' && (
               <>
-                <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Items</Text>
-                  <Pressable
-                    style={styles.addButton}
-                    onPress={() => router.push({ pathname: '/add-item', params: { storeId: row.id } })}>
-                    <Ionicons name="add-circle-outline" size={20} color="#5E6AD2" />
-                    <Text style={[styles.addButtonText, { color: '#5E6AD2' }]}>Add</Text>
-                  </Pressable>
-                </View>
-                {storeItems.length > 0 ? (
-                  storeItems.map((item) => {
-                    const id = parseData(item.data);
-                    return (
-                      <Pressable
-                        key={item.id}
-                        style={({ pressed }) => [styles.timelineRow, pressed && { opacity: 0.7 }]}
-                        onPress={() => router.push({ pathname: '/entity', params: { id: item.id } })}>
-                        <View style={[styles.timelineDot, { backgroundColor: '#10B981' }]} />
-                        <View style={styles.timelineContent}>
-                          <Text style={[styles.timelineTitle, { color: theme.text }]}>
-                            {item.product_name}
-                          </Text>
-                          <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
-                            {id.variant || id.size || ''}{' '}
-                            {item.qty !== null ? `· ${item.qty} nos` : ''}
-                            {item.value ? ` · ₹${item.value}` : ''}
-                            {id.location ? ` · ${id.location}` : ''}
-                          </Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
-                      </Pressable>
-                    );
-                  })
-                ) : (
-                  <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                    No items yet. Tap + to add products.
-                  </Text>
-                )}
+                {storeItems.map((item) => {
+                  const id = parseData(item.data);
+                  return (
+                    <Pressable
+                      key={item.id}
+                      style={({ pressed }) => [styles.timelineRow, pressed && { opacity: 0.7 }]}
+                      onPress={() => router.push({ pathname: '/entity', params: { id: item.id } })}>
+                      <View style={[styles.timelineDot, { backgroundColor: '#10B981' }]} />
+                      <View style={styles.timelineContent}>
+                        <Text style={[styles.timelineTitle, { color: theme.text }]}>
+                          {item.product_name}
+                        </Text>
+                        <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
+                          {id.variant || id.size || ''}{' '}
+                          {item.qty !== null ? `· ${item.qty} nos` : ''}
+                          {item.value ? ` · ₹${item.value}` : ''}
+                          {id.location ? ` · ${id.location}` : ''}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                    </Pressable>
+                  );
+                })}
               </>
             )}
 
             {/* Transactions Tab */}
             {storeTab === 'transactions' && (
               <>
-                <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Transactions</Text>
-                {storeTransactions.length > 0 ? (
-                  storeTransactions.map((txn) => {
-                    const td = parseData(txn.data);
-                    return (
-                      <View key={txn.stream + '_' + txn.seq} style={styles.timelineRow}>
-                        <View style={[styles.timelineDot, { backgroundColor: txn.delta && txn.delta < 0 ? '#FF3B30' : '#10B981' }]} />
-                        <View style={styles.timelineContent}>
-                          <Text style={[styles.timelineTitle, { color: theme.text }]}>
-                            {txn.product_name}
-                          </Text>
-                          <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
-                            {motionLabel(txn.action)}
-                            {txn.delta ? ` ${txn.delta > 0 ? '+' : ''}${txn.delta} nos` : ''}
-                            {txn.delta && txn.value ? ` · ₹${Math.abs(txn.delta * (txn.value || 0))}` : ''}
-                            {formatTime(txn.time)}
-                          </Text>
-                        </View>
+                {storeTransactions.map((txn) => {
+                  const td = parseData(txn.data);
+                  return (
+                    <View key={txn.stream + '_' + txn.seq} style={styles.timelineRow}>
+                      <View style={[styles.timelineDot, { backgroundColor: txn.delta && txn.delta < 0 ? '#FF3B30' : '#10B981' }]} />
+                      <View style={styles.timelineContent}>
+                        <Text style={[styles.timelineTitle, { color: theme.text }]}>
+                          {txn.product_name}
+                        </Text>
+                        <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
+                          {motionLabel(txn.action)}
+                          {txn.delta ? ` ${txn.delta > 0 ? '+' : ''}${txn.delta} nos` : ''}
+                          {txn.delta && txn.value ? ` · ₹${Math.abs(txn.delta * (txn.value || 0))}` : ''}
+                          {formatTime(txn.time)}
+                        </Text>
                       </View>
-                    );
-                  })
-                ) : (
-                  <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                    No transactions yet.
-                  </Text>
-                )}
+                    </View>
+                  );
+                })}
               </>
             )}
           </>
         )}
 
-        {/* Timeline - only for non-store entities */}
-        {!isStore && (
-          <>
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Timeline</Text>
+      </KeyboardAwareScrollView>
 
-            {motions.length > 0 ? motions.map((m, i) => {
-              const md = parseData(m.data);
-              return (
-                <View key={i} style={styles.timelineRow}>
-                  <View style={[styles.timelineDot, { backgroundColor: theme.textSecondary }]} />
-                  <View style={styles.timelineContent}>
-                    <Text style={[styles.timelineTitle, { color: theme.text }]}>{motionLabel(m.action)}</Text>
-                    <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
-                      {formatTime(m.time)}
-                      {md.skill ? ` · ${md.skill}` : ''}
-                      {md.title ? ` · ${md.title}` : ''}
-                      {md.text ? ` · ${md.text}` : ''}
-                    </Text>
-                  </View>
-                </View>
-              );
-            }) : (
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No activity yet</Text>
-            )}
-          </>
-        )}
-
-      </ScrollView>
-
-      {/* Bottom bar — sticks to the keyboard top when open, sits above the
-          safe area when closed. KeyboardStickyView tracks the keyboard natively. */}
-      <KeyboardStickyView offset={{ closed: insets.bottom, opened: 0 }}>
+      {/* Bottom bar — sticks to keyboard top when open */}
+      <KeyboardStickyView offset={{ closed: 0, opened: 0 }} style={{ paddingBottom: insets.bottom }}>
         {/* Skill results dropdown */}
         {skillResults.length > 0 && (
           <View style={[styles.skillResults, { backgroundColor: theme.background, borderTopColor: 'rgba(0,0,0,0.1)' }]}>
@@ -446,6 +565,18 @@ export default function EntityScreen() {
           </View>
         )}
 
+        {/* Add Member Chip */}
+        {isBusiness && detailTab === 'members' && (
+          <View style={styles.chipBar}>
+            <Pressable
+              style={({ pressed }) => [styles.chipBtn, pressed && { opacity: 0.7 }]}
+              onPress={loadAllPeople}>
+              <Ionicons name="add" size={16} color="#5E6AD2" />
+              <Text style={styles.chipBtnText}>member</Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* Search input bar */}
         <View style={[styles.inputBarFixed, { backgroundColor: theme.background }]}>
           <View style={[styles.inputBarInner, { backgroundColor: theme.backgroundElement }]}>
@@ -472,8 +603,59 @@ export default function EntityScreen() {
             onCancel={() => { setShowSkillForm(false); setSelectedSkill(null); }}
           />
         )}
-      </BottomSheet>
-    </Host>
+      </Modal>
+
+      {/* Menu Bottom Sheet */}
+      <Modal visible={showMenu} transparent animationType="slide">
+        <Pressable style={styles.modalOverlay} onPress={() => setShowMenu(false)}>
+          <Pressable style={[styles.bottomSheet, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.dragHandle, { backgroundColor: theme.textSecondary }]} />
+            <View style={styles.menuOptions}>
+              <Pressable style={styles.menuOption} onPress={() => { setShowMenu(false); }}>
+                <Ionicons name="copy-outline" size={20} color={theme.text} />
+                <Text style={[styles.menuOptionText, { color: theme.text }]}>Duplicate</Text>
+              </Pressable>
+              <View style={[styles.menuSeparator, { backgroundColor: theme.backgroundElement }]} />
+              <Pressable style={styles.menuOption} onPress={handleDelete}>
+                <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+                <Text style={[styles.menuOptionText, { color: '#FF3B30' }]}>Delete</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Pick Member Full Screen */}
+      <Modal visible={showPickMember} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
+          <View style={[styles.pickHeader, { paddingTop: insets.top + 8 }]}>
+            <Text style={[styles.pickTitle, { color: theme.text }]}>Add Member</Text>
+          </View>
+          <FlatList
+            data={allPeople.filter(p => !new Set(members.map(m => m.id)).has(p.id))}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+            renderItem={({ item }) => {
+              const pd = parseData(item.data);
+              return (
+                <Pressable
+                  style={({ pressed }) => [styles.pickRow, pressed && { opacity: 0.7 }]}
+                  onPress={() => handleAddMember(item.id)}>
+                  <View style={[styles.pickAvatar, { backgroundColor: pd.color || '#5E6AD2' }]}>
+                    <Text style={styles.pickAvatarText}>{item.title.charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <Text style={[styles.pickName, { color: theme.text }]}>{item.title}</Text>
+                  <Ionicons name="add-circle-outline" size={20} color="#5E6AD2" />
+                </Pressable>
+              );
+            }}
+            ListEmptyComponent={
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>All people are already members</Text>
+            }
+          />
+        </View>
+      </Modal>
+    </View>
   );
 }
 
@@ -489,9 +671,6 @@ const styles = StyleSheet.create({
   chip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, gap: 6 },
   chipText: { fontSize: 13, fontWeight: '500' },
   sectionTitle: { fontSize: 13, fontWeight: '500', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
-  addButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  addButtonText: { fontSize: 14, fontWeight: '500' },
   storeTabs: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 16, gap: 24, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.1)' },
   storeTab: { paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   storeTabText: { fontSize: 14, fontWeight: '500' },
@@ -519,9 +698,16 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   bottomSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '50%' },
   dragHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 8, opacity: 0.3 },
+  sheetTitle: { fontSize: 16, fontWeight: '600', paddingHorizontal: 20, paddingBottom: 12 },
   // Menu
   menuOptions: { paddingHorizontal: 20, paddingVertical: 16 },
   menuOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
   menuOptionText: { fontSize: 16, fontWeight: '500' },
   menuSeparator: { height: 1, marginVertical: 8 },
+  pickHeader: { paddingHorizontal: 16, paddingBottom: 8 },
+  pickTitle: { fontSize: 28, fontWeight: '700' },
+  pickRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 12 },
+  pickAvatar: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  pickAvatarText: { color: '#ffffff', fontSize: 13, fontWeight: '600' },
+  pickName: { flex: 1, fontSize: 15, fontWeight: '400' },
 });

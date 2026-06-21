@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, FlatList, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator, Keyboard } from 'react-native';
+import { StyleSheet, FlatList, Pressable, View, TextInput, Text, ActivityIndicator, Keyboard } from 'react-native';
+import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -305,7 +306,8 @@ export default function AddItemScreen() {
 
       {/* Step: Select Variants & Set Stock */}
       {step === 'variants' && selectedProduct && (
-        <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
+        <>
+        <KeyboardAwareScrollView style={styles.content} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
           <View style={[styles.selectedProduct, { backgroundColor: theme.backgroundElement }]}>
             <Ionicons name="cube-outline" size={20} color="#5E6AD2" />
             <Text style={[styles.selectedProductName, { color: theme.text }]}>{selectedProduct.title}</Text>
@@ -379,7 +381,9 @@ export default function AddItemScreen() {
             <Ionicons name="add" size={18} color={theme.textSecondary} />
             <Text style={[styles.addVariantBtnText, { color: theme.textSecondary }]}>Add Variant</Text>
           </Pressable>
-        </ScrollView>
+        </KeyboardAwareScrollView>
+        <KeyboardToolbar />
+        </>
       )}
     </View>
   );

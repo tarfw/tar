@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
+import { StyleSheet, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
+import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -134,7 +135,7 @@ export default function ProductScreen() {
         </Pressable>
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
+      <KeyboardAwareScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
         {/* Name */}
         <View style={styles.section}>
           <TextInput
@@ -239,7 +240,8 @@ export default function ProductScreen() {
             ))}
           </>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
+      <KeyboardToolbar />
     </View>
   );
 }

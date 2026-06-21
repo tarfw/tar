@@ -3,12 +3,16 @@ import { StyleSheet, ScrollView, Pressable, View, Text, ActivityIndicator } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useMotion, type ActionGroup, type ActionItem } from '@/hooks/use-motion';
 import { getCurrentUser, type UserProfile } from '@/lib/auth';
 
 type Urgency = 'Now' | 'Next' | 'Later' | 'Done';
+
+// Notion-style girl avatar (bundled DiceBear "Notionists" illustration) — used when user has no photo
+const NOTION_AVATAR = require('../../assets/images/profile-avatar.jpg');
 
 function StatusDot({ status, color, size = 8 }: { status: 'todo' | 'in_progress' | 'done'; color: string; size?: number }) {
   if (status === 'todo') {
@@ -149,24 +153,20 @@ export default function ActionsScreen() {
         </ScrollView>
       )}
 
-      <View style={[styles.actionBar, { paddingBottom: insets.bottom + 12, backgroundColor: theme.background, borderColor: theme.backgroundElement }]}>
+      <View style={[styles.actionBar, { paddingBottom: insets.bottom, backgroundColor: theme.background, borderColor: theme.backgroundElement }]}>
         <View style={styles.actionBarRow}>
           <Pressable style={styles.profileButton} onPress={() => router.push('/personal')}>
-            <Image source={{ uri: user?.photo || '' }} style={styles.profileImage} contentFit="cover" />
+            <Image source={NOTION_AVATAR} style={styles.profileImage} contentFit="cover" />
           </Pressable>
-          <View style={styles.chipRow}>
-            <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/skills')}>
-              <Text style={[styles.chipText, { color: theme.text }]}>Skills</Text>
-            </Pressable>
-            <Pressable style={[styles.chip, { backgroundColor: '#5E6AD220' }]} onPress={() => router.push('/chat')}>
-              <Text style={[styles.chipText, { color: '#5E6AD2' }]}>tarai</Text>
-            </Pressable>
-          </View>
-          <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse')}>
-            <Text style={[styles.chipText, { color: theme.text }]}>Browse</Text>
+          <Pressable style={styles.taraiCircleWrap} onPress={() => router.push('/chat')}>
+            <View style={styles.taraiCircle} />
+          </Pressable>
+          <Pressable style={[styles.iconBtn, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse')}>
+            <Ionicons name="search" size={20} color={theme.text} />
           </Pressable>
         </View>
       </View>
+
     </View>
   );
 }
@@ -196,11 +196,11 @@ const styles = StyleSheet.create({
   subtaskRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 6, paddingLeft: 84, gap: 8 },
   subtaskTitle: { fontSize: 13, fontWeight: '400', flex: 1 },
   dot: { borderWidth: 1.5 },
-  actionBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
-  actionBarRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  profileButton: { padding: 2 },
-  profileImage: { width: 38, height: 38, borderRadius: 19 },
-  chipRow: { flexDirection: 'row', gap: 8, flex: 1 },
-  chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24 },
-  chipText: { fontSize: 15, fontWeight: '600' },
+  actionBar: { borderTopWidth: StyleSheet.hairlineWidth },
+  actionBarRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 8 },
+  profileButton: {},
+  profileImage: { width: 44, height: 44, borderRadius: 10 },
+  taraiCircleWrap: { padding: 4 },
+  taraiCircle: { width: 44, height: 44, borderRadius: 22, experimental_backgroundImage: 'linear-gradient(135deg, #5E6AD2, #8B5CF6, #22D3EE)' },
+  iconBtn: { width: 44, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
 });

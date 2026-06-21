@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   StyleSheet,
-  ScrollView,
   Pressable,
   View,
   Text,
@@ -10,6 +9,7 @@ import {
   Keyboard,
   Alert,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -224,7 +224,7 @@ export default function SkillsScreen() {
           <ActivityIndicator color={theme.textSecondary} />
         </View>
       ) : (
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.scroll}
           contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
           keyboardShouldPersistTaps="handled">
@@ -282,7 +282,7 @@ export default function SkillsScreen() {
               </Text>
             </View>
           )}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       )}
     </View>
   );

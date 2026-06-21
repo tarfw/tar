@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 import { ThemeProvider, useThemeMode } from '@/hooks/use-theme-context';
 import { DbProvider } from '@/db/provider';
@@ -75,12 +76,14 @@ function RootLayoutInner() {
 
 export default function RootLayout() {
   return (
-    <DbProvider>
-      <ThemeProvider>
-        <EmbeddingsProvider>
-          <RootLayoutInner />
-        </EmbeddingsProvider>
-      </ThemeProvider>
-    </DbProvider>
+    <KeyboardProvider>
+      <DbProvider>
+        <ThemeProvider>
+          <EmbeddingsProvider>
+            <RootLayoutInner />
+          </EmbeddingsProvider>
+        </ThemeProvider>
+      </DbProvider>
+    </KeyboardProvider>
   );
 }

@@ -96,7 +96,6 @@ export default function BrowseScreen() {
                   <View style={styles.listItemContent}>
                     <Text style={[styles.listItemTitle, { color: theme.text }]}>{p.title}</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
                 </Pressable>
               );
             })}
@@ -109,14 +108,13 @@ export default function BrowseScreen() {
             {work.map((w) => {
               const d = parseData(w.data);
               return (
-                <Pressable key={w.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/workspace', params: { id: w.id } })}>
+                <Pressable key={w.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/entity', params: { id: w.id } })}>
                   <View style={[styles.workIcon, { backgroundColor: d.color || '#5E6AD2' }]}>
                     <Text style={styles.workIconText}>{w.title.charAt(0).toUpperCase()}</Text>
                   </View>
                   <View style={styles.listItemContent}>
                     <Text style={[styles.listItemTitle, { color: theme.text }]}>{w.title}</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
                 </Pressable>
               );
             })}
@@ -135,11 +133,7 @@ export default function BrowseScreen() {
                   </View>
                   <View style={styles.listItemContent}>
                     <Text style={[styles.listItemTitle, { color: theme.text }]}>{s.title}</Text>
-                    {d.subdomain ? (
-                      <Text style={[styles.listItemMeta, { color: theme.textSecondary }]}>{d.subdomain}.tarai.space</Text>
-                    ) : null}
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
                 </Pressable>
               );
             })}

@@ -123,6 +123,13 @@ export default function SettingsScreen() {
 
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>GENERAL</Text>
       <View style={[styles.section, { backgroundColor: theme.backgroundElement }]}>
+        <Pressable
+          style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+          onPress={() => router.push('/skills')}>
+          <Text style={[styles.rowLabel, { color: theme.text }]}>Skills</Text>
+          <Text style={[styles.chevron, { color: theme.textSecondary }]}>{'>'}</Text>
+        </Pressable>
+        <View style={[styles.separator, { backgroundColor: theme.background }]} />
         <View style={styles.row}>
           <Text style={[styles.rowLabel, { color: theme.text }]}>Language</Text>
           <View style={styles.rowRight}>

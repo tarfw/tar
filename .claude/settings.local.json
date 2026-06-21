@@ -80,7 +80,9 @@
       "Bash(npm ls *)",
       "Bash(echo \"=== EXIT: $? ===\")",
       "Bash(npm uninstall *)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(echo \"exit=$?\")",
+      "Bash(node *)"
     ]
   }
 }

@@ -12,7 +12,7 @@ function parseData(data: string): Record<string, any> {
   try { return JSON.parse(data); } catch { return {}; }
 }
 
-type Step = 'search' | 'create' | 'variants';
+type Step = 'search' | 'variants';
 
 export default function AddItemScreen() {
   const insets = useSafeAreaInsets();
@@ -90,23 +90,8 @@ export default function AddItemScreen() {
     setStep('variants');
   };
 
-  const handleCreateLocalProduct = async () => {
-    if (!newName.trim()) return;
-    const id = `prod_${Date.now()}`;
-    const now = new Date().toISOString();
-    const data = {
-      category: newCategory.trim(),
-      description: newDescription.trim(),
-      local: true,
-    };
-    await db.runAsync(
-      'INSERT INTO form (id, type, title, scope, data, time, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
-      id, 'product', newName.trim(), 'p', JSON.stringify(data), now
-    );
-    const product = await db.getFirstAsync<any>('SELECT * FROM form WHERE id = ?', id);
-    setSelectedProduct(product);
-    setVariants([]);
-    setStep('variants');
+  const handleCreateLocalProduct = () => {
+    router.push({ pathname: '/product', params: { mode: 'create', storeId: params.storeId } });
   };
 
   const handleAddVariant = () => {
@@ -285,7 +270,7 @@ export default function AddItemScreen() {
             renderItem={({ item }) => (
               <Pressable
                 style={({ pressed }) => [styles.productRow, pressed && { opacity: 0.7 }]}
-                onPress={() => handleSelectGlobalProduct(item)}>
+                onPress={() => router.push({ pathname: '/product', params: { id: item.id, mode: 'edit', storeId: params.storeId } })}>
                 <View style={[styles.productThumb, { backgroundColor: '#5E6AD220' }]}>
                   <Text style={[styles.productThumbText, { color: '#5E6AD2' }]}>{item.title.charAt(0).toUpperCase()}</Text>
                 </View>
@@ -299,11 +284,11 @@ export default function AddItemScreen() {
           />
 
           {/* Bottom Bar */}
-          <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement, paddingBottom: insets.bottom + 12 }]}>
+          <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement, paddingBottom: insets.bottom + 8 }]}>
             <View style={styles.bottomBarRow}>
               <Pressable
                 style={({ pressed }) => [styles.chip, { backgroundColor: theme.backgroundElement }, pressed && { opacity: 0.7 }]}
-                onPress={() => setStep('create')}>
+                onPress={() => router.push({ pathname: '/product', params: { mode: 'create', storeId: params.storeId } })}>
                 <Ionicons name="add" size={16} color={theme.text} />
                 <Text style={[styles.chipText, { color: theme.text }]}>product</Text>
               </Pressable>
@@ -316,123 +301,6 @@ export default function AddItemScreen() {
             </View>
           </View>
         </View>
-      )}
-
-      {/* Step: Create Local Product (Full Screen) */}
-      {step === 'create' && (
-        <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
-          {/* Product Name */}
-          <View style={styles.fieldGroup}>
-            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Product Name *</Text>
-            <TextInput
-              style={[styles.nameInput, { color: theme.text }]}
-              value={newName}
-              onChangeText={setNewName}
-              placeholder="e.g. Chocolate Smoothie"
-              placeholderTextColor={theme.textSecondary}
-              autoFocus
-            />
-          </View>
-
-          {/* AI Generate Button */}
-          <View style={styles.fieldGroup}>
-            <Pressable
-              style={({ pressed }) => [styles.aiBtn, { backgroundColor: '#5E6AD210' }, pressed && { opacity: 0.7 }]}
-              onPress={handleAiGenerate}
-              disabled={aiLoading || !newName.trim()}>
-              {aiLoading ? (
-                <ActivityIndicator size="small" color="#5E6AD2" />
-              ) : (
-                <Ionicons name="sparkles" size={20} color="#5E6AD2" />
-              )}
-              <View style={styles.aiBtnInfo}>
-                <Text style={[styles.aiBtnTitle, { color: '#5E6AD2' }]}>
-                  {aiLoading ? 'Generating...' : 'AI Generate'}
-                </Text>
-                <Text style={[styles.aiBtnDesc, { color: theme.textSecondary }]}>
-                  Auto-fill category, description, options
-                </Text>
-              </View>
-              {!aiLoading && <Ionicons name="chevron-forward" size={18} color="#5E6AD2" />}
-            </Pressable>
-            {aiError && (
-              <Text style={[styles.aiError, { color: '#FF3B30' }]}>{aiError}</Text>
-            )}
-          </View>
-
-          <View style={[styles.divider, { backgroundColor: theme.backgroundElement, marginVertical: 16 }]} />
-
-          {/* Classification */}
-          <View style={styles.fieldGroup}>
-            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Category</Text>
-            <TextInput
-              style={[styles.nameInput, { color: theme.text }]}
-              value={newCategory}
-              onChangeText={setNewCategory}
-              placeholder="e.g. Beverages"
-              placeholderTextColor={theme.textSecondary}
-            />
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Tags</Text>
-            <TextInput
-              style={[styles.nameInput, { color: theme.text }]}
-              value={newTags}
-              onChangeText={setNewTags}
-              placeholder="e.g. cold, sweet, chocolate"
-              placeholderTextColor={theme.textSecondary}
-            />
-          </View>
-
-          {/* Description */}
-          <View style={styles.fieldGroup}>
-            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Description</Text>
-            <TextInput
-              style={[styles.nameInput, { color: theme.text, height: 80, textAlignVertical: 'top' }]}
-              value={newDescription}
-              onChangeText={setNewDescription}
-              placeholder="Product description..."
-              placeholderTextColor={theme.textSecondary}
-              multiline
-            />
-          </View>
-
-          {/* Options (Variants) */}
-          <View style={styles.fieldGroup}>
-            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Options (Variants)</Text>
-            <Text style={[styles.fieldHint, { color: theme.textSecondary }]}>Comma separated: Small, Medium, Large</Text>
-            <TextInput
-              style={[styles.nameInput, { color: theme.text }]}
-              value={newOptions}
-              onChangeText={setNewOptions}
-              placeholder="e.g. 250ml, 500ml, 1L"
-              placeholderTextColor={theme.textSecondary}
-            />
-          </View>
-
-          {/* Modifiers (Add-ons) */}
-          <View style={styles.fieldGroup}>
-            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Modifiers (Add-ons)</Text>
-            <Text style={[styles.fieldHint, { color: theme.textSecondary }]}>Comma separated: Extra shot, Whipped cream</Text>
-            <TextInput
-              style={[styles.nameInput, { color: theme.text }]}
-              value={newModifiers}
-              onChangeText={setNewModifiers}
-              placeholder="e.g. Extra shot, Whipped cream"
-              placeholderTextColor={theme.textSecondary}
-            />
-          </View>
-
-          <Pressable
-            style={({ pressed }) => [styles.continueBtn, pressed && { opacity: 0.7 }]}
-            onPress={handleCreateLocalProduct}
-            disabled={!newName.trim()}>
-            <Text style={[styles.continueBtnText, { color: newName.trim() ? '#fff' : theme.textSecondary }]}>
-              Continue
-            </Text>
-          </Pressable>
-        </ScrollView>
       )}
 
       {/* Step: Select Variants & Set Stock */}
@@ -520,45 +388,35 @@ export default function AddItemScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  backBtn: { paddingVertical: 8 },
-  headerTitle: { fontSize: 16, fontWeight: '600' },
-  saveBtn: { paddingVertical: 8, minWidth: 50, alignItems: 'flex-end' },
-  content: { flex: 1 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 12, height: 44, borderRadius: 10, gap: 8 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   headerTitle: { fontSize: 16, fontWeight: '600' },
   saveBtn: { paddingVertical: 8, minWidth: 50, alignItems: 'flex-end' },
   backBtn: { padding: 4 },
+  content: { flex: 1 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 12, height: 44, borderRadius: 10, gap: 8 },
   searchInput: { flex: 1, fontSize: 16, paddingVertical: 0 },
   scrollView: { flex: 1 },
   centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
   sectionTitle: { fontSize: 13, fontWeight: '500', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
   productRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
-  divider: { height: StyleSheet.hairlineWidth, marginLeft: 68 },
   productThumb: { width: 40, height: 40, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   productThumbText: { fontSize: 16, fontWeight: '600' },
   productInfo: { flex: 1 },
   productName: { fontSize: 15, fontWeight: '500' },
   productId: { fontSize: 12, marginTop: 2 },
+  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16, marginVertical: 4 },
   emptyText: { fontSize: 14, textAlign: 'center', paddingVertical: 20 },
   bottomBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
   bottomBarRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   chip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24, gap: 6 },
   chipText: { fontSize: 15, fontWeight: '600' },
   searchIconBtn: { padding: 10 },
-  createBtnText: { fontSize: 15, fontWeight: '600' },
-  fieldGroup: { paddingHorizontal: 16, paddingTop: 16 },
-  fieldLabel: { fontSize: 13, fontWeight: '500', marginBottom: 8 },
-  fieldHint: { fontSize: 12, marginTop: -4, marginBottom: 8 },
-  nameInput: { fontSize: 18, fontWeight: '500', paddingVertical: 8 },
-  aiBtn: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, paddingHorizontal: 14, paddingVertical: 14, borderRadius: 12, gap: 12 },
-  aiBtnInfo: { flex: 1 },
-  aiBtnTitle: { fontSize: 15, fontWeight: '600' },
-  aiBtnDesc: { fontSize: 12, marginTop: 2 },
-  aiError: { fontSize: 12, marginTop: 8 },
-  chipsInput: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chipTag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderStyle: 'dashed', gap: 4 },
-  chipTagText: { fontSize: 13, fontWeight: '500' },
+  fieldGroup: { paddingHorizontal: 16, paddingTop: 12 },
+  nameInput: { fontSize: 24, fontWeight: '600', paddingVertical: 4 },
+  fieldInput: { fontSize: 16, paddingVertical: 8 },
+  aiGenerateText: { fontSize: 15, fontWeight: '500' },
+  aiLoading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aiLoadingText: { fontSize: 14 },
+  aiError: { fontSize: 12, marginTop: 4 },
   continueBtn: { marginHorizontal: 16, marginTop: 32, backgroundColor: '#5E6AD2', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   continueBtnText: { fontSize: 16, fontWeight: '600' },
   selectedProduct: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 12, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, gap: 10 },

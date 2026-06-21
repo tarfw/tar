@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator, Modal } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
+import { Host, BottomSheet } from '@expo/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -202,7 +203,7 @@ export default function PersonalScreen() {
     : user.email.charAt(0).toUpperCase();
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <Host style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 80 }}>
@@ -352,40 +353,30 @@ export default function PersonalScreen() {
       </ScrollView>
 
       {/* Type Picker Bottom Sheet */}
-      <Modal visible={showTypePicker} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowTypePicker(false)}>
-          <Pressable style={[styles.bottomSheet, { backgroundColor: theme.background, paddingBottom: insets.bottom + 8 }]} onPress={(e) => e.stopPropagation()}>
-            <View style={[styles.dragHandle, { backgroundColor: theme.textSecondary }]} />
-            <Text style={[styles.sheetTitle, { color: theme.text, paddingHorizontal: 20, paddingBottom: 12 }]}>Subtask Type</Text>
-            <View style={styles.sheetOptions}>
-              {SUBTASK_TYPES.map((t) => (
-                <Pressable
-                  key={t.key}
-                  style={[styles.sheetOption, { backgroundColor: newSubtaskType === t.key ? t.color : theme.backgroundElement }]}
-                  onPress={() => { setNewSubtaskType(t.key); setShowTypePicker(false); }}>
-                  <Text style={[styles.sheetOptionText, { color: newSubtaskType === t.key ? '#fff' : theme.text }]}>{t.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <BottomSheet isPresented={showTypePicker} onDismiss={() => setShowTypePicker(false)}>
+        <Text style={[styles.sheetTitle, { color: theme.text, paddingHorizontal: 20, paddingBottom: 12 }]}>Subtask Type</Text>
+        <View style={styles.sheetOptions}>
+          {SUBTASK_TYPES.map((t) => (
+            <Pressable
+              key={t.key}
+              style={[styles.sheetOption, { backgroundColor: newSubtaskType === t.key ? t.color : theme.backgroundElement }]}
+              onPress={() => { setNewSubtaskType(t.key); setShowTypePicker(false); }}>
+              <Text style={[styles.sheetOptionText, { color: newSubtaskType === t.key ? '#fff' : theme.text }]}>{t.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </BottomSheet>
 
       {/* Menu Bottom Sheet */}
-      <Modal visible={showMenu} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowMenu(false)}>
-          <Pressable style={[styles.bottomSheet, { backgroundColor: theme.background, paddingBottom: insets.bottom + 8 }]} onPress={(e) => e.stopPropagation()}>
-            <View style={[styles.dragHandle, { backgroundColor: theme.textSecondary }]} />
-            <View style={styles.menuOptions}>
-              <Pressable style={styles.menuOption} onPress={() => { setShowMenu(false); router.push('/settings'); }}>
-                <Ionicons name="settings-outline" size={20} color={theme.text} />
-                <Text style={[styles.menuOptionText, { color: theme.text }]}>Settings</Text>
-              </Pressable>
-            </View>
+      <BottomSheet isPresented={showMenu} onDismiss={() => setShowMenu(false)}>
+        <View style={styles.menuOptions}>
+          <Pressable style={styles.menuOption} onPress={() => { setShowMenu(false); router.push('/settings'); }}>
+            <Ionicons name="settings-outline" size={20} color={theme.text} />
+            <Text style={[styles.menuOptionText, { color: theme.text }]}>Settings</Text>
           </Pressable>
-        </Pressable>
-      </Modal>
-    </View>
+        </View>
+      </BottomSheet>
+    </Host>
   );
 }
 

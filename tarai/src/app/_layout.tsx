@@ -49,24 +49,25 @@ function RootLayoutInner() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
         <Stack
           screenOptions={{
-            headerStyle: { backgroundColor: colors.background },
-            headerTintColor: colors.text,
-            headerShadowVisible: false,
+            headerShown: false,
+            animation: 'fade',
+            animationDuration: 0,
             contentStyle: { backgroundColor: colors.background },
           }}>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="auth" options={{ headerShown: false, animation: 'fade' }} />
-        <Stack.Screen name="actions" options={{ headerShown: false }} />
-        <Stack.Screen name="(nav)" options={{ headerShown: false }} />
-        <Stack.Screen name="settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="workspace" options={{ headerShown: false, animation: 'fade' }} />
-        <Stack.Screen name="add" options={{ headerShown: false, animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="add-item" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="browse" options={{ headerShown: false, animation: 'fade', animationDuration: 150 }} />
-        <Stack.Screen name="skills" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="entity" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="personal" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="products" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="index" />
+        <Stack.Screen name="auth" />
+        <Stack.Screen name="actions" />
+        <Stack.Screen name="(nav)" />
+        <Stack.Screen name="settings" />
+        <Stack.Screen name="workspace" />
+        <Stack.Screen name="add" />
+        <Stack.Screen name="add-item" />
+        <Stack.Screen name="browse" />
+        <Stack.Screen name="chat" />
+        <Stack.Screen name="skills" />
+        <Stack.Screen name="entity" />
+        <Stack.Screen name="product" />
+        <Stack.Screen name="personal" />
       </Stack>
     </View>
   );

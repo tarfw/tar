@@ -68,7 +68,13 @@
       "WebFetch(domain:swmansion.com)",
       "Bash(python3 -c ' *)",
       "Bash(grep -aoE \"vector32\\\\\\([^\\)]{0,40}|[A-Za-z0-9_ '.]{0,30}vector[A-Za-z0-9_ '.]{0,40}\" libs/android/arm64-v8a/libturso_sync_sdk_kit.so)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "mcp__expo__add_library",
+      "Bash(npx expo *)",
+      "WebFetch(domain:kirillzyusko.github.io)",
+      "Bash(npx expo-doctor *)",
+      "Bash(npx eas *)",
+      "Bash(grep -vE \"eas-cli|upgrade|npm install|^$|^To \")"
     ]
   }
 }

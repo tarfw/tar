@@ -158,6 +158,9 @@ export default function ActionsScreen() {
             <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/skills')}>
               <Text style={[styles.chipText, { color: theme.text }]}>Skills</Text>
             </Pressable>
+            <Pressable style={[styles.chip, { backgroundColor: '#5E6AD220' }]} onPress={() => router.push('/chat')}>
+              <Text style={[styles.chipText, { color: '#5E6AD2' }]}>tarai</Text>
+            </Pressable>
           </View>
           <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse')}>
             <Text style={[styles.chipText, { color: theme.text }]}>Browse</Text>

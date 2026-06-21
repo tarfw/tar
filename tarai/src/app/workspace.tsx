@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator, Modal } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
+import { Host, BottomSheet } from '@expo/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -117,7 +118,7 @@ export default function WorkspaceScreen() {
   const tabs: Tab[] = ['Lists', 'Tasks', 'Members'];
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <Host style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -204,34 +205,29 @@ export default function WorkspaceScreen() {
 
       </ScrollView>
 
-      {/* Pick Member Modal */}
-      <Modal visible={showPickMember} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowPickMember(false)}>
-          <Pressable style={[styles.bottomSheet, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()}>
-            <View style={[styles.dragHandle, { backgroundColor: theme.textSecondary }]} />
-            <Text style={[styles.sheetTitle, { color: theme.text, paddingHorizontal: 20, paddingBottom: 12 }]}>Add Member</Text>
-            <ScrollView style={styles.sheetScroll} contentContainerStyle={{ paddingBottom: 20 }}>
-              {allPeople.filter(p => !memberIds.has(p.id)).length === 0 ? (
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>All people are already members</Text>
-              ) : (
-                allPeople.filter(p => !memberIds.has(p.id)).map((p) => {
-                  const pd = parseData(p.data);
-                  return (
-                    <Pressable key={p.id} style={({ pressed }) => [styles.pickRow, pressed && { opacity: 0.6 }]} onPress={() => handleAddMember(p.id)}>
-                      <View style={[styles.pickAvatar, { backgroundColor: pd.color || '#5E6AD2' }]}>
-                        <Text style={styles.pickAvatarText}>{p.title.charAt(0).toUpperCase()}</Text>
-                      </View>
-                      <Text style={[styles.pickName, { color: theme.text }]}>{p.title}</Text>
-                      <Ionicons name="add-circle-outline" size={22} color="#5E6AD2" />
-                    </Pressable>
-                  );
-                })
-              )}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </View>
+      {/* Pick Member Bottom Sheet */}
+      <BottomSheet isPresented={showPickMember} onDismiss={() => setShowPickMember(false)}>
+        <Text style={[styles.sheetTitle, { color: theme.text, paddingHorizontal: 20, paddingBottom: 12 }]}>Add Member</Text>
+        <ScrollView style={styles.sheetScroll} contentContainerStyle={{ paddingBottom: 20 }}>
+          {allPeople.filter(p => !memberIds.has(p.id)).length === 0 ? (
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>All people are already members</Text>
+          ) : (
+            allPeople.filter(p => !memberIds.has(p.id)).map((p) => {
+              const pd = parseData(p.data);
+              return (
+                <Pressable key={p.id} style={({ pressed }) => [styles.pickRow, pressed && { opacity: 0.6 }]} onPress={() => handleAddMember(p.id)}>
+                  <View style={[styles.pickAvatar, { backgroundColor: pd.color || '#5E6AD2' }]}>
+                    <Text style={styles.pickAvatarText}>{p.title.charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <Text style={[styles.pickName, { color: theme.text }]}>{p.title}</Text>
+                  <Ionicons name="add-circle-outline" size={22} color="#5E6AD2" />
+                </Pressable>
+              );
+            })
+          )}
+        </ScrollView>
+      </BottomSheet>
+    </Host>
   );
 }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
+import { Host, BottomSheet } from '@expo/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -219,15 +220,12 @@ export default function EntityScreen() {
   const isStore = row.type === 'store';
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}>
+    <Host style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: 16 }}
+        contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: 100 }}
         keyboardShouldPersistTaps="handled">
 
         {/* Header */}
@@ -409,45 +407,61 @@ export default function EntityScreen() {
 
       </ScrollView>
 
-      {/* Skill Results */}
-      {skillResults.length > 0 && (
-        <View style={[styles.skillResults, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement }]}>
-          {skillResults.map((r) => (
-            <Pressable
-              key={r.skill.id}
-              style={({ pressed }) => [styles.skillRow, { backgroundColor: theme.backgroundElement }, pressed && { opacity: 0.7 }]}
-              onPress={() => handleSelectSkill(r.skill)}>
-              <View style={[styles.skillIcon, { backgroundColor: r.skill.custom ? '#10B98120' : '#5E6AD220' }]}>
-                <Ionicons name={r.skill.icon as any} size={20} color={r.skill.custom ? '#10B981' : '#5E6AD2'} />
-              </View>
-              <View style={styles.skillInfo}>
-                <Text style={[styles.skillName, { color: theme.text }]} numberOfLines={1}>
-                  {r.skill.name}
-                </Text>
-                <Text style={[styles.skillDesc, { color: theme.textSecondary }]} numberOfLines={1}>
-                  {r.skill.description}
-                </Text>
-              </View>
-            </Pressable>
-          ))}
-        </View>
-      )}
+      {/* Bottom bar — sticks to the keyboard top when open, sits above the
+          safe area when closed. KeyboardStickyView tracks the keyboard natively. */}
+      <KeyboardStickyView offset={{ closed: insets.bottom, opened: 0 }}>
+        {/* Skill results dropdown */}
+        {skillResults.length > 0 && (
+          <View style={[styles.skillResults, { backgroundColor: theme.background, borderTopColor: 'rgba(0,0,0,0.1)' }]}>
+            {skillResults.map((r) => (
+              <Pressable
+                key={r.skill.name}
+                style={[styles.skillRow, { backgroundColor: theme.backgroundElement }]}
+                onPress={() => handleSelectSkill(r.skill)}>
+                <View style={[styles.skillIcon, { backgroundColor: '#5E6AD2' }]}>
+                  <Ionicons name="flash" size={18} color="#fff" />
+                </View>
+                <View style={styles.skillInfo}>
+                  <Text style={[styles.skillName, { color: theme.text }]} numberOfLines={1}>
+                    {r.skill.name}
+                  </Text>
+                  <Text style={[styles.skillDesc, { color: theme.textSecondary }]} numberOfLines={1}>
+                    {r.skill.description}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        )}
 
-      {/* Bottom Input Bar */}
-      <View style={[styles.inputBar, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement, paddingBottom: insets.bottom }]}>
-        <View style={[styles.inputBarInner, { backgroundColor: theme.backgroundElement }]}>
-          <Ionicons name="search" size={18} color={theme.textSecondary} />
-          <TextInput
-            style={[styles.inputBarText, { color: theme.text }]}
-            value={skillQuery}
-            onChangeText={setSkillQuery}
-            placeholder="Search a skill…"
-            placeholderTextColor={theme.textSecondary}
-            returnKeyType="search"
-          />
-          {searching && <ActivityIndicator size="small" color={theme.textSecondary} />}
+        {/* Add Item Chip */}
+        {isStore && storeTab === 'items' && (
+          <View style={styles.chipBar}>
+            <Pressable
+              style={({ pressed }) => [styles.chipBtn, pressed && { opacity: 0.7 }]}
+              onPress={() => router.push({ pathname: '/add-item', params: { storeId: row.id } })}>
+              <Ionicons name="add" size={16} color="#5E6AD2" />
+              <Text style={styles.chipBtnText}>item</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Search input bar */}
+        <View style={[styles.inputBarFixed, { backgroundColor: theme.background }]}>
+          <View style={[styles.inputBarInner, { backgroundColor: theme.backgroundElement }]}>
+            <Ionicons name="search" size={18} color={theme.textSecondary} />
+            <TextInput
+              style={[styles.inputBarText, { color: theme.text }]}
+              value={skillQuery}
+              onChangeText={setSkillQuery}
+              placeholder="Search a skill…"
+              placeholderTextColor={theme.textSecondary}
+              returnKeyType="search"
+            />
+            {searching && <ActivityIndicator size="small" color={theme.textSecondary} />}
+          </View>
         </View>
-      </View>
+      </KeyboardStickyView>
 
       {/* Skill Form Modal */}
       <Modal visible={showSkillForm} animationType="slide">
@@ -458,28 +472,8 @@ export default function EntityScreen() {
             onCancel={() => { setShowSkillForm(false); setSelectedSkill(null); }}
           />
         )}
-      </Modal>
-
-      {/* Menu Bottom Sheet */}
-      <Modal visible={showMenu} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowMenu(false)}>
-          <Pressable style={[styles.bottomSheet, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()}>
-            <View style={[styles.dragHandle, { backgroundColor: theme.textSecondary }]} />
-            <View style={styles.menuOptions}>
-              <Pressable style={styles.menuOption} onPress={() => { setShowMenu(false); }}>
-                <Ionicons name="copy-outline" size={20} color={theme.text} />
-                <Text style={[styles.menuOptionText, { color: theme.text }]}>Duplicate</Text>
-              </Pressable>
-              <View style={[styles.menuSeparator, { backgroundColor: theme.backgroundElement }]} />
-              <Pressable style={styles.menuOption} onPress={handleDelete}>
-                <Ionicons name="trash-outline" size={20} color="#FF3B30" />
-                <Text style={[styles.menuOptionText, { color: '#FF3B30' }]}>Delete</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </KeyboardAvoidingView>
+      </BottomSheet>
+    </Host>
   );
 }
 
@@ -508,14 +502,17 @@ const styles = StyleSheet.create({
   timelineTitle: { fontSize: 14, fontWeight: '500' },
   timelineMeta: { fontSize: 12, marginTop: 2 },
   // Skill results
-  skillResults: { borderTopWidth: StyleSheet.hairlineWidth, maxHeight: 200 },
+  skillResults: { paddingBottom: 8, borderTopWidth: StyleSheet.hairlineWidth, maxHeight: 240 },
   skillRow: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 8, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, gap: 12 },
   skillIcon: { width: 36, height: 36, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   skillInfo: { flex: 1, gap: 2 },
   skillName: { fontSize: 14, fontWeight: '500' },
   skillDesc: { fontSize: 12 },
   // Bottom input bar
-  inputBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 8 },
+  inputBarFixed: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.1)' },
+  chipBar: { paddingLeft: 16, paddingBottom: 8, flexDirection: 'row', gap: 8 },
+  chipBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 24, backgroundColor: '#5E6AD215', gap: 4 },
+  chipBtnText: { fontSize: 14, fontWeight: '600', color: '#5E6AD2' },
   inputBarInner: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
   inputBarText: { flex: 1, fontSize: 15, paddingVertical: 0 },
   // Bottom Sheet

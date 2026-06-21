@@ -9,7 +9,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
 import { type FormRow } from '@/hooks/use-form';
 
-type Filter = 'All' | 'People' | 'Work';
+type Filter = 'All' | 'People' | 'Work' | 'Stores';
 
 function parseData(data: string): Record<string, any> {
   try { return JSON.parse(data); } catch { return {}; }
@@ -23,6 +23,7 @@ export default function BrowseScreen() {
   const [activeFilter, setActiveFilter] = useState<Filter>('All');
   const [people, setPeople] = useState<FormRow[]>([]);
   const [work, setWork] = useState<FormRow[]>([]);
+  const [stores, setStores] = useState<FormRow[]>([]);
   const [loading, setLoading] = useState(true);
   const dbRef = useRef(db);
   dbRef.current = db;
@@ -31,8 +32,10 @@ export default function BrowseScreen() {
     const all = await dbRef.current.getAllAsync<FormRow>('SELECT * FROM form WHERE active = 1 ORDER BY time DESC');
     const p = all.filter(r => r.type === 'profile');
     const w = all.filter(r => r.type === 'team');
+    const s = all.filter(r => r.type === 'store');
     setPeople(p);
     setWork(w);
+    setStores(s);
     setLoading(false);
   }, []);
 
@@ -51,10 +54,11 @@ export default function BrowseScreen() {
     }, [loadData])
   );
 
-  const filters: Filter[] = ['All', 'People', 'Work'];
+  const filters: Filter[] = ['All', 'People', 'Work', 'Stores'];
 
   const showPeople = activeFilter === 'All' || activeFilter === 'People';
   const showWork = activeFilter === 'All' || activeFilter === 'Work';
+  const showStores = activeFilter === 'All' || activeFilter === 'Stores';
 
   if (loading) {
     return (
@@ -119,7 +123,30 @@ export default function BrowseScreen() {
           </>
         )}
 
-        {((showPeople && people.length === 0) || (showWork && work.length === 0)) && (
+        {showStores && stores.length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Stores</Text>
+            {stores.map((s) => {
+              const d = parseData(s.data);
+              return (
+                <Pressable key={s.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/entity', params: { id: s.id } })}>
+                  <View style={[styles.storeIcon, { backgroundColor: '#10B981' }]}>
+                    <Ionicons name="storefront-outline" size={18} color="#fff" />
+                  </View>
+                  <View style={styles.listItemContent}>
+                    <Text style={[styles.listItemTitle, { color: theme.text }]}>{s.title}</Text>
+                    {d.subdomain ? (
+                      <Text style={[styles.listItemMeta, { color: theme.textSecondary }]}>{d.subdomain}.tarai.space</Text>
+                    ) : null}
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                </Pressable>
+              );
+            })}
+          </>
+        )}
+
+        {((showPeople && people.length === 0) || (showWork && work.length === 0) || (showStores && stores.length === 0)) && (
           <Text style={[styles.empty, { color: theme.textSecondary }]}>No items yet. Tap + Add to create one.</Text>
         )}
       </ScrollView>
@@ -156,6 +183,8 @@ const styles = StyleSheet.create({
   avatarText: { color: '#ffffff', fontSize: 13, fontWeight: '600' },
   workIcon: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   workIconText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
+  storeIcon: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   listItemTitle: { fontSize: 15, fontWeight: '400', flex: 1 },
+  listItemMeta: { fontSize: 12, marginTop: 2 },
   listItemContent: { flex: 1 },
 });

@@ -151,20 +151,17 @@ export default function ActionsScreen() {
 
       <View style={[styles.actionBar, { paddingBottom: insets.bottom + 12, backgroundColor: theme.background, borderColor: theme.backgroundElement }]}>
         <View style={styles.actionBarRow}>
-          <Pressable style={styles.profileButton} onPress={() => router.push('/settings')}>
+          <Pressable style={styles.profileButton} onPress={() => router.push('/personal')}>
             <Image source={{ uri: user?.photo || '' }} style={styles.profileImage} contentFit="cover" />
           </Pressable>
           <View style={styles.chipRow}>
-            <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push({ pathname: '/add', params: { type: 'task' } })}>
-              <Text style={[styles.chipText, { color: theme.text }]}>+ Task</Text>
-            </Pressable>
-            <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse')}>
-              <Text style={[styles.chipText, { color: theme.text }]}>Browse</Text>
-            </Pressable>
             <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/skills')}>
               <Text style={[styles.chipText, { color: theme.text }]}>Skills</Text>
             </Pressable>
           </View>
+          <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse')}>
+            <Text style={[styles.chipText, { color: theme.text }]}>Browse</Text>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -200,7 +197,7 @@ const styles = StyleSheet.create({
   actionBarRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   profileButton: { padding: 2 },
   profileImage: { width: 38, height: 38, borderRadius: 19 },
-  chipRow: { flexDirection: 'row', gap: 8 },
+  chipRow: { flexDirection: 'row', gap: 8, flex: 1 },
   chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24 },
   chipText: { fontSize: 15, fontWeight: '600' },
 });

@@ -1,57 +1,43 @@
 import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator, Modal } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, Stack } from 'expo-router';
+import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
-import { useFormById, type FormRow } from '@/hooks/use-form';
+import { useFormById } from '@/hooks/use-form';
 import { type MatterRow } from '@/hooks/use-matter';
+import { searchSkills, type SkillSearchResult } from '@/skills/store';
+import type { SkillDef } from '@/skills/definitions';
+import SkillForm from '@/components/SkillForm';
 
 function parseData(data: string): Record<string, any> {
   try { return JSON.parse(data); } catch { return {}; }
 }
 
-interface Subtask {
-  id: string;
-  title: string;
-  done: boolean;
-  type: SubtaskType;
-}
 
-type SubtaskType = 'crm' | 'hr' | 'pay' | 'log' | 'mkt' | 'svc' | 'proj' | 'task';
-
-const SUBTASK_TYPES: { key: SubtaskType; label: string; color: string }[] = [
-  { key: 'crm', label: 'CRM', color: '#5E6AD2' },
-  { key: 'hr', label: 'HR', color: '#FF9500' },
-  { key: 'pay', label: 'Pay', color: '#34C759' },
-  { key: 'log', label: 'Logistics', color: '#007AFF' },
-  { key: 'mkt', label: 'Marketing', color: '#FF2D55' },
-  { key: 'svc', label: 'Service', color: '#AF52DE' },
-  { key: 'proj', label: 'Project', color: '#5856D6' },
-  { key: 'task', label: 'Task', color: '#8E8E93' },
-];
-
-function getSubtaskType(type: string): { label: string; color: string } {
-  return SUBTASK_TYPES.find(t => t.key === type) || { label: type, color: '#8E8E93' };
-}
 
 export default function EntityScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const db = useDb();
+  const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
   const { row, loading: rowLoading } = useFormById(params.id);
 
   const [matter, setMatter] = useState<MatterRow | null>(null);
   const [localTitle, setLocalTitle] = useState('');
-  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
-  const [newSubtask, setNewSubtask] = useState('');
-  const [newSubtaskType, setNewSubtaskType] = useState<SubtaskType>('task');
-  const [showTypePicker, setShowTypePicker] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [motions, setMotions] = useState<any[]>([]);
+  const [storeItems, setStoreItems] = useState<any[]>([]);
+  const [storeTransactions, setStoreTransactions] = useState<any[]>([]);
+  const [storeTab, setStoreTab] = useState<'items' | 'transactions'>('items');
+  const [skillQuery, setSkillQuery] = useState('');
+  const [skillResults, setSkillResults] = useState<SkillSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState<SkillDef | null>(null);
+  const [showSkillForm, setShowSkillForm] = useState(false);
 
   const loadMatter = useCallback(async () => {
     if (!row) return;
@@ -62,16 +48,43 @@ export default function EntityScreen() {
       row.id
     );
     setMatter(m);
-    if (m) {
-      const d = parseData(m.data);
-      setSubtasks(d.subtasks || []);
-    }
 
     const mov = await db.getAllAsync<any>(
       "SELECT * FROM motion WHERE stream = ? ORDER BY seq DESC LIMIT 20",
       row.id
     );
     setMotions(mov);
+
+    // Load store items (matter rows linked via graph)
+    if (row.type === 'store') {
+      const items = await db.getAllAsync<any>(
+        `SELECT m.*, f.title as product_name, f.data as product_data
+         FROM matter m
+         JOIN graph g ON g.src = m.id AND g.type = 'belongs_to'
+         JOIN form f ON f.id = m.form
+         WHERE g.tgt = ? AND m.type = 'stock' AND m.active = 1`,
+        row.id
+      );
+      setStoreItems(items);
+
+      // Load recent transactions for all items in this store
+      const itemIds = items.map((i: any) => i.id);
+      if (itemIds.length > 0) {
+        const placeholders = itemIds.map(() => '?').join(',');
+        const txns = await db.getAllAsync<any>(
+          `SELECT mo.*, m.form as product_id, f.title as product_name, m.data as item_data
+           FROM motion mo
+           JOIN matter m ON m.id = mo.stream
+           JOIN form f ON f.id = m.form
+           WHERE mo.stream IN (${placeholders})
+           ORDER BY mo.time DESC LIMIT 20`,
+          ...itemIds
+        );
+        setStoreTransactions(txns);
+      } else {
+        setStoreTransactions([]);
+      }
+    }
   }, [db, row]);
 
   useEffect(() => {
@@ -107,37 +120,44 @@ export default function EntityScreen() {
     await db.runAsync('UPDATE form SET title = ? WHERE id = ?', localTitle.trim(), row.id);
   };
 
-  const handleToggleSubtask = (id: string) => {
-    const updated = subtasks.map(s => s.id === id ? { ...s, done: !s.done } : s);
-    setSubtasks(updated);
-    saveMatter({ subtasks: updated });
+  useEffect(() => {
+    if (!skillQuery.trim()) {
+      setSkillResults([]);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setSearching(true);
+      const results = await searchSkills(skillQuery, 5);
+      if (!cancelled) {
+        setSkillResults(results);
+        setSearching(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [skillQuery]);
+
+  const handleSelectSkill = (skill: SkillDef) => {
+    setSelectedSkill(skill);
+    setShowSkillForm(true);
+    setSkillQuery('');
+    setSkillResults([]);
   };
 
-  const handleUpdateSubtaskTitle = (id: string, newTitle: string) => {
-    const updated = subtasks.map(s => s.id === id ? { ...s, title: newTitle } : s);
-    setSubtasks(updated);
-    saveMatter({ subtasks: updated });
-  };
-
-  const handleAddSubtask = async () => {
-    if (!newSubtask.trim()) return;
-    const sub: Subtask = { id: `sub_${Date.now()}`, title: newSubtask.trim(), done: false, type: newSubtaskType };
-    const updated = [...subtasks, sub];
-    setSubtasks(updated);
-    setNewSubtask('');
-    await saveMatter({ subtasks: updated });
-
-    const seq = await getNextSeq(row!.id);
-    await db.runAsync(
-      "INSERT INTO motion (stream, seq, action, phase, data, time) VALUES (?, ?, 100, 0, ?, ?)",
-      row!.id, seq, JSON.stringify({ title: sub.title, type: sub.type }), new Date().toISOString()
-    );
-  };
-
-  const handleDeleteSubtask = (id: string) => {
-    const updated = subtasks.filter(s => s.id !== id);
-    setSubtasks(updated);
-    saveMatter({ subtasks: updated });
+  const handleSkillDone = async () => {
+    setShowSkillForm(false);
+    if (selectedSkill && row) {
+      const seq = (await db.getFirstAsync<{ max_seq: number }>(
+        'SELECT COALESCE(MAX(seq), 0) + 1 as max_seq FROM motion WHERE stream = ?', row.id
+      ))?.max_seq ?? 1;
+      await db.runAsync(
+        'INSERT INTO motion (stream, seq, action, phase, data, time) VALUES (?, ?, 900, 0, ?, ?)',
+        row.id, seq, JSON.stringify({ skill: selectedSkill.name }), new Date().toISOString()
+      );
+    }
+    setSelectedSkill(null);
+    await loadMatter();
   };
 
   const handleDelete = async () => {
@@ -146,14 +166,6 @@ export default function EntityScreen() {
     await db.runAsync('UPDATE matter SET active = 0 WHERE form = ?', row.id);
     await db.runAsync('DELETE FROM motion WHERE stream = ?', row.id);
     setShowMenu(false);
-  };
-
-  const getNextSeq = async (stream: string): Promise<number> => {
-    const r = await db.getFirstAsync<{ max_seq: number }>(
-      "SELECT COALESCE(MAX(seq), 0) + 1 as max_seq FROM motion WHERE stream = ?",
-      stream
-    );
-    return r?.max_seq ?? 1;
   };
 
   const formatTime = (time: string) => {
@@ -178,6 +190,7 @@ export default function EntityScreen() {
       601: 'Push sent', 602: 'SMS sent', 603: 'Referral',
       701: 'Booked', 702: 'Completed', 703: 'Cancelled',
       801: 'Payment init', 802: 'Payment success', 803: 'Partial pay', 806: 'Expense',
+      900: 'Skill executed',
     };
     return labels[action] || `Action ${action}`;
   };
@@ -203,15 +216,19 @@ export default function EntityScreen() {
   const avatarColor = data.color || '#5E6AD2';
   const isPerson = row.type === 'profile';
   const isBusiness = row.type === 'team';
-
-  const activeTasks = subtasks.filter(s => !s.done);
-  const doneTasks = subtasks.filter(s => s.done);
+  const isStore = row.type === 'store';
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 80 }}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: 16 }}
+        keyboardShouldPersistTaps="handled">
 
         {/* Header */}
         <View style={styles.titleRow}>
@@ -255,138 +272,192 @@ export default function EntityScreen() {
           </View>
         )}
 
-        <View style={[styles.divider, { backgroundColor: theme.backgroundElement }]} />
-
-        {/* Active Subtasks */}
-        {activeTasks.length > 0 && (
+        {/* Store info */}
+        {isStore && (
           <>
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Active ({activeTasks.length})</Text>
-            {activeTasks.map((sub) => {
-              const typeInfo = getSubtaskType(sub.type);
-              return (
-                <View key={sub.id} style={styles.subtaskRow}>
-                  <Pressable onPress={() => handleToggleSubtask(sub.id)}>
-                    <View style={[styles.subtaskCircle, { borderColor: theme.textSecondary }]}>
-                    </View>
-                  </Pressable>
-                  <TextInput
-                    style={[styles.subtaskInput, { color: theme.text }]}
-                    value={sub.title}
-                    onChangeText={(text) => handleUpdateSubtaskTitle(sub.id, text)}
-                    onBlur={() => saveMatter({ subtasks })}
-                  />
-                  <View style={[styles.typeBadge, { backgroundColor: typeInfo.color + '20' }]}>
-                    <Text style={[styles.typeBadgeText, { color: typeInfo.color }]}>{typeInfo.label}</Text>
-                  </View>
-                  <Pressable onPress={() => handleDeleteSubtask(sub.id)} style={styles.deleteBtn}>
-                    <Ionicons name="close" size={16} color={theme.textSecondary} />
-                  </Pressable>
+            <View style={styles.chipsRow}>
+              {data.subdomain ? (
+                <View style={[styles.chip, { backgroundColor: theme.backgroundElement }]}>
+                  <Ionicons name="globe-outline" size={14} color={theme.textSecondary} />
+                  <Text style={[styles.chipText, { color: theme.text }]}>{data.subdomain}.tarai.space</Text>
                 </View>
-              );
-            })}
-          </>
-        )}
-
-        {/* Done Subtasks */}
-        {doneTasks.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Done ({doneTasks.length})</Text>
-            {doneTasks.map((sub) => {
-              const typeInfo = getSubtaskType(sub.type);
-              return (
-                <View key={sub.id} style={styles.subtaskRow}>
-                  <Pressable onPress={() => handleToggleSubtask(sub.id)}>
-                    <View style={[styles.subtaskCircle, { borderColor: '#34C759', backgroundColor: '#34C759' }]}>
-                      <Ionicons name="checkmark" size={12} color="#fff" />
-                    </View>
-                  </Pressable>
-                  <TextInput
-                    style={[styles.subtaskInput, { color: theme.textSecondary, textDecorationLine: 'line-through' }]}
-                    value={sub.title}
-                    onChangeText={(text) => handleUpdateSubtaskTitle(sub.id, text)}
-                    onBlur={() => saveMatter({ subtasks })}
-                  />
-                  <View style={[styles.typeBadge, { backgroundColor: typeInfo.color + '20' }]}>
-                    <Text style={[styles.typeBadgeText, { color: typeInfo.color }]}>{typeInfo.label}</Text>
-                  </View>
-                  <Pressable onPress={() => handleDeleteSubtask(sub.id)} style={styles.deleteBtn}>
-                    <Ionicons name="close" size={16} color={theme.textSecondary} />
-                  </Pressable>
-                </View>
-              );
-            })}
-          </>
-        )}
-
-        {/* Add Subtask */}
-        <View style={styles.addRow}>
-          <Pressable onPress={() => setShowTypePicker(true)}>
-            <View style={[styles.typeBadge, { backgroundColor: getSubtaskType(newSubtaskType).color + '20' }]}>
-              <Text style={[styles.typeBadgeText, { color: getSubtaskType(newSubtaskType).color }]}>
-                {getSubtaskType(newSubtaskType).label} ▾
-              </Text>
+              ) : null}
             </View>
-          </Pressable>
-          <TextInput
-            style={[styles.addInput, { color: theme.text }]}
-            value={newSubtask}
-            onChangeText={setNewSubtask}
-            onSubmitEditing={handleAddSubtask}
-            placeholder="Add subtask"
-            placeholderTextColor={theme.textSecondary}
-            returnKeyType="done"
-          />
-          {newSubtask.trim() ? (
-            <Pressable onPress={handleAddSubtask} style={styles.addBtn}>
-              <Ionicons name="add-circle" size={28} color="#5E6AD2" />
-            </Pressable>
-          ) : null}
-        </View>
 
-        <View style={[styles.divider, { backgroundColor: theme.backgroundElement }]} />
-
-        {/* Timeline */}
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Timeline</Text>
-
-        {motions.length > 0 ? motions.map((m, i) => {
-          const md = parseData(m.data);
-          return (
-            <View key={i} style={styles.timelineRow}>
-              <View style={[styles.timelineDot, { backgroundColor: theme.textSecondary }]} />
-              <View style={styles.timelineContent}>
-                <Text style={[styles.timelineTitle, { color: theme.text }]}>{motionLabel(m.action)}</Text>
-                <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
-                  {formatTime(m.time)}
-                  {md.title ? ` · ${md.title}` : ''}
-                  {md.text ? ` · ${md.text}` : ''}
+            {/* Store Tabs */}
+            <View style={styles.storeTabs}>
+              <Pressable
+                style={[styles.storeTab, storeTab === 'items' && { borderBottomColor: '#5E6AD2' }]}
+                onPress={() => setStoreTab('items')}>
+                <Text style={[styles.storeTabText, { color: storeTab === 'items' ? '#5E6AD2' : theme.textSecondary }]}>
+                  Items ({storeItems.length})
                 </Text>
-              </View>
+              </Pressable>
+              <Pressable
+                style={[styles.storeTab, storeTab === 'transactions' && { borderBottomColor: '#5E6AD2' }]}
+                onPress={() => setStoreTab('transactions')}>
+                <Text style={[styles.storeTabText, { color: storeTab === 'transactions' ? '#5E6AD2' : theme.textSecondary }]}>
+                  Transactions ({storeTransactions.length})
+                </Text>
+              </Pressable>
             </View>
-          );
-        }) : (
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No activity yet</Text>
+
+            {/* Items Tab */}
+            {storeTab === 'items' && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Items</Text>
+                  <Pressable
+                    style={styles.addButton}
+                    onPress={() => router.push({ pathname: '/add-item', params: { storeId: row.id } })}>
+                    <Ionicons name="add-circle-outline" size={20} color="#5E6AD2" />
+                    <Text style={[styles.addButtonText, { color: '#5E6AD2' }]}>Add</Text>
+                  </Pressable>
+                </View>
+                {storeItems.length > 0 ? (
+                  storeItems.map((item) => {
+                    const id = parseData(item.data);
+                    return (
+                      <Pressable
+                        key={item.id}
+                        style={({ pressed }) => [styles.timelineRow, pressed && { opacity: 0.7 }]}
+                        onPress={() => router.push({ pathname: '/entity', params: { id: item.id } })}>
+                        <View style={[styles.timelineDot, { backgroundColor: '#10B981' }]} />
+                        <View style={styles.timelineContent}>
+                          <Text style={[styles.timelineTitle, { color: theme.text }]}>
+                            {item.product_name}
+                          </Text>
+                          <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
+                            {id.variant || id.size || ''}{' '}
+                            {item.qty !== null ? `· ${item.qty} nos` : ''}
+                            {item.value ? ` · ₹${item.value}` : ''}
+                            {id.location ? ` · ${id.location}` : ''}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                      </Pressable>
+                    );
+                  })
+                ) : (
+                  <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                    No items yet. Tap + to add products.
+                  </Text>
+                )}
+              </>
+            )}
+
+            {/* Transactions Tab */}
+            {storeTab === 'transactions' && (
+              <>
+                <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Transactions</Text>
+                {storeTransactions.length > 0 ? (
+                  storeTransactions.map((txn) => {
+                    const td = parseData(txn.data);
+                    return (
+                      <View key={txn.stream + '_' + txn.seq} style={styles.timelineRow}>
+                        <View style={[styles.timelineDot, { backgroundColor: txn.delta && txn.delta < 0 ? '#FF3B30' : '#10B981' }]} />
+                        <View style={styles.timelineContent}>
+                          <Text style={[styles.timelineTitle, { color: theme.text }]}>
+                            {txn.product_name}
+                          </Text>
+                          <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
+                            {motionLabel(txn.action)}
+                            {txn.delta ? ` ${txn.delta > 0 ? '+' : ''}${txn.delta} nos` : ''}
+                            {txn.delta && txn.value ? ` · ₹${Math.abs(txn.delta * (txn.value || 0))}` : ''}
+                            {formatTime(txn.time)}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                    No transactions yet.
+                  </Text>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* Timeline - only for non-store entities */}
+        {!isStore && (
+          <>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Timeline</Text>
+
+            {motions.length > 0 ? motions.map((m, i) => {
+              const md = parseData(m.data);
+              return (
+                <View key={i} style={styles.timelineRow}>
+                  <View style={[styles.timelineDot, { backgroundColor: theme.textSecondary }]} />
+                  <View style={styles.timelineContent}>
+                    <Text style={[styles.timelineTitle, { color: theme.text }]}>{motionLabel(m.action)}</Text>
+                    <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
+                      {formatTime(m.time)}
+                      {md.skill ? ` · ${md.skill}` : ''}
+                      {md.title ? ` · ${md.title}` : ''}
+                      {md.text ? ` · ${md.text}` : ''}
+                    </Text>
+                  </View>
+                </View>
+              );
+            }) : (
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No activity yet</Text>
+            )}
+          </>
         )}
 
       </ScrollView>
 
-      {/* Type Picker Bottom Sheet */}
-      <Modal visible={showTypePicker} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowTypePicker(false)}>
-          <Pressable style={[styles.bottomSheet, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()}>
-            <View style={[styles.dragHandle, { backgroundColor: theme.textSecondary }]} />
-            <Text style={[styles.sheetTitle, { color: theme.text, paddingHorizontal: 20, paddingBottom: 12 }]}>Subtask Type</Text>
-            <View style={styles.sheetOptions}>
-              {SUBTASK_TYPES.map((t) => (
-                <Pressable
-                  key={t.key}
-                  style={[styles.sheetOption, { backgroundColor: newSubtaskType === t.key ? t.color : theme.backgroundElement }]}
-                  onPress={() => { setNewSubtaskType(t.key); setShowTypePicker(false); }}>
-                  <Text style={[styles.sheetOptionText, { color: newSubtaskType === t.key ? '#fff' : theme.text }]}>{t.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </Pressable>
-        </Pressable>
+      {/* Skill Results */}
+      {skillResults.length > 0 && (
+        <View style={[styles.skillResults, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement }]}>
+          {skillResults.map((r) => (
+            <Pressable
+              key={r.skill.id}
+              style={({ pressed }) => [styles.skillRow, { backgroundColor: theme.backgroundElement }, pressed && { opacity: 0.7 }]}
+              onPress={() => handleSelectSkill(r.skill)}>
+              <View style={[styles.skillIcon, { backgroundColor: r.skill.custom ? '#10B98120' : '#5E6AD220' }]}>
+                <Ionicons name={r.skill.icon as any} size={20} color={r.skill.custom ? '#10B981' : '#5E6AD2'} />
+              </View>
+              <View style={styles.skillInfo}>
+                <Text style={[styles.skillName, { color: theme.text }]} numberOfLines={1}>
+                  {r.skill.name}
+                </Text>
+                <Text style={[styles.skillDesc, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {r.skill.description}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
+      {/* Bottom Input Bar */}
+      <View style={[styles.inputBar, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement, paddingBottom: insets.bottom }]}>
+        <View style={[styles.inputBarInner, { backgroundColor: theme.backgroundElement }]}>
+          <Ionicons name="search" size={18} color={theme.textSecondary} />
+          <TextInput
+            style={[styles.inputBarText, { color: theme.text }]}
+            value={skillQuery}
+            onChangeText={setSkillQuery}
+            placeholder="Search a skill…"
+            placeholderTextColor={theme.textSecondary}
+            returnKeyType="search"
+          />
+          {searching && <ActivityIndicator size="small" color={theme.textSecondary} />}
+        </View>
+      </View>
+
+      {/* Skill Form Modal */}
+      <Modal visible={showSkillForm} animationType="slide">
+        {selectedSkill && (
+          <SkillForm
+            skill={selectedSkill}
+            onDone={handleSkillDone}
+            onCancel={() => { setShowSkillForm(false); setSelectedSkill(null); }}
+          />
+        )}
       </Modal>
 
       {/* Menu Bottom Sheet */}
@@ -408,7 +479,7 @@ export default function EntityScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -423,31 +494,34 @@ const styles = StyleSheet.create({
   chipsRow: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 12, gap: 8, flexWrap: 'wrap' },
   chip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, gap: 6 },
   chipText: { fontSize: 13, fontWeight: '500' },
-  divider: { height: 1, marginHorizontal: 16, marginTop: 16 },
   sectionTitle: { fontSize: 13, fontWeight: '500', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
-  subtaskRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, gap: 10 },
-  subtaskCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
-  subtaskInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  typeBadgeText: { fontSize: 11, fontWeight: '600' },
-  deleteBtn: { padding: 4 },
-  addRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
-  addInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
-  addBtn: { padding: 2 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
+  addButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  addButtonText: { fontSize: 14, fontWeight: '500' },
+  storeTabs: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 16, gap: 24, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.1)' },
+  storeTab: { paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  storeTabText: { fontSize: 14, fontWeight: '500' },
   emptyText: { fontSize: 14, textAlign: 'center', paddingVertical: 20 },
   timelineRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, gap: 12 },
   timelineDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5 },
   timelineContent: { flex: 1 },
   timelineTitle: { fontSize: 14, fontWeight: '500' },
   timelineMeta: { fontSize: 12, marginTop: 2 },
+  // Skill results
+  skillResults: { borderTopWidth: StyleSheet.hairlineWidth, maxHeight: 200 },
+  skillRow: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: 8, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, gap: 12 },
+  skillIcon: { width: 36, height: 36, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  skillInfo: { flex: 1, gap: 2 },
+  skillName: { fontSize: 14, fontWeight: '500' },
+  skillDesc: { fontSize: 12 },
+  // Bottom input bar
+  inputBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 8 },
+  inputBarInner: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  inputBarText: { flex: 1, fontSize: 15, paddingVertical: 0 },
   // Bottom Sheet
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   bottomSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '50%' },
   dragHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 8, opacity: 0.3 },
-  sheetTitle: { fontSize: 16, fontWeight: '600' },
-  sheetOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, paddingBottom: 24 },
-  sheetOption: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
-  sheetOptionText: { fontSize: 14, fontWeight: '500' },
   // Menu
   menuOptions: { paddingHorizontal: 20, paddingVertical: 16 },
   menuOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },

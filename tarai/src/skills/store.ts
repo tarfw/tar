@@ -145,15 +145,29 @@ async function doSeedSkills(embed: (text: string) => Promise<number[]>): Promise
   }
 }
 
+function textSearchSkills(allSkills: SkillDef[], query: string, limit: number): SkillSearchResult[] {
+  const q = query.toLowerCase();
+  const scored = allSkills
+    .map((skill) => {
+      let score = 0;
+      if (skill.name.toLowerCase().includes(q)) score += 3;
+      if (skill.description.toLowerCase().includes(q)) score += 1;
+      if (skill.keywords?.some((kw) => kw.toLowerCase().includes(q))) score += 2;
+      return { skill, score };
+    })
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+  return scored.map(({ skill, score }) => ({ skill, similarity: score / 5 }));
+}
+
 export async function searchSkills(query: string, limit = 5, minSimilarity = 0.2): Promise<SkillSearchResult[]> {
-  if (!embeddingFn || !query.trim()) return [];
+  if (!query.trim()) return [];
 
   try {
-    const queryVector = await embeddingFn(query);
     const db = getUserDb();
     const skillMap = new Map(SKILLS.map((t) => [t.id, t]));
 
-    // Also load custom skills into the map so they can appear in results
     const customRows = await db.all(
       "SELECT id, title, data FROM form WHERE type = 'tool' AND active = 1"
     ).catch(() => []);
@@ -164,24 +178,43 @@ export async function searchSkills(query: string, limit = 5, minSimilarity = 0.2
       }
     }
 
-    const rows = await db.all(
-      `SELECT m.form AS form, MIN(vector_distance_cos(m.vector, vector32(?))) AS dist
-         FROM memory m JOIN form f ON f.id = m.form AND f.type = 'tool'
-         GROUP BY m.form ORDER BY dist LIMIT ?`,
-      [vectorToText(queryVector), limit]
-    ).catch((err) => {
-      console.warn('[SKILLS] native distance query failed:', err);
-      return [];
-    });
+    const allSkills = Array.from(skillMap.values());
 
-    const results: SkillSearchResult[] = [];
-    for (const row of rows as any[]) {
-      const skill = skillMap.get(String(row.form));
-      if (!skill || row.dist == null) continue;
-      const similarity = 1 - Number(row.dist);
-      if (similarity >= minSimilarity) results.push({ skill, similarity });
+    // Text fallback always runs
+    const textResults = textSearchSkills(allSkills, query, limit);
+
+    // Vector search only when model is ready
+    if (embeddingFn) {
+      try {
+        const queryVector = await embeddingFn(query);
+        const rows = await db.all(
+          `SELECT m.form AS form, MIN(vector_distance_cos(m.vector, vector32(?))) AS dist
+             FROM memory m JOIN form f ON f.id = m.form AND f.type = 'tool'
+             GROUP BY m.form ORDER BY dist LIMIT ?`,
+          [vectorToText(queryVector), limit]
+        ).catch(() => []);
+
+        const vecResults: SkillSearchResult[] = [];
+        for (const row of rows as any[]) {
+          const skill = skillMap.get(String(row.form));
+          if (!skill || row.dist == null) continue;
+          const similarity = 1 - Number(row.dist);
+          if (similarity >= minSimilarity) vecResults.push({ skill, similarity });
+        }
+
+        // Merge: vector results first, then text-only hits
+        const seen = new Set(vecResults.map((r) => r.skill.id));
+        const merged = [...vecResults];
+        for (const t of textResults) {
+          if (!seen.has(t.skill.id)) merged.push(t);
+        }
+        return merged.slice(0, limit);
+      } catch {
+        // Vector search failed, fall through to text-only
+      }
     }
-    return results;
+
+    return textResults;
   } catch (e) {
     console.error('[SKILLS] search failed:', e);
     return [];

@@ -7,11 +7,12 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
 
-type EntityType = 'people' | 'work';
+type EntityType = 'people' | 'work' | 'store';
 
 const ENTITY_TYPES: { key: EntityType; label: string; icon: string; color: string }[] = [
   { key: 'people', label: 'People', icon: 'person-outline', color: '#5E6AD2' },
   { key: 'work', label: 'Work', icon: 'briefcase-outline', color: '#FF9500' },
+  { key: 'store', label: 'Store', icon: 'storefront-outline', color: '#10B981' },
 ];
 
 export default function AddScreen() {
@@ -28,12 +29,25 @@ export default function AddScreen() {
     const id = `form_${selectedType}_${Date.now()}`;
     const now = new Date().toISOString();
 
-    const formType = selectedType === 'people' ? 'profile' : 'team';
-    const scope = selectedType === 'work' ? `t:team_${Date.now()}` : 'p';
+    let formType: string;
+    let scope: string;
+    let data: Record<string, any> = {};
+
+    if (selectedType === 'people') {
+      formType = 'profile';
+      scope = 'p';
+    } else if (selectedType === 'store') {
+      formType = 'store';
+      scope = `s:store_${Date.now()}`;
+      data = { subdomain: title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') };
+    } else {
+      formType = 'team';
+      scope = `t:team_${Date.now()}`;
+    }
 
     await db.runAsync(
       'INSERT INTO form (id, type, title, scope, data, time, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
-      id, formType, title.trim(), scope, '{}', now
+      id, formType, title.trim(), scope, JSON.stringify(data), now
     );
 
     router.replace({ pathname: '/entity', params: { id } });
@@ -87,6 +101,8 @@ export default function AddScreen() {
           <Text style={[styles.infoText, { color: theme.textSecondary }]}>
             {selectedType === 'people'
               ? 'Add people to track CRM, HR, and tasks'
+              : selectedType === 'store'
+              ? 'Create a storefront to sell products online'
               : 'Add work spaces to organize teams and projects'}
           </Text>
         </View>

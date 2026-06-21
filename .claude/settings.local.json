@@ -74,7 +74,13 @@
       "WebFetch(domain:kirillzyusko.github.io)",
       "Bash(npx expo-doctor *)",
       "Bash(npx eas *)",
-      "Bash(grep -vE \"eas-cli|upgrade|npm install|^$|^To \")"
+      "Bash(grep -vE \"eas-cli|upgrade|npm install|^$|^To \")",
+      "Bash(npm ci *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npm ls *)",
+      "Bash(echo \"=== EXIT: $? ===\")",
+      "Bash(npm uninstall *)",
+      "Bash(echo \"EXIT: $?\")"
     ]
   }
 }

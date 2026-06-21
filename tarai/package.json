@@ -10,7 +10,6 @@
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@shopify/flash-list": "^2.3.2",
     "@tanstack/react-query": "^5.101.0",
-    "@tanstack/react-table": "^8.21.3",
     "@tursodatabase/sync-react-native": "^0.6.1",
     "ai": "^6.0.208",
     "expo": "~56.0.12",
@@ -55,6 +54,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "lint": "expo lint"
+  },
+  "overrides": {
+    "react-dom": "19.2.3"
   },
   "private": true
 }

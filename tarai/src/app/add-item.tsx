@@ -107,8 +107,9 @@ export default function AddItemScreen() {
       const suggestion = await suggestProductDetails(newName.trim());
       if (suggestion.category) setNewCategory(suggestion.category);
       if (suggestion.description) setNewDescription(suggestion.description);
-      if (suggestion.variants.length > 0) {
-        setNewOptions(suggestion.variants.join(', '));
+      if (suggestion.options?.length) {
+        const allValues = suggestion.options.flatMap(o => o.values);
+        setNewOptions(allValues.join(', '));
       }
     } catch (e: any) {
       console.warn('[AddItem] AI generate failed:', e);

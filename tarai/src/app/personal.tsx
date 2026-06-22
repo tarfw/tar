@@ -16,6 +16,7 @@ function parseData(data: string): Record<string, any> {
 }
 
 const PERSONAL_FORM_ID = '__personal_profile__';
+const NOTION_AVATAR = require('../../assets/images/profile avatar.webp');
 
 export default function PersonalScreen() {
   const insets = useSafeAreaInsets();
@@ -110,13 +111,7 @@ export default function PersonalScreen() {
 
         {/* Header */}
         <View style={styles.titleRow}>
-          {user.photo ? (
-            <Image source={{ uri: user.photo }} style={[styles.avatar, { backgroundColor: '#5E6AD2' }]} contentFit="cover" />
-          ) : (
-            <View style={[styles.avatar, { backgroundColor: '#5E6AD2' }]}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
-          )}
+          <Image source={NOTION_AVATAR} style={styles.avatar} contentFit="cover" />
           <TextInput
             style={[styles.titleInput, { color: theme.text }]}
             value={localTitle}
@@ -140,13 +135,13 @@ export default function PersonalScreen() {
           ) : null}
         </View>
 
-        {/* Tabs — same pattern as entity */}
+        {/* Tabs */}
         <View style={styles.storeTabs}>
           <Pressable
             style={[styles.storeTab, detailTab === 'activity' && { borderBottomColor: '#5E6AD2' }]}
             onPress={() => setDetailTab('activity')}>
             <Text style={[styles.storeTabText, { color: detailTab === 'activity' ? '#5E6AD2' : theme.textSecondary }]}>
-              Activity ({motions.length})
+              Activity
             </Text>
           </Pressable>
           <Pressable
@@ -214,8 +209,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollView: { flex: 1 },
   titleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 12 },
-  avatar: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  avatarText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
+  avatar: { width: 40, height: 40, borderRadius: 20 },
   titleInput: { flex: 1, fontSize: 22, fontWeight: '600', paddingVertical: 0 },
   menuBtn: { padding: 8 },
   chipsRow: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 12, gap: 8, flexWrap: 'wrap' },

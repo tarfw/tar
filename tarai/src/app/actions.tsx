@@ -12,7 +12,7 @@ import { getCurrentUser, type UserProfile } from '@/lib/auth';
 type Urgency = 'Now' | 'Next' | 'Later' | 'Done';
 
 // Notion-style girl avatar (bundled DiceBear "Notionists" illustration) — used when user has no photo
-const NOTION_AVATAR = require('../../assets/images/profile-avatar.jpg');
+const NOTION_AVATAR = require('../../assets/images/profile avatar.webp');
 
 function StatusDot({ status, color, size = 8 }: { status: 'todo' | 'in_progress' | 'done'; color: string; size?: number }) {
   if (status === 'todo') {

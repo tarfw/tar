@@ -337,7 +337,7 @@ export default function EntityScreen() {
                 style={[styles.storeTab, detailTab === 'activity' && { borderBottomColor: '#5E6AD2' }]}
                 onPress={() => setDetailTab('activity')}>
                 <Text style={[styles.storeTabText, { color: detailTab === 'activity' ? '#5E6AD2' : theme.textSecondary }]}>
-                  Activity ({motions.length})
+                  Activity
                 </Text>
               </Pressable>
               <Pressable
@@ -352,7 +352,7 @@ export default function EntityScreen() {
                   style={[styles.storeTab, detailTab === 'members' && { borderBottomColor: '#5E6AD2' }]}
                   onPress={() => setDetailTab('members')}>
                   <Text style={[styles.storeTabText, { color: detailTab === 'members' ? '#5E6AD2' : theme.textSecondary }]}>
-                    Members ({members.length})
+                    Members
                   </Text>
                 </Pressable>
               )}
@@ -457,14 +457,14 @@ export default function EntityScreen() {
                 style={[styles.storeTab, storeTab === 'items' && { borderBottomColor: '#5E6AD2' }]}
                 onPress={() => setStoreTab('items')}>
                 <Text style={[styles.storeTabText, { color: storeTab === 'items' ? '#5E6AD2' : theme.textSecondary }]}>
-                  Items ({storeItems.length})
+                  Items
                 </Text>
               </Pressable>
               <Pressable
                 style={[styles.storeTab, storeTab === 'transactions' && { borderBottomColor: '#5E6AD2' }]}
                 onPress={() => setStoreTab('transactions')}>
                 <Text style={[styles.storeTabText, { color: storeTab === 'transactions' ? '#5E6AD2' : theme.textSecondary }]}>
-                  Transactions ({storeTransactions.length})
+                  Transactions
                 </Text>
               </Pressable>
             </View>

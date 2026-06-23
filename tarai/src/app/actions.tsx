@@ -1,85 +1,219 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { StyleSheet, ScrollView, Pressable, View, Text, ActivityIndicator } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { Image } from 'expo-image';
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { useState, useCallback, useRef, useEffect } from "react";
+import {
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  View,
+  Text,
+  ActivityIndicator,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter, useFocusEffect } from "expo-router";
+import { Image } from "expo-image";
+import Ionicons from "@expo/vector-icons/Ionicons";
 
-import { useTheme } from '@/hooks/use-theme';
-import { useMotion, type ActionGroup, type ActionItem } from '@/hooks/use-motion';
-import { getCurrentUser, type UserProfile } from '@/lib/auth';
+import { useTheme } from "@/hooks/use-theme";
+import {
+  useMotion,
+  type ActionGroup,
+  type ActionItem,
+} from "@/hooks/use-motion";
+import { getCurrentUser, type UserProfile } from "@/lib/auth";
 
-type Urgency = 'Now' | 'Next' | 'Later' | 'Done';
+type Urgency = "Now" | "Next" | "Later" | "Done";
 
 // Notion-style girl avatar (bundled DiceBear "Notionists" illustration) — used when user has no photo
-const NOTION_AVATAR = require('../../assets/images/profile avatar.webp');
+const NOTION_AVATAR = require("../../assets/images/profile avatar.webp");
 
-function StatusDot({ status, color, size = 8 }: { status: 'todo' | 'in_progress' | 'done'; color: string; size?: number }) {
-  if (status === 'todo') {
-    return <View style={[styles.dot, { width: size, height: size, borderRadius: size / 2, borderColor: color, borderStyle: 'dotted' }]} />;
+function StatusDot({
+  status,
+  color,
+  size = 8,
+}: {
+  status: "todo" | "in_progress" | "done";
+  color: string;
+  size?: number;
+}) {
+  if (status === "todo") {
+    return (
+      <View
+        style={[
+          styles.dot,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderColor: color,
+            borderStyle: "dotted",
+          },
+        ]}
+      />
+    );
   }
-  if (status === 'in_progress') {
-    return <View style={[styles.dot, { width: size, height: size, borderRadius: size / 2, backgroundColor: color, borderColor: color }]} />;
+  if (status === "in_progress") {
+    return (
+      <View
+        style={[
+          styles.dot,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: color,
+            borderColor: color,
+          },
+        ]}
+      />
+    );
   }
-  return <View style={[styles.dot, { width: size, height: size, borderRadius: size / 2, backgroundColor: '#34C759', borderColor: '#34C759' }]} />;
+  return (
+    <View
+      style={[
+        styles.dot,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: "#34C759",
+          borderColor: "#34C759",
+        },
+      ]}
+    />
+  );
 }
 
-function GroupSection({ group, theme, onPressGroup, onPressAction }: {
+function GroupSection({
+  group,
+  theme,
+  onPressGroup,
+  onPressAction,
+}: {
   group: ActionGroup;
   theme: any;
   onPressGroup: () => void;
   onPressAction: (action: ActionItem) => void;
 }) {
-  const tasks = group.actions.filter(a => a.vertical === 'task');
-  const others = group.actions.filter(a => a.vertical !== 'task');
-  const isTask = group.type === 'task';
+  const tasks = group.actions.filter((a) => a.vertical === "task");
+  const others = group.actions.filter((a) => a.vertical !== "task");
+  const isTask = group.type === "task";
 
   return (
     <View style={styles.groupSection}>
       <Pressable style={styles.groupHeader} onPress={onPressGroup}>
         <View style={[styles.groupAvatar, { backgroundColor: group.color }]}>
-          <Text style={styles.groupAvatarText}>{group.name.charAt(0).toUpperCase()}</Text>
+          <Text style={styles.groupAvatarText}>
+            {group.name.charAt(0).toUpperCase()}
+          </Text>
         </View>
         <View style={styles.groupInfo}>
-          <Text style={[styles.groupName, { color: theme.text }]}>{group.name}</Text>
+          <Text style={[styles.groupName, { color: theme.text }]}>
+            {group.name}
+          </Text>
           <Text style={[styles.groupMeta, { color: theme.textSecondary }]}>
-            {isTask ? `${tasks.length} task${tasks.length !== 1 ? 's' : ''}` : `${group.actions.length} action${group.actions.length !== 1 ? 's' : ''}`}
+            {isTask
+              ? `${tasks.length} task${tasks.length !== 1 ? "s" : ""}`
+              : `${group.actions.length} action${group.actions.length !== 1 ? "s" : ""}`}
           </Text>
         </View>
       </Pressable>
 
-      {isTask ? (
-        tasks.map((action) => {
-          const subs = group.actions.filter(a => a.vertical === 'subtask' && a.routeParams.id === action.routeParams.id);
-          return (
-            <View key={action.id}>
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.6 }]} onPress={() => onPressAction(action)}>
-                <StatusDot status={action.status} color={theme.textSecondary} />
-                <View style={styles.actionContent}>
-                  <Text style={[styles.actionTitle, { color: theme.text }]}>{action.title}</Text>
-                  {action.subtitle ? <Text style={[styles.actionSubtitle, { color: theme.textSecondary }]}>{action.subtitle}</Text> : null}
-                </View>
-              </Pressable>
-              {subs.map((sub) => (
-                <Pressable key={sub.id} style={({ pressed }) => [styles.subtaskRow, pressed && { opacity: 0.6 }]} onPress={() => onPressAction(sub)}>
-                  <StatusDot status={sub.status} color={theme.textSecondary} size={6} />
-                  <Text style={[styles.subtaskTitle, { color: sub.status === 'done' ? theme.textSecondary : theme.text, textDecorationLine: sub.status === 'done' ? 'line-through' : 'none' }]}>{sub.title}</Text>
+      {isTask
+        ? tasks.map((action) => {
+            const subs = group.actions.filter(
+              (a) =>
+                a.vertical === "subtask" &&
+                a.routeParams.id === action.routeParams.id,
+            );
+            return (
+              <View key={action.id}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.actionRow,
+                    pressed && { opacity: 0.6 },
+                  ]}
+                  onPress={() => onPressAction(action)}
+                >
+                  <StatusDot
+                    status={action.status}
+                    color={theme.textSecondary}
+                  />
+                  <View style={styles.actionContent}>
+                    <Text style={[styles.actionTitle, { color: theme.text }]}>
+                      {action.title}
+                    </Text>
+                    {action.subtitle ? (
+                      <Text
+                        style={[
+                          styles.actionSubtitle,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        {action.subtitle}
+                      </Text>
+                    ) : null}
+                  </View>
                 </Pressable>
-              ))}
-            </View>
-          );
-        })
-      ) : (
-        others.map((action) => (
-          <Pressable key={action.id} style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.6 }]} onPress={() => onPressAction(action)}>
-            <StatusDot status={action.status} color={theme.textSecondary} />
-            <View style={styles.actionContent}>
-              <Text style={[styles.actionTitle, { color: theme.text }]}>{action.title}</Text>
-              {action.subtitle ? <Text style={[styles.actionSubtitle, { color: theme.textSecondary }]}>{action.subtitle}</Text> : null}
-            </View>
-          </Pressable>
-        ))
-      )}
+                {subs.map((sub) => (
+                  <Pressable
+                    key={sub.id}
+                    style={({ pressed }) => [
+                      styles.subtaskRow,
+                      pressed && { opacity: 0.6 },
+                    ]}
+                    onPress={() => onPressAction(sub)}
+                  >
+                    <StatusDot
+                      status={sub.status}
+                      color={theme.textSecondary}
+                      size={6}
+                    />
+                    <Text
+                      style={[
+                        styles.subtaskTitle,
+                        {
+                          color:
+                            sub.status === "done"
+                              ? theme.textSecondary
+                              : theme.text,
+                          textDecorationLine:
+                            sub.status === "done" ? "line-through" : "none",
+                        },
+                      ]}
+                    >
+                      {sub.title}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            );
+          })
+        : others.map((action) => (
+            <Pressable
+              key={action.id}
+              style={({ pressed }) => [
+                styles.actionRow,
+                pressed && { opacity: 0.6 },
+              ]}
+              onPress={() => onPressAction(action)}
+            >
+              <StatusDot status={action.status} color={theme.textSecondary} />
+              <View style={styles.actionContent}>
+                <Text style={[styles.actionTitle, { color: theme.text }]}>
+                  {action.title}
+                </Text>
+                {action.subtitle ? (
+                  <Text
+                    style={[
+                      styles.actionSubtitle,
+                      { color: theme.textSecondary },
+                    ]}
+                  >
+                    {action.subtitle}
+                  </Text>
+                ) : null}
+              </View>
+            </Pressable>
+          ))}
     </View>
   );
 }
@@ -88,14 +222,16 @@ export default function ActionsScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
-  const [activeFilter, setActiveFilter] = useState<Urgency>('Now');
+  const [activeFilter, setActiveFilter] = useState<Urgency>("Now");
   const { groups, loading, refresh } = useMotion();
   const [user, setUser] = useState<UserProfile | null>(null);
 
-  const filters: Urgency[] = ['Now', 'Next', 'Later', 'Done'];
+  const filters: Urgency[] = ["Now", "Next", "Later", "Done"];
 
   useEffect(() => {
-    getCurrentUser().then(setUser).catch(() => {});
+    getCurrentUser()
+      .then(setUser)
+      .catch(() => {});
   }, []);
 
   const isMounted = useRef(false);
@@ -103,15 +239,18 @@ export default function ActionsScreen() {
     useCallback(() => {
       if (isMounted.current) refresh();
       isMounted.current = true;
-    }, [refresh])
+    }, [refresh]),
   );
 
   const handlePressGroup = (group: ActionGroup) => {
-    router.push({ pathname: '/entity', params: { id: group.id } });
+    router.push({ pathname: "/entity", params: { id: group.id } });
   };
 
   const handlePressAction = (action: ActionItem) => {
-    router.push({ pathname: action.route as any, params: action.routeParams as any });
+    router.push({
+      pathname: action.route as any,
+      params: action.routeParams as any,
+    });
   };
 
   return (
@@ -124,9 +263,25 @@ export default function ActionsScreen() {
         {filters.map((filter) => (
           <Pressable
             key={filter}
-            style={[styles.filterTab, activeFilter === filter && [styles.filterTabActive, { borderColor: theme.text }]]}
-            onPress={() => setActiveFilter(filter)}>
-            <Text style={[styles.filterText, { color: activeFilter === filter ? theme.text : theme.textSecondary }, activeFilter === filter && styles.filterTextActive]}>
+            style={[
+              styles.filterTab,
+              activeFilter === filter && [
+                styles.filterTabActive,
+                { borderColor: theme.text },
+              ],
+            ]}
+            onPress={() => setActiveFilter(filter)}
+          >
+            <Text
+              style={[
+                styles.filterText,
+                {
+                  color:
+                    activeFilter === filter ? theme.text : theme.textSecondary,
+                },
+                activeFilter === filter && styles.filterTextActive,
+              ]}
+            >
               {filter}
             </Text>
           </Pressable>
@@ -136,9 +291,14 @@ export default function ActionsScreen() {
       {loading ? (
         <ActivityIndicator style={{ flex: 1 }} color={theme.textSecondary} />
       ) : (
-        <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: insets.bottom + 160 }}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 160 }}
+        >
           {groups.length === 0 ? (
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>No actions</Text>
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>
+              No actions
+            </Text>
           ) : (
             groups.map((group) => (
               <GroupSection
@@ -153,54 +313,155 @@ export default function ActionsScreen() {
         </ScrollView>
       )}
 
-      <View style={[styles.actionBar, { paddingBottom: insets.bottom, backgroundColor: theme.background, borderColor: theme.backgroundElement }]}>
+      {/* Skills chip */}
+      <View style={[styles.chipBar, { paddingLeft: 16, paddingBottom: 8 }]}>
+        <Pressable
+          style={({ pressed }) => [styles.chipBtn, pressed && { opacity: 0.7 }]}
+          onPress={() => router.push("/skills")}
+        >
+          <Ionicons name="apps-outline" size={16} color="#5E6AD2" />
+          <Text style={styles.chipBtnText}>Skills</Text>
+        </Pressable>
+      </View>
+
+      <View
+        style={[
+          styles.actionBar,
+          {
+            paddingBottom: insets.bottom,
+            backgroundColor: theme.background,
+            borderColor: theme.backgroundElement,
+          },
+        ]}
+      >
         <View style={styles.actionBarRow}>
-          <Pressable style={styles.profileButton} onPress={() => router.push('/personal')}>
-            <Image source={NOTION_AVATAR} style={styles.profileImage} contentFit="cover" />
+          <Pressable
+            style={styles.profileButton}
+            onPress={() => router.push("/personal")}
+          >
+            <Image
+              source={NOTION_AVATAR}
+              style={styles.profileImage}
+              contentFit="cover"
+            />
           </Pressable>
-          <Pressable style={styles.taraiCircleWrap} onPress={() => router.push('/chat')}>
+          <Pressable
+            style={styles.taraiCircleWrap}
+            onPress={() => router.push("/chat")}
+          >
             <View style={styles.taraiCircle} />
           </Pressable>
-          <Pressable style={[styles.iconBtn, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse')}>
+          <Pressable
+            style={[
+              styles.iconBtn,
+              { backgroundColor: theme.backgroundElement },
+            ]}
+            onPress={() => router.push("/browse")}
+          >
             <Ionicons name="search" size={20} color={theme.text} />
           </Pressable>
         </View>
       </View>
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8 },
-  title: { fontSize: 28, fontWeight: '700' },
-  filters: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 8, gap: 4 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  title: { fontSize: 28, fontWeight: "700" },
+  filters: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 4,
+  },
   filterTab: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
   filterTabActive: { borderBottomWidth: 2 },
-  filterText: { fontSize: 14, fontWeight: '500' },
-  filterTextActive: { fontWeight: '600' },
+  filterText: { fontSize: 14, fontWeight: "500" },
+  filterTextActive: { fontWeight: "600" },
   scrollView: { flex: 1 },
-  empty: { textAlign: 'center', paddingTop: 60, fontSize: 15 },
+  empty: { textAlign: "center", paddingTop: 60, fontSize: 15 },
   groupSection: { marginBottom: 8 },
-  groupHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
-  groupAvatar: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  groupAvatarText: { color: '#ffffff', fontSize: 13, fontWeight: '600' },
+  groupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  groupAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  groupAvatarText: { color: "#ffffff", fontSize: 13, fontWeight: "600" },
   groupInfo: { flex: 1 },
-  groupName: { fontSize: 15, fontWeight: '600' },
+  groupName: { fontSize: 15, fontWeight: "600" },
   groupMeta: { fontSize: 12, marginTop: 2 },
-  actionRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, paddingLeft: 60, gap: 10 },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingLeft: 60,
+    gap: 10,
+  },
   actionContent: { flex: 1 },
-  actionTitle: { fontSize: 14, fontWeight: '400' },
+  actionTitle: { fontSize: 14, fontWeight: "400" },
   actionSubtitle: { fontSize: 12, marginTop: 1 },
-  subtaskRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 6, paddingLeft: 84, gap: 8 },
-  subtaskTitle: { fontSize: 13, fontWeight: '400', flex: 1 },
+  subtaskRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    paddingLeft: 84,
+    gap: 8,
+  },
+  subtaskTitle: { fontSize: 13, fontWeight: "400", flex: 1 },
   dot: { borderWidth: 1.5 },
+  chipBar: { paddingLeft: 16, paddingBottom: 8, flexDirection: "row", gap: 8 },
+  chipBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    backgroundColor: "#5E6AD215",
+    gap: 4,
+  },
+  chipBtnText: { fontSize: 14, fontWeight: "600", color: "#5E6AD2" },
   actionBar: { borderTopWidth: StyleSheet.hairlineWidth },
-  actionBarRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 8 },
+  actionBarRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
   profileButton: {},
   profileImage: { width: 44, height: 44, borderRadius: 10 },
   taraiCircleWrap: { padding: 4 },
-  taraiCircle: { width: 44, height: 44, borderRadius: 22, experimental_backgroundImage: 'linear-gradient(135deg, #5E6AD2, #8B5CF6, #22D3EE)' },
-  iconBtn: { width: 44, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  taraiCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    experimental_backgroundImage:
+      "linear-gradient(135deg, #5E6AD2, #8B5CF6, #22D3EE)",
+  },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 });

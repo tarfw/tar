@@ -2048,4 +2048,75 @@ This is **benign**. HuggingFace does not send `Content-Length` for `tokenizer.js
 
 ---
 
+## 13. TAR Integration
+
+### tarai Architecture
+
+```
+┌─────────────────────────────────────┐
+│  EmbeddingsProvider (Context)       │
+│  ┌───────────────────────────────┐  │
+│  │  useTextEmbeddings (hook)     │  │
+│  │  → Downloads model from HF    │  │
+│  │  → Loads into ExecuTorch      │  │
+│  │  → Exposes generateEmbedding  │  │
+│  └───────────────────────────────┘  │
+│                                     │
+│  setEmbeddingFunction() ──────┐     │
+│                               │     │
+│  ┌────────────────────────────▼──┐  │
+│  │  VectorStore                  │  │
+│  │  → cosine similarity search   │  │
+│  │  → upsert/delete vectors      │  │
+│  │  → auto-sync on first run     │  │
+│  └───────────────────────────────┘  │
+│                                     │
+│  ┌───────────────────────────────┐  │
+│  │  Turso DB (memory table)      │  │
+│  │  → form TEXT PRIMARY KEY      │  │
+│  │  → vector BLOB                │  │
+│  │  → embedding BLOB             │  │
+│  └───────────────────────────────┘  │
+└─────────────────────────────────────┘
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/embeddings.ts` | Hook-based model loader, `useEmbeddingsModule()` |
+| `src/db/embeddings-provider.tsx` | React context, auto-wires vector store on model ready |
+| `src/lib/vectorStore.ts` | Cosine similarity, upsert/delete, initial sync |
+| `src/lib/schema.ts` | `memory` table with `vector` + `embedding` BLOB columns |
+
+### Vector Search Flow
+
+1. **Index:** Form created → `upsertFormVector(id, form)` → `generateEmbedding(text)` → store as Float32 BLOB
+2. **Search:** Query text → `generateEmbedding(query)` → brute-force cosine similarity → return top-k
+3. **Sync:** On first launch, `checkAndSyncExistingForms()` re-indexes all forms
+
+### Prompt Prefixes (LFM2.5)
+
+The LFM2.5 embedding model is trained with asymmetric prefixes:
+- Search queries: prepend `query:`
+- Indexed documents: prepend `document:`
+
+### tarapp vs tarai
+
+| Aspect | @tarapp/ | @tarai/ | Verdict |
+|--------|----------|---------|---------|
+| Expo SDK | 54 | 56 | tarai is current |
+| ExecuTorch | 0.7.2 (class API) | 0.9.2 (hook API) | tarai is current |
+| Embedding Model | MiniLM-L6 (23 MB) | LFM2.5-350M (431 MB) | tarai is better |
+| Vector Dimensions | 384 | 1024 | tarai is better |
+| DB | Turso sync-react-native 0.5.3 | Turso sync-react-native 0.6.1 | tarai is current |
+| Auth | Google Sign-In | Google Sign-In | Same |
+| Styling | NativeWind + Tailwind | Plain StyleSheet | tarai is simpler |
+| RAG | react-native-rag | Manual vector search | tarai is lighter |
+| Status | Legacy prototype | Active development | **tarai replaces tarapp** |
+
+**Recommendation:** @tarai/ supersedes @tarapp/. No new features should be added to tarapp. Archive it after verifying tarai covers all use cases.
+
+---
+
 *This document is a comprehensive reference compiled from the official React Native ExecuTorch documentation at https://docs.swmansion.com/react-native-executorch/. For the latest updates, always refer to the official docs.*

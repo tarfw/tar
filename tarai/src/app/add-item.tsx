@@ -226,7 +226,7 @@ export default function AddItemScreen() {
             <Ionicons name="chevron-back" size={24} color={theme.text} />
           </Pressable>
           <Text style={[styles.headerTitle, { color: theme.text }]}>
-            {step === 'create' ? 'Create Product' : 'Add Items'}
+            Add Items
           </Text>
           {step === 'variants' ? (
             <Pressable style={styles.saveBtn} onPress={handleAddItems} disabled={adding}>
@@ -432,6 +432,7 @@ const styles = StyleSheet.create({
   variantInput: { fontSize: 15, fontWeight: '500', paddingVertical: 0 },
   variantRow: { flexDirection: 'row', gap: 8 },
   variantField: { flex: 1 },
+  fieldLabel: { fontSize: 11, marginBottom: 4 },
   variantFieldInput: { fontSize: 14, paddingVertical: 4 },
   removeBtn: { padding: 4 },
   addVariantBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: 16, marginTop: 12, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', gap: 6 },

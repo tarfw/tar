@@ -3,7 +3,7 @@ import { Redirect } from 'expo-router';
 import { getCurrentUser } from '@/lib/auth';
 
 export default function Index() {
-  const [target, setTarget] = useState<string | null>(null);
+  const [target, setTarget] = useState<'/actions' | '/auth' | null>(null);
 
   useEffect(() => {
     getCurrentUser().then((user) => {

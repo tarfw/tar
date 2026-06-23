@@ -10,6 +10,7 @@ import { Colors } from '@/constants/theme';
 import { initDb } from '@/lib/db';
 import { initEmbeddings } from '@/lib/embeddings';
 import { checkAndSyncExistingForms } from '@/lib/vectorStore';
+import { ensureBuiltins } from '@/skills/seed';
 
 const T0 = Date.now();
 function ms() { return `${Date.now() - T0}ms`; }
@@ -30,6 +31,10 @@ function RootLayoutInner() {
         console.log(`[BOOT] ${ms()} — initDb() START`);
         await initDb();
         console.log(`[BOOT] ${ms()} — initDb() DONE`);
+
+        console.log(`[BOOT] ${ms()} — ensureBuiltins() START`);
+        await ensureBuiltins();
+        console.log(`[BOOT] ${ms()} — ensureBuiltins() DONE`);
 
         console.log(`[BOOT] ${ms()} — vector sync START (fire & forget)`);
         checkAndSyncExistingForms().catch(e => console.warn(`[BOOT] ${ms()} — Vector sync error:`, e));

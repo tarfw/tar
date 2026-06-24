@@ -6,7 +6,6 @@ import {
   Switch,
   View,
   Text,
-  ActivityIndicator,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useRouter } from "expo-router";
@@ -35,7 +34,7 @@ export default function SettingsScreen() {
     try {
       await signOutGoogle();
       router.replace("/auth");
-    } catch (_) {
+    } catch {
       router.replace("/auth");
     }
   };

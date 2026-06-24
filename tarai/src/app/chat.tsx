@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { StyleSheet, FlatList, Pressable, View, TextInput, Text, ActivityIndicator, Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
@@ -91,7 +91,7 @@ Be concise and helpful. Reply in 2-3 sentences max.`;
         time: new Date().toISOString(),
       };
       setMessages(prev => [...prev, assistantMsg]);
-    } catch (e) {
+    } catch {
       const errorMsg: Message = {
         id: `msg_${Date.now()}`,
         role: 'assistant',

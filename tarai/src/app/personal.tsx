@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { StyleSheet, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,10 +11,6 @@ import { useDb } from '@/db/provider';
 import { getCurrentUser, type UserProfile } from '@/lib/auth';
 import { type FormRow } from '@/hooks/use-form';
 
-function parseData(data: string): Record<string, any> {
-  try { return JSON.parse(data); } catch { return {}; }
-}
-
 const PERSONAL_FORM_ID = '__personal_profile__';
 const NOTION_AVATAR = require('../../assets/images/profile avatar.webp');
 
@@ -25,38 +21,11 @@ export default function PersonalScreen() {
   const router = useRouter();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [localTitle, setLocalTitle] = useState('');
-  const [motions, setMotions] = useState<any[]>([]);
   const [detailTab, setDetailTab] = useState<'activity' | 'details'>('activity');
 
   useEffect(() => {
     getCurrentUser().then(setUser);
   }, []);
-
-  const loadData = useCallback(async () => {
-    if (!user) return;
-
-    const existing = await db.getFirstAsync<FormRow>(
-      'SELECT * FROM form WHERE id = ?',
-      PERSONAL_FORM_ID
-    );
-    if (existing) {
-      setLocalTitle(existing.title);
-    } else if (user.name) {
-      setLocalTitle(user.name);
-    }
-
-    const mov = await db.getAllAsync<any>(
-      "SELECT * FROM motion WHERE stream = ? ORDER BY seq DESC LIMIT 20",
-      PERSONAL_FORM_ID
-    );
-    setMotions(mov);
-  }, [db, user]);
-
-  useEffect(() => {
-    if (user) {
-      loadData();
-    }
-  }, [user, loadData]);
 
   const handleSaveTitle = async () => {
     if (!localTitle.trim()) return;
@@ -69,25 +38,6 @@ export default function PersonalScreen() {
     }
   };
 
-  const formatTime = (time: string) => {
-    const d = new Date(time);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 1) return 'Just now';
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    return `${Math.floor(diffHr / 24)}d ago`;
-  };
-
-  const motionLabel = (action: number) => {
-    const labels: Record<number, string> = {
-      100: 'Subtask added',
-    };
-    return labels[action] || `Action ${action}`;
-  };
-
   if (!user) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -95,10 +45,6 @@ export default function PersonalScreen() {
       </View>
     );
   }
-
-  const initials = user.name
-    ? user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-    : user.email.charAt(0).toUpperCase();
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -156,23 +102,7 @@ export default function PersonalScreen() {
         {/* Activity Tab */}
         {detailTab === 'activity' && (
           <>
-            {motions.length > 0 ? motions.map((m, i) => {
-              const md = parseData(m.data);
-              return (
-                <View key={i} style={styles.timelineRow}>
-                  <View style={[styles.timelineDot, { backgroundColor: theme.textSecondary }]} />
-                  <View style={styles.timelineContent}>
-                    <Text style={[styles.timelineTitle, { color: theme.text }]}>{motionLabel(m.action)}</Text>
-                    <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
-                      {formatTime(m.time)}
-                      {md.title ? ` · ${md.title}` : ''}
-                    </Text>
-                  </View>
-                </View>
-              );
-            }) : (
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No activity yet</Text>
-            )}
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No activity yet</Text>
           </>
         )}
 

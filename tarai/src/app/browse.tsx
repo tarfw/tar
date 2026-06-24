@@ -26,7 +26,7 @@ export default function BrowseScreen() {
   const [stores, setStores] = useState<FormRow[]>([]);
   const [loading, setLoading] = useState(true);
   const dbRef = useRef(db);
-  dbRef.current = db;
+  useEffect(() => { dbRef.current = db; }, [db]);
 
   const loadData = useCallback(async () => {
     const all = await dbRef.current.getAllAsync<FormRow>('SELECT * FROM form WHERE active = 1 ORDER BY time DESC');
@@ -44,7 +44,7 @@ export default function BrowseScreen() {
     if (didInit.current) return;
     didInit.current = true;
     loadData();
-  }, []);
+  }, [loadData]);
 
   const isMounted = useRef(false);
   useFocusEffect(
@@ -125,7 +125,6 @@ export default function BrowseScreen() {
           <>
             <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Stores</Text>
             {stores.map((s) => {
-              const d = parseData(s.data);
               return (
                 <Pressable key={s.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/entity', params: { id: s.id } })}>
                   <View style={[styles.storeIcon, { backgroundColor: '#10B981' }]}>

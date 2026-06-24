@@ -292,3 +292,98 @@ export async function generateSkillDefinition(userInput: string): Promise<import
     custom: true,
   };
 }
+
+const SKILL_EDIT_PROMPT = `You are a skill editor for a business app. Given an existing skill definition and a user's edit instruction, modify the skill accordingly.
+
+Respond with ONLY a JSON object (no markdown, no prose) of this exact shape:
+{
+  "name": string,
+  "description": string,
+  "vertical": string,
+  "icon": string,
+  "keywords": string[],
+  "fields": [
+    {
+      "name": string,
+      "label": string,
+      "type": "text"|"number"|"select"|"textarea"|"date"|"phone"|"email"|"rating",
+      "required": boolean,
+      "placeholder": string,
+      "options": string[]
+    }
+  ],
+  "creates": {
+    "table": "form",
+    "formType": string,
+    "formScope": "p",
+    "titleTemplate": string,
+    "dataFields": string[]
+  }
+}
+
+Rules:
+- Apply the user's edit instruction to the existing skill
+- Keep unchanged parts as-is
+- Only modify what the user asked for
+- Return ONLY the JSON object, nothing else`;
+
+/**
+ * Edit an existing skill definition using AI.
+ * Takes the current skill + user's edit instruction, returns modified skill.
+ */
+export async function editSkillDefinition(
+  currentSkill: import('@/skills/definitions').SkillDef,
+  editInstruction: string
+): Promise<import('@/skills/definitions').SkillDef> {
+  console.log(`[AI] editSkillDefinition: "${editInstruction}" on "${currentSkill.name}"`);
+
+  const currentJson = JSON.stringify({
+    name: currentSkill.name,
+    description: currentSkill.description,
+    vertical: currentSkill.vertical,
+    icon: currentSkill.icon,
+    keywords: currentSkill.keywords,
+    fields: currentSkill.fields,
+    creates: currentSkill.creates,
+  }, null, 2);
+
+  const userPrompt = `Current skill:\n${currentJson}\n\nEdit instruction: ${editInstruction}`;
+
+  const content = await chatCompletion(SKILL_EDIT_PROMPT, userPrompt);
+  const parsed = extractJson(content);
+
+  const VALID_TYPES = new Set(['text', 'number', 'select', 'textarea', 'date', 'phone', 'email', 'rating']);
+
+  const fields = Array.isArray(parsed.fields)
+    ? parsed.fields.map((f: any) => ({
+        name: String(f.name || 'field'),
+        type: VALID_TYPES.has(f.type) ? f.type : 'text',
+        label: String(f.label || f.name || 'Field'),
+        required: Boolean(f.required),
+        placeholder: String(f.placeholder || ''),
+        options: f.type === 'select' && Array.isArray(f.options) ? f.options.map(String) : undefined,
+      }))
+    : currentSkill.fields;
+
+  const titleTemplate = String(parsed.creates?.titleTemplate || currentSkill.creates?.titleTemplate || '{title}');
+  const dataFields = Array.isArray(parsed.creates?.dataFields)
+    ? parsed.creates.dataFields.map(String)
+    : currentSkill.creates?.dataFields || fields.map((f: any) => f.name);
+
+  return {
+    ...currentSkill,
+    name: String(parsed.name || currentSkill.name),
+    description: String(parsed.description || currentSkill.description),
+    vertical: String(parsed.vertical || currentSkill.vertical),
+    icon: String(parsed.icon || currentSkill.icon),
+    keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(String).slice(0, 5) : currentSkill.keywords,
+    fields,
+    creates: {
+      table: 'form',
+      formType: String(parsed.creates?.formType || currentSkill.creates?.formType || 'custom'),
+      formScope: 'p',
+      titleTemplate,
+      dataFields,
+    },
+  };
+}

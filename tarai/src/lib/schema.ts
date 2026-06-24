@@ -18,7 +18,7 @@ export const SCHEMA_STATEMENTS = [
     embedding BLOB,
     PRIMARY KEY (form, chunk)
   )`,
-  `CREATE TABLE IF NOT EXISTS bond (
+  `CREATE TABLE IF NOT EXISTS graph (
     src TEXT NOT NULL,
     tgt TEXT NOT NULL,
     type TEXT NOT NULL,
@@ -60,6 +60,6 @@ export const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_matter_type ON matter(type)`,
   `CREATE INDEX IF NOT EXISTS idx_motion_stream ON motion(stream)`,
   `CREATE INDEX IF NOT EXISTS idx_motion_action ON motion(action)`,
-  `CREATE INDEX IF NOT EXISTS idx_bond_src ON bond(src)`,
-  `CREATE INDEX IF NOT EXISTS idx_bond_tgt ON bond(tgt)`,
+  `CREATE INDEX IF NOT EXISTS idx_graph_src ON graph(src)`,
+  `CREATE INDEX IF NOT EXISTS idx_graph_tgt ON graph(tgt)`,
 ];

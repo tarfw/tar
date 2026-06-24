@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   StyleSheet,
   ScrollView,
@@ -18,8 +18,6 @@ import {
   type ActionGroup,
   type ActionItem,
 } from "@/hooks/use-motion";
-import { getCurrentUser, type UserProfile } from "@/lib/auth";
-
 type Urgency = "Now" | "Next" | "Later" | "Done";
 
 // Notion-style girl avatar (bundled DiceBear "Notionists" illustration) — used when user has no photo
@@ -224,15 +222,7 @@ export default function ActionsScreen() {
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<Urgency>("Now");
   const { groups, loading, refresh } = useMotion();
-  const [user, setUser] = useState<UserProfile | null>(null);
-
   const filters: Urgency[] = ["Now", "Next", "Later", "Done"];
-
-  useEffect(() => {
-    getCurrentUser()
-      .then(setUser)
-      .catch(() => {});
-  }, []);
 
   const isMounted = useRef(false);
   useFocusEffect(

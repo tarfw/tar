@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, FlatList, Pressable, View, TextInput, Text, ActivityIndicator, Keyboard } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { StyleSheet, FlatList, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';

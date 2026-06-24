@@ -7,10 +7,12 @@ import { ThemeProvider, useThemeMode } from '@/hooks/use-theme-context';
 import { DbProvider } from '@/db/provider';
 import { EmbeddingsProvider } from '@/db/embeddings-provider';
 import { Colors } from '@/constants/theme';
-import { initDb } from '@/lib/db';
+import { initDb, getSelfId } from '@/lib/db';
 import { initEmbeddings } from '@/lib/embeddings';
 import { checkAndSyncExistingForms } from '@/lib/vectorStore';
 import { ensureBuiltins } from '@/skills/seed';
+import { ensureSkillsTable } from '@/skills/api';
+import { setSkillUserId } from '@/skills/store';
 
 const T0 = Date.now();
 function ms() { return `${Date.now() - T0}ms`; }
@@ -35,6 +37,15 @@ function RootLayoutInner() {
         console.log(`[BOOT] ${ms()} — ensureBuiltins() START`);
         await ensureBuiltins();
         console.log(`[BOOT] ${ms()} — ensureBuiltins() DONE`);
+
+        console.log(`[BOOT] ${ms()} — ensureSkillsTable() START`);
+        await ensureSkillsTable().catch(e => console.warn(`[BOOT] ${ms()} — Skills table error:`, e));
+        console.log(`[BOOT] ${ms()} — ensureSkillsTable() DONE`);
+
+        console.log(`[BOOT] ${ms()} — getSelfId() START`);
+        const userId = await getSelfId();
+        setSkillUserId(userId);
+        console.log(`[BOOT] ${ms()} — getSelfId() DONE: ${userId}`);
 
         console.log(`[BOOT] ${ms()} — vector sync START (fire & forget)`);
         checkAndSyncExistingForms().catch(e => console.warn(`[BOOT] ${ms()} — Vector sync error:`, e));

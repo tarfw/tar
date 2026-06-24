@@ -2,9 +2,6 @@ import { GoogleSignin, statusCodes } from "@react-native-google-signin/google-si
 import * as SecureStore from "expo-secure-store";
 
 const SECURE_STORE_USER_KEY = "google_auth_user";
-const SECURE_STORE_JWT_KEY = "sync_jwt";
-
-const WORKER_URL = process.env.EXPO_PUBLIC_TAR_SYNC_URL || "https://tar-sync.tar-54d.workers.dev";
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "",
@@ -17,35 +14,6 @@ export interface UserProfile {
   email: string;
   photo: string | null;
   idToken: string | null;
-}
-
-export async function exchangeForJwt(idToken: string): Promise<string | null> {
-  const t0 = Date.now();
-  try {
-    console.log(`[Auth] ${Date.now() - t0}ms — exchangeForJwt START → ${WORKER_URL}/api/auth`);
-    const response = await fetch(`${WORKER_URL}/api/auth`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken })
-    });
-
-    if (!response.ok) {
-      console.warn(`[Auth] ${Date.now() - t0}ms — exchangeForJwt HTTP ${response.status}`);
-      return null;
-    }
-
-    const { token } = await response.json();
-    await SecureStore.setItemAsync(SECURE_STORE_JWT_KEY, token);
-    console.log(`[Auth] ${Date.now() - t0}ms — exchangeForJwt DONE`);
-    return token;
-  } catch (e) {
-    console.warn(`[Auth] ${Date.now() - t0}ms — exchangeForJwt ERROR:`, e);
-    return null;
-  }
-}
-
-export async function getJwt(): Promise<string | null> {
-  return await SecureStore.getItemAsync(SECURE_STORE_JWT_KEY);
 }
 
 export async function signInWithGoogle(): Promise<UserProfile> {
@@ -75,10 +43,6 @@ export async function signInWithGoogle(): Promise<UserProfile> {
     console.log(`[Auth] ${Date.now() - t0}ms — storing profile to SecureStore`);
     await SecureStore.setItemAsync(SECURE_STORE_USER_KEY, JSON.stringify(profile));
 
-    if (userData.idToken) {
-      await exchangeForJwt(userData.idToken);
-    }
-
     console.log(`[Auth] ${Date.now() - t0}ms — signInWithGoogle DONE: ${profile.email}`);
     return profile;
   } catch (error: any) {
@@ -105,7 +69,6 @@ export async function signOutGoogle(): Promise<void> {
     console.error(`[Auth] ${Date.now() - t0}ms — signOutGoogle error:`, error);
   } finally {
     await SecureStore.deleteItemAsync(SECURE_STORE_USER_KEY);
-    await SecureStore.deleteItemAsync(SECURE_STORE_JWT_KEY);
     console.log(`[Auth] ${Date.now() - t0}ms — signOutGoogle DONE (SecureStore cleared)`);
   }
 }
@@ -116,15 +79,6 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
   console.log(`[Auth] ${Date.now() - t0}ms — getCurrentUser: ${savedUserJson ? 'found' : 'null'}`);
   if (!savedUserJson) return null;
   return JSON.parse(savedUserJson) as UserProfile;
-}
-
-export async function ensureJwt(): Promise<void> {
-  const profile = await getCurrentUser();
-  if (!profile?.idToken) return;
-  const jwt = await getJwt();
-  if (!jwt) {
-    await exchangeForJwt(profile.idToken);
-  }
 }
 
 export async function trySilentSignIn(): Promise<UserProfile | null> {
@@ -159,10 +113,6 @@ export async function trySilentSignIn(): Promise<UserProfile | null> {
     };
 
     await SecureStore.setItemAsync(SECURE_STORE_USER_KEY, JSON.stringify(profile));
-
-    if (userData.idToken) {
-      await exchangeForJwt(userData.idToken);
-    }
 
     console.log(`[Auth] ${Date.now() - t0}ms — trySilentSignIn DONE: ${profile.email}`);
     return profile;

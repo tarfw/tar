@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
 import { Host, BottomSheet } from '@expo/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,7 +30,7 @@ export default function WorkspaceScreen() {
   const [showPickMember, setShowPickMember] = useState(false);
   const [allPeople, setAllPeople] = useState<FormRow[]>([]);
 
-  const loadWorkspace = useCallback(async () => {
+  const loadWorkspace = async () => {
     if (!row) return;
     setLocalTitle(row.title);
 
@@ -55,12 +55,41 @@ export default function WorkspaceScreen() {
       row.scope
     );
     setTasks(taskList);
-  }, [db, row]);
+  };
 
   useEffect(() => {
-    if (row) setLocalTitle(row.title);
-    loadWorkspace();
-  }, [row, loadWorkspace]);
+    if (!row) return;
+    let cancelled = false;
+    (async () => {
+      setLocalTitle(row.title);
+
+      const memberLinks = await db.getAllAsync<{ tgt: string }>(
+        "SELECT tgt FROM graph WHERE src = ? AND type = 'has_member' AND active = 1",
+        row.id
+      );
+      const memberIds = memberLinks.map(l => l.tgt);
+      if (memberIds.length > 0) {
+        const placeholders = memberIds.map(() => '?').join(',');
+        const membersList = await db.getAllAsync<FormRow>(
+          `SELECT * FROM form WHERE id IN (${placeholders}) AND active = 1`,
+          ...memberIds
+        );
+        if (cancelled) return;
+        setMembers(membersList);
+      } else {
+        if (cancelled) return;
+        setMembers([]);
+      }
+
+      const taskList = await db.getAllAsync<FormRow>(
+        "SELECT * FROM form WHERE type = 'task' AND scope = ? AND active = 1 ORDER BY time DESC",
+        row.scope
+      );
+      if (cancelled) return;
+      setTasks(taskList);
+    })();
+    return () => { cancelled = true; };
+  }, [db, row]);
 
   const handleSaveTitle = async () => {
     if (!row || !localTitle.trim()) return;

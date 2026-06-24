@@ -1,12 +1,18 @@
-import { getUserDb, getGlobalDb } from '@/lib/db';
+import { getGlobalDb } from '@/lib/db';
 import { vectorToText } from '@/lib/vectorStore';
 import type { SkillDef } from './definitions';
+import * as api from './api';
 
 let embeddingFn: ((text: string) => Promise<number[]>) | null = null;
 let seedPromise: Promise<void> | null = null;
+let currentUserId: string | null = null;
 
 export function setSkillEmbeddingFunction(fn: (text: string) => Promise<number[]>) {
   embeddingFn = fn;
+}
+
+export function setSkillUserId(userId: string) {
+  currentUserId = userId;
 }
 
 export interface SkillSearchResult {
@@ -15,7 +21,7 @@ export interface SkillSearchResult {
 }
 
 // ---------------------------------------------------------------------------
-// Seed: embed all skills into memory table (both global + user)
+// Seed: embed built-in skills into local memory table
 // ---------------------------------------------------------------------------
 
 export async function seedSkills(): Promise<void> {
@@ -34,22 +40,13 @@ export async function seedSkills(): Promise<void> {
 
 async function doSeedSkills(embed: (text: string) => Promise<number[]>): Promise<void> {
   try {
-    // Seed built-in skills from global.db
     const globalDb = getGlobalDb();
-    const globalRows = await globalDb.all(
+    const rows = await globalDb.all(
       "SELECT id, title, data FROM form WHERE type = 'tool' AND active = 1"
     ).catch(() => []);
-
-    // Seed user's custom skills
-    const userDb = getUserDb();
-    const userRows = await userDb.all(
-      "SELECT id, title, data FROM form WHERE type = 'tool' AND active = 1"
-    ).catch(() => []);
-
-    const allRows = [...(globalRows as any[]), ...(userRows as any[])];
 
     let count = 0;
-    for (const row of allRows) {
+    for (const row of rows as any[]) {
       const data = JSON.parse(String(row.data || '{}'));
       const textToEmbed = [
         String(row.title || ''),
@@ -60,73 +57,63 @@ async function doSeedSkills(embed: (text: string) => Promise<number[]>): Promise
       const vector = await embed(textToEmbed);
       const vecText = vectorToText(vector);
 
-      // Embed into the appropriate DB's memory table
-      const db = row.id.startsWith('tool_') && !row.id.includes('_custom_')
-        ? globalDb
-        : userDb;
-
-      await db.run(
+      await globalDb.run(
         'INSERT OR REPLACE INTO memory (form, chunk, vector, embedding) VALUES (?, 0, vector32(?), vector32(?))',
         [row.id, vecText, vecText]
       );
       count++;
     }
 
-    console.log(`[SKILLS] seeded ${count} skills into memory`);
+    console.log(`[SKILLS] seeded ${count} built-in skills into memory`);
   } catch (e) {
     console.error('[SKILLS] seed failed:', e);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Persist + embed a single skill (used by AI generation)
+// Create custom skill → save to Turso cloud
 // ---------------------------------------------------------------------------
 
-export async function persistAndEmbedSkill(
-  embed: (text: string) => Promise<number[]>,
-  skill: SkillDef
-): Promise<void> {
-  const db = getUserDb();
-  const data = JSON.stringify({
+export async function createCustomSkill(skill: SkillDef): Promise<void> {
+  if (!currentUserId) throw new Error('User not authenticated');
+
+  await api.createSkill(currentUserId, {
+    id: skill.id,
+    name: skill.name,
     description: skill.description,
     vertical: skill.vertical,
+    icon: skill.icon,
+    keywords: skill.keywords || [],
     fields: skill.fields,
-    keywords: skill.keywords,
-    creates: skill.creates,
-    execute: skill.execute,
-    custom: skill.custom,
-    builtIn: skill.builtIn,
+    data: {
+      creates: skill.creates,
+      execute: skill.execute,
+    },
   });
 
-  await db.run(
-    'INSERT OR REPLACE INTO form (id, type, title, scope, public, data, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
-    [skill.id, 'tool', skill.name, 'p', 0, data]
-  );
-
-  const textToEmbed = [skill.name, skill.description, ...(skill.keywords ?? [])].join('. ');
-  const vector = await embed(textToEmbed);
-  const vecText = vectorToText(vector);
-  await db.run(
-    'INSERT OR REPLACE INTO memory (form, chunk, vector, embedding) VALUES (?, 0, vector32(?), vector32(?))',
-    [skill.id, vecText, vecText]
-  );
-}
-
-/**
- * Create a custom (AI-generated) skill: persist + embed + make available
- * via searchSkills. Saved to user's private DB.
- */
-export async function createCustomSkill(skill: SkillDef): Promise<void> {
-  if (!embeddingFn) throw new Error('Embedding model not loaded');
-  await persistAndEmbedSkill(embeddingFn, { ...skill, custom: true });
-  console.log(`[SKILLS] custom skill created: ${skill.id} — "${skill.name}"`);
+  console.log(`[SKILLS] custom skill created in cloud: ${skill.id}`);
 }
 
 // ---------------------------------------------------------------------------
-// Load skills from both DBs
+// Load skills: built-in from global.db + custom from Turso cloud
 // ---------------------------------------------------------------------------
 
-function reconstructSkillFromRow(row: any): SkillDef | null {
+function apiRecordToSkillDef(record: api.SkillRecord): SkillDef {
+  return {
+    id: record.id,
+    name: record.name,
+    description: record.description,
+    vertical: record.vertical,
+    icon: record.icon,
+    keywords: record.keywords,
+    fields: record.fields,
+    creates: record.data?.creates,
+    execute: typeof record.data?.execute === 'function' ? record.data.execute : undefined,
+    custom: true,
+  };
+}
+
+function localRowToSkillDef(row: any): SkillDef | null {
   try {
     const data = JSON.parse(String(row.data || '{}'));
     return {
@@ -147,29 +134,33 @@ function reconstructSkillFromRow(row: any): SkillDef | null {
   }
 }
 
-/**
- * Load all skills: built-in from global.db + custom from user DB.
- */
 export async function loadAllSkills(): Promise<SkillDef[]> {
   try {
+    // Built-in from local global.db
     const globalDb = getGlobalDb();
-    const userDb = getUserDb();
-
     const globalRows = await globalDb.all(
       "SELECT id, title, data FROM form WHERE type = 'tool' AND active = 1"
     ).catch(() => []);
 
-    const userRows = await userDb.all(
-      "SELECT id, title, data FROM form WHERE type = 'tool' AND active = 1"
-    ).catch(() => []);
-
     const skills: SkillDef[] = [];
-    for (const row of [...(globalRows as any[]), ...(userRows as any[])]) {
-      const skill = reconstructSkillFromRow(row);
+    for (const row of globalRows as any[]) {
+      const skill = localRowToSkillDef(row);
       if (skill) skills.push(skill);
     }
 
-    // Sort: built-in first, then custom, alphabetically within each group
+    // Custom from Turso cloud
+    if (currentUserId) {
+      try {
+        const cloudSkills = await api.getSkillsByUser(currentUserId);
+        for (const record of cloudSkills) {
+          skills.push(apiRecordToSkillDef(record));
+        }
+      } catch (e) {
+        console.warn('[SKILLS] failed to load cloud skills:', e);
+      }
+    }
+
+    // Sort: built-in first, then custom, alphabetically
     skills.sort((a, b) => {
       if (a.builtIn && !b.builtIn) return -1;
       if (!a.builtIn && b.builtIn) return 1;
@@ -182,29 +173,17 @@ export async function loadAllSkills(): Promise<SkillDef[]> {
   }
 }
 
-/**
- * Load only public skills (for marketplace / import).
- */
 export async function loadPublicSkills(): Promise<SkillDef[]> {
   try {
-    const globalDb = getGlobalDb();
-    const rows = await globalDb.all(
-      "SELECT id, title, data FROM form WHERE type = 'tool' AND public = 1 AND active = 1"
-    ).catch(() => []);
-
-    const skills: SkillDef[] = [];
-    for (const row of rows as any[]) {
-      const skill = reconstructSkillFromRow(row);
-      if (skill) skills.push(skill);
-    }
-    return skills;
+    const records = await api.getPublicSkills();
+    return records.map(apiRecordToSkillDef);
   } catch {
     return [];
   }
 }
 
 // ---------------------------------------------------------------------------
-// Search: vector + text fallback across both DBs
+// Search: vector (local) + text (local + cloud)
 // ---------------------------------------------------------------------------
 
 function textSearchSkills(allSkills: SkillDef[], query: string, limit: number): SkillSearchResult[] {
@@ -226,74 +205,68 @@ function textSearchSkills(allSkills: SkillDef[], query: string, limit: number): 
 export async function searchSkills(query: string, limit = 5, minSimilarity = 0.2): Promise<SkillSearchResult[]> {
   if (!query.trim()) return [];
 
-  try {
-    const globalDb = getGlobalDb();
-    const userDb = getUserDb();
+  // Load all skills (built-in + custom)
+  const allSkills = await loadAllSkills();
 
-    // Load all skills from both DBs into a map
-    const globalRows = await globalDb.all(
-      "SELECT id, title, data FROM form WHERE type = 'tool' AND active = 1"
-    ).catch(() => []);
+  // Text fallback always runs
+  const textResults = textSearchSkills(allSkills, query, limit);
 
-    const userRows = await userDb.all(
-      "SELECT id, title, data FROM form WHERE type = 'tool' AND active = 1"
-    ).catch(() => []);
+  // Vector search only when model is ready (searches local memory table)
+  if (embeddingFn) {
+    try {
+      const globalDb = getGlobalDb();
+      const queryVector = await embeddingFn(query);
+      const vecText = vectorToText(queryVector);
 
-    const skillMap = new Map<string, SkillDef>();
-    for (const row of [...(globalRows as any[]), ...(userRows as any[])]) {
-      const s = reconstructSkillFromRow(row);
-      if (s) skillMap.set(s.id, s);
-    }
+      const vecRows = await globalDb.all(
+        `SELECT m.form AS form, MIN(vector_distance_cos(m.vector, vector32(?))) AS dist
+           FROM memory m JOIN form f ON f.id = m.form AND f.type = 'tool'
+           GROUP BY m.form ORDER BY dist LIMIT ?`,
+        [vecText, limit]
+      ).catch(() => []);
 
-    const allSkills = Array.from(skillMap.values());
+      const skillMap = new Map(allSkills.map((s) => [s.id, s]));
+      const vecResults: SkillSearchResult[] = [];
 
-    // Text fallback always runs
-    const textResults = textSearchSkills(allSkills, query, limit);
-
-    // Vector search only when model is ready
-    if (embeddingFn) {
-      try {
-        const queryVector = await embeddingFn(query);
-        const vecText = vectorToText(queryVector);
-
-        // Search memory in both DBs
-        const globalVecRows = await globalDb.all(
-          `SELECT m.form AS form, MIN(vector_distance_cos(m.vector, vector32(?))) AS dist
-             FROM memory m JOIN form f ON f.id = m.form AND f.type = 'tool'
-             GROUP BY m.form ORDER BY dist LIMIT ?`,
-          [vecText, limit]
-        ).catch(() => []);
-
-        const userVecRows = await userDb.all(
-          `SELECT m.form AS form, MIN(vector_distance_cos(m.vector, vector32(?))) AS dist
-             FROM memory m JOIN form f ON f.id = m.form AND f.type = 'tool'
-             GROUP BY m.form ORDER BY dist LIMIT ?`,
-          [vecText, limit]
-        ).catch(() => []);
-
-        const vecResults: SkillSearchResult[] = [];
-        for (const row of [...(globalVecRows as any[]), ...(userVecRows as any[])]) {
-          const skill = skillMap.get(String(row.form));
-          if (!skill || row.dist == null) continue;
-          const similarity = 1 - Number(row.dist);
-          if (similarity >= minSimilarity) vecResults.push({ skill, similarity });
-        }
-
-        // Merge: vector results first, then text-only hits
-        const seen = new Set(vecResults.map((r) => r.skill.id));
-        const merged = [...vecResults];
-        for (const t of textResults) {
-          if (!seen.has(t.skill.id)) merged.push(t);
-        }
-        return merged.slice(0, limit);
-      } catch {
-        // Vector search failed, fall through to text-only
+      for (const row of vecRows as any[]) {
+        const skill = skillMap.get(String(row.form));
+        if (!skill || row.dist == null) continue;
+        const similarity = 1 - Number(row.dist);
+        if (similarity >= minSimilarity) vecResults.push({ skill, similarity });
       }
-    }
 
-    return textResults;
-  } catch (e) {
-    console.error('[SKILLS] search failed:', e);
-    return [];
+      // Merge: vector first, then text-only
+      const seen = new Set(vecResults.map((r) => r.skill.id));
+      const merged = [...vecResults];
+      for (const t of textResults) {
+        if (!seen.has(t.skill.id)) merged.push(t);
+      }
+      return merged.slice(0, limit);
+    } catch {
+      // Fall through to text-only
+    }
   }
+
+  return textResults;
+}
+
+// ---------------------------------------------------------------------------
+// Share / Import
+// ---------------------------------------------------------------------------
+
+export async function shareSkill(skillId: string): Promise<void> {
+  await api.shareSkill(skillId);
+}
+
+export async function unshareSkill(skillId: string): Promise<void> {
+  await api.unshareSkill(skillId);
+}
+
+export async function importSkill(skillId: string): Promise<string> {
+  if (!currentUserId) throw new Error('User not authenticated');
+  return api.importSkill(skillId, currentUserId);
+}
+
+export async function deleteSkill(skillId: string): Promise<void> {
+  await api.deleteSkill(skillId);
 }

@@ -8,6 +8,40 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
 
+const TURSO_URL = process.env.EXPO_PUBLIC_TURSO_URL || '';
+const TURSO_AUTH_TOKEN = process.env.EXPO_PUBLIC_TURSO_AUTH_TOKEN || '';
+
+async function syncStoreToTurso(id: string, title: string, scope: string, data: Record<string, any>) {
+  if (!TURSO_URL || !TURSO_AUTH_TOKEN) return;
+  try {
+    const httpsUrl = TURSO_URL.replace('libsql://', 'https://');
+    await fetch(`${httpsUrl}/v2/pipeline`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TURSO_AUTH_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            type: 'execute',
+            stmt: {
+              sql: `INSERT INTO form (id, type, title, scope, data, time, active)
+                    VALUES (?, 'store', ?, ?, ?, datetime('now'), 1)
+                    ON CONFLICT(id) DO UPDATE SET title = ?, data = ?, time = datetime('now')`,
+              args: [id, title, scope, JSON.stringify(data), title, JSON.stringify(data)].map(v => ({ type: 'text', value: String(v) })),
+            },
+          },
+          { type: 'close' },
+        ],
+      }),
+    });
+    console.log(`[Add] Synced store to Turso: ${data.subdomain}.tarai.space`);
+  } catch (err: any) {
+    console.error('[Add] Turso sync failed:', err?.message);
+  }
+}
+
 type EntityType = 'people' | 'work' | 'store';
 
 const ENTITY_TYPES: { key: EntityType; label: string; icon: string; color: string }[] = [
@@ -31,7 +65,7 @@ export default function AddScreen() {
     const now = new Date().toISOString();
 
     let formType: string;
-    let scope: string;
+    let scope: string = '';
     let data: Record<string, any> = {};
 
     if (selectedType === 'people') {
@@ -39,17 +73,23 @@ export default function AddScreen() {
       scope = 'p';
     } else if (selectedType === 'store') {
       formType = 'store';
-      scope = `s:store_${Date.now()}`;
       data = { subdomain: title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') };
     } else {
       formType = 'team';
       scope = `t:team_${Date.now()}`;
     }
 
+    if (!scope) scope = `s:${id}`;
+
     await db.runAsync(
       'INSERT INTO form (id, type, title, scope, data, time, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
       id, formType, title.trim(), scope, JSON.stringify(data), now
     );
+
+    // Sync store to Turso (non-blocking)
+    if (selectedType === 'store') {
+      syncStoreToTurso(id, title.trim(), scope, data);
+    }
 
     router.replace({ pathname: '/entity', params: { id } });
   };

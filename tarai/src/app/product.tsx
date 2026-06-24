@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { StyleSheet, Pressable, View, TextInput, Text, ActivityIndicator, Modal } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,10 +8,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
 import { suggestProductDetails } from '@/lib/ai';
-
-function parseData(data: string): Record<string, any> {
-  try { return JSON.parse(data); } catch { return {}; }
-}
 
 const COLOR_MAP: Record<string, string> = {
   black: '#1a1a1a', white: '#f5f5f5', red: '#FF3B30', blue: '#007AFF', green: '#34C759',
@@ -45,6 +41,24 @@ const DEFAULT_MARKETING: Marketing = {
 
 type AiSection = 'description' | 'tags' | 'options' | 'modifiers' | 'headline' | 'features' | 'social' | 'seo';
 
+function SectionContainer({ section, selectedSection, aiLoading, onPressSection, backgroundElement, children }: {
+  section: AiSection; selectedSection: AiSection | null; aiLoading: boolean;
+  onPressSection: (section: AiSection) => void; backgroundElement: string; children: React.ReactNode;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.sectionContainer,
+        pressed && { opacity: 0.6 },
+        selectedSection === section && { backgroundColor: `${backgroundElement}80`, borderRadius: 12, marginHorizontal: 12, paddingHorizontal: 4, paddingVertical: 8, marginTop: 10 },
+      ]}
+      onPress={() => onPressSection(section)}
+      disabled={aiLoading}>
+      {children}
+    </Pressable>
+  );
+}
+
 export default function ProductScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -53,7 +67,7 @@ export default function ProductScreen() {
   const params = useLocalSearchParams<{ id: string; mode?: 'create' | 'edit' }>();
   const isNew = params.mode === 'create' || !params.id;
 
-  const [loading, setLoading] = useState(!isNew);
+  const [loading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [selectedSection, setSelectedSection] = useState<AiSection | null>(null);
@@ -65,39 +79,9 @@ export default function ProductScreen() {
   const [options, setOptions] = useState('');
   const [modifiers, setModifiers] = useState('');
   const [marketing, setMarketing] = useState<Marketing>(DEFAULT_MARKETING);
-  const [files, setFiles] = useState<any[]>([]);
-
   const [showMenu, setShowMenu] = useState(false);
   const [detailTab, setDetailTab] = useState<'details' | 'marketing' | 'files'>('details');
   const [aiQuery, setAiQuery] = useState('');
-
-  const loadProduct = useCallback(async () => {
-    if (isNew || !params.id) return;
-    setLoading(true);
-    try {
-      const row = await db.getFirstAsync<any>('SELECT * FROM form WHERE id = ?', params.id);
-      if (row) {
-        setLocalTitle(row.title || '');
-        const data = parseData(row.data);
-        setCategory(data.category || '');
-        setTags(data.tags || '');
-        setDescription(data.description || '');
-        setOptions(data.options || '');
-        setModifiers(data.modifiers || '');
-        if (data.marketing) setMarketing({ ...DEFAULT_MARKETING, ...data.marketing });
-
-        const fileRows = await db.getAllAsync<any>(
-          "SELECT * FROM matter WHERE form = ? AND type = 'file' AND active = 1 ORDER BY time DESC",
-          params.id
-        );
-        setFiles(fileRows);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [params.id, isNew, db]);
-
-  useEffect(() => { loadProduct(); }, [loadProduct]);
 
   const handleAiSection = (section: AiSection) => {
     if (aiLoading) return;
@@ -241,19 +225,6 @@ export default function ProductScreen() {
     }).filter(m => m.name);
   };
 
-  const SectionContainer = ({ section, children }: { section: AiSection; children: React.ReactNode }) => (
-    <Pressable
-      style={({ pressed }) => [
-        styles.sectionContainer,
-        pressed && { opacity: 0.6 },
-        selectedSection === section && { backgroundColor: `${theme.backgroundElement}80`, borderRadius: 12, marginHorizontal: 12, paddingHorizontal: 4, paddingVertical: 8, marginTop: 10 },
-      ]}
-      onPress={() => handleAiSection(section)}
-      disabled={aiLoading}>
-      {children}
-    </Pressable>
-  );
-
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -322,7 +293,7 @@ export default function ProductScreen() {
         {/* Details Tab */}
         {detailTab === 'details' && (
           <>
-            <SectionContainer section="description">
+            <SectionContainer section="description" selectedSection={selectedSection} aiLoading={aiLoading} onPressSection={handleAiSection} backgroundElement={theme.backgroundElement}>
               {description ? (
                 <View style={styles.sectionContent}>
                   <Text style={[styles.descriptionText, { color: theme.text }]}>{description}</Text>
@@ -336,7 +307,7 @@ export default function ProductScreen() {
 
             <View style={[styles.divider, { backgroundColor: theme.backgroundElement }]} />
 
-            <SectionContainer section="options">
+            <SectionContainer section="options" selectedSection={selectedSection} aiLoading={aiLoading} onPressSection={handleAiSection} backgroundElement={theme.backgroundElement}>
               <View style={styles.sectionContent}>
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Options</Text>
                 {options ? (
@@ -359,7 +330,7 @@ export default function ProductScreen() {
 
             <View style={[styles.divider, { backgroundColor: theme.backgroundElement }]} />
 
-            <SectionContainer section="modifiers">
+            <SectionContainer section="modifiers" selectedSection={selectedSection} aiLoading={aiLoading} onPressSection={handleAiSection} backgroundElement={theme.backgroundElement}>
               <View style={styles.sectionContent}>
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Modifiers</Text>
                 {modifiers ? (
@@ -383,7 +354,7 @@ export default function ProductScreen() {
         {/* Marketing Tab */}
         {detailTab === 'marketing' && (
           <>
-            <SectionContainer section="headline">
+            <SectionContainer section="headline" selectedSection={selectedSection} aiLoading={aiLoading} onPressSection={handleAiSection} backgroundElement={theme.backgroundElement}>
               <View style={styles.sectionContent}>
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Headline</Text>
                 {marketing.headline ? (
@@ -396,7 +367,7 @@ export default function ProductScreen() {
 
             <View style={[styles.divider, { backgroundColor: theme.backgroundElement }]} />
 
-            <SectionContainer section="tags">
+            <SectionContainer section="tags" selectedSection={selectedSection} aiLoading={aiLoading} onPressSection={handleAiSection} backgroundElement={theme.backgroundElement}>
               <View style={styles.sectionContent}>
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Tags</Text>
                 {tags ? (
@@ -415,7 +386,7 @@ export default function ProductScreen() {
 
             <View style={[styles.divider, { backgroundColor: theme.backgroundElement }]} />
 
-            <SectionContainer section="features">
+            <SectionContainer section="features" selectedSection={selectedSection} aiLoading={aiLoading} onPressSection={handleAiSection} backgroundElement={theme.backgroundElement}>
               <View style={styles.sectionContent}>
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Key Features</Text>
                 {marketing.features.length > 0 ? (
@@ -433,7 +404,7 @@ export default function ProductScreen() {
 
             <View style={[styles.divider, { backgroundColor: theme.backgroundElement }]} />
 
-            <SectionContainer section="social">
+            <SectionContainer section="social" selectedSection={selectedSection} aiLoading={aiLoading} onPressSection={handleAiSection} backgroundElement={theme.backgroundElement}>
               <View style={styles.sectionContent}>
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Social Caption</Text>
                 {marketing.socialCaption ? (
@@ -446,7 +417,7 @@ export default function ProductScreen() {
 
             <View style={[styles.divider, { backgroundColor: theme.backgroundElement }]} />
 
-            <SectionContainer section="seo">
+            <SectionContainer section="seo" selectedSection={selectedSection} aiLoading={aiLoading} onPressSection={handleAiSection} backgroundElement={theme.backgroundElement}>
               <View style={styles.sectionContent}>
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>SEO</Text>
                 {marketing.seoTitle ? (
@@ -471,28 +442,7 @@ export default function ProductScreen() {
 
         {/* Files Tab */}
         {detailTab === 'files' && (
-          <>
-            {files.map((file, i) => {
-              const fd = parseData(file.data);
-              return (
-                <View key={i} style={styles.timelineRow}>
-                  <View style={[styles.timelineDot, { backgroundColor: '#5E6AD2' }]} />
-                  <View style={styles.timelineContent}>
-                    <Text style={[styles.timelineTitle, { color: theme.text }]}>
-                      {file.title || fd.name || 'Untitled'}
-                    </Text>
-                    <Text style={[styles.timelineMeta, { color: theme.textSecondary }]}>
-                      {fd.size ? `${(fd.size / 1024).toFixed(1)} KB` : ''}
-                      {file.time ? ` · ${new Date(file.time).toLocaleDateString()}` : ''}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-            {files.length === 0 && (
-              <Text style={[styles.emptyFiles, { color: theme.textSecondary }]}>No files attached</Text>
-            )}
-          </>
+          <Text style={[styles.emptyFiles, { color: theme.textSecondary }]}>No files attached</Text>
         )}
       </KeyboardAwareScrollView>
 

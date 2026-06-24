@@ -16,11 +16,13 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
 import type { SkillDef, SkillField } from '@/skills/definitions';
 import SkillExecutor from './SkillExecutor';
+import { editSkillDefinition } from '@/lib/ai';
 
 interface Props {
   skill: SkillDef;
   onDone: () => void;
   onCancel: () => void;
+  onSkillUpdated?: (updated: SkillDef) => void;
 }
 
 function SelectField({ field, value, onChange, theme }: { field: SkillField; value: string; onChange: (v: string) => void; theme: any }) {
@@ -63,16 +65,19 @@ function StarRating({ value, onChange }: { value: number; onChange: (v: number) 
   );
 }
 
-export default function SkillForm({ skill, onDone, onCancel }: Props) {
+export default function SkillForm({ skill, onDone, onCancel, onSkillUpdated }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const [values, setValues] = useState<Record<string, any>>({});
   const [executing, setExecuting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editInput, setEditInput] = useState('');
+  const [currentSkill, setCurrentSkill] = useState(skill);
 
   const set = (name: string, val: any) => setValues((v) => ({ ...v, [name]: val }));
 
   const handleExecute = () => {
-    const missing = skill.fields.filter((f) => f.required && !values[f.name]);
+    const missing = currentSkill.fields.filter((f) => f.required && !values[f.name]);
     if (missing.length > 0) {
       Alert.alert('Required fields', `Please fill: ${missing.map((f) => f.label).join(', ')}`);
       return;
@@ -80,10 +85,26 @@ export default function SkillForm({ skill, onDone, onCancel }: Props) {
     setExecuting(true);
   };
 
+  const handleEditWithAI = async () => {
+    const instruction = editInput.trim();
+    if (!instruction) return;
+
+    try {
+      const updated = await editSkillDefinition(currentSkill, instruction);
+      setCurrentSkill(updated);
+      setEditing(false);
+      setEditInput('');
+      onSkillUpdated?.(updated);
+    } catch (e) {
+      console.warn('[SkillForm] AI edit failed:', e);
+      Alert.alert('Edit failed', 'Could not edit skill. Please try again.');
+    }
+  };
+
   if (executing) {
     return (
       <SkillExecutor
-        skill={skill}
+        skill={currentSkill}
         values={values}
         onDone={() => {
           setExecuting(false);
@@ -100,68 +121,105 @@ export default function SkillForm({ skill, onDone, onCancel }: Props) {
         <Pressable onPress={onCancel} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>{skill.name}</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{currentSkill.name}</Text>
         <Pressable onPress={handleExecute} style={styles.backBtn}>
           <Ionicons name="play" size={20} color="#5E6AD2" />
         </Pressable>
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
-          keyboardShouldPersistTaps="handled">
-
-          {skill.fields.map((field) => (
-            <View key={field.name} style={styles.fieldGroup}>
-              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>
-                {field.label} {field.required ? '*' : ''}
-              </Text>
-
-              {field.type === 'select' ? (
-                <SelectField field={field} value={values[field.name] || ''} onChange={(v) => set(field.name, v)} theme={theme} />
-              ) : field.type === 'textarea' ? (
-                <TextInput
-                  style={[styles.textarea, { color: theme.text, backgroundColor: theme.backgroundElement }]}
-                  value={values[field.name] || ''}
-                  onChangeText={(t) => set(field.name, t)}
-                  placeholder={field.placeholder}
-                  placeholderTextColor={theme.textSecondary}
-                  multiline
-                  textAlignVertical="top"
-                />
-              ) : field.type === 'rating' ? (
-                <StarRating value={values[field.name] || 0} onChange={(v) => set(field.name, v)} />
-              ) : (
-                <TextInput
-                  style={[styles.textInput, { color: theme.text, backgroundColor: theme.backgroundElement }]}
-                  value={values[field.name] || ''}
-                  onChangeText={(t) => set(field.name, t)}
-                  placeholder={field.placeholder}
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType={field.type === 'number' ? 'numeric' : field.type === 'phone' ? 'phone-pad' : field.type === 'email' ? 'email-address' : 'default'}
-                  autoFocus={field === skill.fields[0]}
-                />
-              )}
-            </View>
-          ))}
-
-          <View style={[styles.infoCard, { backgroundColor: theme.backgroundElement }]}>
-            <Text style={[styles.infoText, { color: theme.textSecondary }]}>{skill.description}</Text>
+      {editing ? (
+        <View style={styles.editSection}>
+          <Text style={[styles.editLabel, { color: theme.textSecondary }]}>What do you want to change?</Text>
+          <TextInput
+            style={[styles.editInput, { color: theme.text, backgroundColor: theme.backgroundElement }]}
+            value={editInput}
+            onChangeText={setEditInput}
+            placeholder='e.g. "Add a phone field" or "Change to dropdown"'
+            placeholderTextColor={theme.textSecondary}
+            multiline
+            autoFocus
+          />
+          <View style={styles.editActions}>
+            <Pressable
+              style={[styles.editCancelBtn, { backgroundColor: theme.backgroundElement }]}
+              onPress={() => { setEditing(false); setEditInput(''); }}>
+              <Text style={[styles.editCancelText, { color: theme.text }]}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.editConfirmBtn, { backgroundColor: editInput.trim() ? '#5E6AD2' : '#999' }]}
+              onPress={handleEditWithAI}
+              disabled={!editInput.trim()}>
+              <Ionicons name="sparkles" size={16} color="#fff" />
+              <Text style={styles.editConfirmText}>Apply</Text>
+            </Pressable>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      ) : (
+        <>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
+              keyboardShouldPersistTaps="handled">
 
-      <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement, paddingBottom: insets.bottom + 12 }]}>
-        <Pressable
-          style={[styles.executeBtn, { backgroundColor: '#5E6AD2' }]}
-          onPress={handleExecute}>
-          <Ionicons name="play" size={18} color="#fff" />
-          <Text style={styles.executeBtnText}>Execute</Text>
-        </Pressable>
-      </View>
+              {currentSkill.fields.map((field) => (
+                <View key={field.name} style={styles.fieldGroup}>
+                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>
+                    {field.label} {field.required ? '*' : ''}
+                  </Text>
+
+                  {field.type === 'select' ? (
+                    <SelectField field={field} value={values[field.name] || ''} onChange={(v) => set(field.name, v)} theme={theme} />
+                  ) : field.type === 'textarea' ? (
+                    <TextInput
+                      style={[styles.textarea, { color: theme.text, backgroundColor: theme.backgroundElement }]}
+                      value={values[field.name] || ''}
+                      onChangeText={(t) => set(field.name, t)}
+                      placeholder={field.placeholder}
+                      placeholderTextColor={theme.textSecondary}
+                      multiline
+                      textAlignVertical="top"
+                    />
+                  ) : field.type === 'rating' ? (
+                    <StarRating value={values[field.name] || 0} onChange={(v) => set(field.name, v)} />
+                  ) : (
+                    <TextInput
+                      style={[styles.textInput, { color: theme.text, backgroundColor: theme.backgroundElement }]}
+                      value={values[field.name] || ''}
+                      onChangeText={(t) => set(field.name, t)}
+                      placeholder={field.placeholder}
+                      placeholderTextColor={theme.textSecondary}
+                      keyboardType={field.type === 'number' ? 'numeric' : field.type === 'phone' ? 'phone-pad' : field.type === 'email' ? 'email-address' : 'default'}
+                      autoFocus={field === currentSkill.fields[0]}
+                    />
+                  )}
+                </View>
+              ))}
+
+              <View style={[styles.infoCard, { backgroundColor: theme.backgroundElement }]}>
+                <Text style={[styles.infoText, { color: theme.textSecondary }]}>{currentSkill.description}</Text>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+
+          <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement, paddingBottom: insets.bottom + 12 }]}>
+            <Pressable
+              style={[styles.aiEditBtn, { backgroundColor: theme.backgroundElement }]}
+              onPress={() => setEditing(true)}>
+              <Ionicons name="sparkles" size={16} color="#5E6AD2" />
+              <Text style={[styles.aiEditText, { color: theme.text }]}>Edit with AI</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.executeBtn, { backgroundColor: '#5E6AD2' }]}
+              onPress={handleExecute}>
+              <Ionicons name="play" size={18} color="#fff" />
+              <Text style={styles.executeBtnText}>Execute</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -181,17 +239,25 @@ const styles = StyleSheet.create({
   infoCard: { marginHorizontal: 16, marginTop: 24, padding: 12, borderRadius: 10 },
   infoText: { fontSize: 12, lineHeight: 17 },
   bottomBar: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 20,
-    paddingTop: 12,
+    flexDirection: 'row', gap: 12,
+    borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingTop: 12,
   },
+  aiEditBtn: {
+    height: 48, paddingHorizontal: 16, borderRadius: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  aiEditText: { fontSize: 15, fontWeight: '500' },
   executeBtn: {
-    height: 48,
-    borderRadius: 12,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
+    flex: 1, height: 48, borderRadius: 12,
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8,
   },
   executeBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  editSection: { flex: 1, paddingHorizontal: 20, paddingTop: 20 },
+  editLabel: { fontSize: 14, fontWeight: '500', marginBottom: 12 },
+  editInput: { fontSize: 15, padding: 14, borderRadius: 12, minHeight: 80, textAlignVertical: 'top' },
+  editActions: { flexDirection: 'row', gap: 12, marginTop: 16 },
+  editCancelBtn: { flex: 1, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  editCancelText: { fontSize: 15, fontWeight: '500' },
+  editConfirmBtn: { flex: 1, height: 44, borderRadius: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  editConfirmText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });

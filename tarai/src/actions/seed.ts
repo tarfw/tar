@@ -1,19 +1,20 @@
 import { getGlobalDb } from '@/lib/db';
-import type { SkillDef } from './definitions';
+import type { ActionDef } from './definitions';
 
 /**
- * Built-in skills live permanently in global.db.
+ * Built-in actions live permanently in global.db.
  * They are inserted once on first launch and never deleted.
  * Users search across global.db + their private DB.
  */
 
-const BUILT_IN_SKILLS: SkillDef[] = [
+const BUILT_IN_ACTIONS: ActionDef[] = [
   {
     id: 'tool_create_lead',
     name: 'Create Lead',
     description: 'Add a new sales lead to CRM',
     vertical: 'crm',
     icon: 'person-add-outline',
+    type: 'tool',
     keywords: ['new customer interested in buying', 'prospect', 'potential client', 'someone wants to buy', 'add a contact', 'enquiry', 'walk-in customer', 'capture a lead'],
     fields: [
       { name: 'name', type: 'text', label: 'Contact Name', required: true, placeholder: 'Priya Sharma' },
@@ -36,6 +37,7 @@ const BUILT_IN_SKILLS: SkillDef[] = [
     description: 'Record a customer visit to the store',
     vertical: 'crm',
     icon: 'walk-outline',
+    type: 'tool',
     keywords: ['customer came to the shop', 'someone visited the store', 'record a walk-in', 'log a visit', 'foot traffic', 'in-person visit'],
     fields: [
       { name: 'person', type: 'text', label: 'Customer Name', required: true, placeholder: 'Who visited?' },
@@ -55,6 +57,7 @@ const BUILT_IN_SKILLS: SkillDef[] = [
     description: 'Log a support or service ticket',
     vertical: 'crm',
     icon: 'ticket-outline',
+    type: 'tool',
     keywords: ['angry customer has a problem', 'complaint', 'something is broken', 'customer issue', 'report a bug', 'service request', 'raise a support ticket', 'help needed'],
     fields: [
       { name: 'subject', type: 'text', label: 'Subject', required: true, placeholder: 'Issue description' },
@@ -75,6 +78,7 @@ const BUILT_IN_SKILLS: SkillDef[] = [
     description: 'Add a new task or to-do item',
     vertical: 'task',
     icon: 'checkbox-outline',
+    type: 'tool',
     keywords: ['i need to follow up tomorrow', 'remind me to do something', 'add a to-do', 'things to do', 'assign work', 'set a reminder', 'action item', 'i have to'],
     fields: [
       { name: 'title', type: 'text', label: 'Task Title', required: true, placeholder: 'What needs to be done?' },
@@ -95,6 +99,7 @@ const BUILT_IN_SKILLS: SkillDef[] = [
     description: 'Log an incoming payment',
     vertical: 'pay',
     icon: 'cash-outline',
+    type: 'tool',
     keywords: ['customer just paid me', 'received money', 'got paid', 'log a payment', 'money came in', 'collected cash', 'payment received'],
     fields: [
       { name: 'amount', type: 'number', label: 'Amount', required: true, placeholder: '5000' },
@@ -115,6 +120,7 @@ const BUILT_IN_SKILLS: SkillDef[] = [
     description: 'Log a business expense',
     vertical: 'pay',
     icon: 'wallet-outline',
+    type: 'tool',
     keywords: ['i spent money', 'bought supplies', 'paid for something', 'business cost', 'record what i spent', 'money went out', 'purchase'],
     fields: [
       { name: 'amount', type: 'number', label: 'Amount', required: true, placeholder: '500' },
@@ -134,6 +140,7 @@ const BUILT_IN_SKILLS: SkillDef[] = [
     description: 'Write a quick note or reminder',
     vertical: 'note',
     icon: 'document-text-outline',
+    type: 'tool',
     keywords: ['jot something down', 'write a note', 'save a thought', 'memo', 'quick reminder', 'note to self'],
     fields: [
       { name: 'title', type: 'text', label: 'Title', required: true, placeholder: 'Note title' },
@@ -152,6 +159,7 @@ const BUILT_IN_SKILLS: SkillDef[] = [
     description: 'Set up a new workspace or team',
     vertical: 'team',
     icon: 'people-outline',
+    type: 'tool',
     keywords: ['start a new group', 'set up a workspace', 'create a department', 'add a team', 'organize people'],
     fields: [
       { name: 'name', type: 'text', label: 'Team Name', required: true, placeholder: 'Marketing Team' },
@@ -167,9 +175,9 @@ const BUILT_IN_SKILLS: SkillDef[] = [
 ];
 
 /**
- * Insert built-in skills into global.db on first launch.
+ * Insert built-in actions into global.db on first launch.
  * Uses INSERT OR IGNORE so repeated calls are safe.
- * Skills stay permanently — never deleted.
+ * Actions stay permanently — never deleted.
  */
 export async function ensureBuiltins(): Promise<void> {
   try {
@@ -177,33 +185,35 @@ export async function ensureBuiltins(): Promise<void> {
 
     // Check if already seeded
     const existing = await db.get(
-      "SELECT id FROM form WHERE id = 'tool_create_lead'"
+      "SELECT id FROM action WHERE id = 'tool_create_lead'"
     ).catch(() => null);
     if (existing) return;
 
-    console.log(`[BUILTINS] Inserting ${BUILT_IN_SKILLS.length} built-in skills into global.db`);
+    console.log(`[BUILTINS] Inserting ${BUILT_IN_ACTIONS.length} built-in actions into global.db`);
 
-    for (const skill of BUILT_IN_SKILLS) {
-      const data = JSON.stringify({
-        description: skill.description,
-        vertical: skill.vertical,
-        fields: skill.fields,
-        keywords: skill.keywords,
-        execute: skill.execute,
-        custom: false,
-        builtIn: true,
-      });
-
+    for (const action of BUILT_IN_ACTIONS) {
       await db.run(
-        'INSERT OR IGNORE INTO form (id, type, title, scope, public, data, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
-        [skill.id, 'tool', skill.name, 'g', 1, data]
+        'INSERT OR IGNORE INTO action (id, scope, type, name, description, vertical, icon, keywords, fields, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          action.id,
+          'g',
+          action.type,
+          action.name,
+          action.description,
+          action.vertical,
+          action.icon,
+          JSON.stringify(action.keywords || []),
+          JSON.stringify(action.fields),
+          JSON.stringify({}),
+        ]
       );
     }
 
-    console.log(`[BUILTINS] Done — ${BUILT_IN_SKILLS.length} skills in global.db`);
+    console.log(`[BUILTINS] Done — ${BUILT_IN_ACTIONS.length} actions in global.db`);
   } catch (e) {
     console.error('[BUILTINS] Failed:', e);
   }
 }
 
-export { BUILT_IN_SKILLS };
+export { BUILT_IN_ACTIONS };
+

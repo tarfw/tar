@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { StyleSheet, ScrollView, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
 import { Host, BottomSheet } from '@expo/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +29,37 @@ export default function WorkspaceScreen() {
   const [localTitle, setLocalTitle] = useState('');
   const [showPickMember, setShowPickMember] = useState(false);
   const [allPeople, setAllPeople] = useState<FormRow[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const [wsStatus, setWsStatus] = useState('connecting');
+
+  const loadWorkspaceRef = useRef<any>(null);
+
+  useEffect(() => {
+    const ws = new (WebSocket as any)('wss://test-store.tarai.space/api/workspace/sync', undefined, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
+      }
+    });
+    wsRef.current = ws;
+    ws.onopen = () => {
+      setWsStatus('connected');
+      console.log('[Workspace Sync] WebSocket connected');
+    };
+    ws.onerror = (e: any) => {
+      setWsStatus('error');
+      console.error('[Workspace Sync] WebSocket error:', e);
+    };
+    ws.onclose = () => {
+      setWsStatus('closed');
+    };
+    ws.onmessage = (e: any) => {
+      console.log('[Workspace Sync] Received message:', e.data);
+      loadWorkspaceRef.current();
+    };
+    return () => {
+      ws.close();
+    };
+  }, []);
 
   const loadWorkspace = async () => {
     if (!row) return;
@@ -56,6 +87,7 @@ export default function WorkspaceScreen() {
     );
     setTasks(taskList);
   };
+  loadWorkspaceRef.current = loadWorkspace;
 
   useEffect(() => {
     if (!row) return;
@@ -110,6 +142,9 @@ export default function WorkspaceScreen() {
       'INSERT OR REPLACE INTO graph (src, tgt, type, weight, active) VALUES (?, ?, ?, ?, 1)',
       row.id, personId, 'has_member', 0
     );
+    if (wsRef.current && wsRef.current.readyState === 1) {
+      wsRef.current.send(JSON.stringify({ action: 'MEMBER_ADDED', workspaceId: row.id, personId }));
+    }
     setShowPickMember(false);
     loadWorkspace();
   };
@@ -120,6 +155,9 @@ export default function WorkspaceScreen() {
       'UPDATE graph SET active = 0 WHERE src = ? AND tgt = ? AND type = ?',
       row.id, memberId, 'has_member'
     );
+    if (wsRef.current && wsRef.current.readyState === 1) {
+      wsRef.current.send(JSON.stringify({ action: 'MEMBER_REMOVED', workspaceId: row.id, memberId }));
+    }
     loadWorkspace();
   };
 
@@ -154,6 +192,7 @@ export default function WorkspaceScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </Pressable>
+        <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '500' }}>Sync: {wsStatus}</Text>
         <Pressable style={styles.menuBtn}>
           <Ionicons name="ellipsis-vertical" size={20} color={theme.textSecondary} />
         </Pressable>

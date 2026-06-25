@@ -11,10 +11,10 @@
 
 import { z } from 'zod';
 
-const ASI_ENDPOINT = 'https://inference.asicloud.cudos.org/v1/chat/completions';
-const ASI_MODEL = 'asi1-mini';
-const ASI_API_KEY =
-  process.env.EXPO_PUBLIC_ASI_API_KEY || 'sk-OUW3HRFwVaiN8ySQp0-UPzgbdNdxoaRG9L55MFSmkB8';
+const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_MODEL = 'openai/gpt-oss-120b';
+const GROQ_API_KEY =
+  process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
 
 export const COMMERCE_CATEGORIES = [
   'Electronics',
@@ -85,18 +85,18 @@ function extractJson(text: string): any {
 }
 
 async function chatCompletion(systemPrompt: string, userPrompt: string): Promise<string> {
-  console.log(`[AI] chatCompletion - endpoint: ${ASI_ENDPOINT}`);
-  console.log(`[AI] chatCompletion - model: ${ASI_MODEL}`);
+  console.log(`[AI] chatCompletion - endpoint: ${GROQ_ENDPOINT}`);
+  console.log(`[AI] chatCompletion - model: ${GROQ_MODEL}`);
   console.log(`[AI] chatCompletion - userPrompt: ${userPrompt.slice(0, 100)}`);
 
-  const res = await fetch(ASI_ENDPOINT, {
+  const res = await fetch(GROQ_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${ASI_API_KEY}`,
+      Authorization: `Bearer ${GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model: ASI_MODEL,
+      model: GROQ_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -204,7 +204,7 @@ Return at most 24 short, human-readable labels. No duplicates, no prose.`;
   return out;
 }
 
-const SKILL_SYSTEM_PROMPT = `You are a skill generator for a business app. Given a natural-language description of what the user wants to do, generate a skill definition.
+const ACTION_SYSTEM_PROMPT = `You are an action generator for a business app. Given a natural-language description of what the user wants to do, generate an action definition.
 
 Respond with ONLY a JSON object (no markdown, no prose) of this exact shape:
 {
@@ -240,18 +240,18 @@ Rules:
 - Return ONLY the JSON object, nothing else`;
 
 /**
- * Ask the model to generate a skill definition from a user's natural-language
- * description. Returns a normalized SkillDef (with `custom: true`, timestamped
+ * Ask the model to generate an action definition from a user's natural-language
+ * description. Returns a normalized ActionDef (with `custom: true`, timestamped
  * id, and forced creates.table='form').
  */
-export async function generateSkillDefinition(userInput: string): Promise<import('@/skills/definitions').SkillDef> {
-  console.log(`[AI] generateSkillDefinition: "${userInput}"`);
+export async function generateActionDefinition(userInput: string): Promise<import('@/actions/definitions').ActionDef> {
+  console.log(`[AI] generateActionDefinition: "${userInput}"`);
 
-  const content = await chatCompletion(SKILL_SYSTEM_PROMPT, userInput);
+  const content = await chatCompletion(ACTION_SYSTEM_PROMPT, userInput);
   const parsed = extractJson(content);
 
   const VALID_TYPES = new Set(['text', 'number', 'select', 'textarea', 'date', 'phone', 'email', 'rating']);
-  const slug = String(parsed.name || 'custom-skill')
+  const slug = String(parsed.name || 'custom-action')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_|_$/g, '');
@@ -276,7 +276,8 @@ export async function generateSkillDefinition(userInput: string): Promise<import
 
   return {
     id,
-    name: String(parsed.name || 'Custom Skill'),
+    type: 'tool',
+    name: String(parsed.name || 'Custom Action'),
     description: String(parsed.description || ''),
     vertical: String(parsed.vertical || 'general'),
     icon: String(parsed.icon || 'document-text-outline'),
@@ -293,7 +294,7 @@ export async function generateSkillDefinition(userInput: string): Promise<import
   };
 }
 
-const SKILL_EDIT_PROMPT = `You are a skill editor for a business app. Given an existing skill definition and a user's edit instruction, modify the skill accordingly.
+const ACTION_EDIT_PROMPT = `You are an action editor for a business app. Given an existing action definition and a user's edit instruction, modify the action accordingly.
 
 Respond with ONLY a JSON object (no markdown, no prose) of this exact shape:
 {
@@ -322,34 +323,34 @@ Respond with ONLY a JSON object (no markdown, no prose) of this exact shape:
 }
 
 Rules:
-- Apply the user's edit instruction to the existing skill
+- Apply the user's edit instruction to the existing action
 - Keep unchanged parts as-is
 - Only modify what the user asked for
 - Return ONLY the JSON object, nothing else`;
 
 /**
- * Edit an existing skill definition using AI.
- * Takes the current skill + user's edit instruction, returns modified skill.
+ * Edit an existing action definition using AI.
+ * Takes the current action + user's edit instruction, returns modified action.
  */
-export async function editSkillDefinition(
-  currentSkill: import('@/skills/definitions').SkillDef,
+export async function editActionDefinition(
+  currentAction: import('@/actions/definitions').ActionDef,
   editInstruction: string
-): Promise<import('@/skills/definitions').SkillDef> {
-  console.log(`[AI] editSkillDefinition: "${editInstruction}" on "${currentSkill.name}"`);
+): Promise<import('@/actions/definitions').ActionDef> {
+  console.log(`[AI] editActionDefinition: "${editInstruction}" on "${currentAction.name}"`);
 
   const currentJson = JSON.stringify({
-    name: currentSkill.name,
-    description: currentSkill.description,
-    vertical: currentSkill.vertical,
-    icon: currentSkill.icon,
-    keywords: currentSkill.keywords,
-    fields: currentSkill.fields,
-    creates: currentSkill.creates,
+    name: currentAction.name,
+    description: currentAction.description,
+    vertical: currentAction.vertical,
+    icon: currentAction.icon,
+    keywords: currentAction.keywords,
+    fields: currentAction.fields,
+    creates: currentAction.creates,
   }, null, 2);
 
-  const userPrompt = `Current skill:\n${currentJson}\n\nEdit instruction: ${editInstruction}`;
+  const userPrompt = `Current action:\n${currentJson}\n\nEdit instruction: ${editInstruction}`;
 
-  const content = await chatCompletion(SKILL_EDIT_PROMPT, userPrompt);
+  const content = await chatCompletion(ACTION_EDIT_PROMPT, userPrompt);
   const parsed = extractJson(content);
 
   const VALID_TYPES = new Set(['text', 'number', 'select', 'textarea', 'date', 'phone', 'email', 'rating']);
@@ -363,27 +364,28 @@ export async function editSkillDefinition(
         placeholder: String(f.placeholder || ''),
         options: f.type === 'select' && Array.isArray(f.options) ? f.options.map(String) : undefined,
       }))
-    : currentSkill.fields;
+    : currentAction.fields;
 
-  const titleTemplate = String(parsed.creates?.titleTemplate || currentSkill.creates?.titleTemplate || '{title}');
+  const titleTemplate = String(parsed.creates?.titleTemplate || currentAction.creates?.titleTemplate || '{title}');
   const dataFields = Array.isArray(parsed.creates?.dataFields)
     ? parsed.creates.dataFields.map(String)
-    : currentSkill.creates?.dataFields || fields.map((f: any) => f.name);
+    : currentAction.creates?.dataFields || fields.map((f: any) => f.name);
 
   return {
-    ...currentSkill,
-    name: String(parsed.name || currentSkill.name),
-    description: String(parsed.description || currentSkill.description),
-    vertical: String(parsed.vertical || currentSkill.vertical),
-    icon: String(parsed.icon || currentSkill.icon),
-    keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(String).slice(0, 5) : currentSkill.keywords,
+    ...currentAction,
+    name: String(parsed.name || currentAction.name),
+    description: String(parsed.description || currentAction.description),
+    vertical: String(parsed.vertical || currentAction.vertical),
+    icon: String(parsed.icon || currentAction.icon),
+    keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(String).slice(0, 5) : currentAction.keywords,
     fields,
     creates: {
       table: 'form',
-      formType: String(parsed.creates?.formType || currentSkill.creates?.formType || 'custom'),
+      formType: String(parsed.creates?.formType || currentAction.creates?.formType || 'custom'),
       formScope: 'p',
       titleTemplate,
       dataFields,
     },
   };
 }
+

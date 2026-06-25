@@ -10,9 +10,8 @@ import { Colors } from '@/constants/theme';
 import { initDb, getSelfId } from '@/lib/db';
 import { initEmbeddings } from '@/lib/embeddings';
 import { checkAndSyncExistingForms } from '@/lib/vectorStore';
-import { ensureBuiltins } from '@/skills/seed';
-import { ensureSkillsTable } from '@/skills/api';
-import { setSkillUserId } from '@/skills/store';
+import { ensureBuiltins } from '@/actions/seed';
+import { setActionUserId } from '@/actions/store';
 
 const T0 = Date.now();
 function ms() { return `${Date.now() - T0}ms`; }
@@ -38,13 +37,9 @@ function RootLayoutInner() {
         await ensureBuiltins();
         console.log(`[BOOT] ${ms()} — ensureBuiltins() DONE`);
 
-        console.log(`[BOOT] ${ms()} — ensureSkillsTable() START`);
-        await ensureSkillsTable().catch(e => console.warn(`[BOOT] ${ms()} — Skills table error:`, e));
-        console.log(`[BOOT] ${ms()} — ensureSkillsTable() DONE`);
-
         console.log(`[BOOT] ${ms()} — getSelfId() START`);
         const userId = await getSelfId();
-        setSkillUserId(userId);
+        setActionUserId(userId);
         console.log(`[BOOT] ${ms()} — getSelfId() DONE: ${userId}`);
 
         console.log(`[BOOT] ${ms()} — vector sync START (fire & forget)`);
@@ -81,7 +76,7 @@ function RootLayoutInner() {
         <Stack.Screen name="add-item" />
         <Stack.Screen name="browse" />
         <Stack.Screen name="chat" />
-        <Stack.Screen name="skills" />
+        <Stack.Screen name="actions-catalog" />
         <Stack.Screen name="entity" />
         <Stack.Screen name="product" />
         <Stack.Screen name="personal" />

@@ -20,9 +20,7 @@
     { "tag": "v3", "new_sqlite_classes": ["EditorDO"] },
     { "tag": "v4", "new_sqlite_classes": ["StorefrontDO", "OrderDO", "WorkspaceDO"] }
   ],
-  "triggers": {
-    "crons": ["*/5 * * * *"]
-  },
+
   "vars": {},
   "routes": [
     { "pattern": "*.tarai.space/*", "zone_name": "tarai.space" }

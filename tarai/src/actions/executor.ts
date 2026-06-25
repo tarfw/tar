@@ -1,52 +1,60 @@
-import type { SkillDef } from './definitions';
+import type { ActionDef } from './definitions';
+import { BUILT_IN_ACTIONS } from './seed';
 
 interface DbLike {
   runAsync(query: string, ...params: any[]): Promise<void>;
 }
 
 /**
- * Generic skill executor. Built-in skills provide their own `execute` function;
- * custom (AI-generated) skills drive via the `creates` mapping.
+ * Generic action executor. Built-in actions provide their own `execute` function;
+ * custom (AI-generated) actions drive via the `creates` mapping.
  *
  * v1: supports `creates.table === 'form'` only. matter/motion are documented
  * extension points (matter needs a form FK).
  */
-export async function executeSkill(
+export async function executeAction(
   db: DbLike,
-  skill: SkillDef,
+  action: ActionDef,
   values: Record<string, any>
 ): Promise<{ id: string; title: string }> {
-  if (skill.execute) {
-    const result = skill.execute(values);
+  // Resolve programmatic execute if it is a built-in action
+  let execFn = action.execute;
+  if (!execFn && action.id.startsWith('tool_')) {
+    const builtin = BUILT_IN_ACTIONS.find((a) => a.id === action.id);
+    if (builtin) execFn = builtin.execute;
+  }
+
+  if (execFn) {
+    const result = execFn(values);
     const id = `form_${result.formType}_${Date.now()}`;
     const now = new Date().toISOString();
     await db.runAsync(
       'INSERT INTO form (id, type, title, scope, data, time, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
       id, result.formType, result.title, result.formScope, JSON.stringify(result.data), now
     );
-    console.log(`[EXEC] built-in ${skill.id} → ${id}`);
+    console.log(`[EXEC] built-in ${action.id} → ${id}`);
     return { id, title: result.title };
   }
 
-  if (skill.creates) {
-    return executeFromCreates(db, skill, values);
+  if (action.creates) {
+    return executeFromCreates(db, action, values);
   }
 
-  throw new Error(`Skill ${skill.id} has no execute function or creates mapping`);
+  throw new Error(`Action ${action.id} has no execute function or creates mapping`);
 }
 
 function executeFromCreates(
   db: DbLike,
-  skill: SkillDef,
+  action: ActionDef,
   values: Record<string, any>
 ): Promise<{ id: string; title: string }> {
-  const creates = skill.creates!;
+  const creates = action.creates!;
 
   if (creates.table !== 'form') {
     throw new Error(`creates.table '${creates.table}' not yet supported (v1 is form-only)`);
   }
 
-  const formType = creates.formType || skill.id.replace(/^tool_/, '').replace(/_/g, '-');
+  const formType = creates.formType || action.id.replace(/^tool_/, '').replace(/_/g, '-');
   const formScope = creates.formScope || 'p';
 
   // Build title from template or titleField
@@ -54,9 +62,9 @@ function executeFromCreates(
   if (creates.titleTemplate) {
     title = creates.titleTemplate.replace(/\{(\w+)\}/g, (_, field) => String(values[field] || ''));
   } else if (creates.titleField) {
-    title = String(values[creates.titleField] || skill.name);
+    title = String(values[creates.titleField] || action.name);
   } else {
-    title = skill.name;
+    title = action.name;
   }
 
   // Build data from dataFields or all non-title values
@@ -75,6 +83,7 @@ function executeFromCreates(
     id, formType, title, formScope, JSON.stringify(data), now
   );
 
-  console.log(`[EXEC] custom ${skill.id} → ${id} (type=${formType})`);
+  console.log(`[EXEC] custom ${action.id} → ${id} (type=${formType})`);
   return Promise.resolve({ id, title });
 }
+

@@ -278,8 +278,6 @@ export class OrderDO extends DurableObject<Env> {
  * Broadcasts team tasks, attendance, and forms to connected WebSocket clients.
  */
 export class WorkspaceDO extends DurableObject<Env> {
-  private sessions = new Set<WebSocket>();
-
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -290,7 +288,6 @@ export class WorkspaceDO extends DurableObject<Env> {
       const server = pair[1];
 
       this.ctx.acceptWebSocket(server);
-      this.sessions.add(server);
 
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -332,9 +329,5 @@ export class WorkspaceDO extends DurableObject<Env> {
         } catch {}
       }
     }
-  }
-
-  async webSocketClose(ws: WebSocket): Promise<void> {
-    this.sessions.delete(ws);
   }
 }

@@ -62,4 +62,23 @@ export const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_motion_action ON motion(action)`,
   `CREATE INDEX IF NOT EXISTS idx_graph_src ON graph(src)`,
   `CREATE INDEX IF NOT EXISTS idx_graph_tgt ON graph(tgt)`,
+  `CREATE TABLE IF NOT EXISTS action (
+    id TEXT PRIMARY KEY,
+    creator_id TEXT,
+    parent_id TEXT,
+    scope TEXT DEFAULT 'team',
+    type TEXT DEFAULT 'tool',
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    vertical TEXT DEFAULT 'general',
+    icon TEXT DEFAULT 'document-outline',
+    keywords TEXT DEFAULT '[]',
+    fields TEXT DEFAULT '[]',
+    data TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_action_type ON action(type)`,
+  `CREATE INDEX IF NOT EXISTS idx_action_scope ON action(scope)`,
 ];
+

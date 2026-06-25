@@ -11,17 +11,17 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
-import type { SkillDef } from '@/skills/definitions';
+import type { ActionDef } from '@/actions/definitions';
 import {
   createInitialState,
-  runSkillExecution,
+  runActionExecution,
   type ExecutionState,
   type ExecutionStep,
   type StepStatus,
-} from '@/skills/executor-engine';
+} from '@/actions/executor-engine';
 
 interface Props {
-  skill: SkillDef;
+  action: ActionDef;
   values: Record<string, any>;
   onDone: (result: { id: string; title: string }) => void;
   onCancel: () => void;
@@ -84,12 +84,12 @@ function ProgressBar({ percent, color }: { percent: number; color: string }) {
   );
 }
 
-export default function SkillExecutor({ skill, values, onDone, onCancel }: Props) {
+export default function ActionExecutor({ action, values, onDone, onCancel }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const db = useDb();
   const abortRef = useRef<AbortController | null>(null);
-  const [state, setState] = useState<ExecutionState>(() => createInitialState(skill));
+  const [state, setState] = useState<ExecutionState>(() => createInitialState(action));
 
   const completedCount = state.steps.filter((s) => s.status === 'success').length;
   const totalCount = state.steps.length;
@@ -102,10 +102,10 @@ export default function SkillExecutor({ skill, values, onDone, onCancel }: Props
 
     (async () => {
       try {
-        await runSkillExecution(db, skill, values, setState, controller.signal);
+        await runActionExecution(db, action, values, setState, controller.signal);
       } catch (e: any) {
         if (e.message !== 'cancelled' && !cancelled) {
-          console.error('[SkillExecutor]', e);
+          console.error('[ActionExecutor]', e);
         }
       }
     })();
@@ -130,7 +130,7 @@ export default function SkillExecutor({ skill, values, onDone, onCancel }: Props
         <Pressable onPress={handleCancel} style={styles.headerBtn}>
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{skill.name}</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{action.name}</Text>
         <View style={styles.headerBtn} />
       </View>
 
@@ -162,7 +162,7 @@ export default function SkillExecutor({ skill, values, onDone, onCancel }: Props
           <View style={[styles.banner, { backgroundColor: '#10B98115' }]}>
             <Ionicons name="checkmark-circle" size={20} color="#10B981" />
             <Text style={[styles.bannerText, { color: '#10B981' }]}>
-              {skill.name} executed successfully
+              {action.name} executed successfully
             </Text>
           </View>
         )}
@@ -194,7 +194,7 @@ export default function SkillExecutor({ skill, values, onDone, onCancel }: Props
           <View style={styles.footerRow}>
             <Pressable
               style={[styles.secondaryBtn, { backgroundColor: theme.backgroundElement }]}
-              onPress={() => { setState(createInitialState(skill)); }}>
+              onPress={() => { setState(createInitialState(action)); }}>
               <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Retry</Text>
             </Pressable>
             <Pressable style={[styles.primaryBtn, { backgroundColor: '#EF4444', flex: 1 }]} onPress={handleCancel}>

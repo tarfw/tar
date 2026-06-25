@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   StyleSheet,
   Pressable,
@@ -21,9 +21,9 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { useTheme } from "@/hooks/use-theme";
 import { useDb } from "@/db/provider";
 import { useFormById, type FormRow } from "@/hooks/use-form";
-import { searchSkills, type SkillSearchResult } from "@/skills/store";
-import type { SkillDef } from "@/skills/definitions";
-import SkillForm from "@/components/SkillForm";
+import { searchActions, type ActionSearchResult } from "@/actions/store";
+import type { ActionDef } from "@/actions/definitions";
+import ActionForm from "@/components/ActionForm";
 import StorefrontTab from "@/components/StorefrontTab";
 
 function parseData(data: string): Record<string, any> {
@@ -53,14 +53,45 @@ export default function EntityScreen() {
   const [detailTab, setDetailTab] = useState<
     "activity" | "details" | "members"
   >("activity");
-  const [skillQuery, setSkillQuery] = useState("");
-  const [skillResults, setSkillResults] = useState<SkillSearchResult[]>([]);
+  const [actionQuery, setActionQuery] = useState("");
+  const [actionResults, setActionResults] = useState<ActionSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedSkill, setSelectedSkill] = useState<SkillDef | null>(null);
-  const [showSkillForm, setShowSkillForm] = useState(false);
+  const [selectedAction, setSelectedAction] = useState<ActionDef | null>(null);
+  const [showActionForm, setShowActionForm] = useState(false);
   const [members, setMembers] = useState<FormRow[]>([]);
   const [showPickMember, setShowPickMember] = useState(false);
   const [allPeople, setAllPeople] = useState<FormRow[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const [wsStatus, setWsStatus] = useState("connecting");
+
+  const loadMatterRef = useRef<any>(null);
+
+  useEffect(() => {
+    const ws = new (WebSocket as any)("wss://test-store.tarai.space/api/workspace/sync", undefined, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+      }
+    });
+    wsRef.current = ws;
+    ws.onopen = () => {
+      setWsStatus("connected");
+      console.log("[Entity Sync] WebSocket connected");
+    };
+    ws.onerror = (e: any) => {
+      setWsStatus("error");
+      console.error("[Entity Sync] WebSocket error:", e);
+    };
+    ws.onclose = () => {
+      setWsStatus("closed");
+    };
+    ws.onmessage = (e: any) => {
+      console.log("[Entity Sync] Received message:", e.data);
+      loadMatterRef.current();
+    };
+    return () => {
+      ws.close();
+    };
+  }, []);
 
   const loadMatter = async () => {
     if (!row) return;
@@ -123,6 +154,7 @@ export default function EntityScreen() {
       }
     }
   };
+  loadMatterRef.current = loadMatter;
 
   useEffect(() => {
     if (!row) return;
@@ -202,13 +234,13 @@ export default function EntityScreen() {
   };
 
   useEffect(() => {
-    if (!skillQuery.trim()) return;
+    if (!actionQuery.trim()) return;
     let cancelled = false;
     const t = setTimeout(async () => {
       setSearching(true);
-      const results = await searchSkills(skillQuery, 5);
+      const results = await searchActions(actionQuery, 5);
       if (!cancelled) {
-        setSkillResults(results);
+        setActionResults(results);
         setSearching(false);
       }
     }, 300);
@@ -216,7 +248,7 @@ export default function EntityScreen() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [skillQuery]);
+  }, [actionQuery]);
 
   useEffect(() => {
     if (!showPickMember) return;
@@ -227,16 +259,16 @@ export default function EntityScreen() {
     return () => sub.remove();
   }, [showPickMember]);
 
-  const handleSelectSkill = (skill: SkillDef) => {
-    setSelectedSkill(skill);
-    setShowSkillForm(true);
-    setSkillQuery("");
-    setSkillResults([]);
+  const handleSelectAction = (action: ActionDef) => {
+    setSelectedAction(action);
+    setShowActionForm(true);
+    setActionQuery("");
+    setActionResults([]);
   };
 
-  const handleSkillDone = async () => {
-    setShowSkillForm(false);
-    if (selectedSkill && row) {
+  const handleActionDone = async () => {
+    setShowActionForm(false);
+    if (selectedAction && row) {
       const seq =
         (
           await db.getFirstAsync<{ max_seq: number }>(
@@ -248,11 +280,11 @@ export default function EntityScreen() {
         "INSERT INTO motion (stream, seq, action, phase, data, time) VALUES (?, ?, 900, 0, ?, ?)",
         row.id,
         seq,
-        JSON.stringify({ skill: selectedSkill.name }),
+        JSON.stringify({ action: selectedAction.name }),
         new Date().toISOString(),
       );
     }
-    setSelectedSkill(null);
+    setSelectedAction(null);
     await loadMatter();
   };
 
@@ -281,6 +313,9 @@ export default function EntityScreen() {
       "has_member",
       0,
     );
+    if (wsRef.current && wsRef.current.readyState === 1) {
+      wsRef.current.send(JSON.stringify({ action: 'MEMBER_ADDED', workspaceId: row.id, personId }));
+    }
     setShowPickMember(false);
     loadMatter();
   };
@@ -293,6 +328,9 @@ export default function EntityScreen() {
       memberId,
       "has_member",
     );
+    if (wsRef.current && wsRef.current.readyState === 1) {
+      wsRef.current.send(JSON.stringify({ action: 'MEMBER_REMOVED', workspaceId: row.id, memberId }));
+    }
     loadMatter();
   };
 
@@ -336,7 +374,7 @@ export default function EntityScreen() {
       802: "Payment success",
       803: "Partial pay",
       806: "Expense",
-      900: "Skill executed",
+      900: "Action executed",
     };
     return labels[action] || `Action ${action}`;
   };
@@ -412,6 +450,11 @@ export default function EntityScreen() {
             />
           </Pressable>
         </View>
+        {isBusiness && (
+          <Text style={{ color: theme.textSecondary, fontSize: 12, paddingHorizontal: 16, marginBottom: 8, marginTop: -8 }}>
+            Sync Status: {wsStatus}
+          </Text>
+        )}
 
         {/* People/Work Tabs — same pattern as store tabs */}
         {(isPerson || isBusiness) && (
@@ -510,7 +553,7 @@ export default function EntityScreen() {
                           ]}
                         >
                           {formatTime(m.time)}
-                          {md.skill ? ` · ${md.skill}` : ""}
+                          {(md.action || md.skill) ? ` · ${md.action || md.skill}` : ""}
                           {md.title ? ` · ${md.title}` : ""}
                           {md.text ? ` · ${md.text}` : ""}
                         </Text>
@@ -844,8 +887,8 @@ export default function EntityScreen() {
         offset={{ closed: 0, opened: 0 }}
         style={{ paddingBottom: insets.bottom }}
       >
-        {/* Skill results dropdown */}
-        {skillResults.length > 0 && (
+        {/* Action results dropdown */}
+        {actionResults.length > 0 && (
           <View
             style={[
               styles.skillResults,
@@ -855,14 +898,14 @@ export default function EntityScreen() {
               },
             ]}
           >
-            {skillResults.map((r) => (
+            {actionResults.map((r) => (
               <Pressable
-                key={r.skill.name}
+                key={r.action.name}
                 style={[
                   styles.skillRow,
                   { backgroundColor: theme.backgroundElement },
                 ]}
-                onPress={() => handleSelectSkill(r.skill)}
+                onPress={() => handleSelectAction(r.action)}
               >
                 <View
                   style={[styles.skillIcon, { backgroundColor: "#5E6AD2" }]}
@@ -874,13 +917,13 @@ export default function EntityScreen() {
                     style={[styles.skillName, { color: theme.text }]}
                     numberOfLines={1}
                   >
-                    {r.skill.name}
+                    {r.action.name}
                   </Text>
                   <Text
                     style={[styles.skillDesc, { color: theme.textSecondary }]}
                     numberOfLines={1}
                   >
-                    {r.skill.description}
+                    {r.action.description}
                   </Text>
                 </View>
               </Pressable>
@@ -938,9 +981,9 @@ export default function EntityScreen() {
             <Ionicons name="search" size={18} color={theme.textSecondary} />
             <TextInput
               style={[styles.inputBarText, { color: theme.text }]}
-              value={skillQuery}
-              onChangeText={setSkillQuery}
-              placeholder="Search a skill…"
+              value={actionQuery}
+              onChangeText={setActionQuery}
+              placeholder="Search an action…"
               placeholderTextColor={theme.textSecondary}
               returnKeyType="search"
             />
@@ -951,15 +994,15 @@ export default function EntityScreen() {
         </View>
       </KeyboardStickyView>
 
-      {/* Skill Form Modal */}
-      <Modal visible={showSkillForm} animationType="slide">
-        {selectedSkill && (
-          <SkillForm
-            skill={selectedSkill}
-            onDone={handleSkillDone}
+      {/* Action Form Modal */}
+      <Modal visible={showActionForm} animationType="slide">
+        {selectedAction && (
+          <ActionForm
+            action={selectedAction}
+            onDone={handleActionDone}
             onCancel={() => {
-              setShowSkillForm(false);
-              setSelectedSkill(null);
+              setShowActionForm(false);
+              setSelectedAction(null);
             }}
           />
         )}

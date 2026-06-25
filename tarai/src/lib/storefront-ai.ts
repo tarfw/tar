@@ -13,9 +13,9 @@
 
 import { TEMPLATES, type StorefrontLayout, type Theme, type Section } from './storefront-schema';
 
-const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL = 'cohere/north-mini-code:free';
-const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY || '';
+const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_MODEL = 'openai/gpt-oss-120b';
+const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
 
 export interface StorefrontProduct {
   name: string;
@@ -35,19 +35,19 @@ function extractJson(text: string): any {
 }
 
 async function chatCompletion(systemPrompt: string, userPrompt: string): Promise<string> {
-  if (!OPENROUTER_API_KEY) {
-    throw new Error('Missing EXPO_PUBLIC_OPENROUTER_API_KEY');
+  if (!GROQ_API_KEY) {
+    throw new Error('Missing EXPO_PUBLIC_GROQ_API_KEY');
   }
-  console.log(`[StorefrontAI] chatCompletion — model: ${OPENROUTER_MODEL}`);
+  console.log(`[StorefrontAI] chatCompletion — model: ${GROQ_MODEL}`);
 
-  const res = await fetch(OPENROUTER_ENDPOINT, {
+  const res = await fetch(GROQ_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      Authorization: `Bearer ${GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model: OPENROUTER_MODEL,
+      model: GROQ_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },

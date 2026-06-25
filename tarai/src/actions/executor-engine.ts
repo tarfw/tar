@@ -1,4 +1,5 @@
-import type { SkillDef } from './definitions';
+import type { ActionDef } from './definitions';
+import { BUILT_IN_ACTIONS } from './seed';
 
 interface DbLike {
   runAsync(query: string, ...params: any[]): Promise<void>;
@@ -17,8 +18,8 @@ export interface ExecutionStep {
 }
 
 export interface ExecutionState {
-  skillId: string;
-  skillName: string;
+  actionId: string;
+  actionName: string;
   steps: ExecutionStep[];
   status: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled';
   totalMs?: number;
@@ -32,29 +33,36 @@ function cloneSteps(state: ExecutionState): ExecutionStep[] {
   return state.steps.map((s) => ({ ...s }));
 }
 
-function buildSteps(skill: SkillDef): ExecutionStep[] {
+function buildSteps(action: ActionDef): ExecutionStep[] {
   const steps: ExecutionStep[] = [
     { id: 0, label: 'Validate input', detail: 'Checking required fields', status: 'pending' },
   ];
 
-  if (skill.execute) {
-    steps.push({ id: 1, label: 'Process data', detail: 'Running skill logic', status: 'pending' });
+  // Resolve programmatic execute if it is a built-in action
+  let execFn = action.execute;
+  if (!execFn && action.id.startsWith('tool_')) {
+    const builtin = BUILT_IN_ACTIONS.find((a) => a.id === action.id);
+    if (builtin) execFn = builtin.execute;
+  }
+
+  if (execFn) {
+    steps.push({ id: 1, label: 'Process data', detail: 'Running action logic', status: 'pending' });
     steps.push({ id: 2, label: 'Save record', detail: 'Writing to database', status: 'pending' });
-  } else if (skill.creates) {
-    steps.push({ id: 1, label: 'Build record', detail: `Preparing ${skill.creates.table} entry`, status: 'pending' });
-    steps.push({ id: 2, label: 'Save record', detail: `Writing to ${skill.creates.table} table`, status: 'pending' });
+  } else if (action.creates) {
+    steps.push({ id: 1, label: 'Build record', detail: `Preparing ${action.creates.table} entry`, status: 'pending' });
+    steps.push({ id: 2, label: 'Save record', detail: `Writing to ${action.creates.table} table`, status: 'pending' });
   } else {
-    steps.push({ id: 1, label: 'Execute', detail: skill.name, status: 'pending' });
+    steps.push({ id: 1, label: 'Execute', detail: action.name, status: 'pending' });
   }
 
   return steps;
 }
 
-export function createInitialState(skill: SkillDef): ExecutionState {
+export function createInitialState(action: ActionDef): ExecutionState {
   return {
-    skillId: skill.id,
-    skillName: skill.name,
-    steps: buildSteps(skill),
+    actionId: action.id,
+    actionName: action.name,
+    steps: buildSteps(action),
     status: 'idle',
   };
 }
@@ -63,14 +71,14 @@ function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export async function runSkillExecution(
+export async function runActionExecution(
   db: DbLike,
-  skill: SkillDef,
+  action: ActionDef,
   values: Record<string, any>,
   onUpdate: OnStepUpdate,
   signal?: AbortSignal
 ): Promise<{ id: string; title: string }> {
-  const state = createInitialState(skill);
+  const state = createInitialState(action);
   state.status = 'running';
   const start = Date.now();
 
@@ -98,7 +106,7 @@ export async function runSkillExecution(
     state.steps[0].status = 'running';
     emit();
 
-    const missing = skill.fields.filter((f) => f.required && !values[f.name]);
+    const missing = action.fields.filter((f) => f.required && !values[f.name]);
     if (missing.length > 0) {
       failStep(0, `Missing: ${missing.map((f) => f.label).join(', ')}`);
       return Promise.reject(new Error(state.errorMessage!));
@@ -117,8 +125,15 @@ export async function runSkillExecution(
 
     let result: { id: string; title: string };
 
-    if (skill.execute) {
-      const execResult = skill.execute(values);
+    // Resolve programmatic execute if it is a built-in action
+    let execFn = action.execute;
+    if (!execFn && action.id.startsWith('tool_')) {
+      const builtin = BUILT_IN_ACTIONS.find((a) => a.id === action.id);
+      if (builtin) execFn = builtin.execute;
+    }
+
+    if (execFn) {
+      const execResult = execFn(values);
       state.steps[1].status = 'success';
       state.steps[1].result = `Built: "${execResult.title}"`;
       state.steps[1].durationMs = Date.now() - start;
@@ -143,18 +158,18 @@ export async function runSkillExecution(
       state.steps[2].durationMs = Date.now() - start;
       result = { id, title: execResult.title };
 
-    } else if (skill.creates) {
-      const c = skill.creates;
-      const formType = c.formType || skill.id.replace(/^tool_/, '').replace(/_/g, '-');
+    } else if (action.creates) {
+      const c = action.creates;
+      const formType = c.formType || action.id.replace(/^tool_/, '').replace(/_/g, '-');
       const formScope = c.formScope || 'p';
 
       let title: string;
       if (c.titleTemplate) {
         title = c.titleTemplate.replace(/\{(\w+)\}/g, (_, f) => String(values[f] || ''));
       } else if (c.titleField) {
-        title = String(values[c.titleField] || skill.name);
+        title = String(values[c.titleField] || action.name);
       } else {
-        title = skill.name;
+        title = action.name;
       }
 
       const dataFields = c.dataFields || Object.keys(values);
@@ -189,7 +204,7 @@ export async function runSkillExecution(
       result = { id, title };
 
     } else {
-      throw new Error('Skill has no execute function or creates mapping');
+      throw new Error('Action has no execute function or creates mapping');
     }
 
     state.status = 'completed';
@@ -216,3 +231,4 @@ export async function runSkillExecution(
     throw e;
   }
 }
+

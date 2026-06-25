@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useEmbeddingsModule, clearEmbeddingModel, isModelCached, EMBEDDING_DIM } from '@/lib/embeddings';
 import { setEmbeddingFunction } from '@/lib/vectorStore';
-import { setSkillEmbeddingFunction, seedSkills } from '@/skills/store';
+import { setActionEmbeddingFunction, seedActions } from '@/actions/store';
 
 interface EmbeddingsContextType {
   isReady: boolean;
@@ -87,9 +87,9 @@ function ModelRunner({
     // Both the form vector store and the tool store share the same model, hence
     // the same global inference mutex (see lib/embeddings) — they can't collide.
     setEmbeddingFunction(mod.generateEmbedding);
-    setSkillEmbeddingFunction(mod.generateEmbedding);
+    setActionEmbeddingFunction(mod.generateEmbedding);
     // Idempotent: SecureStore flag + in-flight guard make repeat calls no-ops.
-    seedSkills();
+    seedActions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mod.isReady]);
 

@@ -303,14 +303,14 @@ export default function ActionsScreen() {
         </ScrollView>
       )}
 
-      {/* Skills chip */}
+      {/* Actions chip */}
       <View style={[styles.chipBar, { paddingLeft: 16, paddingBottom: 8 }]}>
         <Pressable
           style={({ pressed }) => [styles.chipBtn, pressed && { opacity: 0.7 }]}
-          onPress={() => router.push("/skills")}
+          onPress={() => router.push("/actions-catalog" as any)}
         >
           <Ionicons name="apps-outline" size={16} color="#5E6AD2" />
-          <Text style={styles.chipBtnText}>Skills</Text>
+          <Text style={styles.chipBtnText}>Actions</Text>
         </Pressable>
       </View>
 

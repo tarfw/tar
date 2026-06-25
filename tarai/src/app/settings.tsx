@@ -204,9 +204,9 @@ export default function SettingsScreen() {
       >
         <Pressable
           style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-          onPress={() => router.push("/skills")}
+          onPress={() => router.push("/actions-catalog" as any)}
         >
-          <Text style={[styles.rowLabel, { color: theme.text }]}>Skills</Text>
+          <Text style={[styles.rowLabel, { color: theme.text }]}>Actions</Text>
           <Text style={[styles.chevron, { color: theme.textSecondary }]}>
             {">"}
           </Text>

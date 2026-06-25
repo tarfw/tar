@@ -270,18 +270,32 @@ export default {
         const stockData = stockRes.ok ? (await stockRes.json() as Record<string, number>) : {};
 
         let reply = '';
-        if (env.AI) {
-          const aiRes = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
-            messages: [
-              {
-                role: 'system',
-                content: `You are an AI sales assistant for "${storeSlug}". Stock levels: ${JSON.stringify(stockData)}. Answer customer questions helpfully & briefly.`,
-              },
-              { role: 'user', content: body.message },
-            ],
+        const groqKey = '';
+        try {
+          const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${groqKey}`,
+            },
+            body: JSON.stringify({
+              model: 'llama-3.1-8b-instant',
+              messages: [
+                {
+                  role: 'system',
+                  content: `You are an AI sales assistant for "${storeSlug}". Stock levels: ${JSON.stringify(stockData)}. Answer customer questions helpfully & briefly.`,
+                },
+                { role: 'user', content: body.message },
+              ],
+              max_completion_tokens: 1024,
+            }),
           });
-          reply = aiRes.response;
-        } else {
+          const aiJson = await aiRes.json() as any;
+          reply = aiJson?.choices?.[0]?.message?.content || '';
+        } catch {
+          // fallback
+        }
+        if (!reply) {
           reply = `Hello! I am the automated sales bot for ${storeSlug}. Our active stock contains: ${Object.keys(stockData).join(', ') || 'no items currently'}.`;
         }
 
@@ -505,19 +519,6 @@ export default {
     }
   },
 
-  async scheduled(event: any, env: Env, ctx: ExecutionContext): Promise<void> {
-    console.log(`[Scheduled] Cron trigger: ${event.cron}`);
-    
-    // Storefront keep-warm & agent trigger ping
-    try {
-      const storefrontId = env.STOREFRONT_DO.idFromName('test-store');
-      const storefrontDO = env.STOREFRONT_DO.get(storefrontId);
-      await storefrontDO.fetch('https://do/stock');
-      console.log('✅ Storefront keep-warm completed.');
-    } catch (err) {
-      console.error('❌ Storefront keep-warm failed:', err);
-    }
-  },
 };
 
 function storePendingPage(slug: string): string {

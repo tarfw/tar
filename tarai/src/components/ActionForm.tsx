@@ -14,18 +14,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
-import type { SkillDef, SkillField } from '@/skills/definitions';
-import SkillExecutor from './SkillExecutor';
-import { editSkillDefinition } from '@/lib/ai';
+import type { ActionDef, ActionField } from '@/actions/definitions';
+import ActionExecutor from './ActionExecutor';
+import { editActionDefinition } from '@/lib/ai';
 
 interface Props {
-  skill: SkillDef;
+  action: ActionDef;
   onDone: () => void;
   onCancel: () => void;
-  onSkillUpdated?: (updated: SkillDef) => void;
+  onActionUpdated?: (updated: ActionDef) => void;
 }
 
-function SelectField({ field, value, onChange, theme }: { field: SkillField; value: string; onChange: (v: string) => void; theme: any }) {
+function SelectField({ field, value, onChange, theme }: { field: ActionField; value: string; onChange: (v: string) => void; theme: any }) {
   const [open, setOpen] = useState(false);
   return (
     <View>
@@ -65,19 +65,19 @@ function StarRating({ value, onChange }: { value: number; onChange: (v: number) 
   );
 }
 
-export default function SkillForm({ skill, onDone, onCancel, onSkillUpdated }: Props) {
+export default function ActionForm({ action, onDone, onCancel, onActionUpdated }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const [values, setValues] = useState<Record<string, any>>({});
   const [executing, setExecuting] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editInput, setEditInput] = useState('');
-  const [currentSkill, setCurrentSkill] = useState(skill);
+  const [currentAction, setCurrentAction] = useState(action);
 
   const set = (name: string, val: any) => setValues((v) => ({ ...v, [name]: val }));
 
   const handleExecute = () => {
-    const missing = currentSkill.fields.filter((f) => f.required && !values[f.name]);
+    const missing = currentAction.fields.filter((f) => f.required && !values[f.name]);
     if (missing.length > 0) {
       Alert.alert('Required fields', `Please fill: ${missing.map((f) => f.label).join(', ')}`);
       return;
@@ -90,21 +90,21 @@ export default function SkillForm({ skill, onDone, onCancel, onSkillUpdated }: P
     if (!instruction) return;
 
     try {
-      const updated = await editSkillDefinition(currentSkill, instruction);
-      setCurrentSkill(updated);
+      const updated = await editActionDefinition(currentAction, instruction);
+      setCurrentAction(updated);
       setEditing(false);
       setEditInput('');
-      onSkillUpdated?.(updated);
+      onActionUpdated?.(updated);
     } catch (e) {
-      console.warn('[SkillForm] AI edit failed:', e);
-      Alert.alert('Edit failed', 'Could not edit skill. Please try again.');
+      console.warn('[ActionForm] AI edit failed:', e);
+      Alert.alert('Edit failed', 'Could not edit action. Please try again.');
     }
   };
 
   if (executing) {
     return (
-      <SkillExecutor
-        skill={currentSkill}
+      <ActionExecutor
+        action={currentAction}
         values={values}
         onDone={() => {
           setExecuting(false);
@@ -121,7 +121,7 @@ export default function SkillForm({ skill, onDone, onCancel, onSkillUpdated }: P
         <Pressable onPress={onCancel} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{currentSkill.name}</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{currentAction.name}</Text>
         <Pressable onPress={handleExecute} style={styles.backBtn}>
           <Ionicons name="play" size={20} color="#5E6AD2" />
         </Pressable>
@@ -164,7 +164,7 @@ export default function SkillForm({ skill, onDone, onCancel, onSkillUpdated }: P
               contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
               keyboardShouldPersistTaps="handled">
 
-              {currentSkill.fields.map((field) => (
+              {currentAction.fields.map((field) => (
                 <View key={field.name} style={styles.fieldGroup}>
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>
                     {field.label} {field.required ? '*' : ''}
@@ -174,7 +174,7 @@ export default function SkillForm({ skill, onDone, onCancel, onSkillUpdated }: P
                     <SelectField field={field} value={values[field.name] || ''} onChange={(v) => set(field.name, v)} theme={theme} />
                   ) : field.type === 'textarea' ? (
                     <TextInput
-                      style={[styles.textarea, { color: theme.text, backgroundColor: theme.backgroundElement }]}
+                       style={[styles.textarea, { color: theme.text, backgroundColor: theme.backgroundElement }]}
                       value={values[field.name] || ''}
                       onChangeText={(t) => set(field.name, t)}
                       placeholder={field.placeholder}
@@ -192,14 +192,14 @@ export default function SkillForm({ skill, onDone, onCancel, onSkillUpdated }: P
                       placeholder={field.placeholder}
                       placeholderTextColor={theme.textSecondary}
                       keyboardType={field.type === 'number' ? 'numeric' : field.type === 'phone' ? 'phone-pad' : field.type === 'email' ? 'email-address' : 'default'}
-                      autoFocus={field === currentSkill.fields[0]}
+                      autoFocus={field === currentAction.fields[0]}
                     />
                   )}
                 </View>
               ))}
 
               <View style={[styles.infoCard, { backgroundColor: theme.backgroundElement }]}>
-                <Text style={[styles.infoText, { color: theme.textSecondary }]}>{currentSkill.description}</Text>
+                <Text style={[styles.infoText, { color: theme.textSecondary }]}>{currentAction.description}</Text>
               </View>
             </ScrollView>
           </KeyboardAvoidingView>

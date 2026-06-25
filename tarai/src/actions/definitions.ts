@@ -1,6 +1,8 @@
 export type FieldType = 'text' | 'number' | 'select' | 'textarea' | 'date' | 'phone' | 'email' | 'rating';
 
-export interface SkillField {
+export type ActionType = 'tool' | 'flow' | 'chat';
+
+export interface ActionField {
   name: string;
   type: FieldType;
   label: string;
@@ -18,14 +20,15 @@ export interface CreatesMapping {
   dataFields?: string[];
 }
 
-export interface SkillDef {
+export interface ActionDef {
   id: string;
   name: string;
   description: string;
   vertical: string;
   icon: string;
   keywords?: string[];
-  fields: SkillField[];
+  type: ActionType; // 'tool' | 'flow' | 'chat'
+  fields: ActionField[];
   execute?: (values: Record<string, any>) => {
     formType: string;
     formScope: string;
@@ -34,6 +37,7 @@ export interface SkillDef {
   };
   creates?: CreatesMapping;
   custom?: boolean;
-  /** True for built-in skills seeded from seed.ts */
+  /** True for built-in actions seeded from seed.ts */
   builtIn?: boolean;
 }
+

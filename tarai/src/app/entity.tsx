@@ -9,6 +9,7 @@ import {
   Modal,
   FlatList,
   BackHandler,
+  Alert,
 } from "react-native";
 import {
   KeyboardAwareScrollView,
@@ -25,6 +26,7 @@ import { searchActions, type ActionSearchResult } from "@/actions/store";
 import type { ActionDef } from "@/actions/definitions";
 import ActionForm from "@/components/ActionForm";
 import StorefrontTab from "@/components/StorefrontTab";
+import { update } from "@/lib/tools";
 
 function parseData(data: string): Record<string, any> {
   try {
@@ -63,6 +65,9 @@ export default function EntityScreen() {
   const [allPeople, setAllPeople] = useState<FormRow[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const [wsStatus, setWsStatus] = useState("connecting");
+  const [editingActivity, setEditingActivity] = useState<any | null>(null);
+  const [editFields, setEditFields] = useState<Record<string, any>>({});
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const loadMatterRef = useRef<any>(null);
 
@@ -79,7 +84,7 @@ export default function EntityScreen() {
     };
     ws.onerror = (e: any) => {
       setWsStatus("error");
-      console.error("[Entity Sync] WebSocket error:", e);
+      console.log("[Entity Sync] WebSocket error (offline/local mode):", e);
     };
     ws.onclose = () => {
       setWsStatus("closed");
@@ -109,7 +114,7 @@ export default function EntityScreen() {
       const items = await db.getAllAsync<any>(
         `SELECT m.*, f.title as product_name, f.data as product_data
          FROM matter m
-         JOIN graph g ON g.src = m.id AND g.type = 'belongs_to'
+         JOIN graph g ON g.src = m.id AND g.rel = 'belongs_to'
          JOIN form f ON f.id = m.form
          WHERE g.tgt = ? AND m.type = 'stock' AND m.active = 1`,
         row.id,
@@ -138,7 +143,7 @@ export default function EntityScreen() {
     // Load members for team/work entities
     if (row.type === "team") {
       const memberLinks = await db.getAllAsync<{ tgt: string }>(
-        "SELECT tgt FROM graph WHERE src = ? AND type = 'has_member' AND active = 1",
+        "SELECT tgt FROM graph WHERE src = ? AND rel = 'has_member' AND active = 1",
         row.id,
       );
       const memberIds = memberLinks.map((l) => l.tgt);
@@ -174,7 +179,7 @@ export default function EntityScreen() {
         const items = await db.getAllAsync<any>(
           `SELECT m.*, f.title as product_name, f.data as product_data
            FROM matter m
-           JOIN graph g ON g.src = m.id AND g.type = 'belongs_to'
+           JOIN graph g ON g.src = m.id AND g.rel = 'belongs_to'
            JOIN form f ON f.id = m.form
            WHERE g.tgt = ? AND m.type = 'stock' AND m.active = 1`,
           row.id,
@@ -203,7 +208,7 @@ export default function EntityScreen() {
 
       if (row.type === "team") {
         const memberLinks = await db.getAllAsync<{ tgt: string }>(
-          "SELECT tgt FROM graph WHERE src = ? AND type = 'has_member' AND active = 1",
+          "SELECT tgt FROM graph WHERE src = ? AND rel = 'has_member' AND active = 1",
           row.id,
         );
         const memberIds = memberLinks.map((l) => l.tgt);
@@ -266,7 +271,7 @@ export default function EntityScreen() {
     setActionResults([]);
   };
 
-  const handleActionDone = async () => {
+  const handleActionDone = async (values?: Record<string, any>, result?: { id: string; title: string }) => {
     setShowActionForm(false);
     if (selectedAction && row) {
       const seq =
@@ -276,15 +281,138 @@ export default function EntityScreen() {
             row.id,
           )
         )?.max_seq ?? 1;
+
+      const taskName = values?.title || result?.title || selectedAction.name;
+      const dueDate = values?.due ? `Due: ${values.due}` : '';
+
       await db.runAsync(
         "INSERT INTO motion (stream, seq, action, phase, data, time) VALUES (?, ?, 900, 0, ?, ?)",
         row.id,
         seq,
-        JSON.stringify({ action: selectedAction.name }),
+        JSON.stringify({
+          action: selectedAction.name,
+          actionId: selectedAction.id,
+          targetId: result?.id,
+          title: taskName,
+          text: dueDate,
+        }),
         new Date().toISOString(),
       );
     }
     setSelectedAction(null);
+    await loadMatter();
+  };
+
+  const handlePressActivity = async (motion: any) => {
+    const md = parseData(motion.data);
+    let targetId = md.targetId;
+
+    if (!targetId) {
+      const searchTitle = md.title || (motion.action === 900 ? null : md.action);
+      if (searchTitle) {
+        const match = await db.getFirstAsync<any>(
+          "SELECT id FROM matter WHERE json_extract(data, '$.title') = ? AND active = 1 ORDER BY time DESC LIMIT 1",
+          [searchTitle]
+        );
+        if (match) {
+          targetId = match.id;
+        }
+      }
+
+      if (!targetId && md.action) {
+        const match = await db.getFirstAsync<any>(
+          "SELECT id FROM matter WHERE (json_extract(data, '$.title') LIKE ? OR type = ?) AND active = 1 ORDER BY time DESC LIMIT 1",
+          [`%${md.action}%`, md.action.toLowerCase()]
+        );
+        if (match) {
+          targetId = match.id;
+        }
+      }
+    }
+
+    if (!targetId) {
+      Alert.alert("Not Found", "Could not locate the database task record for this old log entry.");
+      return;
+    }
+
+    const matter = await db.getFirstAsync<any>(
+      "SELECT * FROM matter WHERE id = ?",
+      targetId
+    );
+    if (!matter) {
+      Alert.alert("Not Found", "The task record associated with this action was deleted or could not be loaded.");
+      return;
+    }
+
+    const matterData = parseData(matter.data);
+    const actionId = md.actionId || `tool_create_${matter.type}`;
+
+    const actionRow = await db.getFirstAsync<any>(
+      "SELECT data FROM form WHERE id = ?",
+      actionId
+    );
+    let fields = [];
+    if (actionRow && actionRow.data) {
+      try {
+        const actData = JSON.parse(actionRow.data);
+        fields = actData.fields || [];
+      } catch (_) {}
+    }
+
+    if (fields.length === 0) {
+      fields = [
+        { name: "title", type: "text", label: "Title" },
+        { name: "due", type: "date", label: "Due Date" },
+        { name: "assignee", type: "text", label: "Assignee" },
+        { name: "priority", type: "select", label: "Priority", options: ["low", "medium", "high"] }
+      ];
+    }
+
+    setEditingActivity({
+      motion,
+      matter,
+      fields,
+    });
+    setEditFields({
+      title: matterData.title || md.title || "",
+      ...matterData,
+    });
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingActivity) return;
+    const { matter, motion } = editingActivity;
+    
+    const newTitle = editFields.title || "";
+    const updatedData = { ...editFields };
+    delete updatedData.title;
+
+    await update({
+      table: 'matter',
+      id: matter.id,
+      scope: matter.scope,
+      patch: {
+        title: newTitle,
+        data: updatedData,
+      }
+    });
+
+    const md = parseData(motion.data);
+    const newDueDate = editFields.due ? `Due: ${editFields.due}` : '';
+    await db.runAsync(
+      "UPDATE motion SET data = ? WHERE stream = ? AND seq = ?",
+      JSON.stringify({
+        ...md,
+        title: newTitle,
+        text: newDueDate,
+      }),
+      motion.stream,
+      motion.seq
+    );
+
+    setShowEditModal(false);
+    setEditingActivity(null);
     await loadMatter();
   };
 
@@ -307,10 +435,10 @@ export default function EntityScreen() {
   const handleAddMember = async (personId: string) => {
     if (!row) return;
     await db.runAsync(
-      "INSERT OR REPLACE INTO graph (src, tgt, type, weight, active) VALUES (?, ?, ?, ?, 1)",
+      "INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active) VALUES (?, ?, ?, ?, 1)",
       row.id,
-      personId,
       "has_member",
+      personId,
       0,
     );
     if (wsRef.current && wsRef.current.readyState === 1) {
@@ -323,7 +451,7 @@ export default function EntityScreen() {
   const handleRemoveMember = async (memberId: string) => {
     if (!row) return;
     await db.runAsync(
-      "UPDATE graph SET active = 0 WHERE src = ? AND tgt = ? AND type = ?",
+      "UPDATE graph SET active = 0 WHERE src = ? AND tgt = ? AND rel = ?",
       row.id,
       memberId,
       "has_member",
@@ -533,18 +661,19 @@ export default function EntityScreen() {
                 {motions.map((m, i) => {
                   const md = parseData(m.data);
                   return (
-                    <View key={i} style={styles.timelineRow}>
-                      <View
-                        style={[
-                          styles.timelineDot,
-                          { backgroundColor: theme.textSecondary },
-                        ]}
-                      />
+                    <Pressable
+                      key={i}
+                      style={({ pressed }) => [
+                        styles.timelineRow,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                      onPress={() => handlePressActivity(m)}
+                    >
                       <View style={styles.timelineContent}>
                         <Text
                           style={[styles.timelineTitle, { color: theme.text }]}
                         >
-                          {motionLabel(m.action)}
+                          {md.title || motionLabel(m.action)}
                         </Text>
                         <Text
                           style={[
@@ -552,13 +681,14 @@ export default function EntityScreen() {
                             { color: theme.textSecondary },
                           ]}
                         >
-                          {formatTime(m.time)}
-                          {(md.action || md.skill) ? ` · ${md.action || md.skill}` : ""}
-                          {md.title ? ` · ${md.title}` : ""}
-                          {md.text ? ` · ${md.text}` : ""}
+                          {md.title ? (
+                            `${md.text || ''}${md.text ? ' · ' : ''}${formatTime(m.time)}`
+                          ) : (
+                            `${formatTime(m.time)}${(md.action || md.skill) ? ` · ${md.action || md.skill}` : ""}`
+                          )}
                         </Text>
                       </View>
-                    </View>
+                    </Pressable>
                   );
                 })}
               </>
@@ -900,18 +1030,13 @@ export default function EntityScreen() {
           >
             {actionResults.map((r) => (
               <Pressable
-                key={r.action.name}
+                key={r.action.id}
                 style={[
                   styles.skillRow,
-                  { backgroundColor: theme.backgroundElement },
+                  { borderBottomColor: theme.backgroundElement },
                 ]}
                 onPress={() => handleSelectAction(r.action)}
               >
-                <View
-                  style={[styles.skillIcon, { backgroundColor: "#5E6AD2" }]}
-                >
-                  <Ionicons name="flash" size={18} color="#fff" />
-                </View>
                 <View style={styles.skillInfo}>
                   <Text
                     style={[styles.skillName, { color: theme.text }]}
@@ -1006,6 +1131,65 @@ export default function EntityScreen() {
             }}
           />
         )}
+      </Modal>
+
+      {/* Edit Activity Item Modal */}
+      <Modal visible={showEditModal} animationType="slide">
+        <View style={[styles.container, { backgroundColor: theme.background, paddingTop: insets.top }]}>
+          <View style={[styles.header, { borderBottomColor: theme.backgroundElement }]}>
+            <Pressable onPress={() => { setShowEditModal(false); setEditingActivity(null); }} style={styles.backBtn}>
+              <Ionicons name="chevron-back" size={24} color={theme.text} />
+            </Pressable>
+            <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
+              Update Task
+            </Text>
+            <Pressable onPress={handleSaveEdit} style={styles.backBtn}>
+              <Ionicons name="checkmark" size={24} color="#10B981" />
+            </Pressable>
+          </View>
+
+          <KeyboardAwareScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}>
+            {editingActivity?.fields.map((field: any) => (
+              <View key={field.name} style={styles.fieldGroup}>
+                <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>
+                  {field.label}
+                </Text>
+                {field.type === 'select' ? (
+                  <View>
+                    <Pressable
+                      style={[styles.selectBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.backgroundElement }]}
+                      onPress={() => {
+                        const currentIndex = field.options.indexOf(editFields[field.name]);
+                        const nextIndex = (currentIndex + 1) % field.options.length;
+                        setEditFields(prev => ({ ...prev, [field.name]: field.options[nextIndex] }));
+                      }}>
+                      <Text style={{ color: editFields[field.name] ? theme.text : theme.textSecondary, fontSize: 15, textTransform: 'capitalize' }}>
+                        {editFields[field.name] || 'Select...'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <TextInput
+                    style={[styles.textInput, { color: theme.text, backgroundColor: theme.backgroundElement }]}
+                    value={String(editFields[field.name] ?? '')}
+                    onChangeText={(t) => setEditFields(prev => ({ ...prev, [field.name]: t }))}
+                    placeholder={field.placeholder || `Enter ${field.label}...`}
+                    placeholderTextColor={theme.textSecondary}
+                  />
+                )}
+              </View>
+            ))}
+          </KeyboardAwareScrollView>
+
+          <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement, paddingBottom: insets.bottom + 12 }]}>
+            <Pressable
+              style={[styles.executeBtn, { backgroundColor: '#10B981', flex: 1 }]}
+              onPress={handleSaveEdit}>
+              <Ionicons name="checkmark-circle" size={18} color="#fff" />
+              <Text style={styles.executeBtnText}>Save Changes</Text>
+            </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* Menu Bottom Sheet */}
@@ -1190,19 +1374,9 @@ const styles = StyleSheet.create({
   skillRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 16,
-    marginTop: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 12,
-    gap: 12,
-  },
-  skillIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   skillInfo: { flex: 1, gap: 2 },
   skillName: { fontSize: 14, fontWeight: "500" },
@@ -1289,4 +1463,14 @@ const styles = StyleSheet.create({
   },
   pickAvatarText: { color: "#ffffff", fontSize: 13, fontWeight: "600" },
   pickName: { flex: 1, fontSize: 15, fontWeight: "400" },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  backBtn: { paddingVertical: 8, paddingHorizontal: 8 },
+  headerTitle: { fontSize: 16, fontWeight: '600', flex: 1, textAlign: 'center' },
+  fieldGroup: { paddingHorizontal: 16, paddingTop: 20 },
+  fieldLabel: { fontSize: 13, fontWeight: '500', marginBottom: 8 },
+  textInput: { fontSize: 16, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10 },
+  selectBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1 },
+  bottomBar: { flexDirection: 'row', gap: 12, borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingTop: 12 },
+  executeBtn: { flex: 1, height: 48, borderRadius: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  executeBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

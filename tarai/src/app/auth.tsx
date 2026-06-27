@@ -32,6 +32,8 @@ export default function AuthScreen() {
         const user = await getCurrentUser();
         console.log(`[AUTH] ${Date.now() - t}ms — getCurrentUser: ${user ? user.email : 'null'}`);
         if (user) {
+          const { switchUser } = await import('@/lib/db');
+          await switchUser(user.id);
           console.log(`[AUTH] ${ms()} — navigating to /(nav)`);
           router.replace('/actions');
           return;
@@ -41,6 +43,8 @@ export default function AuthScreen() {
         const silent = await trySilentSignIn();
         console.log(`[AUTH] ${Date.now() - t2}ms — trySilentSignIn: ${silent ? silent.email : 'null'}`);
         if (silent) {
+          const { switchUser } = await import('@/lib/db');
+          await switchUser(silent.id);
           console.log(`[AUTH] ${ms()} — navigating to /actions via silent sign-in`);
           router.replace('/actions');
         } else {
@@ -51,12 +55,14 @@ export default function AuthScreen() {
       }
     })();
   }, [router]);
-
+ 
   const handleGoogleAuth = async () => {
     if (loading) return;
     setLoading(true);
     try {
-      await signInWithGoogle();
+      const user = await signInWithGoogle();
+      const { switchUser } = await import('@/lib/db');
+      await switchUser(user.id);
       router.replace('/actions');
     } catch (e: any) {
       console.warn('[Auth] Google sign-in failed:', e.message);

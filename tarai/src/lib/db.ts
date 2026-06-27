@@ -64,84 +64,146 @@ export function routeDbForEntity(type: string | null, scope: string | null): Dat
     return getLocalPrivateDb(selfId);
   }
   if (scope === "g") {
-    return getGlobalDb();
+    return getLocalPrivateDb(selfId);
   }
   return getLocalPrivateDb(selfId);
 }
 
 /**
- * One-time migration of the `memory` table from the old single-vector-per-form
- * schema (PK `form`) to the chunked schema (composite PK `(form, chunk)`).
- *
- * `CREATE TABLE IF NOT EXISTS` can't alter an existing table, and
- * `ALTER TABLE ADD COLUMN` can't add `chunk` to the PRIMARY KEY — so we detect
- * the old shape via PRAGMA and DROP+recreate. This only discards cached
- * vectors; the source `form` rows are untouched and re-embed automatically
- * (the bumped sync flags in vectorStore/skills force a full re-index).
+ * Handles database schema migrations for tables whose layout has changed
+ * in the final unified system architecture (memory, graph, and deletion of action).
  */
 async function migrateMemoryTable(db: Database, label: string) {
   try {
     const cols = await db.all(`PRAGMA table_info(memory)`).catch(() => [] as any[]);
-    if (!Array.isArray(cols) || cols.length === 0) return; // fresh DB — CREATE handles it
-    const hasChunk = cols.some((c: any) => c.name === 'chunk');
-    if (hasChunk) return;
-    console.log(`[DB] migrating memory table (${label}) → chunked schema`);
-    await db.exec(`DROP TABLE IF EXISTS memory`);
-    await db.exec(
-      `CREATE TABLE IF NOT EXISTS memory (form TEXT NOT NULL, chunk INTEGER NOT NULL DEFAULT 0, vector BLOB, embedding BLOB, PRIMARY KEY (form, chunk))`
-    );
-    console.log(`[DB] memory table migrated (${label})`);
+    if (Array.isArray(cols) && cols.length > 0) {
+      const hasFormCol = cols.some((c: any) => c.name === 'form');
+      const hasMetaCol = cols.some((c: any) => c.name === 'meta');
+      if (hasFormCol || !hasMetaCol) {
+        console.log(`[DB] migrating memory table (${label}) → target schema`);
+        await db.exec(`DROP TABLE IF EXISTS memory`);
+        await db.exec(
+          `CREATE TABLE IF NOT EXISTS memory (id TEXT NOT NULL, chunk INTEGER NOT NULL DEFAULT 0, text TEXT, embedding BLOB, meta TEXT, PRIMARY KEY (id, chunk))`
+        );
+        console.log(`[DB] memory table migrated (${label})`);
+      }
+    }
   } catch (e) {
     console.warn(`[DB] memory migration failed (${label}):`, e);
   }
+
+  try {
+    const cols = await db.all(`PRAGMA table_info(graph)`).catch(() => [] as any[]);
+    if (Array.isArray(cols) && cols.length > 0) {
+      const hasTypeCol = cols.some((c: any) => c.name === 'type');
+      if (hasTypeCol) {
+        console.log(`[DB] migrating graph table (${label}) → target schema`);
+        await db.exec(`DROP TABLE IF EXISTS graph`);
+        await db.exec(
+          `CREATE TABLE IF NOT EXISTS graph (src TEXT NOT NULL, rel TEXT NOT NULL, tgt TEXT NOT NULL, weight REAL DEFAULT 1.0, active INTEGER DEFAULT 1, time TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (src, rel, tgt))`
+        );
+        console.log(`[DB] graph table migrated (${label})`);
+      }
+    }
+  } catch (e) {
+    console.warn(`[DB] graph migration failed (${label}):`, e);
+  }
+
+  try {
+    const cols = await db.all(`PRAGMA table_info(matter)`).catch(() => [] as any[]);
+    if (Array.isArray(cols) && cols.length > 0) {
+      const hasOwnerCol = cols.some((c: any) => c.name === 'owner');
+      if (!hasOwnerCol) {
+        console.log(`[DB] migrating matter table (${label}) → adding owner column`);
+        await db.exec(`ALTER TABLE matter ADD COLUMN owner TEXT`);
+        console.log(`[DB] matter table migrated (added owner column) (${label})`);
+      }
+    }
+  } catch (e) {
+    console.warn(`[DB] matter migration failed (${label}):`, e);
+  }
+
+  try {
+    const cols = await db.all(`PRAGMA table_info(form)`).catch(() => [] as any[]);
+    if (Array.isArray(cols) && cols.length > 0) {
+      const hasOwnerCol = cols.some((c: any) => c.name === 'owner');
+      if (!hasOwnerCol) {
+        console.log(`[DB] migrating form table (${label}) → adding owner column`);
+        await db.exec(`ALTER TABLE form ADD COLUMN owner TEXT`);
+        console.log(`[DB] form table migrated (added owner column) (${label})`);
+      }
+    }
+  } catch (e) {
+    console.warn(`[DB] form migration failed (${label}):`, e);
+  }
+
+  try {
+    await db.exec(`DROP TABLE IF EXISTS action`);
+  } catch (_) {}
+}
+
+export async function switchUser(userId: string): Promise<Database> {
+  const t0 = Date.now();
+  console.log(`[DB] switchUser START: switching session to user = ${userId}`);
+  cachedSelfId = userId;
+
+  try {
+    const { setActionUserId } = await import('@/actions/store');
+    setActionUserId(userId);
+  } catch (e) {
+    console.warn('[DB] Failed to set action user ID:', e);
+  }
+
+  const db = getLocalPrivateDb(userId);
+  try {
+    await db.connect();
+    await migrateMemoryTable(db, userId);
+    for (const sql of SCHEMA_STATEMENTS) {
+      try { await db.exec(sql); } catch (_) {}
+    }
+  } catch (e) {
+    console.error(`[DB] switchUser DB init FAILED:`, e);
+    throw e;
+  }
+
+  try {
+    const { ensureBuiltins } = await import('@/actions/seed');
+    await ensureBuiltins();
+  } catch (e) {
+    console.warn('[DB] Failed to ensure built-in actions:', e);
+  }
+
+  try {
+    const { seedActions } = await import('@/actions/store');
+    await seedActions();
+  } catch (e) {
+    console.warn('[DB] Failed to seed action embeddings:', e);
+  }
+
+  console.log(`[DB] switchUser DONE: switched and initialized in ${Date.now() - t0}ms`);
+  return db;
 }
 
 export async function initDb() {
   const t0 = Date.now();
   console.log(`[DB] ${Date.now() - t0}ms — initDb START`);
 
-  const privateDb = getLocalPrivateDb("guest");
-  try {
-    console.log(`[DB] ${Date.now() - t0}ms — privateDb.connect() START`);
-    await privateDb.connect();
-    console.log(`[DB] ${Date.now() - t0}ms — privateDb.connect() DONE`);
-    await migrateMemoryTable(privateDb, "guest");
-    for (const sql of SCHEMA_STATEMENTS) {
-      try { await privateDb.exec(sql); } catch (_) {}
-    }
-    console.log(`[DB] ${Date.now() - t0}ms — privateDb schema applied`);
-  } catch (e) {
-    console.error(`[DB] ${Date.now() - t0}ms — privateDb FAILED:`, e);
-    throw e;
+  // 1. Resolve current user identity first
+  const userId = await getSelfId();
+
+  // 2. Initialize the user's private database
+  await switchUser(userId);
+
+  // 3. Keep guest DB available just in case, but no need to wait for it if logged in as user
+  if (userId !== "guest") {
+    const guestDb = getLocalPrivateDb("guest");
+    guestDb.connect().then(async () => {
+      await migrateMemoryTable(guestDb, "guest");
+      for (const sql of SCHEMA_STATEMENTS) {
+        try { await guestDb.exec(sql); } catch (_) {}
+      }
+    }).catch(() => {});
   }
 
-  const globalDb = getGlobalDb();
-  try {
-    console.log(`[DB] ${Date.now() - t0}ms — globalDb.connect() START`);
-    await globalDb.connect();
-    console.log(`[DB] ${Date.now() - t0}ms — globalDb.connect() DONE`);
-    await migrateMemoryTable(globalDb, "global");
-    for (const sql of SCHEMA_STATEMENTS) {
-      try { await globalDb.exec(sql); } catch (_) {}
-    }
-    console.log(`[DB] ${Date.now() - t0}ms — globalDb schema applied`);
-  } catch (e) {
-    console.error(`[DB] ${Date.now() - t0}ms — globalDb FAILED:`, e);
-  }
-
-  console.log(`[DB] ${Date.now() - t0}ms — initDb DONE (guest, upgrading async)`);
-
-  getSelfId().then((userId) => {
-    if (userId !== "guest") {
-      console.log(`[DB] — getSelfId resolved: ${userId}, upgrading DB`);
-      const userDb = getLocalPrivateDb(userId);
-      userDb.connect().then(async () => {
-        await migrateMemoryTable(userDb, userId);
-        for (const sql of SCHEMA_STATEMENTS) {
-          userDb.exec(sql).catch(() => {});
-        }
-        console.log(`[DB] — user DB ready for ${userId}`);
-      }).catch((e) => console.warn(`[DB] — user DB upgrade failed:`, e));
-    }
-  });
+  console.log(`[DB] ${Date.now() - t0}ms — initDb DONE`);
 }

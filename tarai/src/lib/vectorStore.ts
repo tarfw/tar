@@ -119,6 +119,7 @@ export async function upsertFormVector(
     scope?: string | null;
     code?: string | null;
     data?: string | null;
+    owner?: string | null;
   }
 ) {
   console.log(`[VEC] ┌─ UPSERT form=${id} title="${clip(form.title)}" type=${form.type ?? '-'} scope=${form.scope ?? '-'}`);
@@ -132,7 +133,15 @@ export async function upsertFormVector(
     console.log(`[VEC] │  text (${text.length} chars) → ${chunks.length} chunk(s)`);
 
     const db = getUserDb();
-    await db.run("DELETE FROM memory WHERE form = ?", [id]);
+    await db.run("DELETE FROM memory WHERE id = ?", [id]);
+
+    const meta = JSON.stringify({
+      table: 'form',
+      scope: form.scope || 'p',
+      type: form.type || '',
+      title: form.title || '',
+      owner: form.owner || null
+    });
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
@@ -142,8 +151,8 @@ export async function upsertFormVector(
 
       const vecText = vectorToText(vector);
       await db.run(
-        "INSERT INTO memory (form, chunk, vector, embedding) VALUES (?, ?, vector32(?), vector32(?))",
-        [id, i, vecText, vecText]
+        "INSERT INTO memory (id, chunk, text, embedding, meta) VALUES (?, ?, ?, vector32(?), ?)",
+        [id, i, chunk, vecText, meta]
       );
     }
 
@@ -157,7 +166,7 @@ export async function deleteFormVector(id: string) {
   console.log(`[VEC] ┌─ DELETE vector form=${id}`);
   try {
     const db = getUserDb();
-    const res = await db.run("DELETE FROM memory WHERE form = ?", [id]);
+    const res = await db.run("DELETE FROM memory WHERE id = ?", [id]);
     console.log(`[VEC] └─ removed from memory table (changes=${res?.changes ?? '?'})`);
   } catch (e) {
     console.error(`[VEC] └─ FAILED delete form=${id}:`, e);
@@ -181,8 +190,8 @@ export async function searchFormVectors(
     const tScan = now();
     const db = getUserDb();
     const rows = await db.all(
-      `SELECT form, MIN(vector_distance_cos(vector, vector32(?))) AS dist
-         FROM memory GROUP BY form ORDER BY dist LIMIT ?`,
+      `SELECT id, MIN(vector_distance_cos(embedding, vector32(?))) AS dist
+         FROM memory GROUP BY id ORDER BY dist LIMIT ?`,
       [vectorToText(queryVector), limit]
     ).catch((err) => {
       console.warn('[VEC] ║  ! native distance query failed:', err);
@@ -190,8 +199,8 @@ export async function searchFormVectors(
     });
 
     const ranked = rows
-      .filter((r: any) => r.form != null && r.dist != null)
-      .map((r: any) => ({ formId: String(r.form), similarity: 1 - Number(r.dist) }));
+      .filter((r: any) => r.id != null && r.dist != null)
+      .map((r: any) => ({ formId: String(r.id), similarity: 1 - Number(r.dist) }));
 
     if (ranked.length > 0) {
       const sims = ranked.map((r) => r.similarity).sort((a, b) => a - b);

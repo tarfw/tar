@@ -1,9 +1,5 @@
 import type { ActionDef } from './definitions';
-import { BUILT_IN_ACTIONS } from './seed';
-
-interface DbLike {
-  runAsync(query: string, ...params: any[]): Promise<void>;
-}
+import { executeAction } from './executor';
 
 export type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped';
 
@@ -34,28 +30,11 @@ function cloneSteps(state: ExecutionState): ExecutionStep[] {
 }
 
 function buildSteps(action: ActionDef): ExecutionStep[] {
-  const steps: ExecutionStep[] = [
+  return [
     { id: 0, label: 'Validate input', detail: 'Checking required fields', status: 'pending' },
+    { id: 1, label: 'Process data', detail: 'Running action logic', status: 'pending' },
+    { id: 2, label: 'Save record', detail: 'Writing to database', status: 'pending' },
   ];
-
-  // Resolve programmatic execute if it is a built-in action
-  let execFn = action.execute;
-  if (!execFn && action.id.startsWith('tool_')) {
-    const builtin = BUILT_IN_ACTIONS.find((a) => a.id === action.id);
-    if (builtin) execFn = builtin.execute;
-  }
-
-  if (execFn) {
-    steps.push({ id: 1, label: 'Process data', detail: 'Running action logic', status: 'pending' });
-    steps.push({ id: 2, label: 'Save record', detail: 'Writing to database', status: 'pending' });
-  } else if (action.creates) {
-    steps.push({ id: 1, label: 'Build record', detail: `Preparing ${action.creates.table} entry`, status: 'pending' });
-    steps.push({ id: 2, label: 'Save record', detail: `Writing to ${action.creates.table} table`, status: 'pending' });
-  } else {
-    steps.push({ id: 1, label: 'Execute', detail: action.name, status: 'pending' });
-  }
-
-  return steps;
 }
 
 export function createInitialState(action: ActionDef): ExecutionState {
@@ -72,7 +51,7 @@ function delay(ms: number): Promise<void> {
 }
 
 export async function runActionExecution(
-  db: DbLike,
+  db: any, // kept for backward-compatibility in signature
   action: ActionDef,
   values: Record<string, any>,
   onUpdate: OnStepUpdate,
@@ -123,89 +102,22 @@ export async function runActionExecution(
     state.steps[1].status = 'running';
     emit();
 
-    let result: { id: string; title: string };
+    const result = await executeAction(action, values);
 
-    // Resolve programmatic execute if it is a built-in action
-    let execFn = action.execute;
-    if (!execFn && action.id.startsWith('tool_')) {
-      const builtin = BUILT_IN_ACTIONS.find((a) => a.id === action.id);
-      if (builtin) execFn = builtin.execute;
-    }
+    state.steps[1].status = 'success';
+    state.steps[1].result = `Built: "${result.title}"`;
+    state.steps[1].durationMs = Date.now() - start;
+    emit();
+    await delay(60);
 
-    if (execFn) {
-      const execResult = execFn(values);
-      state.steps[1].status = 'success';
-      state.steps[1].result = `Built: "${execResult.title}"`;
-      state.steps[1].durationMs = Date.now() - start;
-      emit();
-      await delay(60);
+    // Step 2: Save
+    check();
+    state.steps[2].status = 'running';
+    emit();
 
-      // Step 2: Save
-      check();
-      state.steps[2].status = 'running';
-      emit();
-
-      const id = `form_${execResult.formType}_${Date.now()}`;
-      const now = new Date().toISOString();
-      await db.runAsync(
-        'INSERT INTO form (id, type, title, scope, data, time, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
-        id, execResult.formType, execResult.title, execResult.formScope,
-        JSON.stringify(execResult.data), now
-      );
-
-      state.steps[2].status = 'success';
-      state.steps[2].result = `Saved as ${id}`;
-      state.steps[2].durationMs = Date.now() - start;
-      result = { id, title: execResult.title };
-
-    } else if (action.creates) {
-      const c = action.creates;
-      const formType = c.formType || action.id.replace(/^tool_/, '').replace(/_/g, '-');
-      const formScope = c.formScope || 'p';
-
-      let title: string;
-      if (c.titleTemplate) {
-        title = c.titleTemplate.replace(/\{(\w+)\}/g, (_, f) => String(values[f] || ''));
-      } else if (c.titleField) {
-        title = String(values[c.titleField] || action.name);
-      } else {
-        title = action.name;
-      }
-
-      const dataFields = c.dataFields || Object.keys(values);
-      const data: Record<string, any> = {};
-      for (const f of dataFields) {
-        if (values[f] !== undefined && values[f] !== null && values[f] !== '') {
-          data[f] = values[f];
-        }
-      }
-
-      state.steps[1].status = 'success';
-      state.steps[1].result = `Type: ${formType}`;
-      state.steps[1].durationMs = Date.now() - start;
-      emit();
-      await delay(60);
-
-      // Step 2: Save
-      check();
-      state.steps[2].status = 'running';
-      emit();
-
-      const id = `form_${formType}_${Date.now()}`;
-      const now = new Date().toISOString();
-      await db.runAsync(
-        'INSERT INTO form (id, type, title, scope, data, time, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
-        id, formType, title, formScope, JSON.stringify(data), now
-      );
-
-      state.steps[2].status = 'success';
-      state.steps[2].result = `Saved as ${id}`;
-      state.steps[2].durationMs = Date.now() - start;
-      result = { id, title };
-
-    } else {
-      throw new Error('Action has no execute function or creates mapping');
-    }
+    state.steps[2].status = 'success';
+    state.steps[2].result = `Saved as ${result.id}`;
+    state.steps[2].durationMs = Date.now() - start;
 
     state.status = 'completed';
     state.totalMs = Date.now() - start;
@@ -231,4 +143,3 @@ export async function runActionExecution(
     throw e;
   }
 }
-

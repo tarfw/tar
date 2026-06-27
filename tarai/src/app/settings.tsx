@@ -33,6 +33,8 @@ export default function SettingsScreen() {
   const handleSignOut = async () => {
     try {
       await signOutGoogle();
+      const { switchUser } = await import("@/lib/db");
+      await switchUser("guest");
       router.replace("/auth");
     } catch {
       router.replace("/auth");

@@ -66,7 +66,7 @@ export default function WorkspaceScreen() {
     setLocalTitle(row.title);
 
     const memberLinks = await db.getAllAsync<{ tgt: string }>(
-      "SELECT tgt FROM graph WHERE src = ? AND type = 'has_member' AND active = 1",
+      "SELECT tgt FROM graph WHERE src = ? AND rel = 'has_member' AND active = 1",
       row.id
     );
     const memberIds = memberLinks.map(l => l.tgt);
@@ -96,7 +96,7 @@ export default function WorkspaceScreen() {
       setLocalTitle(row.title);
 
       const memberLinks = await db.getAllAsync<{ tgt: string }>(
-        "SELECT tgt FROM graph WHERE src = ? AND type = 'has_member' AND active = 1",
+        "SELECT tgt FROM graph WHERE src = ? AND rel = 'has_member' AND active = 1",
         row.id
       );
       const memberIds = memberLinks.map(l => l.tgt);
@@ -139,8 +139,8 @@ export default function WorkspaceScreen() {
   const handleAddMember = async (personId: string) => {
     if (!row) return;
     await db.runAsync(
-      'INSERT OR REPLACE INTO graph (src, tgt, type, weight, active) VALUES (?, ?, ?, ?, 1)',
-      row.id, personId, 'has_member', 0
+      'INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active) VALUES (?, ?, ?, ?, 1)',
+      row.id, 'has_member', personId, 0
     );
     if (wsRef.current && wsRef.current.readyState === 1) {
       wsRef.current.send(JSON.stringify({ action: 'MEMBER_ADDED', workspaceId: row.id, personId }));
@@ -152,7 +152,7 @@ export default function WorkspaceScreen() {
   const handleRemoveMember = async (memberId: string) => {
     if (!row) return;
     await db.runAsync(
-      'UPDATE graph SET active = 0 WHERE src = ? AND tgt = ? AND type = ?',
+      'UPDATE graph SET active = 0 WHERE src = ? AND tgt = ? AND rel = ?',
       row.id, memberId, 'has_member'
     );
     if (wsRef.current && wsRef.current.readyState === 1) {

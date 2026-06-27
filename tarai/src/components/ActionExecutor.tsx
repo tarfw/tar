@@ -23,7 +23,7 @@ import {
 interface Props {
   action: ActionDef;
   values: Record<string, any>;
-  onDone: (result: { id: string; title: string }) => void;
+  onDone: (result: { id: string; title: string }, values: Record<string, any>) => void;
   onCancel: () => void;
 }
 
@@ -182,7 +182,7 @@ export default function ActionExecutor({ action, values, onDone, onCancel }: Pro
           <Pressable
             style={[styles.primaryBtn, { backgroundColor: '#10B981' }]}
             onPress={() => {
-              if (state.result) onDone(state.result);
+              if (state.result) onDone(state.result, values);
             }}>
             <Text style={styles.primaryBtnText}>Done</Text>
           </Pressable>

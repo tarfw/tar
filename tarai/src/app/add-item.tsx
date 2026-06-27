@@ -162,14 +162,14 @@ export default function AddItemScreen() {
 
         // Create graph connection (item → store)
         await db.runAsync(
-          'INSERT OR IGNORE INTO graph (src, tgt, type, time) VALUES (?, ?, ?, ?)',
-          itemId, params.storeId, 'belongs_to', now
+          'INSERT OR IGNORE INTO graph (src, rel, tgt, time) VALUES (?, ?, ?, ?)',
+          itemId, 'belongs_to', params.storeId, now
         );
 
         // Create graph connection (item → product)
         await db.runAsync(
-          'INSERT OR IGNORE INTO graph (src, tgt, type, time) VALUES (?, ?, ?, ?)',
-          itemId, selectedProduct.id, 'has_stock', now
+          'INSERT OR IGNORE INTO graph (src, rel, tgt, time) VALUES (?, ?, ?, ?)',
+          itemId, 'has_stock', selectedProduct.id, now
         );
 
         // Create initial motion (TRANS_IN)

@@ -1,7 +1,6 @@
-import { getGlobalDb, getUserDb } from '@/lib/db';
+import { getUserDb } from '@/lib/db';
 import { vectorToText } from '@/lib/vectorStore';
 import type { ActionDef, ActionType } from './definitions';
-import { BUILT_IN_ACTIONS } from './seed';
 
 let embeddingFn: ((text: string) => Promise<number[]>) | null = null;
 let seedPromise: Promise<void> | null = null;
@@ -40,26 +39,41 @@ export async function seedActions(): Promise<void> {
 
 async function doSeedActions(embed: (text: string) => Promise<number[]>): Promise<void> {
   try {
-    const globalDb = getGlobalDb();
-    const rows = await globalDb.all(
-      "SELECT id, name, description, keywords FROM action WHERE scope = 'g'"
+    const db = getUserDb();
+    const rows = await db.all(
+      "SELECT id, title, data FROM form WHERE type = 'action' AND scope = 'g'"
     ).catch(() => []);
 
     let count = 0;
     for (const row of rows as any[]) {
-      const keywords = JSON.parse(row.keywords || '[]');
+      let description = '';
+      let keywords: string[] = [];
+      try {
+        const parsedData = JSON.parse(row.data || '{}');
+        description = parsedData.description || '';
+        keywords = parsedData.keywords || [];
+      } catch (_) {}
+
       const textToEmbed = [
-        String(row.name || ''),
-        row.description || '',
-        ...(keywords ?? []),
+        String(row.title || ''),
+        description,
+        ...keywords,
       ].join('. ');
 
       const vector = await embed(textToEmbed);
       const vecText = vectorToText(vector);
 
-      await globalDb.run(
-        'INSERT OR REPLACE INTO memory (form, chunk, vector, embedding) VALUES (?, 0, vector32(?), vector32(?))',
-        [row.id, vecText, vecText]
+      const meta = JSON.stringify({
+        table: 'form',
+        scope: 'g',
+        type: 'action',
+        title: row.title || '',
+        owner: null
+      });
+
+      await db.run(
+        'INSERT OR REPLACE INTO memory (id, chunk, text, embedding, meta) VALUES (?, 0, ?, vector32(?), ?)',
+        [row.id, textToEmbed, vecText, meta]
       );
       count++;
     }
@@ -76,21 +90,29 @@ async function doSeedActions(embed: (text: string) => Promise<number[]>): Promis
 
 export async function createCustomAction(action: ActionDef): Promise<void> {
   const db = getUserDb();
+  const nowStr = new Date().toISOString();
+  const creator = currentUserId || 'guest';
+
   await db.run(
-    'INSERT OR REPLACE INTO action (id, creator_id, parent_id, scope, type, name, description, vertical, icon, keywords, fields, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT OR REPLACE INTO form (id, code, type, scope, owner, title, public, active, data, time) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
     [
       action.id,
-      currentUserId || 'guest',
-      null,
+      action.id,
+      'action',
       'team',
-      action.type,
+      creator,
       action.name,
-      action.description,
-      action.vertical,
-      action.icon,
-      JSON.stringify(action.keywords || []),
-      JSON.stringify(action.fields),
-      JSON.stringify({ creates: action.creates }),
+      0,
+      JSON.stringify({
+        type: action.type,
+        description: action.description,
+        vertical: action.vertical,
+        icon: action.icon,
+        keywords: action.keywords || [],
+        fields: action.fields,
+        creates: action.creates,
+      }),
+      nowStr,
     ]
   );
 
@@ -102,9 +124,18 @@ export async function createCustomAction(action: ActionDef): Promise<void> {
       const textToEmbed = [action.name, action.description, ...(action.keywords || [])].join('. ');
       const vector = await embeddingFn(textToEmbed);
       const vecText = vectorToText(vector);
+      
+      const meta = JSON.stringify({
+        table: 'form',
+        scope: 'team',
+        type: 'action',
+        title: action.name,
+        owner: creator
+      });
+
       await db.run(
-        'INSERT OR REPLACE INTO memory (form, chunk, vector, embedding) VALUES (?, 0, vector32(?), vector32(?))',
-        [action.id, vecText, vecText]
+        'INSERT OR REPLACE INTO memory (id, chunk, text, embedding, meta) VALUES (?, 0, ?, vector32(?), ?)',
+        [action.id, textToEmbed, vecText, meta]
       );
       console.log(`[ACTIONS] embedded custom action: ${action.id}`);
     } catch (e) {
@@ -120,18 +151,15 @@ export async function createCustomAction(action: ActionDef): Promise<void> {
 function localRowToActionDef(row: any, isCustom: boolean): ActionDef | null {
   try {
     const data = JSON.parse(String(row.data || '{}'));
-    const keywords = JSON.parse(String(row.keywords || '[]'));
-    const fields = JSON.parse(String(row.fields || '[]'));
-
     return {
       id: String(row.id),
-      name: String(row.name || 'Untitled Action'),
-      description: String(row.description || ''),
-      vertical: String(row.vertical || 'general'),
-      icon: String(row.icon || (isCustom ? 'sparkles-outline' : 'document-outline')),
-      keywords: Array.isArray(keywords) ? keywords : [],
-      fields: Array.isArray(fields) ? fields : [],
-      type: (row.type as ActionType) || 'tool',
+      name: String(row.title || 'Untitled Action'),
+      description: String(data.description || ''),
+      vertical: String(data.vertical || 'general'),
+      icon: String(data.icon || (isCustom ? 'sparkles-outline' : 'document-outline')),
+      keywords: Array.isArray(data.keywords) ? data.keywords : [],
+      fields: Array.isArray(data.fields) ? data.fields : [],
+      type: (data.type as ActionType) || 'tool',
       creates: data.creates || undefined,
       custom: isCustom,
       builtIn: !isCustom,
@@ -143,10 +171,11 @@ function localRowToActionDef(row: any, isCustom: boolean): ActionDef | null {
 
 export async function loadAllActions(): Promise<ActionDef[]> {
   try {
-    // 1. Built-in actions from global.db
-    const globalDb = getGlobalDb();
-    const globalRows = await globalDb.all(
-      "SELECT * FROM action WHERE scope = 'g'"
+    const userDb = getUserDb();
+
+    // 1. Built-in actions (type = 'action', scope = 'g')
+    const globalRows = await userDb.all(
+      "SELECT * FROM form WHERE type = 'action' AND scope = 'g'"
     ).catch(() => []);
 
     const actions: ActionDef[] = [];
@@ -155,10 +184,9 @@ export async function loadAllActions(): Promise<ActionDef[]> {
       if (action) actions.push(action);
     }
 
-    // 2. Custom actions from user private DB
-    const userDb = getUserDb();
+    // 2. Custom actions (type = 'action', scope != 'g')
     const userRows = await userDb.all(
-      "SELECT * FROM action WHERE scope != 'g'"
+      "SELECT * FROM form WHERE type = 'action' AND scope != 'g'"
     ).catch(() => []);
 
     for (const row of userRows as any[]) {
@@ -166,7 +194,6 @@ export async function loadAllActions(): Promise<ActionDef[]> {
       if (action) actions.push(action);
     }
 
-    // Sort: built-in first, then custom, alphabetically
     actions.sort((a, b) => {
       if (a.builtIn && !b.builtIn) return -1;
       if (!a.builtIn && b.builtIn) return 1;
@@ -174,19 +201,6 @@ export async function loadAllActions(): Promise<ActionDef[]> {
     });
 
     return actions;
-  } catch {
-    return [];
-  }
-}
-
-export async function loadPublicActions(): Promise<ActionDef[]> {
-  // For local-first prototype, public actions are loaded from userDb with public = 1
-  try {
-    const userDb = getUserDb();
-    const rows = await userDb.all(
-      "SELECT * FROM action WHERE scope = 'public'"
-    ).catch(() => []);
-    return rows.map((r) => localRowToActionDef(r, true)).filter((a): a is ActionDef => a !== null);
   } catch {
     return [];
   }
@@ -215,55 +229,40 @@ function textSearchActions(allActions: ActionDef[], query: string, limit: number
 export async function searchActions(query: string, limit = 5, minSimilarity = 0.2): Promise<ActionSearchResult[]> {
   if (!query.trim()) return [];
 
-  // Load all actions
   const allActions = await loadAllActions();
-
-  // Text fallback always runs
   const textResults = textSearchActions(allActions, query, limit);
 
-  // Vector search only when model is ready
   if (embeddingFn) {
     try {
-      const globalDb = getGlobalDb();
       const userDb = getUserDb();
       const queryVector = await embeddingFn(query);
       const vecText = vectorToText(queryVector);
 
-      // Search built-in memory
-      const globalVecRows = await globalDb.all(
-        `SELECT m.form AS form, MIN(vector_distance_cos(m.vector, vector32(?))) AS dist
-           FROM memory m JOIN action a ON a.id = m.form
-           GROUP BY m.form ORDER BY dist LIMIT ?`,
-        [vecText, limit]
-      ).catch(() => []);
-
-      // Search custom memory
       const userVecRows = await userDb.all(
-        `SELECT m.form AS form, MIN(vector_distance_cos(m.vector, vector32(?))) AS dist
-           FROM memory m JOIN action a ON a.id = m.form
-           GROUP BY m.form ORDER BY dist LIMIT ?`,
+        `SELECT m.id AS id, MIN(vector_distance_cos(m.embedding, vector32(?))) AS dist
+           FROM memory m JOIN form f ON f.id = m.id
+           WHERE f.type = 'action'
+           GROUP BY m.id ORDER BY dist LIMIT ?`,
         [vecText, limit]
       ).catch(() => []);
 
-      const vecRows = [...globalVecRows, ...userVecRows] as { form: any; dist: any }[];
+      const vecRows = userVecRows as { id: any; dist: any }[];
       vecRows.sort((a, b) => Number(a.dist ?? 1) - Number(b.dist ?? 1));
 
       const actionMap = new Map(allActions.map((a) => [a.id, a]));
       const vecResults: ActionSearchResult[] = [];
 
       for (const row of vecRows) {
-        const action = actionMap.get(String(row.form));
+        const action = actionMap.get(String(row.id));
         if (!action || row.dist == null) continue;
         const similarity = 1 - Number(row.dist);
         if (similarity >= minSimilarity) {
-          // Avoid duplicate entries if found in both databases
           if (!vecResults.some((r) => r.action.id === action.id)) {
             vecResults.push({ action, similarity });
           }
         }
       }
 
-      // Merge: vector first, then text-only
       const seen = new Set(vecResults.map((r) => r.action.id));
       const merged = [...vecResults];
       for (const t of textResults) {
@@ -271,7 +270,7 @@ export async function searchActions(query: string, limit = 5, minSimilarity = 0.
       }
       return merged.slice(0, limit);
     } catch {
-      // Fall through to text-only
+      // Fall through to textResults
     }
   }
 
@@ -284,12 +283,12 @@ export async function searchActions(query: string, limit = 5, minSimilarity = 0.
 
 export async function shareAction(actionId: string): Promise<void> {
   const db = getUserDb();
-  await db.run("UPDATE action SET scope = 'public' WHERE id = ?", [actionId]);
+  await db.run("UPDATE form SET scope = 'public' WHERE id = ? AND type = 'action'", [actionId]);
 }
 
 export async function unshareAction(actionId: string): Promise<void> {
   const db = getUserDb();
-  await db.run("UPDATE action SET scope = 'team' WHERE id = ?", [actionId]);
+  await db.run("UPDATE form SET scope = 'team' WHERE id = ? AND type = 'action'", [actionId]);
 }
 
 export async function importAction(action: ActionDef): Promise<void> {
@@ -302,7 +301,24 @@ export async function importAction(action: ActionDef): Promise<void> {
 
 export async function deleteAction(actionId: string): Promise<void> {
   const db = getUserDb();
-  await db.run('DELETE FROM action WHERE id = ?', [actionId]);
-  await db.run('DELETE FROM memory WHERE form = ?', [actionId]);
+  await db.run("DELETE FROM form WHERE id = ? AND type = 'action'", [actionId]);
+  await db.run('DELETE FROM memory WHERE id = ?', [actionId]);
 }
 
+export async function loadPublicActions(): Promise<ActionDef[]> {
+  try {
+    const userDb = getUserDb();
+    const rows = await userDb.all(
+      "SELECT * FROM form WHERE type = 'action' AND scope = 'public'"
+    ).catch(() => []);
+
+    const actions: ActionDef[] = [];
+    for (const row of rows as any[]) {
+      const action = localRowToActionDef(row, true);
+      if (action) actions.push(action);
+    }
+    return actions;
+  } catch {
+    return [];
+  }
+}

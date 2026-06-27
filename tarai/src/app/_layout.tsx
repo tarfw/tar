@@ -33,14 +33,14 @@ function RootLayoutInner() {
         await initDb();
         console.log(`[BOOT] ${ms()} — initDb() DONE`);
 
-        console.log(`[BOOT] ${ms()} — ensureBuiltins() START`);
-        await ensureBuiltins();
-        console.log(`[BOOT] ${ms()} — ensureBuiltins() DONE`);
-
         console.log(`[BOOT] ${ms()} — getSelfId() START`);
         const userId = await getSelfId();
         setActionUserId(userId);
         console.log(`[BOOT] ${ms()} — getSelfId() DONE: ${userId}`);
+
+        console.log(`[BOOT] ${ms()} — ensureBuiltins() START`);
+        await ensureBuiltins();
+        console.log(`[BOOT] ${ms()} — ensureBuiltins() DONE`);
 
         console.log(`[BOOT] ${ms()} — vector sync START (fire & forget)`);
         checkAndSyncExistingForms().catch(e => console.warn(`[BOOT] ${ms()} — Vector sync error:`, e));

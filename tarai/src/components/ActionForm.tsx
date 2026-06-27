@@ -20,7 +20,7 @@ import { editActionDefinition } from '@/lib/ai';
 
 interface Props {
   action: ActionDef;
-  onDone: () => void;
+  onDone: (values?: Record<string, any>, result?: { id: string; title: string }) => void;
   onCancel: () => void;
   onActionUpdated?: (updated: ActionDef) => void;
 }
@@ -106,9 +106,9 @@ export default function ActionForm({ action, onDone, onCancel, onActionUpdated }
       <ActionExecutor
         action={currentAction}
         values={values}
-        onDone={() => {
+        onDone={(res, vals) => {
           setExecuting(false);
-          onDone();
+          onDone(vals, res);
         }}
         onCancel={() => setExecuting(false)}
       />

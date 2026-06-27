@@ -270,30 +270,32 @@ export default {
         const stockData = stockRes.ok ? (await stockRes.json() as Record<string, number>) : {};
 
         let reply = '';
-        const groqKey = '';
-        try {
-          const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${groqKey}`,
-            },
-            body: JSON.stringify({
-              model: 'llama-3.1-8b-instant',
-              messages: [
-                {
-                  role: 'system',
-                  content: `You are an AI sales assistant for "${storeSlug}". Stock levels: ${JSON.stringify(stockData)}. Answer customer questions helpfully & briefly.`,
-                },
-                { role: 'user', content: body.message },
-              ],
-              max_completion_tokens: 1024,
-            }),
-          });
-          const aiJson = await aiRes.json() as any;
-          reply = aiJson?.choices?.[0]?.message?.content || '';
-        } catch {
-          // fallback
+        const groqKey = env.GROQ_API_KEY || '';
+        if (groqKey) {
+          try {
+            const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${groqKey}`,
+              },
+              body: JSON.stringify({
+                model: 'llama-3.1-8b-instant',
+                messages: [
+                  {
+                    role: 'system',
+                    content: `You are an AI sales assistant for "${storeSlug}". Stock levels: ${JSON.stringify(stockData)}. Answer customer questions helpfully & briefly.`,
+                  },
+                  { role: 'user', content: body.message },
+                ],
+                max_completion_tokens: 1024,
+              }),
+            });
+            const aiJson = await aiRes.json() as any;
+            reply = aiJson?.choices?.[0]?.message?.content || '';
+          } catch {
+            // fallback
+          }
         }
         if (!reply) {
           reply = `Hello! I am the automated sales bot for ${storeSlug}. Our active stock contains: ${Object.keys(stockData).join(', ') || 'no items currently'}.`;

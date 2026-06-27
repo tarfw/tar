@@ -16,6 +16,9 @@ import { TEMPLATES, type StorefrontLayout, type Theme, type Section } from './st
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'openai/gpt-oss-120b';
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
+if (!GROQ_API_KEY) {
+  console.warn('[StorefrontAI] Missing EXPO_PUBLIC_GROQ_API_KEY');
+}
 
 export interface StorefrontProduct {
   name: string;

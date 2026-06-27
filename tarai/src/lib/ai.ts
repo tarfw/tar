@@ -13,8 +13,10 @@ import { z } from 'zod';
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'openai/gpt-oss-120b';
-const GROQ_API_KEY =
-  process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
+const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
+if (!GROQ_API_KEY) {
+  console.warn('[AI] Missing EXPO_PUBLIC_GROQ_API_KEY');
+}
 
 export const COMMERCE_CATEGORIES = [
   'Electronics',

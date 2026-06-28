@@ -6,11 +6,7 @@ import { useRouter, Stack } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
-import { useDb } from '@/db/provider';
-import { toolCreateMatter } from '@/tools/core/create_matter';
-import { toolSetAttr } from '@/tools/core/set_attr';
-import { toolLinkGraph } from '@/tools/core/link_graph';
-import { toolAppendMotion } from '@/tools/core/append_motion';
+import { tarflue } from '@/lib/tarflue';
 import { getSelfId } from '@/lib/db';
 
 type EntityType = 'people' | 'work' | 'store' | 'task' | 'lead' | 'product';
@@ -28,7 +24,6 @@ export default function AddScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
-  const db = useDb();
 
   const [selectedType, setSelectedType] = useState<EntityType>('people');
   const [title, setTitle] = useState('');
@@ -42,39 +37,22 @@ export default function AddScreen() {
     try {
       const userId = await getSelfId();
       const scope = `user_${userId}`;
-      const id = `${selectedType}_${Date.now()}`;
 
-      await toolCreateMatter.run({
-        input: {
-          table: 'matter',
-          scope,
-          type: selectedType,
-          title: title.trim(),
-        },
-        signal: new AbortController().signal,
+      await tarflue.tools.createMatter({
+        table: 'matter',
+        scope,
+        type: selectedType,
+        title: title.trim(),
       });
 
-      await toolSetAttr.run({
-        input: {
-          matterId: id,
-          key: 'status',
-          val: 'active',
-          scope,
-        },
-        signal: new AbortController().signal,
+      await tarflue.tools.setAttr({
+        matterId: `${selectedType}_${Date.now()}`,
+        key: 'status',
+        val: 'active',
+        scope,
       });
 
-      await toolAppendMotion.run({
-        input: {
-          stream: id,
-          action: 99993,
-          data: { event: 'created', type: selectedType, title: title.trim() },
-          scope,
-        },
-        signal: new AbortController().signal,
-      });
-
-      router.replace({ pathname: '/entity', params: { id } });
+      router.back();
     } catch (e) {
       console.error('[Add] Create failed:', e);
     } finally {
@@ -87,22 +65,8 @@ export default function AddScreen() {
     setCreating(true);
 
     try {
-      const userId = await getSelfId();
-      const scope = `user_${userId}`;
-      const id = `matter_${Date.now()}`;
-
-      await toolCreateMatter.run({
-        input: {
-          table: 'matter',
-          scope,
-          type: 'general',
-          title: aiInput.trim(),
-          data: { aiGenerated: true, originalInput: aiInput },
-        },
-        signal: new AbortController().signal,
-      });
-
-      router.replace({ pathname: '/entity', params: { id } });
+      const response = await tarflue.agents.chat(aiInput);
+      router.back();
     } catch (e) {
       console.error('[Add] AI create failed:', e);
     } finally {
@@ -175,24 +139,6 @@ export default function AddScreen() {
           />
         </View>
 
-        {/* Info */}
-        <View style={[styles.infoCard, { backgroundColor: theme.backgroundElement }]}>
-          <Ionicons name="information-circle-outline" size={18} color={theme.textSecondary} />
-          <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-            {selectedType === 'people'
-              ? 'Add people to track CRM, HR, and tasks'
-              : selectedType === 'store'
-              ? 'Create a storefront to sell products online'
-              : selectedType === 'task'
-              ? 'Create a task to track work items'
-              : selectedType === 'lead'
-              ? 'Add a sales lead to your pipeline'
-              : selectedType === 'product'
-              ? 'Add a product to your inventory'
-              : 'Add work spaces to organize teams and projects'}
-          </Text>
-        </View>
-
       </KeyboardAwareScrollView>
     </View>
   );
@@ -214,6 +160,4 @@ const styles = StyleSheet.create({
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, paddingTop: 20, gap: 8 },
   typeCard: { paddingVertical: 16, paddingHorizontal: 12, borderRadius: 12, alignItems: 'center', gap: 6, borderWidth: 2, minWidth: 80 },
   typeLabel: { fontSize: 12, fontWeight: '600' },
-  infoCard: { flexDirection: 'row', marginHorizontal: 16, marginTop: 24, padding: 14, borderRadius: 12, gap: 10, alignItems: 'flex-start' },
-  infoText: { fontSize: 13, flex: 1, lineHeight: 18 },
 });

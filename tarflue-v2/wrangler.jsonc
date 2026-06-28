@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tarflue",
+  "compatibility_date": "2026-06-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "FlueRegistry",
+        "FlueMasterAgent",
+        "FlueTranslateWorkflow",
+        "FlueDailyReportWorkflow",
+        "FlueDailyStandupWorkflow",
+        "FlueInventoryAlertWorkflow",
+        "FlueLeadScoringWorkflow",
+        "FlueSprintPlanningWorkflow",
+        "StorefrontDO",
+        "OrderDO",
+        "EditorDO"
+      ]
+    }
+  ]
+}

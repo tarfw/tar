@@ -3,7 +3,7 @@
  * All Flue tool calls go through this client.
  */
 
-const TARFLUE_URL = process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://tarflue.tarai.space';
+const TARFLUE_URL = process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://tarflue.tar-54d.workers.dev';
 
 interface ToolResponse<T = any> {
   data?: T;

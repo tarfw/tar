@@ -6,10 +6,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
-
-const ASI_ENDPOINT = 'https://inference.asicloud.cudos.org/v1/chat/completions';
-const ASI_MODEL = 'asi1-mini';
-const ASI_API_KEY = process.env.EXPO_PUBLIC_ASI_API_KEY || 'sk-OUW3HRFwVaiN8ySQp0-UPzgbdNdxoaRG9L55MFSmkB8';
+import { tarflue } from '@/lib/tarflue';
 
 interface Message {
   id: string;
@@ -45,44 +42,8 @@ export default function ChatScreen() {
     Keyboard.dismiss();
 
     try {
-      // Get context from DB
-      const products = await db.getAllAsync<any>(
-        "SELECT title, data FROM form WHERE type = 'product' AND active = 1 LIMIT 10"
-      );
-      const items = await db.getAllAsync<any>(
-        "SELECT m.*, f.title as product_name FROM matter m JOIN form f ON f.id = m.form WHERE m.type = 'stock' AND m.active = 1 LIMIT 10"
-      );
-
-      const context = products.length > 0
-        ? `Products: ${products.map((p: any) => p.title).join(', ')}`
-        : 'No products yet.';
-      const stockContext = items.length > 0
-        ? `Stock: ${items.map((i: any) => `${i.product_name} (${i.qty} nos)`).join(', ')}`
-        : 'No stock data.';
-
-      const systemPrompt = `You are tarai, a helpful business assistant for a store management app.
-You can help with products, inventory, sales, and business decisions.
-Context: ${context}. ${stockContext}.
-Be concise and helpful. Reply in 2-3 sentences max.`;
-
-      const res = await fetch(ASI_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${ASI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: ASI_MODEL,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messages.slice(-10).map(m => ({ role: m.role, content: m.text })),
-            { role: 'user', content: text },
-          ],
-        }),
-      });
-
-      const json = await res.json();
-      const reply = json?.choices?.[0]?.message?.content || 'Sorry, I could not respond.';
+      const response = await tarflue.agents.chat(text);
+      const reply = response?.response || 'Sorry, I could not respond.';
 
       const assistantMsg: Message = {
         id: `msg_${Date.now()}`,

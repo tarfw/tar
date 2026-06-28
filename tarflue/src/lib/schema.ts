@@ -1,0 +1,83 @@
+export const SCHEMA_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS form (
+    id      TEXT PRIMARY KEY,
+    code    TEXT UNIQUE,
+    type    TEXT NOT NULL,
+    scope   TEXT NOT NULL,
+    owner   TEXT,
+    title   TEXT,
+    public  INTEGER DEFAULT 0,
+    active  INTEGER DEFAULT 1,
+    data    TEXT,
+    time    TEXT DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS matter (
+    id      TEXT PRIMARY KEY,
+    form    TEXT NOT NULL,
+    type    TEXT NOT NULL,
+    scope   TEXT NOT NULL,
+    qty     REAL,
+    value   REAL,
+    active  INTEGER DEFAULT 1,
+    variant INTEGER,
+    mark    INTEGER DEFAULT 0,
+    geo     TEXT,
+    start   TEXT,
+    end     TEXT,
+    data    TEXT,
+    owner   TEXT,
+    time    TEXT DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS motion (
+    stream     TEXT NOT NULL,
+    seq        INTEGER NOT NULL,
+    action     INTEGER NOT NULL,
+    phase      INTEGER,
+    delta      REAL,
+    client_ref TEXT,
+    data       TEXT,
+    time       TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (stream, seq)
+  )`,
+  `CREATE TABLE IF NOT EXISTS graph (
+    src    TEXT NOT NULL,
+    rel    TEXT NOT NULL,
+    tgt    TEXT NOT NULL,
+    weight REAL DEFAULT 1.0,
+    active INTEGER DEFAULT 1,
+    time   TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (src, rel, tgt)
+  )`,
+  `CREATE TABLE IF NOT EXISTS memory (
+    id        TEXT NOT NULL,
+    chunk     INTEGER NOT NULL DEFAULT 0,
+    matter    TEXT,
+    text      TEXT,
+    embedding BLOB,
+    meta      TEXT,
+    PRIMARY KEY (id, chunk)
+  )`,
+  `CREATE TABLE IF NOT EXISTS attr (
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    matter TEXT NOT NULL,
+    key    TEXT NOT NULL,
+    val    TEXT,
+    num    REAL,
+    ref    TEXT,
+    time   TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(matter, key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS matter_scope_type ON matter(scope, type, active, time)`,
+  `CREATE INDEX IF NOT EXISTS matter_owner ON matter(scope, owner, active)`,
+  `CREATE INDEX IF NOT EXISTS form_scope_type ON form(scope, type, active)`,
+  `CREATE INDEX IF NOT EXISTS motion_stream ON motion(stream, seq)`,
+  `CREATE INDEX IF NOT EXISTS graph_tgt ON graph(tgt, rel, src)`,
+  `CREATE INDEX IF NOT EXISTS matter_geo ON matter(geo)`,
+  `CREATE INDEX IF NOT EXISTS idx_attr_matter ON attr(matter)`,
+  `CREATE INDEX IF NOT EXISTS idx_attr_key ON attr(key)`,
+  `CREATE INDEX IF NOT EXISTS idx_memory_matter ON memory(matter)`,
+  `ALTER TABLE matter ADD COLUMN updated TEXT`,
+  `ALTER TABLE graph ADD COLUMN data TEXT`,
+  `ALTER TABLE memory ADD COLUMN matter TEXT`,
+];
+

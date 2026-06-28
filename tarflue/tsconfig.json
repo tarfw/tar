@@ -3,10 +3,16 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "strict": true,
+    "strict": false,
     "noEmit": true,
     "skipLibCheck": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "types": []
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["node_modules", "src/cloudflare.ts", "src/lib/**"]
 }

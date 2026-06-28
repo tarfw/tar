@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "flue dev --target cloudflare",
-    "build": "flue build --target cloudflare",
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run",
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@flue/runtime": "latest"
+    "@flue/runtime": "latest",
+    "hono": "^4.4.0"
   },
   "devDependencies": {
     "@flue/cli": "latest",

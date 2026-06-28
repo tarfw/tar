@@ -10,11 +10,13 @@
   },
   "dependencies": {
     "@flue/runtime": "latest",
-    "hono": "^4.4.0"
+    "@libsql/client": "^0.17.0",
+    "hono": "^4.4.0",
+    "valibot": "^1.0.0"
   },
   "devDependencies": {
-    "@flue/cli": "latest",
-    "wrangler": "latest",
+    "@cloudflare/workers-types": "^4.0.0",
+    "wrangler": "^3.0.0",
     "typescript": "^5.7.0"
   }
 }

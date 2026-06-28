@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, ScrollView, Pressable, View, Text, ActivityIndicator } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, View, Text, ActivityIndicator, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 
@@ -7,13 +7,11 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
-import { type FormRow } from '@/hooks/use-form';
+import { toolListMatters } from '@/tools/core/list_matters';
+import { toolSearchMemory } from '@/tools/core/search_memory';
+import { getSelfId } from '@/lib/db';
 
-type Filter = 'All' | 'People' | 'Work' | 'Stores';
-
-function parseData(data: string): Record<string, any> {
-  try { return JSON.parse(data); } catch { return {}; }
-}
+type Filter = 'All' | 'People' | 'Work' | 'Stores' | 'Tasks' | 'Leads' | 'Products';
 
 export default function BrowseScreen() {
   const insets = useSafeAreaInsets();
@@ -21,22 +19,27 @@ export default function BrowseScreen() {
   const router = useRouter();
   const db = useDb();
   const [activeFilter, setActiveFilter] = useState<Filter>('All');
-  const [people, setPeople] = useState<FormRow[]>([]);
-  const [work, setWork] = useState<FormRow[]>([]);
-  const [stores, setStores] = useState<FormRow[]>([]);
+  const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const dbRef = useRef(db);
-  useEffect(() => { dbRef.current = db; }, [db]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
 
   const loadData = useCallback(async () => {
-    const all = await dbRef.current.getAllAsync<FormRow>('SELECT * FROM form WHERE active = 1 ORDER BY time DESC');
-    const p = all.filter(r => r.type === 'profile');
-    const w = all.filter(r => r.type === 'team');
-    const s = all.filter(r => r.type === 'store');
-    setPeople(p);
-    setWork(w);
-    setStores(s);
-    setLoading(false);
+    try {
+      const userId = await getSelfId();
+      const scope = `user_${userId}`;
+
+      const result = await toolListMatters.run({
+        input: { table: 'matter', scope, limit: 100 },
+        signal: new AbortController().signal,
+      });
+
+      setItems(result.rows);
+    } catch (e) {
+      console.error('[Browse] Load failed:', e);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const didInit = useRef(false);
@@ -54,11 +57,54 @@ export default function BrowseScreen() {
     }, [loadData])
   );
 
-  const filters: Filter[] = ['All', 'People', 'Work', 'Stores'];
+  const handleSearch = async (query: string) => {
+    if (!query.trim()) {
+      loadData();
+      return;
+    }
 
-  const showPeople = activeFilter === 'All' || activeFilter === 'People';
-  const showWork = activeFilter === 'All' || activeFilter === 'Work';
-  const showStores = activeFilter === 'All' || activeFilter === 'Stores';
+    setSearching(true);
+    try {
+      const userId = await getSelfId();
+      const scope = `user_${userId}`;
+
+      const results = await toolSearchMemory.run({
+        input: { query, scope, limit: 20 },
+        signal: new AbortController().signal,
+      });
+
+      const matterIds = results.map((r: any) => r.id);
+      if (matterIds.length > 0) {
+        const matterResult = await toolListMatters.run({
+          input: { table: 'matter', scope, limit: 20 },
+          signal: new AbortController().signal,
+        });
+        setItems(matterResult.rows.filter((r: any) => matterIds.includes(r.id)));
+      } else {
+        setItems([]);
+      }
+    } catch (e) {
+      console.error('[Browse] Search failed:', e);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const filters: Filter[] = ['All', 'People', 'Work', 'Stores', 'Tasks', 'Leads', 'Products'];
+
+  const typeMap: Record<Filter, string> = {
+    'All': '',
+    'People': 'profile',
+    'Work': 'team',
+    'Stores': 'store',
+    'Tasks': 'task',
+    'Leads': 'lead',
+    'Products': 'product',
+  };
+
+  const filteredItems = activeFilter === 'All'
+    ? items
+    : items.filter((item: any) => item.type === typeMap[activeFilter]);
 
   if (loading) {
     return (
@@ -71,7 +117,28 @@ export default function BrowseScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
 
-      <View style={[styles.filters, { paddingTop: insets.top + 4 }]}>
+      {/* Search Bar */}
+      <View style={[styles.searchBar, { paddingTop: insets.top + 4, backgroundColor: theme.background }]}>
+        <View style={[styles.searchInput, { backgroundColor: theme.backgroundElement }]}>
+          <Ionicons name="search" size={18} color={theme.textSecondary} />
+          <TextInput
+            style={[styles.searchText, { color: theme.text }]}
+            value={searchQuery}
+            onChangeText={(t) => { setSearchQuery(t); handleSearch(t); }}
+            placeholder="Search anything..."
+            placeholderTextColor={theme.textSecondary}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => { setSearchQuery(''); loadData(); }}>
+              <Ionicons name="close-circle" size={18} color={theme.textSecondary} />
+            </Pressable>
+          )}
+        </View>
+      </View>
+
+      {/* Filters */}
+      <View style={styles.filters}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersContent}>
           {filters.map((filter) => (
             <Pressable key={filter} style={[styles.filterTab, activeFilter === filter && [styles.filterTabActive, { borderColor: theme.text }]]} onPress={() => setActiveFilter(filter)}>
@@ -81,69 +148,36 @@ export default function BrowseScreen() {
         </ScrollView>
       </View>
 
+      {/* Items List */}
       <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
+        {searching ? (
+          <ActivityIndicator style={{ paddingTop: 40 }} color={theme.textSecondary} />
+        ) : filteredItems.length === 0 ? (
+          <Text style={[styles.empty, { color: theme.textSecondary }]}>No items found.</Text>
+        ) : (
+          filteredItems.map((item: any) => {
+            const data = typeof item.data === 'string' ? JSON.parse(item.data) : item.data || {};
+            const iconColor = data.color || '#5E6AD2';
 
-        {showPeople && people.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>People</Text>
-            {people.map((p) => {
-              const d = parseData(p.data);
-              return (
-                <Pressable key={p.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/entity', params: { id: p.id } })}>
-                  <View style={[styles.avatar, { backgroundColor: d.color || '#5E6AD2' }]}>
-                    <Text style={styles.avatarText}>{d.initials || p.title.charAt(0).toUpperCase()}</Text>
-                  </View>
-                  <View style={styles.listItemContent}>
-                    <Text style={[styles.listItemTitle, { color: theme.text }]}>{p.title}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </>
-        )}
-
-        {showWork && work.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Work</Text>
-            {work.map((w) => {
-              const d = parseData(w.data);
-              return (
-                <Pressable key={w.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/entity', params: { id: w.id } })}>
-                  <View style={[styles.workIcon, { backgroundColor: d.color || '#5E6AD2' }]}>
-                    <Text style={styles.workIconText}>{w.title.charAt(0).toUpperCase()}</Text>
-                  </View>
-                  <View style={styles.listItemContent}>
-                    <Text style={[styles.listItemTitle, { color: theme.text }]}>{w.title}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </>
-        )}
-
-        {showStores && stores.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Stores</Text>
-            {stores.map((s) => {
-              return (
-                <Pressable key={s.id} style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]} onPress={() => router.push({ pathname: '/entity', params: { id: s.id } })}>
-                  <View style={[styles.storeIcon, { backgroundColor: '#10B981' }]}>
-                    <Ionicons name="storefront-outline" size={18} color="#fff" />
-                  </View>
-                  <View style={styles.listItemContent}>
-                    <Text style={[styles.listItemTitle, { color: theme.text }]}>{s.title}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </>
-        )}
-
-        {((showPeople && people.length === 0) || (showWork && work.length === 0) || (showStores && stores.length === 0)) && (
-          <Text style={[styles.empty, { color: theme.textSecondary }]}>No items yet. Tap + Add to create one.</Text>
+            return (
+              <Pressable
+                key={item.id}
+                style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.6 }]}
+                onPress={() => router.push({ pathname: '/entity', params: { id: item.id } })}>
+                <View style={[styles.itemIcon, { backgroundColor: iconColor, borderRadius: item.type === 'profile' ? 16 : 8 }]}>
+                  <Text style={styles.iconText}>{item.title?.charAt(0)?.toUpperCase() || '?'}</Text>
+                </View>
+                <View style={styles.listItemContent}>
+                  <Text style={[styles.listItemTitle, { color: theme.text }]}>{item.title}</Text>
+                  <Text style={[styles.listItemMeta, { color: theme.textSecondary }]}>{item.type} · {item.scope}</Text>
+                </View>
+              </Pressable>
+            );
+          })
         )}
       </ScrollView>
 
+      {/* Add Button */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12, backgroundColor: theme.background, borderTopColor: theme.backgroundElement }]}>
         <Pressable style={[styles.addButton, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/add')}>
           <Ionicons name="add" size={20} color={theme.text} />
@@ -156,27 +190,23 @@ export default function BrowseScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  searchBar: { paddingHorizontal: 16, paddingBottom: 8 },
+  searchInput: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  searchText: { flex: 1, fontSize: 15, paddingVertical: 0 },
   bottomBar: { alignItems: 'flex-end', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
-  profileButton: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  profileImage: { width: 32, height: 32, borderRadius: 16 },
-  profileName: { fontSize: 15, fontWeight: '600' },
   addButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, gap: 4 },
   addButtonText: { fontSize: 15, fontWeight: '600' },
-  filters: { paddingTop: 4, paddingBottom: 8 },
+  filters: { paddingBottom: 8 },
   filtersContent: { paddingHorizontal: 16, gap: 4 },
   filterTab: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
   filterTabActive: { borderBottomWidth: 2 },
   filterText: { fontSize: 14, fontWeight: '500' },
   filterTextActive: { fontWeight: '600' },
   scrollView: { flex: 1 },
-  sectionTitle: { fontSize: 13, fontWeight: '500', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
   empty: { textAlign: 'center', paddingTop: 60, fontSize: 15 },
   listRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 12 },
-  avatar: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  avatarText: { color: '#ffffff', fontSize: 13, fontWeight: '600' },
-  workIcon: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  workIconText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
-  storeIcon: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  itemIcon: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
+  iconText: { color: '#ffffff', fontSize: 13, fontWeight: '600' },
   listItemTitle: { fontSize: 15, fontWeight: '400', flex: 1 },
   listItemMeta: { fontSize: 12, marginTop: 2 },
   listItemContent: { flex: 1 },

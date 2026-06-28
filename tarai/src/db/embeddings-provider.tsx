@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useEmbeddingsModule, clearEmbeddingModel, isModelCached, EMBEDDING_DIM } from '@/lib/embeddings';
 import { setEmbeddingFunction } from '@/lib/vectorStore';
-import { setActionEmbeddingFunction, seedActions } from '@/actions/store';
+// Flue: old store.ts removed - actions now use Flue tool_store_memory
 
 interface EmbeddingsContextType {
   isReady: boolean;

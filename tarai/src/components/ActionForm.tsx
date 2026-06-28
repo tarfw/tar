@@ -14,9 +14,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
-import type { ActionDef, ActionField } from '@/actions/definitions';
-import ActionExecutor from './ActionExecutor';
 import { editActionDefinition } from '@/lib/ai';
+
+// Flue: ActionDef and ActionField types now come from Valibot schemas in defineAction
+type ActionDef = { id: string; name: string; description: string; fields: ActionField[]; [key: string]: any };
+type ActionField = { name: string; type: string; label: string; required?: boolean; placeholder?: string; options?: string[] };
 
 interface Props {
   action: ActionDef;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Pressable, View, TextInput, Text } from 'react-native';
+import { StyleSheet, Pressable, View, TextInput, Text, ActivityIndicator } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
@@ -7,47 +7,21 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
+import { toolCreateMatter } from '@/tools/core/create_matter';
+import { toolSetAttr } from '@/tools/core/set_attr';
+import { toolLinkGraph } from '@/tools/core/link_graph';
+import { toolAppendMotion } from '@/tools/core/append_motion';
+import { getSelfId } from '@/lib/db';
 
-const TURSO_URL = process.env.EXPO_PUBLIC_TURSO_URL || '';
-const TURSO_AUTH_TOKEN = process.env.EXPO_PUBLIC_TURSO_AUTH_TOKEN || '';
-
-async function syncStoreToTurso(id: string, title: string, scope: string, data: Record<string, any>) {
-  if (!TURSO_URL || !TURSO_AUTH_TOKEN) return;
-  try {
-    const httpsUrl = TURSO_URL.replace('libsql://', 'https://');
-    await fetch(`${httpsUrl}/v2/pipeline`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${TURSO_AUTH_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        requests: [
-          {
-            type: 'execute',
-            stmt: {
-              sql: `INSERT INTO form (id, type, title, scope, data, time, active)
-                    VALUES (?, 'store', ?, ?, ?, datetime('now'), 1)
-                    ON CONFLICT(id) DO UPDATE SET title = ?, data = ?, time = datetime('now')`,
-              args: [id, title, scope, JSON.stringify(data), title, JSON.stringify(data)].map(v => ({ type: 'text', value: String(v) })),
-            },
-          },
-          { type: 'close' },
-        ],
-      }),
-    });
-    console.log(`[Add] Synced store to Turso: ${data.subdomain}.tarai.space`);
-  } catch (err: any) {
-    console.error('[Add] Turso sync failed:', err?.message);
-  }
-}
-
-type EntityType = 'people' | 'work' | 'store';
+type EntityType = 'people' | 'work' | 'store' | 'task' | 'lead' | 'product';
 
 const ENTITY_TYPES: { key: EntityType; label: string; icon: string; color: string }[] = [
   { key: 'people', label: 'People', icon: 'person-outline', color: '#5E6AD2' },
   { key: 'work', label: 'Work', icon: 'briefcase-outline', color: '#FF9500' },
   { key: 'store', label: 'Store', icon: 'storefront-outline', color: '#10B981' },
+  { key: 'task', label: 'Task', icon: 'checkbox-outline', color: '#8B5CF6' },
+  { key: 'lead', label: 'Lead', icon: 'person-add-outline', color: '#EF4444' },
+  { key: 'product', label: 'Product', icon: 'cube-outline', color: '#06B6D4' },
 ];
 
 export default function AddScreen() {
@@ -58,40 +32,82 @@ export default function AddScreen() {
 
   const [selectedType, setSelectedType] = useState<EntityType>('people');
   const [title, setTitle] = useState('');
+  const [aiInput, setAiInput] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const handleSave = async () => {
     if (!title.trim()) return;
-    const id = `form_${selectedType}_${Date.now()}`;
-    const now = new Date().toISOString();
+    setCreating(true);
 
-    let formType: string;
-    let scope: string = '';
-    let data: Record<string, any> = {};
+    try {
+      const userId = await getSelfId();
+      const scope = `user_${userId}`;
+      const id = `${selectedType}_${Date.now()}`;
 
-    if (selectedType === 'people') {
-      formType = 'profile';
-      scope = 'p';
-    } else if (selectedType === 'store') {
-      formType = 'store';
-      data = { subdomain: title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') };
-    } else {
-      formType = 'team';
-      scope = `t:team_${Date.now()}`;
+      await toolCreateMatter.run({
+        input: {
+          table: 'matter',
+          scope,
+          type: selectedType,
+          title: title.trim(),
+        },
+        signal: new AbortController().signal,
+      });
+
+      await toolSetAttr.run({
+        input: {
+          matterId: id,
+          key: 'status',
+          val: 'active',
+          scope,
+        },
+        signal: new AbortController().signal,
+      });
+
+      await toolAppendMotion.run({
+        input: {
+          stream: id,
+          action: 99993,
+          data: { event: 'created', type: selectedType, title: title.trim() },
+          scope,
+        },
+        signal: new AbortController().signal,
+      });
+
+      router.replace({ pathname: '/entity', params: { id } });
+    } catch (e) {
+      console.error('[Add] Create failed:', e);
+    } finally {
+      setCreating(false);
     }
+  };
 
-    if (!scope) scope = `s:${id}`;
+  const handleAiCreate = async () => {
+    if (!aiInput.trim()) return;
+    setCreating(true);
 
-    await db.runAsync(
-      'INSERT INTO form (id, type, title, scope, data, time, active) VALUES (?, ?, ?, ?, ?, ?, 1)',
-      id, formType, title.trim(), scope, JSON.stringify(data), now
-    );
+    try {
+      const userId = await getSelfId();
+      const scope = `user_${userId}`;
+      const id = `matter_${Date.now()}`;
 
-    // Sync store to Turso (non-blocking)
-    if (selectedType === 'store') {
-      syncStoreToTurso(id, title.trim(), scope, data);
+      await toolCreateMatter.run({
+        input: {
+          table: 'matter',
+          scope,
+          type: 'general',
+          title: aiInput.trim(),
+          data: { aiGenerated: true, originalInput: aiInput },
+        },
+        signal: new AbortController().signal,
+      });
+
+      router.replace({ pathname: '/entity', params: { id } });
+    } catch (e) {
+      console.error('[Add] AI create failed:', e);
+    } finally {
+      setCreating(false);
     }
-
-    router.replace({ pathname: '/entity', params: { id } });
   };
 
   return (
@@ -103,12 +119,35 @@ export default function AddScreen() {
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: theme.text }]}>New</Text>
-        <Pressable style={styles.saveBtn} onPress={handleSave}>
-          <Text style={{ color: title.trim() ? '#5E6AD2' : theme.textSecondary, fontSize: 16, fontWeight: '600' }}>Save</Text>
+        <Pressable style={styles.saveBtn} onPress={handleSave} disabled={creating}>
+          {creating ? (
+            <ActivityIndicator size="small" color="#5E6AD2" />
+          ) : (
+            <Text style={{ color: title.trim() ? '#5E6AD2' : theme.textSecondary, fontSize: 16, fontWeight: '600' }}>Save</Text>
+          )}
         </Pressable>
       </View>
 
       <KeyboardAwareScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
+
+        {/* AI Input */}
+        <View style={styles.fieldGroup}>
+          <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>What do you want to create?</Text>
+          <View style={[styles.aiInputRow, { backgroundColor: theme.backgroundElement }]}>
+            <TextInput
+              style={[styles.aiInput, { color: theme.text }]}
+              value={aiInput}
+              onChangeText={setAiInput}
+              placeholder="Ask AI to create anything..."
+              placeholderTextColor={theme.textSecondary}
+              returnKeyType="done"
+              onSubmitEditing={handleAiCreate}
+            />
+            <Pressable style={styles.aiGoBtn} onPress={handleAiCreate} disabled={!aiInput.trim() || creating}>
+              <Ionicons name="sparkles" size={18} color="#fff" />
+            </Pressable>
+          </View>
+        </View>
 
         {/* Type Selection */}
         <View style={styles.typeRow}>
@@ -130,7 +169,7 @@ export default function AddScreen() {
             style={[styles.nameInput, { color: theme.text }]}
             value={title}
             onChangeText={setTitle}
-            placeholder={selectedType === 'people' ? 'Enter name' : 'Enter work name'}
+            placeholder={`Enter ${selectedType} name`}
             placeholderTextColor={theme.textSecondary}
             autoFocus
           />
@@ -144,6 +183,12 @@ export default function AddScreen() {
               ? 'Add people to track CRM, HR, and tasks'
               : selectedType === 'store'
               ? 'Create a storefront to sell products online'
+              : selectedType === 'task'
+              ? 'Create a task to track work items'
+              : selectedType === 'lead'
+              ? 'Add a sales lead to your pipeline'
+              : selectedType === 'product'
+              ? 'Add a product to your inventory'
               : 'Add work spaces to organize teams and projects'}
           </Text>
         </View>
@@ -160,12 +205,15 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 16, fontWeight: '600' },
   saveBtn: { paddingVertical: 8 },
   scrollView: { flex: 1 },
-  typeRow: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 20, gap: 12 },
-  typeCard: { flex: 1, paddingVertical: 20, borderRadius: 12, alignItems: 'center', gap: 8, borderWidth: 2 },
-  typeLabel: { fontSize: 14, fontWeight: '600' },
   fieldGroup: { paddingHorizontal: 16, paddingTop: 24 },
   fieldLabel: { fontSize: 13, fontWeight: '500', marginBottom: 8 },
   nameInput: { fontSize: 22, fontWeight: '600', paddingVertical: 8 },
+  aiInputRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 4, gap: 8 },
+  aiInput: { flex: 1, fontSize: 15, paddingVertical: 8 },
+  aiGoBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#5E6AD2', justifyContent: 'center', alignItems: 'center' },
+  typeRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, paddingTop: 20, gap: 8 },
+  typeCard: { paddingVertical: 16, paddingHorizontal: 12, borderRadius: 12, alignItems: 'center', gap: 6, borderWidth: 2, minWidth: 80 },
+  typeLabel: { fontSize: 12, fontWeight: '600' },
   infoCard: { flexDirection: 'row', marginHorizontal: 16, marginTop: 24, padding: 14, borderRadius: 12, gap: 10, alignItems: 'flex-start' },
   infoText: { fontSize: 13, flex: 1, lineHeight: 18 },
 });

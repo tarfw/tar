@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tarflue",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "kv_namespaces": [
+    { "binding": "STOREFRONT_CACHE", "id": "ed0923e84cb1417bb4930984fa19ccad" }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "EDITOR", "class_name": "EditorDO" },
+      { "name": "STOREFRONT_DO", "class_name": "StorefrontDO" },
+      { "name": "ORDER_DO", "class_name": "OrderDO" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "FlueRegistry",
+        "StorefrontDO",
+        "OrderDO",
+        "EditorDO"
+      ]
+    }
+  ],
+  "vars": {},
+  "routes": [
+    { "pattern": "*.tarai.space/*", "zone_name": "tarai.space" }
+  ]
+}

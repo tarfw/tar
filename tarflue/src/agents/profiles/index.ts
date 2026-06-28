@@ -1,0 +1,10 @@
+export { agentCrm } from './crm';
+export { agentLogistics } from './logistics';
+export { agentSupport } from './support';
+export { agentHr } from './hr';
+export { agentRealEstate } from './realestate';
+export { agentEcommerce } from './ecommerce';
+export { agentProjects } from './projects';
+export { agentBooking } from './booking';
+export { agentInventory } from './inventory';
+export { agentLms } from './lms';

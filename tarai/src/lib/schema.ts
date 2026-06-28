@@ -51,15 +51,33 @@ export const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS memory (
     id        TEXT NOT NULL,
     chunk     INTEGER NOT NULL DEFAULT 0,
+    matter    TEXT,
     text      TEXT,
     embedding BLOB,
     meta      TEXT,
     PRIMARY KEY (id, chunk)
+  )`,
+  `CREATE TABLE IF NOT EXISTS attr (
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    matter TEXT NOT NULL,
+    key    TEXT NOT NULL,
+    val    TEXT,
+    num    REAL,
+    ref    TEXT,
+    time   TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(matter, key)
   )`,
   `CREATE INDEX IF NOT EXISTS matter_scope_type ON matter(scope, type, active, time)`,
   `CREATE INDEX IF NOT EXISTS matter_owner ON matter(scope, owner, active)`,
   `CREATE INDEX IF NOT EXISTS form_scope_type ON form(scope, type, active)`,
   `CREATE INDEX IF NOT EXISTS motion_stream ON motion(stream, seq)`,
   `CREATE INDEX IF NOT EXISTS graph_tgt ON graph(tgt, rel, src)`,
+  `CREATE INDEX IF NOT EXISTS matter_geo ON matter(geo)`,
+  `CREATE INDEX IF NOT EXISTS idx_attr_matter ON attr(matter)`,
+  `CREATE INDEX IF NOT EXISTS idx_attr_key ON attr(key)`,
+  `CREATE INDEX IF NOT EXISTS idx_memory_matter ON memory(matter)`,
+  `ALTER TABLE matter ADD COLUMN updated TEXT`,
+  `ALTER TABLE graph ADD COLUMN data TEXT`,
+  `ALTER TABLE memory ADD COLUMN matter TEXT`,
 ];
 

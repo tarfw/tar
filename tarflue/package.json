@@ -1,0 +1,19 @@
+{
+  "name": "tarflue",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "flue dev --target cloudflare",
+    "build": "flue build --target cloudflare",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@flue/runtime": "latest"
+  },
+  "devDependencies": {
+    "@flue/cli": "latest",
+    "wrangler": "latest",
+    "typescript": "^5.7.0"
+  }
+}

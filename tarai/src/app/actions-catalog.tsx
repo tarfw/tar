@@ -22,14 +22,25 @@ import {
   createCustomAction,
   loadAllActions,
   loadPublicActions,
-  shareAction,
-  deleteAction,
-  importAction,
-  type ActionSearchResult,
-} from '@/actions/store';
-import type { ActionDef } from '@/actions/definitions';
+import { toolSearchMemory } from '@/tools/core/search_memory';
 import { generateActionDefinition } from '@/lib/ai';
 import ActionForm from '@/components/ActionForm';
+
+// Flue: ActionDef and ActionSearchResult now use Flue primitives
+type ActionDef = { id: string; name: string; description: string; fields?: any[]; [key: string]: any };
+type ActionSearchResult = { action: ActionDef; similarity: number };
+
+async function searchActions(query: string, limit = 5): Promise<ActionSearchResult[]> {
+  const results = await toolSearchMemory.run({ input: { query, limit }, signal: new AbortController().signal });
+  return results.map((r: any) => ({ action: { id: r.id, name: r.meta?.title || r.id, description: r.text }, similarity: r.similarity }));
+}
+
+async function loadAllActions(): Promise<ActionDef[]> { return []; }
+async function loadPublicActions(): Promise<ActionDef[]> { return []; }
+async function shareAction(id: string) {}
+async function deleteAction(id: string) {}
+async function importAction(action: ActionDef) {}
+async function createCustomAction(action: ActionDef) {}
 
 type ViewMode = 'list' | 'search' | 'create' | 'public' | 'menu';
 

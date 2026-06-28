@@ -1,273 +1,155 @@
-import { Database, getDbPath } from "@tursodatabase/sync-react-native";
-import { SCHEMA_STATEMENTS } from "./schema";
-import { getCurrentUser } from "./auth";
+/**
+ * Database layer for tarflue (Cloudflare Worker).
+ * Uses Turso HTTP API instead of libsql client.
+ * Same database as tarai, just different connection method.
+ */
 
-const dbConnections: Record<string, Database> = {};
-export let cachedSelfId: string | null = null;
+import { SCHEMA_STATEMENTS } from './schema';
 
-export async function getSelfId(): Promise<string> {
-  if (cachedSelfId) return cachedSelfId;
-  const t0 = Date.now();
-  try {
-    console.log(`[DB] ${Date.now() - t0}ms — getSelfId: getCurrentUser START`);
-    const user = await getCurrentUser();
-    console.log(`[DB] ${Date.now() - t0}ms — getSelfId: getCurrentUser done, user: ${user ? user.id : 'null'}`);
-    if (user && user.id) {
-      cachedSelfId = user.id;
-      return user.id;
-    }
-  } catch (e) {
-    console.warn(`[DB] ${Date.now() - t0}ms — getSelfId failed:`, e);
-  }
-  cachedSelfId = "guest";
-  console.log(`[DB] ${Date.now() - t0}ms — getSelfId: fallback to guest`);
-  return "guest";
-}
+const TURSO_URL = process.env.TURSO_URL || '';
+const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || '';
 
-function createDbConnection(key: string, dbName: string): Database {
-  if (!dbConnections[key]) {
-    const config = { path: getDbPath(dbName) };
-    const db = new Database(config);
-    (db as any).push = async () => {};
-    (db as any).pull = async () => {};
-    (db as any).sync = async () => {};
-    dbConnections[key] = db;
-  }
-  return dbConnections[key];
-}
-
-export function getLocalPrivateDb(userId: string): Database {
-  return createDbConnection(`private_${userId}`, `user_${userId}.db`);
-}
-
-export function getGlobalDb(): Database {
-  return createDbConnection("global", "global.db");
-}
-
-export function getUserDb(): Database {
-  const userId = cachedSelfId || "guest";
-  return getLocalPrivateDb(userId);
-}
-
-export const getDbClient = getUserDb;
-
-export function scopePrefix(scope: string | null): 'p' | 't' | 's' | 'g' {
-  if (!scope || scope === 'p' || scope.startsWith('p:')) return 'p';
-  if (scope === 't' || scope.startsWith('t:')) return 't';
-  if (scope === 's' || scope.startsWith('s:')) return 's';
-  return 'g';
-}
-
-function extractScopeId(scope: string): string {
-  return scope.includes(':') ? scope.split(':').slice(1).join(':') : scope;
-}
-
-export function getWorkspaceDb(workspaceId: string): Database {
-  const id = extractScopeId(workspaceId);
-  return createDbConnection(`workspace_${id}`, `workspace_${id}.db`);
-}
-
-export function getStorefrontDb(storefrontId: string): Database {
-  const id = extractScopeId(storefrontId);
-  return createDbConnection(`storefront_${id}`, `storefront_${id}.db`);
+interface TursoResult {
+  results: Array<{
+    cols: Array<{ name: string; decltype?: string }>;
+    rows: Array<Array<any>>;
+    response: { type: string };
+  }>;
 }
 
 /**
- * Initialize schema and run migrations for any database connection.
+ * Execute SQL via Turso HTTP Pipeline API.
  */
-export async function ensureDbSchema(db: Database, label: string): Promise<void> {
-  await db.connect();
-  await migrateMemoryTable(db, label);
-  for (const sql of SCHEMA_STATEMENTS) {
-    try { await db.exec(sql); } catch (_) {}
-  }
-}
-
-export function routeDbForEntity(_type: string | null, scope: string | null): Database {
-  const selfId = cachedSelfId || "guest";
-  const prefix = scopePrefix(scope);
-
-  if (prefix === 'p') {
-    return getLocalPrivateDb(selfId);
+async function tursoExec(sql: string, args: any[] = []): Promise<any[]> {
+  if (!TURSO_URL || !TURSO_AUTH_TOKEN) {
+    console.warn('[DB] Turso not configured, skipping query');
+    return [];
   }
 
-  if (prefix === 'g') {
-    return getGlobalDb();
+  const httpsUrl = TURSO_URL.replace('libsql://', 'https://');
+
+  const res = await fetch(`${httpsUrl}/v2/pipeline`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      requests: [
+        {
+          type: 'execute',
+          stmt: {
+            sql,
+            args: args.map(v => ({ type: 'text', value: String(v ?? '') })),
+          },
+        },
+        { type: 'close' },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Turso error: ${err}`);
   }
 
-  if (prefix === 't' && scope) {
-    return getWorkspaceDb(scope);
+  const data = await res.json() as TursoResult;
+  const result = data.results?.[0];
+
+  if (!result || result.response.type !== 'ok') {
+    return [];
   }
 
-  if (prefix === 's' && scope) {
-    return getStorefrontDb(scope);
-  }
-
-  // Fallback to personal DB for unrecognized scopes
-  return getLocalPrivateDb(selfId);
+  // Convert rows to objects
+  return result.rows.map(row => {
+    const obj: Record<string, any> = {};
+    result.cols.forEach((col, i) => {
+      obj[col.name] = row[i];
+    });
+    return obj;
+  });
 }
 
 /**
- * Return a database for a scope, ensuring it is connected and has the schema.
+ * Execute SQL and return first row.
  */
-export async function getPreparedDbForScope(scope: string | null): Promise<Database> {
-  const db = routeDbForEntity('form', scope);
-  const label = scope || 'p';
-  await ensureDbSchema(db, label);
-  return db;
+export async function dbGet(sql: string, args: any[] = []): Promise<any | null> {
+  const rows = await tursoExec(sql, args);
+  return rows[0] || null;
 }
 
 /**
- * Run a sequence of database operations inside a single SQLite transaction.
- * Automatically COMMIT on success, ROLLBACK on failure.
+ * Execute SQL and return all rows.
  */
-export async function withTransaction<T>(db: Database, fn: () => Promise<T>): Promise<T> {
-  await db.exec('BEGIN');
-  try {
-    const result = await fn();
-    await db.exec('COMMIT');
-    return result;
-  } catch (e) {
-    await db.exec('ROLLBACK').catch(() => {});
-    throw e;
-  }
+export async function dbAll(sql: string, args: any[] = []): Promise<any[]> {
+  return tursoExec(sql, args);
 }
 
 /**
- * Handles database schema migrations for tables whose layout has changed
- * in the final unified system architecture (memory, graph, and deletion of action).
+ * Execute SQL (INSERT/UPDATE/DELETE).
  */
-async function migrateMemoryTable(db: Database, label: string) {
-  try {
-    const cols = await db.all(`PRAGMA table_info(memory)`).catch(() => [] as any[]);
-    if (Array.isArray(cols) && cols.length > 0) {
-      const hasFormCol = cols.some((c: any) => c.name === 'form');
-      const hasMetaCol = cols.some((c: any) => c.name === 'meta');
-      if (hasFormCol || !hasMetaCol) {
-        console.log(`[DB] migrating memory table (${label}) → target schema`);
-        await db.exec(`DROP TABLE IF EXISTS memory`);
-        await db.exec(
-          `CREATE TABLE IF NOT EXISTS memory (id TEXT NOT NULL, chunk INTEGER NOT NULL DEFAULT 0, text TEXT, embedding BLOB, meta TEXT, PRIMARY KEY (id, chunk))`
-        );
-        console.log(`[DB] memory table migrated (${label})`);
-      }
-    }
-  } catch (e) {
-    console.warn(`[DB] memory migration failed (${label}):`, e);
-  }
-
-  try {
-    const cols = await db.all(`PRAGMA table_info(graph)`).catch(() => [] as any[]);
-    if (Array.isArray(cols) && cols.length > 0) {
-      const hasTypeCol = cols.some((c: any) => c.name === 'type');
-      if (hasTypeCol) {
-        console.log(`[DB] migrating graph table (${label}) → target schema`);
-        await db.exec(`DROP TABLE IF EXISTS graph`);
-        await db.exec(
-          `CREATE TABLE IF NOT EXISTS graph (src TEXT NOT NULL, rel TEXT NOT NULL, tgt TEXT NOT NULL, weight REAL DEFAULT 1.0, active INTEGER DEFAULT 1, time TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (src, rel, tgt))`
-        );
-        console.log(`[DB] graph table migrated (${label})`);
-      }
-    }
-  } catch (e) {
-    console.warn(`[DB] graph migration failed (${label}):`, e);
-  }
-
-  try {
-    const cols = await db.all(`PRAGMA table_info(matter)`).catch(() => [] as any[]);
-    if (Array.isArray(cols) && cols.length > 0) {
-      const hasOwnerCol = cols.some((c: any) => c.name === 'owner');
-      if (!hasOwnerCol) {
-        console.log(`[DB] migrating matter table (${label}) → adding owner column`);
-        await db.exec(`ALTER TABLE matter ADD COLUMN owner TEXT`);
-        console.log(`[DB] matter table migrated (added owner column) (${label})`);
-      }
-    }
-  } catch (e) {
-    console.warn(`[DB] matter migration failed (${label}):`, e);
-  }
-
-  try {
-    const cols = await db.all(`PRAGMA table_info(form)`).catch(() => [] as any[]);
-    if (Array.isArray(cols) && cols.length > 0) {
-      const hasOwnerCol = cols.some((c: any) => c.name === 'owner');
-      if (!hasOwnerCol) {
-        console.log(`[DB] migrating form table (${label}) → adding owner column`);
-        await db.exec(`ALTER TABLE form ADD COLUMN owner TEXT`);
-        console.log(`[DB] form table migrated (added owner column) (${label})`);
-      }
-    }
-  } catch (e) {
-    console.warn(`[DB] form migration failed (${label}):`, e);
-  }
-
-  try {
-    await db.exec(`DROP TABLE IF EXISTS action`);
-  } catch (_) {}
+export async function dbRun(sql: string, args: any[] = []): Promise<void> {
+  await tursoExec(sql, args);
 }
 
-export async function switchUser(userId: string): Promise<Database> {
-  const t0 = Date.now();
-  console.log(`[DB] switchUser START: switching session to user = ${userId}`);
-  cachedSelfId = userId;
+/**
+ * Execute multiple SQL statements in a transaction.
+ */
+export async function dbTransaction(statements: Array<{ sql: string; args?: any[] }>): Promise<void> {
+  if (!TURSO_URL || !TURSO_AUTH_TOKEN) return;
 
-  try {
-    const { setActionUserId } = await import('@/actions/store');
-    setActionUserId(userId);
-  } catch (e) {
-    console.warn('[DB] Failed to set action user ID:', e);
-  }
+  const httpsUrl = TURSO_URL.replace('libsql://', 'https://');
 
-  const db = getLocalPrivateDb(userId);
-  try {
-    await db.connect();
-    await migrateMemoryTable(db, userId);
-    for (const sql of SCHEMA_STATEMENTS) {
-      try { await db.exec(sql); } catch (_) {}
-    }
-  } catch (e) {
-    console.error(`[DB] switchUser DB init FAILED:`, e);
-    throw e;
-  }
+  const requests = [
+    { type: 'execute', stmt: { sql: 'BEGIN', args: [] } },
+    ...statements.map(s => ({
+      type: 'execute',
+      stmt: {
+        sql: s.sql,
+        args: (s.args || []).map(v => ({ type: 'text', value: String(v ?? '') })),
+      },
+    })),
+    { type: 'execute', stmt: { sql: 'COMMIT', args: [] } },
+    { type: 'close' },
+  ];
 
-  try {
-    const { ensureBuiltins } = await import('@/actions/seed');
-    await ensureBuiltins();
-  } catch (e) {
-    console.warn('[DB] Failed to ensure built-in actions:', e);
-  }
+  const res = await fetch(`${httpsUrl}/v2/pipeline`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ requests }),
+  });
 
-  try {
-    const { seedActions } = await import('@/actions/store');
-    await seedActions();
-  } catch (e) {
-    console.warn('[DB] Failed to seed action embeddings:', e);
-  }
-
-  console.log(`[DB] switchUser DONE: switched and initialized in ${Date.now() - t0}ms`);
-  return db;
-}
-
-export async function initDb() {
-  const t0 = Date.now();
-  console.log(`[DB] ${Date.now() - t0}ms — initDb START`);
-
-  // 1. Resolve current user identity first
-  const userId = await getSelfId();
-
-  // 2. Initialize the user's private database
-  await switchUser(userId);
-
-  // 3. Keep guest DB available just in case, but no need to wait for it if logged in as user
-  if (userId !== "guest") {
-    const guestDb = getLocalPrivateDb("guest");
-    guestDb.connect().then(async () => {
-      await migrateMemoryTable(guestDb, "guest");
-      for (const sql of SCHEMA_STATEMENTS) {
-        try { await guestDb.exec(sql); } catch (_) {}
-      }
+  if (!res.ok) {
+    // Rollback on error
+    await fetch(`${httpsUrl}/v2/pipeline`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          { type: 'execute', stmt: { sql: 'ROLLBACK', args: [] } },
+          { type: 'close' },
+        ],
+      }),
     }).catch(() => {});
+    throw new Error(`Turso transaction failed`);
   }
+}
 
-  console.log(`[DB] ${Date.now() - t0}ms — initDb DONE`);
+/**
+ * Initialize schema if needed.
+ */
+export async function ensureSchema(): Promise<void> {
+  for (const sql of SCHEMA_STATEMENTS) {
+    try {
+      await dbRun(sql);
+    } catch (e) {
+      // Ignore errors (column already exists, etc.)
+    }
+  }
 }

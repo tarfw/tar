@@ -14,5 +14,13 @@
     "types": []
   },
   "include": ["src"],
-  "exclude": ["node_modules", "src/cloudflare.ts", "src/lib/**"]
+  "exclude": [
+    "node_modules",
+    "src/cloudflare.ts",
+    "src/lib/acl.ts",
+    "src/lib/tools.ts",
+    "src/lib/vectorStore.ts",
+    "src/lib/textSplitter.ts",
+    "src/workflows/**"
+  ]
 }

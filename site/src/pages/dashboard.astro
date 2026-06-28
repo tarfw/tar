@@ -1,0 +1,2985 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="TAR — Developer Control Panel" description="Interactive developer dashboard and visualizer for the TAR Architecture.">
+  <div class="dashboard-wrapper">
+    <header class="dashboard-header">
+      <div class="logo-area">
+        <svg class="console-icon" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="76" height="76" rx="18" fill="#5E6AD2"/>
+          <rect x="10" y="10" width="56" height="56" rx="8" fill="#0D0E12"/>
+          <circle cx="70" cy="14" r="2.5" fill="#22D3EE"/>
+          <rect x="72" y="30" width="4" height="20" rx="2" fill="#8B5CF6"/>
+          <circle cx="22" cy="72" r="1.5" fill="#22D3EE"/>
+          <circle cx="28" cy="72" r="1.5" fill="#22D3EE"/>
+          <circle cx="34" cy="72" r="1.5" fill="#22D3EE"/>
+        </svg>
+        <div class="logo-text">
+          <span class="brand-tar">tar</span><span class="brand-dot">.</span>
+          <span class="brand-sub">control panel</span>
+        </div>
+      </div>
+      <nav class="tab-navigation">
+        <button class="nav-tab active" data-tab="architecture">Architecture</button>
+        <button class="nav-tab" data-tab="database">Database (5 Tables)</button>
+        <button class="nav-tab" data-tab="tools">Tools (6 Operations)</button>
+        <button class="nav-tab" data-tab="agents">Agents & Flows</button>
+        <button class="nav-tab" data-tab="simulator">Execution Simulator</button>
+        <button class="nav-tab highlight" data-tab="realtime">Real-Time DO Sync</button>
+      </nav>
+    </header>
+
+    <main class="dashboard-content">
+      <!-- ARCHITECTURE OVERVIEW TAB -->
+      <section class="tab-pane active" id="tab-architecture">
+        <div class="hero-card">
+          <div class="hero-card-glow"></div>
+          <h2>Welcome to the TAR Architecture</h2>
+          <p>
+            TAR collapses complex business applications into <strong>data, not code</strong>. Instead of writing custom logic, controllers, and database tables for every feature (Food, Taxi, CRM, etc.), we define everything in <strong>5 tables</strong>, mutate it using <strong>6 core tools</strong>, and orchestrate it with <strong>5 flow primitives</strong> and <strong>4 agent types</strong>.
+          </p>
+        </div>
+
+        <div class="grid-3">
+          <div class="card glass">
+            <div class="card-header">
+              <span class="badge blue">State Collapse</span>
+              <h3>Everything is Data</h3>
+            </div>
+            <p>
+              In traditional development, creating a new feature like "Food Delivery Orders" requires setting up a new DB table, backend routers, forms, and custom state machines. In TAR, a pizza order is just a <code>matter</code> record whose layout is defined by a <code>form</code> record (blueprint). Transitioning its status is a simple <code>update</code> tool call.
+            </p>
+          </div>
+
+          <div class="card glass">
+            <div class="card-header">
+              <span class="badge purple">Agentic Integration</span>
+              <h3>Built for LLMs</h3>
+            </div>
+            <p>
+              Because the entire application is mapped to only 6 tools (Create, Read, Update, Delete, Link, Search), an AI Agent can fully control the application. You don't need to write API tool definitions for every endpoint; you just give the LLM access to these 6 tools and let it read the schemas from the <code>form</code> table.
+            </p>
+          </div>
+
+          <div class="card glass">
+            <div class="card-header">
+              <span class="badge cyan">Offline-First Sync</span>
+              <h3>Local SQLite to Cloud DO</h3>
+            </div>
+            <p>
+              Personal data runs inside a local-only SQLite DB on the device (Expo). Shared workspaces and stores sync automatically via WebSockets to Cloudflare Durable Objects. The synchronization is audit-logged and conflict-free because every mutation creates a deterministic, sequential <code>motion</code> event.
+            </p>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <h2>Core System Layout</h2>
+          <p>How the mobile app, local storage, cloud workers, and agent layers interact.</p>
+        </div>
+
+        <div class="flowchart-container glass">
+          <div class="flow-step">
+            <h4>1. User Interface</h4>
+            <span class="flow-sub">Chat Input / Dynamic UI Forms</span>
+            <div class="flow-arrow">▼</div>
+          </div>
+          <div class="flow-step">
+            <h4>2. Agent Loop (MCP Client)</h4>
+            <span class="flow-sub">Router / Worker LLM Decision Making</span>
+            <div class="flow-arrow">▼</div>
+          </div>
+          <div class="flow-step">
+            <h4>3. Execution Layer (6 Tools)</h4>
+            <span class="flow-sub">ACL Verification · Local SQLite Operations</span>
+            <div class="flow-arrow-split">
+              <div class="arrow-left">◀ <span>Local Scope (Personal)</span></div>
+              <div class="arrow-right"><span>Cloud Scope (Team/Store)</span> ▶</div>
+            </div>
+          </div>
+          <div class="split-destinations">
+            <div class="flow-step mini">
+              <h5>On-Device Private DB</h5>
+              <span class="flow-sub">User SQLite</span>
+            </div>
+            <div class="flow-step mini">
+              <h5>Cloudflare Workers & DO</h5>
+              <span class="flow-sub">WebSocket Sync + Cloud MCP</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DATABASE TAB -->
+      <section class="tab-pane" id="tab-database">
+        <div class="pane-header">
+          <h2>The 5 Core Tables</h2>
+          <p>Every single piece of data in the system lives in one of these five tables. Click a table to inspect its schema and purpose.</p>
+        </div>
+
+        <div class="db-inspector">
+          <div class="db-sidebar">
+            <div class="db-nav-item active" data-table="form">
+              <div class="nav-item-title">form <span class="tag-pill cyan">Blueprint</span></div>
+              <span class="nav-item-desc">Schemas, UI layouts, flow charts, agents, plugins</span>
+            </div>
+            <div class="db-nav-item" data-table="matter">
+              <div class="nav-item-title">matter <span class="tag-pill blue">Instance</span></div>
+              <span class="nav-item-desc">Actual entities: tasks, orders, invoices, contacts</span>
+            </div>
+            <div class="db-nav-item" data-table="motion">
+              <div class="nav-item-title">motion <span class="tag-pill purple">Event Log</span></div>
+              <span class="nav-item-desc">Append-only audit trail and state transitions</span>
+            </div>
+            <div class="db-nav-item" data-table="graph">
+              <div class="nav-item-title">graph <span class="tag-pill green">Relation</span></div>
+              <span class="nav-item-desc">Graph edges mapping owners, assignments, and tags</span>
+            </div>
+            <div class="db-nav-item" data-table="memory">
+              <div class="nav-item-title">memory <span class="tag-pill yellow">Semantic Index</span></div>
+              <span class="nav-item-desc">Embeddings + FTS text index for AI search</span>
+            </div>
+          </div>
+
+          <div class="db-detail glass">
+            <div id="db-details-content">
+              <!-- Content dynamically rendered by JS -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TOOLS TAB -->
+      <section class="tab-pane" id="tab-tools">
+        <div class="pane-header">
+          <h2>The 6 Tools</h2>
+          <p>These 6 operations are the only code that performs mutations or reads. Click on a tool to see how it operates under the hood.</p>
+        </div>
+
+        <div class="tools-layout">
+          <div class="tools-grid">
+            <div class="tool-btn active" data-tool="create">
+              <div class="tool-header-row">
+                <span class="tool-icon bg-blue">C</span>
+                <h4>create</h4>
+              </div>
+              <p>Inserts forms/matters, links and indexes vectors atomically.</p>
+            </div>
+            <div class="tool-btn" data-tool="read">
+              <div class="tool-header-row">
+                <span class="tool-icon bg-green">R</span>
+                <h4>read</h4>
+              </div>
+              <p>Fetches records with ACL filters, joins, and graph traversal.</p>
+            </div>
+            <div class="tool-btn" data-tool="update">
+              <div class="tool-header-row">
+                <span class="tool-icon bg-purple">U</span>
+                <h4>update</h4>
+              </div>
+              <p>Deep-merges JSON, checks state-machine phase, logs motion.</p>
+            </div>
+            <div class="tool-btn" data-tool="delete">
+              <div class="tool-header-row">
+                <span class="tool-icon bg-red">D</span>
+                <h4>delete</h4>
+              </div>
+              <p>Soft deletes records, deactivates graph links, logs event.</p>
+            </div>
+            <div class="tool-btn" data-tool="link">
+              <div class="tool-header-row">
+                <span class="tool-icon bg-orange">L</span>
+                <h4>link</h4>
+              </div>
+              <p>Creates or updates an edge in the graph mapping table.</p>
+            </div>
+            <div class="tool-btn" data-tool="search">
+              <div class="tool-header-row">
+                <span class="tool-icon bg-yellow">S</span>
+                <h4>search</h4>
+              </div>
+              <p>Performs hybrid, vector, FTS, geo, or structured search.</p>
+            </div>
+          </div>
+
+          <div class="tool-details glass">
+            <div id="tool-details-content">
+              <!-- Content dynamically rendered by JS -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- AGENTS TAB -->
+      <section class="tab-pane" id="tab-agents">
+        <div class="grid-2">
+          <div class="card glass">
+            <div class="card-header">
+              <span class="badge blue">Orchestration</span>
+              <h2>4 Agent Types</h2>
+            </div>
+            <p>The system uses 4 distinct styles of agent runtime. Each agent configuration is stored as a <code>form</code> record of type <code>agent</code>, meaning new agents can be dynamically provisioned by inserting data into the database.</p>
+            
+            <div class="agent-types-list">
+              <div class="agent-type-card">
+                <h5>Router Agent (LLM)</h5>
+                <p>Receives conversational input (e.g. chat messages), classifies the user's intent, and routes it to the matching action or workflow.</p>
+              </div>
+              <div class="agent-type-card">
+                <h5>Worker Agent (LLM)</h5>
+                <p>Runs a feedback loop. It calls tools sequentially, evaluates results, plans next steps, and stops when a target condition is met.</p>
+              </div>
+              <div class="agent-type-card">
+                <h5>Scheduler Agent (No LLM)</h5>
+                <p>Runs deterministic, pre-configured tool steps on a set schedule. High efficiency, zero AI cost.</p>
+              </div>
+              <div class="agent-type-card">
+                <h5>Sub-Agent DO (State-Based)</h5>
+                <p>Lightweight, cloud-spawned Durable Object worker designed to process tasks asynchronously and hibernate when done.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card glass">
+            <div class="card-header">
+              <span class="badge purple">Execution Pipelines</span>
+              <h2>5 Flow Primitives</h2>
+            </div>
+            <p>Workflows are structured diagrams stored as JSON. A Turing-complete execution engine processes them using these 5 flow primitives:</p>
+            
+            <div class="flow-primitives-list">
+              <div class="primitive-row">
+                <span class="prim-symbol">→</span>
+                <div class="prim-info">
+                  <strong>Sequence</strong>
+                  <span>Executes tools one after another (A then B then C).</span>
+                </div>
+              </div>
+              <div class="primitive-row">
+                <span class="prim-symbol">⇉</span>
+                <div class="prim-info">
+                  <strong>Parallel</strong>
+                  <span>Spawns multiple tool operations concurrently.</span>
+                </div>
+              </div>
+              <div class="primitive-row">
+                <span class="prim-symbol">?</span>
+                <div class="prim-info">
+                  <strong>Branch</strong>
+                  <span>Evaluates a condition to decide which execution path to take.</span>
+                </div>
+              </div>
+              <div class="primitive-row">
+                <span class="prim-symbol">↻</span>
+                <div class="prim-info">
+                  <strong>Loop</strong>
+                  <span>Iterates over a collection or query result set.</span>
+                </div>
+              </div>
+              <div class="primitive-row">
+                <span class="prim-symbol">⏻</span>
+                <div class="prim-info">
+                  <strong>Wait</strong>
+                  <span>Pauses execution for a timer, webhook callback, or manual approval.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SIMULATOR TAB -->
+      <section class="tab-pane" id="tab-simulator">
+        <div class="pane-header">
+          <h2>Interactive Execution Simulator</h2>
+          <p>See exactly how the system processes natural language commands. Click a preset command to launch the visual simulation.</p>
+        </div>
+
+        <div class="simulator-layout">
+          <div class="sim-controls glass">
+            <h3>1. Select Preset Input</h3>
+            <div class="preset-buttons">
+              <button class="preset-btn" data-preset="task">"Create task 'Review pizza menu' and assign to John"</button>
+              <button class="preset-btn" data-preset="order">"Order a Pepperoni Pizza, value $15"</button>
+              <button class="preset-btn" data-preset="search">"Find recent support tickets from last week"</button>
+            </div>
+            <div class="custom-input-box">
+              <label for="custom-prompt">Or write a custom command:</label>
+              <div class="input-row">
+                <input type="text" id="custom-prompt" placeholder="e.g. create a meeting invoice..." />
+                <button id="run-custom-btn" class="btn btn--primary">Simulate</button>
+              </div>
+            </div>
+
+            <div class="simulation-progress-box">
+              <h3>2. Execution Log</h3>
+              <div id="sim-log" class="console-box">
+                <span class="console-placeholder">Waiting for simulation trigger...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sim-visualizer glass">
+            <h3>3. Visual State Transitions</h3>
+            <div id="visual-nodes" class="nodes-wrapper">
+              <div class="node-state inactive" id="node-ui">
+                <div class="node-icon">📱</div>
+                <h5>Mobile UI</h5>
+                <span>User Input / Prompt</span>
+              </div>
+              <div class="node-connector" id="conn-ui-agent"></div>
+              <div class="node-state inactive" id="node-agent">
+                <div class="node-icon">🧠</div>
+                <h5>Router Agent</h5>
+                <span id="agent-type-lbl">Classifying...</span>
+              </div>
+              <div class="node-connector" id="conn-agent-tool"></div>
+              <div class="node-state inactive" id="node-tool">
+                <div class="node-icon">🔧</div>
+                <h5>6 Tools</h5>
+                <span id="tool-name-lbl">Executing...</span>
+              </div>
+              <div class="node-connector" id="conn-tool-db"></div>
+              <div class="node-state inactive" id="node-db">
+                <div class="node-icon">💾</div>
+                <h5>SQLite / DO</h5>
+                <span>Database Tables</span>
+              </div>
+            </div>
+
+            <div class="sim-db-inspector">
+              <h4>Database State Output</h4>
+              <div class="sim-tables">
+                <div class="sim-table-card" id="sim-tbl-form">
+                  <h5>form (Blueprints)</h5>
+                  <div class="tbl-count">130 records</div>
+                </div>
+                <div class="sim-table-card" id="sim-tbl-matter">
+                  <h5>matter (Instances)</h5>
+                  <div class="tbl-count" id="matter-count-lbl">4,812 records</div>
+                </div>
+                <div class="sim-table-card" id="sim-tbl-motion">
+                  <h5>motion (Logs)</h5>
+                  <div class="tbl-count" id="motion-count-lbl">12,412 records</div>
+                </div>
+                <div class="sim-table-card" id="sim-tbl-graph">
+                  <h5>graph (Edges)</h5>
+                  <div class="tbl-count" id="graph-count-lbl">9,310 records</div>
+                </div>
+                <div class="sim-table-card" id="sim-tbl-memory">
+                  <h5>memory (Search)</h5>
+                  <div class="tbl-count" id="memory-count-lbl">4,812 records</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- REAL-TIME SYNC TAB -->
+      <section class="tab-pane" id="tab-realtime">
+        <div class="pane-header">
+          <h2>Real-Time Durable Object Collaboration Arena</h2>
+          <p>
+            Open this page in <strong>multiple browser windows side-by-side</strong>. Watch as data, graph links, and mouse movements sync across tabs in real-time using Cloudflare Durable Object WebSockets (or localized BroadcastChannel replication fallback).
+          </p>
+        </div>
+
+        <div class="collab-container">
+          <!-- Left Column: Operations -->
+          <div class="collab-controls">
+            <!-- WebSockets Status -->
+            <div class="card glass">
+              <div class="card-header">
+                <span class="badge blue">Durable Object Sync Gateway</span>
+                <div class="ws-indicator-row">
+                  <span class="indicator-dot disconnected" id="ws-indicator"></span>
+                  <span id="ws-status-text" class="status-lbl">Initializing replication...</span>
+                </div>
+              </div>
+              <div class="ws-settings">
+                <div class="input-row">
+                  <input type="text" id="ws-url-input" value="ws://localhost:8787/api/workspace/sync" placeholder="ws://localhost:8787/api/workspace/sync" />
+                  <button id="ws-connect-btn" class="btn btn--primary">Sync via DO</button>
+                </div>
+                <span class="helper-text">Defaults to local inter-tab replication (BroadcastChannel) if no backend is running.</span>
+              </div>
+            </div>
+
+            <!-- Create Matter -->
+            <div class="card glass">
+              <h3>Execute create() Tool</h3>
+              <form id="create-matter-form" class="collab-form">
+                <div class="form-group">
+                  <label for="matter-form-select">Target Schema Blueprint</label>
+                  <select id="matter-form-select">
+                    <option value="form_task">Task Blueprint (form_task)</option>
+                    <option value="form_order">Order Blueprint (form_order)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="matter-title">Title</label>
+                  <input type="text" id="matter-title" placeholder="e.g. Order Pepperoni Pizza" required />
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="matter-qty">Quantity (qty)</label>
+                    <input type="number" id="matter-qty" value="1" step="1" />
+                  </div>
+                  <div class="form-group">
+                    <label for="matter-value">Value ($)</label>
+                    <input type="number" id="matter-value" value="15" step="0.01" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label for="matter-owner">Assignee / Owner</label>
+                  <input type="text" id="matter-owner" placeholder="usr_john" value="usr_john" />
+                </div>
+                <button type="submit" class="btn btn--primary full-width">Write to Local SQLite + Sync</button>
+              </form>
+            </div>
+
+            <!-- Link Graph Nodes -->
+            <div class="card glass">
+              <h3>Execute link() Tool</h3>
+              <form id="link-graph-form" class="collab-form">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="link-src">Source Node ID</label>
+                    <input type="text" id="link-src" placeholder="mt_xxxx" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="link-rel">Relation Type</label>
+                    <input type="text" id="link-rel" placeholder="assigned_to" value="assigned_to" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="link-tgt">Target Node ID</label>
+                    <input type="text" id="link-tgt" placeholder="usr_john" required />
+                  </div>
+                </div>
+                <button type="submit" class="btn btn--primary full-width">Add Link to Graph Index</button>
+              </form>
+            </div>
+
+            <!-- Search Database -->
+            <div class="card glass">
+              <h3>Execute search() Tool</h3>
+              <div class="collab-form">
+                <div class="form-group">
+                  <label for="search-input">Hybrid Vector/Text Search Query</label>
+                  <div class="input-row">
+                    <input type="text" id="search-input" placeholder="Type keyword..." />
+                    <button id="search-btn" class="btn btn--primary">Query</button>
+                  </div>
+                </div>
+                <div id="search-results-list" class="search-results-box">
+                  <span class="helper-text">Enter query to see similarity matching results.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Live Viewports -->
+          <div class="collab-visuals">
+            <!-- Mouse Collaboration Arena -->
+            <div class="card glass cursor-arena-card">
+              <div class="card-header">
+                <span class="badge purple">Cursor Arena</span>
+                <h3>Real-time Mouse Collaboration Sandbox</h3>
+              </div>
+              <p class="arena-desc">Move your mouse in the area below. Open this page in another tab/window to watch other cursor locations update instantly!</p>
+              <div id="cursor-arena" class="cursor-arena">
+                <div class="arena-placeholder-grid"></div>
+              </div>
+            </div>
+
+            <!-- Replication Event Logs -->
+            <div class="card glass logs-card">
+              <h3>Durable Object Replication Feed (Motion Logs)</h3>
+              <div id="collab-logs" class="console-box collab-logs-box">
+                <span class="console-placeholder">Listening for real-time mutations...</span>
+              </div>
+            </div>
+
+            <!-- Live Local DB Inspector -->
+            <div class="card glass live-table-card">
+              <div class="table-tabs">
+                <button class="table-tab active" data-tbl-name="matter">matter (<span id="count-lbl-matter">0</span>)</button>
+                <button class="table-tab" data-tbl-name="graph">graph (<span id="count-lbl-graph">0</span>)</button>
+                <button class="table-tab" data-tbl-name="motion">motion (<span id="count-lbl-motion">0</span>)</button>
+              </div>
+              <div class="live-table-container">
+                <table class="schema-table live-table">
+                  <thead id="live-table-head">
+                    <!-- Dynamic -->
+                  </thead>
+                  <tbody id="live-table-body">
+                    <!-- Dynamic -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</Layout>
+
+<style is:global>
+  body {
+    background-color: #0b0c10;
+    color: #f3f4f6;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .dashboard-wrapper {
+    min-height: 100vh;
+    background: radial-gradient(135deg, rgba(13, 14, 18, 0.98) 0%, rgba(22, 24, 34, 0.98) 100%);
+    color: #e5e7eb;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dashboard-header {
+    background: rgba(18, 20, 29, 0.8);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 40px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo-area {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .console-icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .logo-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+  }
+
+  .brand-tar {
+    font-size: 22px;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: -0.02em;
+  }
+
+  .brand-dot {
+    font-size: 22px;
+    font-weight: 800;
+    color: #22d3ee;
+  }
+
+  .brand-sub {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #8b5cf6;
+    font-weight: 600;
+  }
+
+  .tab-navigation {
+    display: flex;
+    gap: 8px;
+  }
+
+  .nav-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    color: #9ca3af;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .nav-tab:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .nav-tab.active {
+    color: #ffffff;
+    background: rgba(94, 106, 210, 0.15);
+    border-color: rgba(94, 106, 210, 0.3);
+  }
+
+  .nav-tab.highlight {
+    border-color: rgba(34, 211, 238, 0.3);
+    color: #22d3ee;
+  }
+
+  .nav-tab.highlight:hover {
+    background: rgba(34, 211, 238, 0.1);
+  }
+
+  .nav-tab.highlight.active {
+    background: rgba(34, 211, 238, 0.15);
+    color: #ffffff;
+    box-shadow: 0 0 15px rgba(34, 211, 238, 0.2);
+  }
+
+  .dashboard-content {
+    flex: 1;
+    max-width: 1400px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 40px;
+    box-sizing: border-box;
+  }
+
+  .tab-pane {
+    display: none;
+  }
+
+  .tab-pane.active {
+    display: block;
+    animation: fadeIn 0.3s ease-in-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .hero-card {
+    position: relative;
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.6) 0%, rgba(17, 24, 39, 0.6) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 32px;
+    overflow: hidden;
+  }
+
+  .hero-card-glow {
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(94,106,210,0.2) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-card h2 {
+    font-size: 24px;
+    margin-top: 0;
+    margin-bottom: 12px;
+    color: #ffffff;
+  }
+
+  .hero-card p {
+    font-size: 16px;
+    color: #9ca3af;
+    line-height: 1.6;
+    max-width: 900px;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+
+  .card {
+    padding: 24px;
+    border-radius: 12px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    margin-bottom: 24px;
+    box-sizing: border-box;
+  }
+
+  .card h3 {
+    margin-top: 0;
+    font-size: 18px;
+    color: #ffffff;
+    margin-bottom: 16px;
+  }
+
+  .glass {
+    background: rgba(22, 24, 34, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .card-header h3 {
+    font-size: 18px;
+    color: #ffffff;
+    margin: 0;
+  }
+
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+  }
+
+  .badge.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+  .badge.purple { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+  .badge.cyan { background: rgba(34, 211, 238, 0.15); color: #22d3ee; }
+
+  .section-title {
+    margin: 48px 0 24px 0;
+  }
+
+  .section-title h2 {
+    font-size: 20px;
+    color: #ffffff;
+    margin-bottom: 4px;
+  }
+
+  .section-title p {
+    font-size: 14px;
+    color: #9ca3af;
+  }
+
+  .flowchart-container {
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-radius: 16px;
+  }
+
+  .flow-step {
+    background: rgba(31, 41, 55, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 16px 32px;
+    text-align: center;
+    width: 320px;
+    position: relative;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  }
+
+  .flow-step h4 {
+    font-size: 16px;
+    color: #ffffff;
+    margin-bottom: 4px;
+    margin-top: 0;
+  }
+
+  .flow-sub {
+    font-size: 12px;
+    color: #9ca3af;
+  }
+
+  .flow-arrow {
+    margin: 16px 0;
+    color: #8b5cf6;
+    font-size: 20px;
+  }
+
+  .flow-arrow-split {
+    margin: 16px 0;
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 12px;
+    color: #8b5cf6;
+  }
+
+  .arrow-left, .arrow-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .split-destinations {
+    display: flex;
+    gap: 40px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .flow-step.mini {
+    width: 240px;
+    background: rgba(17, 24, 39, 0.8);
+    border-color: rgba(94, 106, 210, 0.3);
+  }
+
+  .pane-header {
+    margin-bottom: 32px;
+  }
+
+  .pane-header h2 {
+    font-size: 24px;
+    color: #ffffff;
+    margin-top: 0;
+    margin-bottom: 8px;
+  }
+
+  .pane-header p {
+    font-size: 15px;
+    color: #9ca3af;
+    margin: 0;
+  }
+
+  .db-inspector {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  .db-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .db-nav-item {
+    background: rgba(31, 41, 55, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .db-nav-item:hover {
+    background: rgba(31, 41, 55, 0.7);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .db-nav-item.active {
+    background: rgba(94, 106, 210, 0.1);
+    border-color: rgba(94, 106, 210, 0.4);
+    box-shadow: inset 3px 0 0 #5e6ad2;
+  }
+
+  .nav-item-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #ffffff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .tag-pill {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .tag-pill.cyan { background: rgba(34, 211, 238, 0.15); color: #22d3ee; }
+  .tag-pill.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+  .tag-pill.purple { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+  .tag-pill.green { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+  .tag-pill.yellow { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+
+  .nav-item-desc {
+    font-size: 12px;
+    color: #9ca3af;
+    display: block;
+    line-height: 1.4;
+  }
+
+  .db-detail {
+    min-height: 480px;
+    padding: 32px;
+    border-radius: 12px;
+  }
+
+  .db-detail-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 20px;
+    margin-bottom: 24px;
+  }
+
+  .db-detail-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .db-detail-title-row h3 {
+    font-size: 24px;
+    color: #ffffff;
+    margin: 0;
+  }
+
+  .db-detail-desc {
+    font-size: 15px;
+    color: #9ca3af;
+  }
+
+  .schema-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+    margin-bottom: 24px;
+  }
+
+  .schema-table th, .schema-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .schema-table th {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #9ca3af;
+    font-weight: 600;
+  }
+
+  .schema-table td {
+    font-size: 14px;
+  }
+
+  .col-name {
+    font-family: monospace;
+    color: #22d3ee;
+    font-weight: 600;
+  }
+
+  .col-type {
+    font-family: monospace;
+    color: #a78bfa;
+  }
+
+  .json-data {
+    background: #090a0f !important;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: monospace;
+    font-size: 13px;
+    color: #a78bfa;
+    overflow-x: auto;
+    margin-top: 0;
+  }
+
+  .tools-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  .tool-btn {
+    background: rgba(31, 41, 55, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    padding: 20px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+  }
+
+  .tool-btn:hover {
+    background: rgba(31, 41, 55, 0.6);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .tool-btn.active {
+    background: rgba(94, 106, 210, 0.1);
+    border-color: rgba(94, 106, 210, 0.4);
+    box-shadow: 0 4px 20px rgba(94, 106, 210, 0.15);
+  }
+
+  .tool-header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .tool-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    color: #ffffff;
+  }
+
+  .bg-blue { background: #3b82f6; }
+  .bg-green { background: #10b981; }
+  .bg-purple { background: #8b5cf6; }
+  .bg-red { background: #ef4444; }
+  .bg-orange { background: #f97316; }
+  .bg-yellow { background: #eab308; }
+
+  .tool-btn h4 {
+    font-size: 16px;
+    color: #ffffff;
+    margin: 0;
+  }
+
+  .tool-btn p {
+    font-size: 12px;
+    color: #9ca3af;
+    line-height: 1.4;
+  }
+
+  .tool-details {
+    min-height: 480px;
+    padding: 32px;
+    border-radius: 12px;
+  }
+
+  .tool-title-row {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+  }
+
+  .tool-title-row h3 {
+    font-size: 24px;
+    color: #ffffff;
+    margin: 0;
+  }
+
+  .tool-desc {
+    font-size: 15px;
+    color: #9ca3af;
+    margin-bottom: 24px;
+    line-height: 1.5;
+  }
+
+  .tool-section-header {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #22d3ee;
+    font-weight: 700;
+    margin-top: 24px;
+    margin-bottom: 12px;
+  }
+
+  .sql-block {
+    background: #090a0f !important;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: monospace;
+    font-size: 13px;
+    color: #22d3ee;
+    overflow-x: auto;
+    margin-bottom: 16px;
+    margin-top: 0;
+  }
+
+  .list-bullet {
+    list-style-type: none;
+    padding: 0;
+  }
+
+  .list-bullet li {
+    font-size: 14px;
+    color: #9ca3af;
+    margin-bottom: 8px;
+    position: relative;
+    padding-left: 18px;
+  }
+
+  .list-bullet li::before {
+    content: "•";
+    color: #8b5cf6;
+    font-size: 16px;
+    position: absolute;
+    left: 4px;
+    top: -1px;
+  }
+
+  .agent-types-list, .flow-primitives-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 24px;
+  }
+
+  .agent-type-card {
+    background: rgba(31, 41, 55, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .agent-type-card h5 {
+    font-size: 15px;
+    color: #ffffff;
+    margin-top: 0;
+    margin-bottom: 6px;
+  }
+
+  .agent-type-card p {
+    font-size: 12px;
+    color: #9ca3af;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .primitive-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .prim-symbol {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 18px;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+  }
+
+  .prim-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .prim-info strong {
+    font-size: 14px;
+    color: #ffffff;
+  }
+
+  .prim-info span {
+    font-size: 12px;
+    color: #9ca3af;
+  }
+
+  .simulator-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .sim-controls {
+    padding: 24px;
+    border-radius: 12px;
+  }
+
+  .sim-controls h3 {
+    font-size: 16px;
+    color: #ffffff;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 8px;
+    margin-top: 0;
+  }
+
+  .preset-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .preset-btn {
+    background: rgba(31, 41, 55, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 12px 16px;
+    text-align: left;
+    color: #e5e7eb;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .preset-btn:hover {
+    background: rgba(31, 41, 55, 0.7);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateX(2px);
+  }
+
+  .custom-input-box {
+    margin-bottom: 24px;
+  }
+
+  .custom-input-box label {
+    font-size: 12px;
+    color: #9ca3af;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 12px;
+  }
+
+  .input-row input {
+    flex: 1;
+    background: #090a0f;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: #ffffff;
+    font-size: 14px;
+  }
+
+  .input-row input:focus {
+    outline: none;
+    border-color: #5e6ad2;
+  }
+
+  .btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    font-size: 14px;
+  }
+
+  .btn--primary {
+    background: #5e6ad2;
+    color: #ffffff;
+  }
+
+  .btn--primary:hover {
+    background: #4d59c2;
+    box-shadow: 0 0 12px rgba(94, 106, 210, 0.3);
+  }
+
+  .full-width {
+    width: 100%;
+  }
+
+  .console-box {
+    background: #07080c;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: monospace;
+    font-size: 12px;
+    min-height: 200px;
+    max-height: 300px;
+    overflow-y: auto;
+    color: #22d3ee;
+    line-height: 1.5;
+  }
+
+  .console-placeholder {
+    color: #4b5563;
+  }
+
+  .console-line {
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  .console-line.system { color: #9ca3af; }
+  .console-line.success { color: #10b981; }
+  .console-line.info { color: #8b5cf6; }
+  .console-line.warning { color: #f59e0b; }
+  .console-line.error { color: #ef4444; }
+
+  .sim-visualizer {
+    padding: 24px;
+    border-radius: 12px;
+  }
+
+  .sim-visualizer h3 {
+    font-size: 16px;
+    color: #ffffff;
+    margin-bottom: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 8px;
+    margin-top: 0;
+  }
+
+  .nodes-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+
+  .node-state {
+    background: rgba(31, 41, 55, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 14px 20px;
+    text-align: center;
+    width: 220px;
+    transition: all 0.3s ease;
+  }
+
+  .node-state.active {
+    background: rgba(94, 106, 210, 0.15);
+    border-color: #5e6ad2;
+    box-shadow: 0 0 15px rgba(94, 106, 210, 0.3);
+  }
+
+  .node-state.running {
+    background: rgba(34, 211, 238, 0.1);
+    border-color: #22d3ee;
+    box-shadow: 0 0 15px rgba(34, 211, 238, 0.3);
+    animation: pulseGlow 1.5s infinite alternate;
+  }
+
+  .node-state.done {
+    background: rgba(16, 185, 129, 0.1);
+    border-color: #10b981;
+  }
+
+  .node-state h5 {
+    font-size: 14px;
+    color: #ffffff;
+    margin: 4px 0 2px 0;
+    margin-top: 0;
+  }
+
+  .node-state span {
+    font-size: 11px;
+    color: #9ca3af;
+  }
+
+  .node-icon {
+    font-size: 20px;
+  }
+
+  .node-connector {
+    width: 2px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.1);
+    transition: background 0.3s ease;
+  }
+
+  .node-connector.active {
+    background: #5e6ad2;
+  }
+
+  .sim-db-inspector h4 {
+    font-size: 14px;
+    color: #ffffff;
+    margin-bottom: 12px;
+    margin-top: 0;
+  }
+
+  .sim-tables {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+
+  .sim-table-card {
+    background: rgba(17, 24, 39, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 8px;
+    text-align: center;
+    transition: all 0.3s ease;
+  }
+
+  .sim-table-card.highlight {
+    background: rgba(139, 92, 246, 0.15);
+    border-color: #8b5cf6;
+    transform: scale(1.05);
+  }
+
+  .sim-table-card h5 {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 0;
+  }
+
+  .tbl-count {
+    font-size: 11px;
+    font-weight: 700;
+    color: #ffffff;
+  }
+
+  /* REALTIME TAB STYLING */
+  .collab-container {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .collab-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .ws-indicator-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .indicator-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .indicator-dot.connected {
+    background-color: #10b981;
+    box-shadow: 0 0 10px #10b981;
+  }
+
+  .indicator-dot.disconnected {
+    background-color: #ef4444;
+    box-shadow: 0 0 10px #ef4444;
+  }
+
+  .indicator-dot.connecting {
+    background-color: #f59e0b;
+    box-shadow: 0 0 10px #f59e0b;
+    animation: flash 1s infinite alternate;
+  }
+
+  @keyframes flash {
+    from { opacity: 0.3; }
+    to { opacity: 1; }
+  }
+
+  .status-lbl {
+    font-size: 13px;
+    color: #e5e7eb;
+  }
+
+  .ws-settings {
+    margin-top: 12px;
+  }
+
+  .helper-text {
+    font-size: 11px;
+    color: #9ca3af;
+    display: block;
+    margin-top: 8px;
+    line-height: 1.4;
+  }
+
+  .collab-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .form-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .collab-form input, .collab-form select {
+    background: #090a0f;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: #ffffff;
+    font-size: 14px;
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .collab-form input:focus, .collab-form select:focus {
+    outline: none;
+    border-color: #5e6ad2;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .collab-visuals {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .cursor-arena-card {
+    position: relative;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  .arena-desc {
+    font-size: 14px;
+    color: #9ca3af;
+    margin-top: 0;
+    margin-bottom: 16px;
+  }
+
+  .cursor-arena {
+    height: 220px;
+    background: #090a0f;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+    cursor: crosshair;
+  }
+
+  .arena-placeholder-grid {
+    position: absolute;
+    inset: 0;
+    background-size: 20px 20px;
+    background-image: 
+      linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px);
+  }
+
+  .remote-cursor {
+    position: fixed; /* absolute relative to viewport/page coords */
+    pointer-events: none;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    transition: left 0.1s ease, top 0.1s ease;
+  }
+
+  .cursor-pointer {
+    width: 18px;
+    height: 18px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+  }
+
+  .cursor-name {
+    background: #8b5cf6;
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 10px;
+    margin-top: -2px;
+    font-weight: 700;
+    white-space: nowrap;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  }
+
+  .collab-logs-box {
+    min-height: 150px;
+    max-height: 200px;
+  }
+
+  .table-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+  }
+
+  .table-tab {
+    background: transparent;
+    border: none;
+    color: #9ca3af;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 4px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .table-tab:hover {
+    color: white;
+    background: rgba(255,255,255,0.05);
+  }
+
+  .table-tab.active {
+    color: #22d3ee;
+    background: rgba(34, 211, 238, 0.1);
+  }
+
+  .live-table-container {
+    overflow-x: auto;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .live-table {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+
+  .live-table td {
+    font-size: 13px;
+    color: #e5e7eb;
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .row-action-btn {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .row-action-btn:hover {
+    background: rgba(239, 68, 68, 0.3);
+  }
+
+  .search-results-box {
+    margin-top: 12px;
+    background: #090a0f;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 12px;
+    min-height: 60px;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
+  .search-result-item {
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .search-result-item:last-child {
+    border-bottom: none;
+  }
+
+  .result-meta {
+    font-size: 11px;
+    color: #9ca3af;
+  }
+
+  .result-score {
+    font-size: 11px;
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+  }
+
+  @media (max-width: 1024px) {
+    .collab-container {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script is:inline>
+  // ==========================================
+  // CLIENT DATABASE ENGINE (5 TABLES IN LOCALSTORAGE)
+  // ==========================================
+  class LocalDB {
+    constructor() {
+      this.load();
+    }
+
+    load() {
+      this.forms = JSON.parse(localStorage.getItem('tar_forms') || '[]');
+      this.matters = JSON.parse(localStorage.getItem('tar_matters') || '[]');
+      this.motions = JSON.parse(localStorage.getItem('tar_motions') || '[]');
+      this.graphs = JSON.parse(localStorage.getItem('tar_graphs') || '[]');
+      this.memories = JSON.parse(localStorage.getItem('tar_memories') || '[]');
+
+      // Seed default blueprints if empty
+      if (this.forms.length === 0) {
+        this.forms = [
+          {
+            id: 'form_task',
+            code: 'task',
+            type: 'schema',
+            scope: 'g',
+            title: 'Task Blueprint',
+            data: { schema: { title: 'string|required', assignee: 'string', state: 'string' } },
+            active: 1,
+            time: new Date().toISOString()
+          },
+          {
+            id: 'form_order',
+            code: 'order',
+            type: 'schema',
+            scope: 'g',
+            title: 'Order Blueprint',
+            data: { schema: { item: 'string', value: 'number', state: 'string' } },
+            active: 1,
+            time: new Date().toISOString()
+          }
+        ];
+        this.save();
+      }
+    }
+
+    save() {
+      localStorage.setItem('tar_forms', JSON.stringify(this.forms));
+      localStorage.setItem('tar_matters', JSON.stringify(this.matters));
+      localStorage.setItem('tar_motions', JSON.stringify(this.motions));
+      localStorage.setItem('tar_graphs', JSON.stringify(this.graphs));
+      localStorage.setItem('tar_memories', JSON.stringify(this.memories));
+    }
+
+    // CREATE
+    create(table, record) {
+      record.id = record.id || (table === 'form' ? 'fm_' : 'mt_') + Math.random().toString(36).substring(2, 10);
+      record.active = 1;
+      record.time = record.time || new Date().toISOString();
+
+      if (table === 'form') {
+        this.forms.push(record);
+      } else {
+        this.matters.push(record);
+        this.memories.push({
+          id: record.id,
+          chunk: 0,
+          text: `Type: ${record.type} | Title: ${record.data?.title || ''} | Owner: ${record.owner || ''}`,
+          meta: { table: 'matter', type: record.type, scope: record.scope }
+        });
+      }
+
+      const seq = this.motions.filter(m => m.stream === record.id).length + 1;
+      const motionRecord = {
+        stream: record.id,
+        seq,
+        action: 1000,
+        data: { event: 'created', table, type: record.type, label: record.data?.title || record.title },
+        time: new Date().toISOString()
+      };
+      this.motions.push(motionRecord);
+
+      this.save();
+      return { record, motionRecord };
+    }
+
+    // UPDATE
+    update(table, id, dataPatch) {
+      let record = null;
+      if (table === 'form') {
+        record = this.forms.find(f => f.id === id);
+      } else {
+        record = this.matters.find(m => m.id === id);
+      }
+
+      if (!record) return null;
+
+      record.data = { ...record.data, ...dataPatch };
+      record.time = new Date().toISOString();
+
+      const seq = this.motions.filter(m => m.stream === id).length + 1;
+      const motionRecord = {
+        stream: id,
+        seq,
+        action: 1001,
+        data: { event: 'updated', table, patch: dataPatch },
+        time: new Date().toISOString()
+      };
+      this.motions.push(motionRecord);
+
+      // Update search index text
+      const idx = this.memories.findIndex(m => m.id === id);
+      if (idx !== -1) {
+        this.memories[idx].text = `Type: ${record.type} | Title: ${record.data?.title || ''} | Owner: ${record.owner || ''}`;
+      }
+
+      this.save();
+      return { record, motionRecord };
+    }
+
+    // DELETE
+    delete(table, id) {
+      let record = null;
+      if (table === 'form') {
+        record = this.forms.find(f => f.id === id);
+      } else {
+        record = this.matters.find(m => m.id === id);
+      }
+
+      if (!record) return null;
+
+      record.active = 0;
+      record.time = new Date().toISOString();
+
+      // Cascade graph deactivation
+      this.graphs.forEach(g => {
+        if (g.src === id || g.tgt === id) {
+          g.active = 0;
+        }
+      });
+
+      const seq = this.motions.filter(m => m.stream === id).length + 1;
+      const motionRecord = {
+        stream: id,
+        seq,
+        action: 1002,
+        data: { event: 'deleted', table },
+        time: new Date().toISOString()
+      };
+      this.motions.push(motionRecord);
+
+      this.save();
+      return { record, motionRecord };
+    }
+
+    // LINK
+    link(src, rel, tgt, weight = 1.0) {
+      const linkRecord = { src, rel, tgt, weight, active: 1, time: new Date().toISOString() };
+      const idx = this.graphs.findIndex(g => g.src === src && g.rel === rel && g.tgt === tgt);
+      
+      if (idx !== -1) {
+        this.graphs[idx] = linkRecord;
+      } else {
+        this.graphs.push(linkRecord);
+      }
+
+      const seq = this.motions.filter(m => m.stream === src).length + 1;
+      const motionRecord = {
+        stream: src,
+        seq,
+        action: 1003,
+        data: { event: 'linked', relation: rel, target: tgt },
+        time: new Date().toISOString()
+      };
+      this.motions.push(motionRecord);
+
+      this.save();
+      return { link: linkRecord, motionRecord };
+    }
+
+    // SEARCH
+    search(query) {
+      if (!query) return [];
+      const q = query.toLowerCase();
+      const results = [];
+
+      this.memories.forEach(mem => {
+        const text = mem.text.toLowerCase();
+        if (text.includes(q)) {
+          const record = this.matters.find(m => m.id === mem.id && m.active === 1);
+          if (record) {
+            const score = 0.5 + (q.length / text.length) * 0.5;
+            results.push({ record, score: parseFloat(score.toFixed(2)) });
+          }
+        }
+      });
+
+      return results.sort((a, b) => b.score - a.score);
+    }
+  }
+
+  // Init local database
+  const db = new LocalDB();
+
+  // ==========================================
+  // TAB SYSTEM CONTROLLER
+  // ==========================================
+  const tabs = document.querySelectorAll(".nav-tab");
+  const panes = document.querySelectorAll(".tab-pane");
+
+  tabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      tabs.forEach(t => t.classList.remove("active"));
+      panes.forEach(p => p.classList.remove("active"));
+
+      tab.classList.add("active");
+      const target = document.getElementById(`tab-${tab.dataset.tab}`);
+      if (target) target.classList.add("active");
+
+      // Auto trigger live updates when hitting realtime tab
+      if (tab.dataset.tab === 'realtime') {
+        renderLiveTables();
+      }
+    });
+  });
+
+  // ==========================================
+  // STATIC DB TAB DETAILS RENDER
+  // ==========================================
+  const dbData = {
+    form: {
+      name: "form",
+      tag: "Blueprint",
+      desc: "Defines blueprints, templates, state machines, agents, flow charts, forms, and plugin integrations. Changing app logic is simply inserting/modifying records in this table.",
+      fields: [
+        { name: "id", type: "TEXT PRIMARY KEY", desc: "Unique record identifier (e.g. form_create_task, agent_router)." },
+        { name: "code", type: "TEXT UNIQUE", desc: "Short code representation for easy lookup." },
+        { name: "type", type: "TEXT", desc: "Categorization type: 'schema', 'agent', 'flow', 'form'." },
+        { name: "scope", type: "TEXT", desc: "Data access scope: 'p' (personal), 't:id' (workspace), 's:id' (store), 'g' (global)." },
+        { name: "owner", type: "TEXT", desc: "The creator/owner identity (e.g. user_id)." },
+        { name: "title", type: "TEXT", desc: "Human readable display name." },
+        { name: "public", type: "INTEGER", desc: "Flags if the blueprint is shared/clonable (1 = true, 0 = false)." },
+        { name: "active", type: "INTEGER", desc: "Soft deletion indicator (1 = active, 0 = deleted)." },
+        { name: "data", type: "TEXT (JSON)", desc: "Main config body. Stores fields, validators, states, transitions, prompt presets." },
+        { name: "time", type: "TEXT", desc: "Timestamp when record was created or updated." }
+      ],
+      json: `{
+  "id": "form_task_blueprint",
+  "code": "task",
+  "type": "schema",
+  "scope": "g",
+  "title": "Task Blueprint",
+  "data": {
+    "schema": {
+      "title": "string|required",
+      "assignee": "string",
+      "priority": "string",
+      "due": "string"
+    },
+    "states": ["pending", "in_progress", "completed", "cancelled"],
+    "transitions": [
+      { "from": "pending", "to": "in_progress", "opcode": 1001 },
+      { "from": "in_progress", "to": "completed", "opcode": 1002 },
+      { "from": "*", "to": "cancelled", "opcode": 1003 }
+    ]
+  }
+}`
+    },
+    matter: {
+      name: "matter",
+      tag: "Instance",
+      desc: "Stores physical data records. Any actual transaction, lead, issue, order, invoice, profile, or ticket is a row in this table. Its structure conforms to the form blueprint schema.",
+      fields: [
+        { name: "id", type: "TEXT PRIMARY KEY", desc: "Unique physical entity ID (e.g. mt_92a831...)." },
+        { name: "form", type: "TEXT", desc: "Foreign key reference to the form.id that defines this record's schema." },
+        { name: "type", type: "TEXT", desc: "Materialized duplicate of form.type for high-speed indexing." },
+        { name: "scope", type: "TEXT", desc: "The tenant database partition key ('p', 't:12', 's:32')." },
+        { name: "qty", type: "REAL", desc: "Numeric quantity helper (e.g. hours logged, product count)." },
+        { name: "value", type: "REAL", desc: "Financial currency value helper (e.g. payment total, quote price)." },
+        { name: "variant", type: "INTEGER", desc: "Variant classification integer (multi-purpose)." },
+        { name: "mark", type: "INTEGER", desc: "Sub-priority classification index." },
+        { name: "geo", type: "TEXT", desc: "Geo location coordinates: 'latitude,longitude' (for geo-searching)." },
+        { name: "start", type: "TEXT", desc: "ISO DateTime representation of start time/due date." },
+        { name: "end", type: "TEXT", desc: "ISO DateTime representation of end time." },
+        { name: "active", type: "INTEGER", desc: "Soft-delete flag (1 = active, 0 = inactive)." },
+        { name: "data", type: "TEXT (JSON)", desc: "Flexible key-value payload containing actual fields (title, desc, status)." },
+        { name: "owner", type: "TEXT", desc: "The creator/owner identity (for ACL checks)." },
+        { name: "time", type: "TEXT", desc: "ISO DateTime of the record." }
+      ],
+      json: `{
+  "id": "mt_82b9381af",
+  "form": "form_task_blueprint",
+  "type": "task",
+  "scope": "t:workspace_alpha",
+  "qty": null,
+  "value": null,
+  "geo": null,
+  "active": 1,
+  "data": {
+    "title": "Review pizza menu",
+    "assignee": "John",
+    "priority": "high",
+    "state": "pending"
+  },
+  "owner": "usr_dev_1",
+  "time": "2026-06-27T12:00:00Z"
+}`
+    },
+    motion: {
+      name: "motion",
+      tag: "Event Log",
+      desc: "An append-only transaction ledger. Every single database mutation tool (create, update, delete, link) MUST insert exactly one motion row. This provides audit trails, offline-sync replay logs, and state history.",
+      fields: [
+        { name: "stream", type: "TEXT", desc: "The target record ID (form.id or matter.id) that was mutated." },
+        { name: "seq", type: "INTEGER", desc: "Sequential increment count for this specific stream (1, 2, 3...)." },
+        { name: "action", type: "INTEGER", desc: "Opcode identifier (e.g., 1000=INIT/CREATE, 1001=UPDATE, 1002=DELETE)." },
+        { name: "phase", type: "INTEGER", desc: "Optional state machine index transition." },
+        { name: "delta", type: "REAL", desc: "Numeric field adjustment value." },
+        { name: "client_ref", type: "TEXT", desc: "UUID generated by client. Prevents double-writes on network retries (Idempotency)." },
+        { name: "data", type: "TEXT (JSON)", desc: "Delta mutation payload, details on what changed, reasons, context." },
+        { name: "time", type: "TEXT", desc: "ISO DateTime representation of the mutation event." }
+      ],
+      json: `{
+  "stream": "mt_82b9381af",
+  "seq": 1,
+  "action": 1000,
+  "phase": 0,
+  "delta": null,
+  "client_ref": "c479fb21-a39c-4822-b9b5",
+  "data": {
+    "event": "created",
+    "table": "matter",
+    "type": "task"
+  },
+  "time": "2026-06-27T12:00:00Z"
+}`
+    },
+    graph: {
+      name: "graph",
+      tag: "Relation",
+      desc: "Stores relationships between entities in a directed weight-attributed graph. Connects tasks to projects, orders to users, messages to chats, and tags to invoices.",
+      fields: [
+        { name: "src", type: "TEXT NOT NULL", desc: "Source entity ID (the starter node)." },
+        { name: "rel", type: "TEXT NOT NULL", desc: "Relation type (e.g. 'assigned_to', 'part_of', 'tagged')." },
+        { name: "tgt", type: "TEXT NOT NULL", desc: "Target entity ID (the destination node)." },
+        { name: "weight", type: "REAL DEFAULT 1.0", desc: "Relevance score, sequence order index, or match strength." },
+        { name: "active", type: "INTEGER DEFAULT 1", desc: "Active flag. Soft deletes in parent records cascade here (active=0)." },
+        { name: "time", type: "TEXT", desc: "ISO creation timestamp." }
+      ],
+      json: `{
+  "src": "mt_82b9381af",
+  "rel": "assigned_to",
+  "tgt": "usr_john_45",
+  "weight": 1.0,
+  "active": 1,
+  "time": "2026-06-27T12:00:00Z"
+}`
+    },
+    memory: {
+      name: "memory",
+      tag: "Semantic Index",
+      desc: "Stores raw textual chunks and vector embeddings of all form and matter records. Used for fast hybrid search (combining vector similarity and full-text keyword indexing).",
+      fields: [
+        { name: "id", type: "TEXT NOT NULL", desc: "The record identifier (form.id or matter.id) that was indexed." },
+        { name: "chunk", type: "INTEGER NOT NULL", desc: "Index sequence for long documents split into chunks." },
+        { name: "text", type: "TEXT", desc: "The raw text representation index (title, tags, JSON string details)." },
+        { name: "embedding", type: "BLOB", desc: "Raw byte buffer containing the floating-point vector dimensions." },
+        { name: "meta", type: "TEXT (JSON)", desc: "Copy of core properties (type, scope, owner) to support filtered queries." }
+      ],
+      json: `{
+  "id": "mt_82b9381af",
+  "chunk": 0,
+  "text": "Task: Review pizza menu | Assignee: John | Priority: high",
+  "embedding": [0.0125, -0.0543, 0.1232, "... 384 dimensions"],
+  "meta": {
+    "table": "matter",
+    "scope": "t:workspace_alpha",
+    "type": "task",
+    "owner": "usr_dev_1"
+  }
+}`
+    }
+  };
+
+  function selectDbTable(tableName) {
+    const data = dbData[tableName];
+    const el = document.getElementById("db-details-content");
+    if (!el || !data) return;
+
+    let fieldsHtml = "";
+    data.fields.forEach(f => {
+      fieldsHtml += `
+        <tr>
+          <td class="col-name">${f.name}</td>
+          <td class="col-type">${f.type}</td>
+          <td>${f.desc}</td>
+        </tr>
+      `;
+    });
+
+    el.innerHTML = `
+      <div class="db-detail-header">
+        <div class="db-detail-title-row">
+          <h3>Table: ${data.name}</h3>
+          <span class="badge ${data.name === 'form' ? 'cyan' : data.name === 'matter' ? 'blue' : data.name === 'motion' ? 'purple' : data.name === 'graph' ? 'green' : 'yellow'}">${data.tag}</span>
+        </div>
+        <p class="db-detail-desc">${data.desc}</p>
+      </div>
+      <h4>Database Schema Definition:</h4>
+      <table class="schema-table">
+        <thead>
+          <tr>
+            <th>Column</th>
+            <th>Type</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${fieldsHtml}
+        </tbody>
+      </table>
+      <h4>Example Record (JSON representation):</h4>
+      <pre class="json-data"><code>${data.json}</code></pre>
+    `;
+  }
+
+  const dbItems = document.querySelectorAll(".db-nav-item");
+  dbItems.forEach(item => {
+    item.addEventListener("click", () => {
+      dbItems.forEach(i => i.classList.remove("active"));
+      item.classList.add("active");
+      selectDbTable(item.dataset.table);
+    });
+  });
+
+  selectDbTable("form");
+
+  // ==========================================
+  // STATIC TOOLS TAB DETAILS RENDER
+  // ==========================================
+  const toolsData = {
+    create: {
+      name: "create",
+      desc: "Inserts a form or matter record into local SQLite, pushes it to WebSocket queues for Cloud DO replication, links relationships in the graph table, writes a motion log, and indexes vector embeddings. All of these steps are executed atomically inside a database transaction.",
+      sql: `BEGIN TRANSACTION;
+-- 1. Insert actual record
+INSERT INTO matter (id, form, type, scope, qty, value, active, variant, mark, geo, start, end, data, owner, time)
+VALUES ('mt_82b9381af', 'form_task_blueprint', 'task', 't:alpha', NULL, NULL, 1, NULL, 0, NULL, NULL, NULL, '{"title":"Review menu","assignee":"John"}', 'usr_dev_1', '2026-06-27T12:00:00Z');
+
+-- 2. Insert graph relationships
+INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
+VALUES ('mt_82b9381af', 'assigned_to', 'usr_john_45', 1.0, 1, '2026-06-27T12:00:00Z');
+
+-- 3. Insert append-only event log
+INSERT INTO motion (stream, seq, action, phase, delta, client_ref, data, time)
+VALUES ('mt_82b9381af', 1, 1000, NULL, NULL, 'client-ref-uuid', '{"event":"created","table":"matter","type":"task"}', '2026-06-27T12:00:00Z');
+
+-- 4. Push vector to memory table
+INSERT INTO memory (id, chunk, text, embedding, meta)
+VALUES ('mt_82b9381af', 0, 'Task: Review menu...', [vector_bytes], '{"table":"matter","scope":"t:alpha"}');
+COMMIT;`,
+      rules: [
+        "Checks client_ref to guarantee idempotency. If client_ref matches a previous motion log, it returns the existing record instead of recreating it.",
+        "Validates input payload fields against JSON Schema from the corresponding form record.",
+        "Ensures user has ACL write permissions (requireCanCreate)."
+      ]
+    },
+    read: {
+      name: "read",
+      desc: "Fetches rows with query parameters. Automatically supports SQL query generation, JSON path extraction, table joins, multi-hop recursive graph queries, and paginated sorting.",
+      sql: `-- Basic SQL translation for read command
+SELECT *, json_extract(data, '$.title') AS title_extracted FROM matter
+WHERE scope = 't:alpha'
+  AND type = 'task'
+  AND active = 1
+ORDER BY time DESC
+LIMIT 50 OFFSET 0;
+
+-- Complex graph traversal read (fetch all people assigned to tasks in a project)
+WITH RECURSIVE traversal(src, rel, tgt, depth) AS (
+  SELECT src, rel, tgt, 1 FROM graph WHERE src = 'project_delta_9' AND active = 1
+  UNION ALL
+  SELECT g.src, g.rel, g.tgt, t.depth + 1 FROM graph g
+  JOIN traversal t ON g.src = t.tgt
+  WHERE t.depth < 3 AND g.active = 1
+)
+SELECT * FROM matter WHERE id IN (SELECT tgt FROM traversal WHERE rel = 'assigned_to');`,
+      rules: [
+        "Applies read ACL filtering (requireCanRead). Disallows reading if the caller does not have team or personal credentials matching the scope.",
+        "Decrypts/formats data JSON blocks back to JavaScript objects."
+      ]
+    },
+    update: {
+      name: "update",
+      desc: "Updates properties of a record. It performs copy-on-write deep merges of the data JSON payload, validates state machine transitions defined on the form template, and logs a motion log detailing the mutated fields.",
+      sql: `BEGIN TRANSACTION;
+-- 1. Get current state and validate transition (e.g. pending -> completed)
+SELECT data FROM matter WHERE id = 'mt_82b9381af';
+
+-- 2. Update record and merge JSON data
+UPDATE matter SET
+  data = '{"title":"Review menu","assignee":"John","state":"completed"}',
+  time = '2026-06-27T12:05:00Z'
+WHERE id = 'mt_82b9381af' AND scope = 't:alpha';
+
+-- 3. Write motion log with updated fields list
+INSERT INTO motion (stream, seq, action, phase, delta, client_ref, data, time)
+VALUES ('mt_82b9381af', 2, 1002, 2, NULL, 'uuid-update', '{"reason":"completed task","changed":["state"]}', '2026-06-27T12:05:00Z');
+COMMIT;`,
+      rules: [
+        "Validates state machine index phase (e.g., preventing transitions directly from 'pending' to 'delivered' without being 'confirmed').",
+        "Triggers vector re-embedding in background."
+      ]
+    },
+    delete: {
+      name: "delete",
+      desc: "Flags a record as deleted (active=0). Does not delete records from the database except for personal 'p:' scope data. If cascade=true, it automatically deactivates all graph edges connected to the deleted record.",
+      sql: `BEGIN TRANSACTION;
+-- 1. Soft delete the matter row
+UPDATE matter SET active = 0 WHERE id = 'mt_82b9381af' AND scope = 't:alpha';
+
+-- 2. Cascade deactivate graph connections
+UPDATE graph SET active = 0 WHERE src = 'mt_82b9381af' OR tgt = 'mt_82b9381af';
+
+-- 3. Log deletion motion
+INSERT INTO motion (stream, seq, action, client_ref, data, time)
+VALUES ('mt_82b9381af', 3, 1003, NULL, '{"event":"deleted","mode":"soft"}', '2026-06-27T12:10:00Z');
+COMMIT;`,
+      rules: [
+        "Verifies owner authorization to delete (requireCanDelete).",
+        "Removes embeddings index from vector storage."
+      ]
+    },
+    link: {
+      name: "link",
+      desc: "Upserts a relationship link in the graph table between two node IDs, attributing it with a connection strength weight.",
+      sql: `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
+VALUES ('project_12', 'has_task', 'mt_82b9381af', 1.0, 1, '2026-06-27T12:00:00Z');
+
+-- If bidirectional is flagged, link reverse path
+INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
+VALUES ('mt_82b9381af', 'part_of_project', 'project_12', 1.0, 1, '2026-06-27T12:00:00Z');`,
+      rules: [
+        "Verifies that both source and target records exist within the scope range if scope_check is enabled.",
+        "Fires a motion event on the source stream for synchronization tracking."
+      ]
+    },
+    search: {
+      name: "search",
+      desc: "Queries the memory index. Supports hybrid keywords and vector lookup. For cheap devices/low batteries, it degrades gracefully to standard SQL full-text search (FTS) fallback.",
+      sql: `-- FTS Mode fallback
+SELECT id, text, meta FROM memory
+WHERE LOWER(text) LIKE '%pizza%'
+  AND JSON_EXTRACT(meta, '$.scope') = 't:alpha'
+LIMIT 10;
+
+-- Hybrid Mode (executed programmatically)
+-- 1. Runs vector search on client embedding DB
+-- 2. Runs SQL text search
+-- 3. Merges and scores outputs: score = 0.7 * vectorSim + 0.3 * keywordScore`,
+      rules: [
+        "Integrates with Expo SQLite full-text indexing.",
+        "Supports geographical circle searches using coordinates (haversine formula)."
+      ]
+    }
+  };
+
+  function selectTool(toolName) {
+    const data = toolsData[toolName];
+    const el = document.getElementById("tool-details-content");
+    if (!el || !data) return;
+
+    let rulesHtml = "";
+    data.rules.forEach(r => {
+      rulesHtml += `<li>${r}</li>`;
+    });
+
+    el.innerHTML = `
+      <div class="tool-title-row">
+        <h3>Tool: ${data.name}()</h3>
+      </div>
+      <p class="tool-desc">${data.desc}</p>
+      
+      <div class="tool-section-header">SQLite Code Execution Flow:</div>
+      <pre class="sql-block"><code>${data.sql}</code></pre>
+
+      <div class="tool-section-header">Execution Rules:</div>
+      <ul class="list-bullet">
+        ${rulesHtml}
+      </ul>
+    `;
+  }
+
+  const toolBtns = document.querySelectorAll(".tool-btn");
+  toolBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      toolBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      selectTool(btn.dataset.tool);
+    });
+  });
+
+  selectTool("create");
+
+
+  // ==========================================
+  // SIMULATOR PIPELINE CONTROLLER
+  // ==========================================
+  const presetBtns = document.querySelectorAll(".preset-btn");
+  const runCustomBtn = document.getElementById("run-custom-btn");
+  const customPromptInput = document.getElementById("custom-prompt");
+  const simLog = document.getElementById("sim-log");
+
+  const nodeUi = document.getElementById("node-ui");
+  const nodeAgent = document.getElementById("node-agent");
+  const nodeTool = document.getElementById("node-tool");
+  const nodeDb = document.getElementById("node-db");
+
+  const connUiAgent = document.getElementById("conn-ui-agent");
+  const connAgentTool = document.getElementById("conn-agent-tool");
+  const connToolDb = document.getElementById("conn-tool-db");
+
+  const agentTypeLbl = document.getElementById("agent-type-lbl");
+  const toolNameLbl = document.getElementById("tool-name-lbl");
+
+  const matterCountLbl = document.getElementById("matter-count-lbl");
+  const motionCountLbl = document.getElementById("motion-count-lbl");
+  const graphCountLbl = document.getElementById("graph-count-lbl");
+  const memoryCountLbl = document.getElementById("memory-count-lbl");
+
+  let dbCounts = {
+    matter: 4812,
+    motion: 12412,
+    graph: 9310,
+    memory: 4812
+  };
+
+  const simulationPipelines = {
+    task: [
+      { text: "📲 User input received: \"Create task 'Review pizza menu' and assign to John\"", type: "system", duration: 800, node: "ui" },
+      { text: "🧠 Router Agent triggered. Analyzing intent...", type: "info", duration: 1000, node: "agent", agentLabel: "Router Agent (LLM)", conn: "ui-agent" },
+      { text: "🧠 Classification: Intent='create_task', entity='matter', scope='t:alpha', verb='create', noun='task'", type: "info", duration: 800, node: "agent" },
+      { text: "🔧 Calling execution layer: create() tool", type: "warning", duration: 1000, node: "tool", toolLabel: "create()", conn: "agent-tool" },
+      { text: "💾 SQLite BEGIN TRANSACTION: Inserting record into 'matter'", type: "success", duration: 800, node: "db", conn: "tool-db", dbHighlight: "matter" },
+      { text: "💾 SQLite: Inserting link into 'graph' (Task assigned_to John)", type: "success", duration: 800, node: "db", dbHighlight: "graph" },
+      { text: "💾 SQLite: Appending audit log into 'motion' (opcode 1000 - Init/Create)", type: "success", duration: 800, node: "db", dbHighlight: "motion" },
+      { text: "💾 SQLite: Generating and inserting embeddings into 'memory'", type: "success", duration: 1000, node: "db", dbHighlight: "memory" },
+      { text: "✅ Simulation completed! mt_task_001 created locally & broadcast to Durable Object.", type: "success", duration: 500, done: true }
+    ],
+    order: [
+      { text: "📲 User input received: \"Order a Pepperoni Pizza, value $15\"", type: "system", duration: 800, node: "ui" },
+      { text: "🧠 Router Agent triggered. Analyzing intent...", type: "info", duration: 1000, node: "agent", agentLabel: "Router Agent (LLM)", conn: "ui-agent" },
+      { text: "🧠 Intent Classified: \"order_pizza\" -> triggering food ordering Flow pipeline.", type: "info", duration: 800, node: "agent" },
+      { text: "🧠 Flow Engine initialized: [Sequence: Create Order → Calculate Tax → Assign Rider]", type: "info", duration: 1000, node: "agent", agentLabel: "Flow Engine (→)" },
+      { text: "🔧 Step 1: calling create() tool for order invoice", type: "warning", duration: 800, node: "tool", toolLabel: "create()", conn: "agent-tool" },
+      { text: "💾 SQLite: Inserted order 'Pepperoni Pizza' into matter. Value set to $15.00", type: "success", duration: 800, node: "db", conn: "tool-db", dbHighlight: "matter" },
+      { text: "💾 SQLite: Written motion event log (opcode 100 - Food Order Created)", type: "success", duration: 800, node: "db", dbHighlight: "motion" },
+      { text: "🔧 Step 2: calling update() to trigger state transition to 'preparing'", type: "warning", duration: 800, node: "tool", toolLabel: "update()" },
+      { text: "💾 SQLite: Updated order state. Appended transition log to motion (seq 2)", type: "success", duration: 800, node: "db", dbHighlight: "motion" },
+      { text: "✅ Pizza order flow executed successfully. Status is: 'preparing'.", type: "success", duration: 500, done: true }
+    ],
+    search: [
+      { text: "📲 User input received: \"Find recent support tickets from last week\"", type: "system", duration: 800, node: "ui" },
+      { text: "🧠 Router Agent triggered. Analyzing intent...", type: "info", duration: 1000, node: "agent", agentLabel: "Router Agent (LLM)", conn: "ui-agent" },
+      { text: "🧠 Intent Classified: \"search_tickets\", entity='matter', filters=[type='ticket']", type: "info", duration: 800, node: "agent" },
+      { text: "🔧 Calling execution layer: search() tool in 'hybrid' mode", type: "warning", duration: 800, node: "tool", toolLabel: "search()", conn: "agent-tool" },
+      { text: "🔧 Executing local semantic search: Vector search + keyword FTS merge", type: "warning", duration: 1000, node: "tool" },
+      { text: "💾 SQLite: Reading database 'memory' index table", type: "success", duration: 800, node: "db", conn: "tool-db", dbHighlight: "memory" },
+      { text: "💾 SQLite: Joining results against 'matter' table for ACL authorization checking", type: "success", duration: 800, node: "db", dbHighlight: "matter" },
+      { text: "✅ Search returned 3 tickets. Similarity threshold: >0.64. Results printed on chat console.", type: "success", duration: 500, done: true }
+    ]
+  };
+
+  let activeTimeout = null;
+
+  function resetVisualNodes() {
+    [nodeUi, nodeAgent, nodeTool, nodeDb].forEach(n => {
+      n.className = "node-state inactive";
+    });
+    [connUiAgent, connAgentTool, connToolDb].forEach(c => {
+      c.className = "node-connector";
+    });
+    agentTypeLbl.textContent = "Classifying...";
+    toolNameLbl.textContent = "Executing...";
+
+    document.querySelectorAll(".sim-table-card").forEach(c => {
+      c.classList.remove("highlight");
+    });
+  }
+
+  function runSimulation(presetKey) {
+    if (activeTimeout) clearTimeout(activeTimeout);
+    resetVisualNodes();
+    simLog.innerHTML = "";
+
+    const steps = simulationPipelines[presetKey];
+    if (!steps) return;
+
+    let stepIndex = 0;
+
+    function executeNextStep() {
+      if (stepIndex >= steps.length) return;
+      const step = steps[stepIndex];
+
+      const line = document.createElement("span");
+      line.className = `console-line ${step.type}`;
+      line.textContent = `> ${step.text}`;
+      simLog.appendChild(line);
+      simLog.scrollTop = simLog.scrollHeight;
+
+      if (step.node) {
+        resetVisualNodes();
+        if (step.node === "ui") {
+          nodeUi.className = "node-state running";
+        } else if (step.node === "agent") {
+          nodeUi.className = "node-state done";
+          nodeAgent.className = "node-state running";
+          if (step.conn === "ui-agent") connUiAgent.className = "node-connector active";
+          if (step.agentLabel) agentTypeLbl.textContent = step.agentLabel;
+        } else if (step.node === "tool") {
+          nodeUi.className = "node-state done";
+          nodeAgent.className = "node-state done";
+          nodeTool.className = "node-state running";
+          if (step.conn === "agent-tool") {
+            connUiAgent.className = "node-connector active";
+            connAgentTool.className = "node-connector active";
+          }
+          if (step.toolLabel) toolNameLbl.textContent = step.toolLabel;
+        } else if (step.node === "db") {
+          nodeUi.className = "node-state done";
+          nodeAgent.className = "node-state done";
+          nodeTool.className = "node-state done";
+          nodeDb.className = "node-state running";
+          if (step.conn === "tool-db") {
+            connUiAgent.className = "node-connector active";
+            connAgentTool.className = "node-connector active";
+            connToolDb.className = "node-connector active";
+          }
+        }
+      }
+
+      if (step.dbHighlight) {
+        const tblCard = document.getElementById(`sim-tbl-${step.dbHighlight}`);
+        if (tblCard) {
+          tblCard.classList.add("highlight");
+          dbCounts[step.dbHighlight]++;
+          updateDbLabels();
+        }
+      }
+
+      if (step.done) {
+        resetVisualNodes();
+        nodeUi.className = "node-state done";
+        nodeAgent.className = "node-state done";
+        nodeTool.className = "node-state done";
+        nodeDb.className = "node-state done";
+        connUiAgent.className = "node-connector active";
+        connAgentTool.className = "node-connector active";
+        connToolDb.className = "node-connector active";
+      }
+
+      stepIndex++;
+      activeTimeout = setTimeout(executeNextStep, step.duration);
+    }
+
+    executeNextStep();
+  }
+
+  function updateDbLabels() {
+    matterCountLbl.textContent = `${dbCounts.matter.toLocaleString()} records`;
+    motionCountLbl.textContent = `${dbCounts.motion.toLocaleString()} records`;
+    graphCountLbl.textContent = `${dbCounts.graph.toLocaleString()} records`;
+    memoryCountLbl.textContent = `${dbCounts.memory.toLocaleString()} records`;
+  }
+
+  presetBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      runSimulation(btn.dataset.preset);
+    });
+  });
+
+  runCustomBtn.addEventListener("click", () => {
+    const prompt = customPromptInput.value.trim();
+    if (!prompt) return;
+    
+    const pipeline = [
+      { text: `📲 User input received: "${prompt}"`, type: "system", duration: 800, node: "ui" },
+      { text: "🧠 Router Agent triggered. Analyzing intent...", type: "info", duration: 1000, node: "agent", agentLabel: "Router Agent (LLM)", conn: "ui-agent" },
+      { text: `🧠 Intent Classified: custom_action, parameters detected from prompt.`, type: "info", duration: 800, node: "agent" },
+      { text: "🔧 Calling execution layer: create() tool", type: "warning", duration: 800, node: "tool", toolLabel: "create()", conn: "agent-tool" },
+      { text: `💾 SQLite: Created custom matter item matching user request`, type: "success", duration: 800, node: "db", conn: "tool-db", dbHighlight: "matter" },
+      { text: "💾 SQLite: Appended action event into motion stream (opcode 1000)", type: "success", duration: 800, node: "db", dbHighlight: "motion" },
+      { text: "✅ Custom prompt simulated successfully!", type: "success", duration: 500, done: true }
+    ];
+
+    simulationPipelines.custom = pipeline;
+    runSimulation("custom");
+  });
+
+  // ==========================================
+  // REAL-TIME DO COLLABORATION CODE
+  // ==========================================
+  const myClientId = 'client_' + Math.random().toString(36).substring(2, 10);
+  const myClientName = 'Developer_' + Math.random().toString(36).substring(2, 6).toUpperCase();
+
+  const wsIndicator = document.getElementById("ws-indicator");
+  const wsStatusText = document.getElementById("ws-status-text");
+  const wsUrlInput = document.getElementById("ws-url-input");
+  const wsConnectBtn = document.getElementById("ws-connect-btn");
+
+  const collabLogs = document.getElementById("collab-logs");
+  const cursorArena = document.getElementById("cursor-arena");
+
+  let ws = null;
+  const bc = new BroadcastChannel('tar_sync_channel');
+
+  // Log message helper
+  function addCollabLog(text, type = "system") {
+    if (collabLogs.querySelector(".console-placeholder")) {
+      collabLogs.innerHTML = "";
+    }
+    const line = document.createElement("span");
+    line.className = `console-line ${type}`;
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+    collabLogs.appendChild(line);
+    collabLogs.scrollTop = collabLogs.scrollHeight;
+  }
+
+  // WS Connection Setup
+  function connectWebSocket(url) {
+    if (ws) {
+      ws.close();
+    }
+
+    addCollabLog(`Attempting DO WebSocket connection to: ${url}`, "info");
+    wsIndicator.className = "indicator-dot connecting";
+    wsStatusText.textContent = "Connecting to WorkspaceDO...";
+
+    try {
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        wsIndicator.className = "indicator-dot connected";
+        wsStatusText.textContent = "Connected to Durable Object";
+        addCollabLog("Real-time Durable Object sync session established successfully!", "success");
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          handleReplicationPayload(payload);
+        } catch (e) {
+          // fallback string
+          if (event.data !== 'pong') {
+            addCollabLog(`Incoming message: ${event.data}`, "info");
+          }
+        }
+      };
+
+      ws.onclose = () => {
+        wsIndicator.className = "indicator-dot disconnected";
+        wsStatusText.textContent = "Disconnected (Using local Broadcast fallback)";
+        addCollabLog("DO connection closed. Falling back to local BroadcastChannel.", "warning");
+      };
+
+      ws.onerror = () => {
+        wsIndicator.className = "indicator-dot disconnected";
+        wsStatusText.textContent = "Connection error";
+        addCollabLog("Failed to connect to local Wrangler Dev server. Verify 'wrangler dev' is running in tarworker.", "error");
+      };
+
+    } catch (err) {
+      wsIndicator.className = "indicator-dot disconnected";
+      wsStatusText.textContent = "Error initializing WebSockets";
+      addCollabLog(`Initialization failed: ${err.message}`, "error");
+    }
+  }
+
+  wsConnectBtn.addEventListener("click", () => {
+    connectWebSocket(wsUrlInput.value.trim());
+  });
+
+  // Handle incoming replication event
+  function handleReplicationPayload(payload) {
+    if (payload.clientId === myClientId) return;
+
+    if (payload.type === 'cursor') {
+      updateRemoteCursor(payload.clientId, payload.x, payload.y, payload.name);
+    } else if (payload.type === 'create') {
+      // Replicate DB create
+      const rec = payload.record;
+      const mot = payload.motion;
+
+      // check if exists
+      const exists = db.matters.find(m => m.id === rec.id);
+      if (!exists) {
+        db.matters.push(rec);
+        db.motions.push(mot);
+        db.save();
+        renderLiveTables();
+        addCollabLog(`REPLICATED CREATE: Instance ${rec.id} (${rec.data?.title}) synced from teammate.`, "success");
+      }
+    } else if (payload.type === 'link') {
+      const link = payload.link;
+      const mot = payload.motion;
+
+      const idx = db.graphs.findIndex(g => g.src === link.src && g.rel === link.rel && g.tgt === link.tgt);
+      if (idx === -1) {
+        db.graphs.push(link);
+        db.motions.push(mot);
+        db.save();
+        renderLiveTables();
+        addCollabLog(`REPLICATED LINK: Graph link (${link.src} - ${link.rel} -> ${link.tgt}) synced.`, "success");
+      }
+    } else if (payload.type === 'delete') {
+      const { targetId, motion } = payload;
+      const rec = db.matters.find(m => m.id === targetId);
+      if (rec && rec.active === 1) {
+        rec.active = 0;
+        db.motions.push(motion);
+        db.save();
+        renderLiveTables();
+        addCollabLog(`REPLICATED DELETE: Soft-deleted instance ${targetId}.`, "warning");
+      }
+    }
+  }
+
+  // Local tab sync via BroadcastChannel
+  bc.onmessage = (event) => {
+    handleReplicationPayload(event.data);
+  };
+
+  // Cursor Move Arena Broadcast
+  cursorArena.addEventListener("mousemove", (e) => {
+    const rect = cursorArena.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const payload = {
+      type: 'cursor',
+      clientId: myClientId,
+      name: myClientName,
+      x: e.clientX, // Use global client coordinates to avoid scaling mismatch
+      y: e.clientY
+    };
+
+    bc.postMessage(payload);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload));
+    }
+  });
+
+  cursorArena.addEventListener("mouseleave", () => {
+    removeRemoteCursor(myClientId);
+  });
+
+  function updateRemoteCursor(id, x, y, name) {
+    let el = document.getElementById(`cursor-${id}`);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = `cursor-${id}`;
+      el.className = "remote-cursor";
+      el.innerHTML = `
+        <svg class="cursor-pointer" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M0 0V11L4 7L10 13L13 10L7 4L11 0H0Z" fill="#a78bfa" stroke="white" stroke-width="1.5"/>
+        </svg>
+        <span class="cursor-name">${name}</span>
+      `;
+      document.body.appendChild(el);
+    }
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+  }
+
+  function removeRemoteCursor(id) {
+    const el = document.getElementById(`cursor-${id}`);
+    if (el) el.remove();
+  }
+
+  // Clean up stale cursors on tab inactivity
+  setInterval(() => {
+    document.querySelectorAll(".remote-cursor").forEach(cursor => {
+      const id = cursor.id.replace("cursor-", "");
+      if (id !== myClientId) {
+        // stale clean fallback
+      }
+    });
+  }, 10000);
+
+  // ==========================================
+  // DATA MANAGEMENT FORMS & CRUD CONTROLS
+  // ==========================================
+  const createMatterForm = document.getElementById("create-matter-form");
+  const linkGraphForm = document.getElementById("link-graph-form");
+
+  createMatterForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const formId = document.getElementById("matter-form-select").value;
+    const title = document.getElementById("matter-title").value.trim();
+    const qty = parseFloat(document.getElementById("matter-qty").value) || null;
+    const value = parseFloat(document.getElementById("matter-value").value) || null;
+    const owner = document.getElementById("matter-owner").value.trim();
+
+    const schemaType = formId.replace("form_", "");
+
+    const newRecord = {
+      form: formId,
+      type: schemaType,
+      scope: "t:workspace_alpha",
+      qty,
+      value,
+      owner,
+      data: {
+        title,
+        status: "pending"
+      }
+    };
+
+    const result = db.create("matter", newRecord);
+
+    // Sync broadcast
+    const syncPayload = {
+      type: 'create',
+      clientId: myClientId,
+      record: result.record,
+      motion: result.motionRecord
+    };
+
+    bc.postMessage(syncPayload);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(syncPayload));
+    }
+
+    addCollabLog(`LOCAL CREATE: Executed create() tool. Matter record ${result.record.id} written.`, "success");
+    createMatterForm.reset();
+    renderLiveTables();
+  });
+
+  linkGraphForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const src = document.getElementById("link-src").value.trim();
+    const rel = document.getElementById("link-rel").value.trim();
+    const tgt = document.getElementById("link-tgt").value.trim();
+
+    const result = db.link(src, rel, tgt);
+
+    const syncPayload = {
+      type: 'link',
+      clientId: myClientId,
+      link: result.link,
+      motion: result.motionRecord
+    };
+
+    bc.postMessage(syncPayload);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(syncPayload));
+    }
+
+    addCollabLog(`LOCAL LINK: Executed link() tool. Edge (${src} -${rel}-> ${tgt}) connected.`, "success");
+    linkGraphForm.reset();
+    renderLiveTables();
+  });
+
+  // Soft Deletion Trigger
+  window.deleteLiveRecord = function(id) {
+    const result = db.delete("matter", id);
+    if (result) {
+      const syncPayload = {
+        type: 'delete',
+        clientId: myClientId,
+        targetId: id,
+        motion: result.motionRecord
+      };
+
+      bc.postMessage(syncPayload);
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(syncPayload));
+      }
+
+      addCollabLog(`LOCAL DELETE: Executed delete() on matter ID ${id}.`, "warning");
+      renderLiveTables();
+    }
+  };
+
+  // Search Engine simulation
+  const searchInput = document.getElementById("search-input");
+  const searchBtn = document.getElementById("search-btn");
+  const searchResultsList = document.getElementById("search-results-list");
+
+  function executeSearch() {
+    const query = searchInput.value.trim();
+    if (!query) {
+      searchResultsList.innerHTML = '<span class="helper-text">Enter query to see similarity matching results.</span>';
+      return;
+    }
+
+    addCollabLog(`LOCAL SEARCH: Executing search() tool for query "${query}"`, "info");
+    const results = db.search(query);
+
+    if (results.length === 0) {
+      searchResultsList.innerHTML = '<span class="helper-text">No matches found.</span>';
+    } else {
+      searchResultsList.innerHTML = "";
+      results.forEach(res => {
+        const item = document.createElement("div");
+        item.className = "search-result-item";
+        item.innerHTML = `
+          <div>
+            <strong>${res.record.data?.title || res.record.id}</strong>
+            <div class="result-meta">ID: ${res.record.id} | Type: ${res.record.type}</div>
+          </div>
+          <span class="result-score">Sim: ${res.score}</span>
+        `;
+        searchResultsList.appendChild(item);
+      });
+    }
+  }
+
+  searchBtn.addEventListener("click", executeSearch);
+  searchInput.addEventListener("keypress", (e) => {
+    if (e.key === 'Enter') executeSearch();
+  });
+
+
+  // ==========================================
+  // TABLE INSPECTOR RENDERER
+  // ==========================================
+  const tblTabs = document.querySelectorAll(".table-tab");
+  let activeLiveTbl = "matter";
+
+  tblTabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      tblTabs.forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      activeLiveTbl = tab.dataset.tblName;
+      renderLiveTables();
+    });
+  });
+
+  function renderLiveTables() {
+    const head = document.getElementById("live-table-head");
+    const body = document.getElementById("live-table-body");
+
+    // Update Counts Labels
+    document.getElementById("count-lbl-matter").textContent = db.matters.filter(m => m.active === 1).length;
+    document.getElementById("count-lbl-graph").textContent = db.graphs.filter(g => g.active === 1).length;
+    document.getElementById("count-lbl-motion").textContent = db.motions.length;
+
+    if (activeLiveTbl === 'matter') {
+      head.innerHTML = `
+        <tr>
+          <th>ID</th>
+          <th>Type</th>
+          <th>Title</th>
+          <th>Qty</th>
+          <th>Value</th>
+          <th>Owner</th>
+          <th>Actions</th>
+        </tr>
+      `;
+
+      const activeMatters = db.matters.filter(m => m.active === 1);
+      if (activeMatters.length === 0) {
+        body.innerHTML = `<tr><td colspan="7" class="helper-text" style="text-align:center; padding: 24px;">No active matter instances. Create one to see details!</td></tr>`;
+      } else {
+        body.innerHTML = "";
+        activeMatters.forEach(m => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td class="col-name">${m.id}</td>
+            <td class="col-type">${m.type}</td>
+            <td>${m.data?.title || ''}</td>
+            <td>${m.qty || '-'}</td>
+            <td>${m.value ? '$' + m.value : '-'}</td>
+            <td>${m.owner || '-'}</td>
+            <td>
+              <button class="row-action-btn" onclick="deleteLiveRecord('${m.id}')">Delete</button>
+            </td>
+          `;
+          body.appendChild(row);
+        });
+      }
+    } else if (activeLiveTbl === 'graph') {
+      head.innerHTML = `
+        <tr>
+          <th>Source</th>
+          <th>Relation</th>
+          <th>Target</th>
+          <th>Weight</th>
+          <th>Time</th>
+        </tr>
+      `;
+
+      const activeGraphs = db.graphs.filter(g => g.active === 1);
+      if (activeGraphs.length === 0) {
+        body.innerHTML = `<tr><td colspan="5" class="helper-text" style="text-align:center; padding: 24px;">No graph edges active. Link nodes to see relationship indexes!</td></tr>`;
+      } else {
+        body.innerHTML = "";
+        activeGraphs.forEach(g => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td class="col-name">${g.src}</td>
+            <td class="col-type">${g.rel}</td>
+            <td class="col-name">${g.tgt}</td>
+            <td>${g.weight}</td>
+            <td>${new Date(g.time).toLocaleTimeString()}</td>
+          `;
+          body.appendChild(row);
+        });
+      }
+    } else if (activeLiveTbl === 'motion') {
+      head.innerHTML = `
+        <tr>
+          <th>Stream</th>
+          <th>Seq</th>
+          <th>Opcode</th>
+          <th>Change Details</th>
+          <th>Timestamp</th>
+        </tr>
+      `;
+
+      if (db.motions.length === 0) {
+        body.innerHTML = `<tr><td colspan="5" class="helper-text" style="text-align:center; padding: 24px;">No motion logs found. Mutate data to append sync entries.</td></tr>`;
+      } else {
+        body.innerHTML = "";
+        // Show newest logs first
+        [...db.motions].reverse().forEach(m => {
+          const row = document.createElement("tr");
+          let actionLabel = m.action;
+          if (m.action === 1000) actionLabel = "CREATE (1000)";
+          if (m.action === 1001) actionLabel = "UPDATE (1001)";
+          if (m.action === 1002) actionLabel = "DELETE (1002)";
+          if (m.action === 1003) actionLabel = "LINK (1003)";
+
+          row.innerHTML = `
+            <td class="col-name">${m.stream}</td>
+            <td>${m.seq}</td>
+            <td class="col-type">${actionLabel}</td>
+            <td>${JSON.stringify(m.data)}</td>
+            <td>${new Date(m.time).toLocaleTimeString()}</td>
+          `;
+          body.appendChild(row);
+        });
+      }
+    }
+  }
+
+  // Initial connection trigger
+  connectWebSocket(wsUrlInput.value.trim());
+  renderLiveTables();
+</script>

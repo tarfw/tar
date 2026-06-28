@@ -1,6 +1,15 @@
-import { getUserDb, routeDbForEntity } from './db';
+import { getPreparedDbForScope, withTransaction } from './db';
 import { upsertFormVector, deleteFormVector, searchFormVectors } from './vectorStore';
-import { getCallerId, requireOwner } from './acl';
+import {
+  getCallerId,
+  requireOwner,
+  requireCanRead,
+  requireCanCreate,
+  requireCanUpdate,
+  requireCanDelete,
+} from './acl';
+import { forwardToCloud } from './remote';
+import { parseGeo, encodeGeo, haversineKm, parseRadius } from './geo';
 import type { Database } from '@tursodatabase/sync-react-native';
 
 function generateId(prefix: string): string {
@@ -110,7 +119,10 @@ export async function create(opts: {
   embed?: boolean;
   client_ref?: string;
 }) {
-  const db = routeDbForEntity(opts.table, opts.scope);
+  const cloudResult = await forwardToCloud<{ id: string; time: string; status: string }>(opts.scope, 'create', opts);
+  if (cloudResult) return cloudResult;
+
+  const db = await getPreparedDbForScope(opts.scope);
   const id = opts.table === 'form'
     ? (opts.code ? `form_${opts.code}` : generateId('form'))
     : generateId('matter');
@@ -141,94 +153,97 @@ export async function create(opts: {
     }
   }
 
-  // 1. Insert into database table
-  if (opts.table === 'form') {
-    await db.run(
-      `INSERT INTO form (id, code, type, scope, owner, title, public, active, data, time)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-      [
-        id,
-        opts.code || null,
-        opts.type,
-        opts.scope,
-        owner,
-        opts.title || null,
-        opts.public ? 1 : 0,
-        JSON.stringify(opts.data || {}),
-        nowStr
-      ]
-    );
-  } else {
-    const mergedData = { ...(opts.data || {}) };
-    if (opts.title && !mergedData.title) {
-      mergedData.title = opts.title;
-    }
-    await db.run(
-      `INSERT INTO matter (id, form, type, scope, qty, value, active, variant, mark, geo, start, end, data, owner, time)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        opts.form || '',
-        opts.type,
-        opts.scope,
-        opts.qty ?? null,
-        opts.value ?? null,
-        opts.variant ?? null,
-        opts.mark ?? 0,
-        opts.geo || null,
-        opts.start || null,
-        opts.end || null,
-        JSON.stringify(mergedData),
-        owner,
-        nowStr
-      ]
-    );
-  }
-
-  // 2. Insert links if provided
-  if (opts.links && opts.links.length > 0) {
-    for (const link of opts.links) {
-      const src = link.src === '$id' ? id : link.src;
-      const tgt = link.tgt === '$id' ? id : link.tgt;
+  // Execute all writes in a single transaction
+  await withTransaction(db, async () => {
+    // 1. Insert into database table
+    if (opts.table === 'form') {
       await db.run(
-        `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
-         VALUES (?, ?, ?, ?, 1, ?)`,
-        [src, link.rel, tgt, link.weight ?? 1.0, nowStr]
+        `INSERT INTO form (id, code, type, scope, owner, title, public, active, data, time)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+        [
+          id,
+          opts.code || null,
+          opts.type,
+          opts.scope,
+          owner,
+          opts.title || null,
+          opts.public ? 1 : 0,
+          JSON.stringify(opts.data || {}),
+          nowStr
+        ]
+      );
+    } else {
+      const mergedData = { ...(opts.data || {}) };
+      if (opts.title && !mergedData.title) {
+        mergedData.title = opts.title;
+      }
+      await db.run(
+        `INSERT INTO matter (id, form, type, scope, qty, value, active, variant, mark, geo, start, end, data, owner, time)
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          opts.form || '',
+          opts.type,
+          opts.scope,
+          opts.qty ?? null,
+          opts.value ?? null,
+          opts.variant ?? null,
+          opts.mark ?? 0,
+          opts.geo || null,
+          opts.start || null,
+          opts.end || null,
+          JSON.stringify(mergedData),
+          owner,
+          nowStr
+        ]
       );
     }
-  }
 
-  // 3. Insert motion log
-  const motionAction = opts.motion?.action ?? 1000;
-  const motionPhase = opts.motion?.phase ?? null;
-  const motionDelta = opts.motion?.delta ?? null;
+    // 2. Insert links if provided
+    if (opts.links && opts.links.length > 0) {
+      for (const link of opts.links) {
+        const src = link.src === '$id' ? id : link.src;
+        const tgt = link.tgt === '$id' ? id : link.tgt;
+        await db.run(
+          `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
+           VALUES (?, ?, ?, ?, 1, ?)`,
+          [src, link.rel, tgt, link.weight ?? 1.0, nowStr]
+        );
+      }
+    }
 
-  await db.run(
-    `INSERT INTO motion (stream, seq, action, phase, delta, client_ref, data, time)
-     VALUES (?, COALESCE((SELECT MAX(seq) FROM motion WHERE stream = ?) + 1, 1), ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      id,
-      motionAction,
-      motionPhase,
-      motionDelta,
-      opts.client_ref || null,
-      JSON.stringify({ event: 'created', table: opts.table, type: opts.type }),
-      nowStr
-    ]
-  );
+    // 3. Insert motion log
+    const motionAction = opts.motion?.action ?? 1000;
+    const motionPhase = opts.motion?.phase ?? null;
+    const motionDelta = opts.motion?.delta ?? null;
 
-  // 4. Generate embeddings if embed !== false
-  if (opts.embed !== false) {
-    upsertFormVector(id, {
-      title: opts.title || opts.type,
-      type: opts.type,
-      scope: opts.scope,
-      code: opts.code || null,
-      data: JSON.stringify(opts.data || {}),
-      owner
-    }).catch(e => console.warn('[TOOLS] upsertFormVector async failed:', e));
-  }
+    await db.run(
+      `INSERT INTO motion (stream, seq, action, phase, delta, client_ref, data, time)
+       VALUES (?, COALESCE((SELECT MAX(seq) FROM motion WHERE stream = ?) + 1, 1), ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        id,
+        motionAction,
+        motionPhase,
+        motionDelta,
+        opts.client_ref || null,
+        JSON.stringify({ event: 'created', table: opts.table, type: opts.type }),
+        nowStr
+      ]
+    );
+
+    // 4. Generate embeddings if embed !== false
+    if (opts.embed !== false) {
+      await upsertFormVector(id, {
+        title: opts.title || opts.type,
+        type: opts.type,
+        scope: opts.scope,
+        code: opts.code || null,
+        data: JSON.stringify(opts.data || {}),
+        owner
+      });
+    }
+  });
 
   return { id, time: nowStr, status: 'created' };
 }
@@ -256,7 +271,10 @@ export async function read(opts: {
   limit?: number;
   offset?: number;
 }) {
-  const db = routeDbForEntity(opts.table, opts.scope);
+  const cloudResult = await forwardToCloud<{ rows: any[]; count: number; next_offset?: number }>(opts.scope, 'read', opts);
+  if (cloudResult) return cloudResult;
+
+  const db = await getPreparedDbForScope(opts.scope);
 
   // Build projection
   let selectClause = '*';
@@ -429,7 +447,10 @@ export async function update(opts: {
   reason?: string;
   client_ref?: string;
 }) {
-  const db = routeDbForEntity(opts.table, opts.scope);
+  const cloudResult = await forwardToCloud<{ success: boolean; id?: string; time?: string; seq?: number; reason?: string }>(opts.scope, 'update', opts);
+  if (cloudResult) return cloudResult;
+
+  const db = await getPreparedDbForScope(opts.scope);
   const nowStr = new Date().toISOString();
 
   const existing = await db.get(`SELECT * FROM ${opts.table} WHERE id = ? AND scope = ?`, [opts.id, opts.scope]).catch(() => null);
@@ -540,40 +561,45 @@ export async function update(opts: {
   params.push(JSON.stringify(mergedData));
 
   params.push(opts.id, opts.scope);
-  await db.run(
-    `UPDATE ${opts.table} SET ${sets.join(', ')} WHERE id = ? AND scope = ?`,
-    params
-  );
 
-  const nextSeqRes = await db.get('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM motion WHERE stream = ?', [opts.id]);
-  const nextSeq = Number(nextSeqRes?.next ?? 1);
+  let nextSeq = 1;
 
-  await db.run(
-    `INSERT INTO motion (stream, seq, action, phase, delta, client_ref, data, time)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      opts.id,
-      nextSeq,
-      finalOpcode,
-      opts.phase ?? null,
-      opts.delta ?? null,
-      opts.client_ref || null,
-      JSON.stringify({ reason: opts.reason || '', changed: Object.keys(opts.patch) }),
-      nowStr
-    ]
-  );
+  await withTransaction(db, async () => {
+    await db.run(
+      `UPDATE ${opts.table} SET ${sets.join(', ')} WHERE id = ? AND scope = ?`,
+      params
+    );
 
-  const updatedRecord = await db.get(`SELECT * FROM ${opts.table} WHERE id = ?`, [opts.id]);
-  if (updatedRecord) {
-    upsertFormVector(opts.id, {
-      title: String(updatedRecord.title || updatedRecord.type || ''),
-      type: String(updatedRecord.type || ''),
-      scope: String(updatedRecord.scope || ''),
-      code: updatedRecord.code ? String(updatedRecord.code) : null,
-      data: String(updatedRecord.data || '{}'),
-      owner: updatedRecord.owner ? String(updatedRecord.owner) : null
-    }).catch(() => {});
-  }
+    const nextSeqRes = await db.get('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM motion WHERE stream = ?', [opts.id]);
+    nextSeq = Number(nextSeqRes?.next ?? 1);
+
+    await db.run(
+      `INSERT INTO motion (stream, seq, action, phase, delta, client_ref, data, time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        opts.id,
+        nextSeq,
+        finalOpcode,
+        opts.phase ?? null,
+        opts.delta ?? null,
+        opts.client_ref || null,
+        JSON.stringify({ reason: opts.reason || '', changed: Object.keys(opts.patch) }),
+        nowStr
+      ]
+    );
+
+    const updatedRecord = await db.get(`SELECT * FROM ${opts.table} WHERE id = ?`, [opts.id]);
+    if (updatedRecord) {
+      await upsertFormVector(opts.id, {
+        title: String(updatedRecord.title || updatedRecord.type || ''),
+        type: String(updatedRecord.type || ''),
+        scope: String(updatedRecord.scope || ''),
+        code: updatedRecord.code ? String(updatedRecord.code) : null,
+        data: String(updatedRecord.data || '{}'),
+        owner: updatedRecord.owner ? String(updatedRecord.owner) : null
+      });
+    }
+  });
 
   return { success: true, id: opts.id, time: nowStr, seq: nextSeq };
 }
@@ -591,51 +617,60 @@ export async function del(opts: {
   cascade?: boolean;
   client_ref?: string;
 }) {
-  const db = routeDbForEntity(opts.table, opts.scope);
+  const cloudResult = await forwardToCloud<{ id: string; mode: 'soft' | 'hard'; seq?: number }>(opts.scope, 'delete', opts);
+  if (cloudResult) return cloudResult;
+
+  const db = await getPreparedDbForScope(opts.scope);
   const nowStr = new Date().toISOString();
 
   const isPersonal = opts.scope === 'p' || opts.scope.startsWith('p:');
   const hardDelete = opts.hard && isPersonal;
 
   if (opts.table === 'graph') {
-    if (hardDelete) {
-      await db.run('DELETE FROM graph WHERE src = ? OR tgt = ?', [opts.id, opts.id]);
-    } else {
-      await db.run('UPDATE graph SET active = 0 WHERE src = ? OR tgt = ?', [opts.id, opts.id]);
-    }
+    await withTransaction(db, async () => {
+      if (hardDelete) {
+        await db.run('DELETE FROM graph WHERE src = ? OR tgt = ?', [opts.id, opts.id]);
+      } else {
+        await db.run('UPDATE graph SET active = 0 WHERE src = ? OR tgt = ?', [opts.id, opts.id]);
+      }
+    });
     return { id: opts.id, mode: hardDelete ? 'hard' : 'soft' };
   }
 
   const existing = await db.get(`SELECT * FROM ${opts.table} WHERE id = ? AND scope = ?`, [opts.id, opts.scope]).catch(() => null);
   if (existing) {
-    requireOwner(opts.scope, existing.owner ? String(existing.owner) : null);
+    await requireCanDelete(opts.scope, existing.owner ? String(existing.owner) : null);
   }
 
-  if (hardDelete) {
-    await db.run(`DELETE FROM ${opts.table} WHERE id = ? AND scope = ?`, [opts.id, opts.scope]);
-    deleteFormVector(opts.id).catch(() => {});
-  } else {
-    await db.run(`UPDATE ${opts.table} SET active = 0 WHERE id = ? AND scope = ?`, [opts.id, opts.scope]);
-  }
+  let nextSeq = 1;
 
-  if (opts.cascade !== false) {
-    await db.run('UPDATE graph SET active = 0 WHERE src = ? OR tgt = ?', [opts.id, opts.id]);
-  }
+  await withTransaction(db, async () => {
+    if (hardDelete) {
+      await db.run(`DELETE FROM ${opts.table} WHERE id = ? AND scope = ?`, [opts.id, opts.scope]);
+      await deleteFormVector(opts.id, opts.scope);
+    } else {
+      await db.run(`UPDATE ${opts.table} SET active = 0 WHERE id = ? AND scope = ?`, [opts.id, opts.scope]);
+    }
 
-  const nextSeqRes = await db.get('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM motion WHERE stream = ?', [opts.id]);
-  const nextSeq = Number(nextSeqRes?.next ?? 1);
+    if (opts.cascade !== false) {
+      await db.run('UPDATE graph SET active = 0 WHERE src = ? OR tgt = ?', [opts.id, opts.id]);
+    }
 
-  await db.run(
-    `INSERT INTO motion (stream, seq, action, client_ref, data, time)
-     VALUES (?, ?, 1002, ?, ?, ?)`,
-    [
-      opts.id,
-      nextSeq,
-      opts.client_ref || null,
-      JSON.stringify({ event: 'deleted', mode: hardDelete ? 'hard' : 'soft' }),
-      nowStr
-    ]
-  );
+    const nextSeqRes = await db.get('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM motion WHERE stream = ?', [opts.id]);
+    nextSeq = Number(nextSeqRes?.next ?? 1);
+
+    await db.run(
+      `INSERT INTO motion (stream, seq, action, client_ref, data, time)
+       VALUES (?, ?, 1002, ?, ?, ?)`,
+      [
+        opts.id,
+        nextSeq,
+        opts.client_ref || null,
+        JSON.stringify({ event: 'deleted', mode: hardDelete ? 'hard' : 'soft' }),
+        nowStr
+      ]
+    );
+  });
 
   return { id: opts.id, mode: hardDelete ? 'hard' : 'soft', seq: nextSeq };
 }
@@ -655,10 +690,16 @@ export async function link(opts: {
   scope_check?: string;
   client_ref?: string;
 }) {
-  const db = routeDbForEntity('graph', opts.scope);
+  const cloudResult = await forwardToCloud<{ src: string; rel: string; tgt: string; status: string }>(opts.scope, 'link', opts);
+  if (cloudResult) return cloudResult;
+
+  const db = await getPreparedDbForScope(opts.scope);
   const nowStr = new Date().toISOString();
   const isActive = opts.active !== false ? 1 : 0;
   const weight = opts.weight ?? 1.0;
+
+  // Authorization check
+  await requireCanCreate(opts.scope);
 
   if (opts.scope_check) {
     const srcExists = await db.get(
@@ -674,34 +715,38 @@ export async function link(opts: {
     }
   }
 
-  await db.run(
-    `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [opts.src, opts.rel, opts.tgt, weight, isActive, nowStr]
-  );
+  let nextSeq = 1;
 
-  if (opts.bidirectional) {
+  await withTransaction(db, async () => {
     await db.run(
       `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [opts.tgt, opts.rel, opts.src, weight, isActive, nowStr]
+      [opts.src, opts.rel, opts.tgt, weight, isActive, nowStr]
     );
-  }
 
-  const nextSeqRes = await db.get('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM motion WHERE stream = ?', [opts.src]);
-  const nextSeq = Number(nextSeqRes?.next ?? 1);
+    if (opts.bidirectional) {
+      await db.run(
+        `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [opts.tgt, opts.rel, opts.src, weight, isActive, nowStr]
+      );
+    }
 
-  await db.run(
-    `INSERT INTO motion (stream, seq, action, client_ref, data, time)
-     VALUES (?, ?, 1001, ?, ?, ?)`,
-    [
-      opts.src,
-      nextSeq,
-      opts.client_ref || null,
-      JSON.stringify({ rel: opts.rel, tgt: opts.tgt, weight, active: isActive }),
-      nowStr
-    ]
-  );
+    const nextSeqRes = await db.get('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM motion WHERE stream = ?', [opts.src]);
+    nextSeq = Number(nextSeqRes?.next ?? 1);
+
+    await db.run(
+      `INSERT INTO motion (stream, seq, action, client_ref, data, time)
+       VALUES (?, ?, 1001, ?, ?, ?)`,
+      [
+        opts.src,
+        nextSeq,
+        opts.client_ref || null,
+        JSON.stringify({ rel: opts.rel, tgt: opts.tgt, weight, active: isActive }),
+        nowStr
+      ]
+    );
+  });
 
   return { src: opts.src, rel: opts.rel, tgt: opts.tgt, status: isActive ? 'linked' : 'unlinked' };
 }
@@ -766,6 +811,54 @@ function scoreFTS(query: string, text: string): number {
     if (tWords.some(tw => tw.includes(qw))) matches++;
   }
   return matches / qWords.length;
+}
+
+async function searchGeo(
+  db: Database,
+  opts: any,
+  limit: number
+): Promise<{ id: string; text: string; meta: any; similarity: number; source: string }[]> {
+  const center = opts.geo?.center ? parseGeo(opts.geo.center) : null;
+  if (!center) {
+    throw new Error('[SEARCH] geo mode requires opts.geo.center as "lat,lng"');
+  }
+  const radiusKm = parseRadius(opts.geo?.radius ?? 5);
+  const table = opts.table || 'matter';
+  if (table !== 'form' && table !== 'matter') return [];
+
+  let sql = `SELECT id, type, scope, data, geo FROM ${table} WHERE active = 1 AND geo IS NOT NULL`;
+  const params: any[] = [];
+
+  if (opts.scope) {
+    sql += ' AND scope = ?';
+    params.push(opts.scope);
+  }
+  if (opts.type) {
+    sql += ' AND type = ?';
+    params.push(opts.type);
+  }
+
+  const rows = await db.all(sql, params).catch(() => []);
+  const scored = rows
+    .map((r: any) => {
+      const point = parseGeo(r.geo);
+      if (!point) return null;
+      const distanceKm = haversineKm(center, point);
+      const data = parseJson(r.data);
+      return {
+        id: r.id,
+        text: String(data.title || data.description || data.body || r.type || ''),
+        meta: { table, scope: r.scope, type: r.type, title: String(data.title || ''), geo: r.geo },
+        similarity: Math.max(0, 1 - distanceKm / radiusKm),
+        source: 'geo',
+        distanceKm,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null && r.distanceKm <= radiusKm)
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, limit);
+
+  return scored;
 }
 
 async function searchStructured(
@@ -834,18 +927,28 @@ export async function search(opts: {
   scope?: string;
   type?: string;
   table?: 'form' | 'matter';
-  mode?: 'hybrid' | 'vector' | 'fts' | 'structured';
+  mode?: 'hybrid' | 'vector' | 'fts' | 'structured' | 'geo';
+  geo?: { center: string; radius?: string | number };
   filters?: { key: string; val: any }[];
   limit?: number;
   threshold?: number;
 }) {
+  if (opts.scope) {
+    const cloudResult = await forwardToCloud<any[]>(opts.scope, 'search', opts);
+    if (cloudResult) return cloudResult;
+  }
+
   const limit = opts.limit ?? 10;
   const threshold = opts.threshold ?? 0.3;
   const mode = opts.mode ?? 'hybrid';
-  const db = getUserDb();
+  const db = await getPreparedDbForScope(opts.scope);
 
   if (mode === 'structured') {
     return searchStructured(db, opts, limit);
+  }
+
+  if (mode === 'geo') {
+    return searchGeo(db, opts, limit);
   }
 
   const embeddingsAvailable = await hasEmbeddings(db, opts.scope, opts.type);
@@ -858,7 +961,7 @@ export async function search(opts: {
 
   if (mode === 'vector' || mode === 'hybrid') {
     try {
-      const hits = await searchFormVectors(opts.query, limit * 2);
+      const hits = await searchFormVectors(opts.query, limit * 2, opts.scope);
       const vecResults: { id: string; text: string; meta: any; similarity: number; source: string }[] = [];
 
       for (const hit of hits) {

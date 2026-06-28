@@ -86,7 +86,7 @@ function extractJson(text: string): any {
   return JSON.parse(jsonStr);
 }
 
-async function chatCompletion(systemPrompt: string, userPrompt: string): Promise<string> {
+export async function chatCompletion(systemPrompt: string, userPrompt: string): Promise<string> {
   console.log(`[AI] chatCompletion - endpoint: ${GROQ_ENDPOINT}`);
   console.log(`[AI] chatCompletion - model: ${GROQ_MODEL}`);
   console.log(`[AI] chatCompletion - userPrompt: ${userPrompt.slice(0, 100)}`);

@@ -24,10 +24,8 @@ export async function getSelfId(): Promise<string> {
   return "guest";
 }
 
-export function getLocalPrivateDb(userId: string): Database {
-  const key = `private_${userId}`;
+function createDbConnection(key: string, dbName: string): Database {
   if (!dbConnections[key]) {
-    const dbName = `user_${userId}.db`;
     const config = { path: getDbPath(dbName) };
     const db = new Database(config);
     (db as any).push = async () => {};
@@ -38,17 +36,12 @@ export function getLocalPrivateDb(userId: string): Database {
   return dbConnections[key];
 }
 
+export function getLocalPrivateDb(userId: string): Database {
+  return createDbConnection(`private_${userId}`, `user_${userId}.db`);
+}
+
 export function getGlobalDb(): Database {
-  const key = "global";
-  if (!dbConnections[key]) {
-    const config = { path: getDbPath("global.db") };
-    const db = new Database(config);
-    (db as any).push = async () => {};
-    (db as any).pull = async () => {};
-    (db as any).sync = async () => {};
-    dbConnections[key] = db;
-  }
-  return dbConnections[key];
+  return createDbConnection("global", "global.db");
 }
 
 export function getUserDb(): Database {
@@ -58,15 +51,86 @@ export function getUserDb(): Database {
 
 export const getDbClient = getUserDb;
 
-export function routeDbForEntity(type: string | null, scope: string | null): Database {
+export function scopePrefix(scope: string | null): 'p' | 't' | 's' | 'g' {
+  if (!scope || scope === 'p' || scope.startsWith('p:')) return 'p';
+  if (scope === 't' || scope.startsWith('t:')) return 't';
+  if (scope === 's' || scope.startsWith('s:')) return 's';
+  return 'g';
+}
+
+function extractScopeId(scope: string): string {
+  return scope.includes(':') ? scope.split(':').slice(1).join(':') : scope;
+}
+
+export function getWorkspaceDb(workspaceId: string): Database {
+  const id = extractScopeId(workspaceId);
+  return createDbConnection(`workspace_${id}`, `workspace_${id}.db`);
+}
+
+export function getStorefrontDb(storefrontId: string): Database {
+  const id = extractScopeId(storefrontId);
+  return createDbConnection(`storefront_${id}`, `storefront_${id}.db`);
+}
+
+/**
+ * Initialize schema and run migrations for any database connection.
+ */
+export async function ensureDbSchema(db: Database, label: string): Promise<void> {
+  await db.connect();
+  await migrateMemoryTable(db, label);
+  for (const sql of SCHEMA_STATEMENTS) {
+    try { await db.exec(sql); } catch (_) {}
+  }
+}
+
+export function routeDbForEntity(_type: string | null, scope: string | null): Database {
   const selfId = cachedSelfId || "guest";
-  if (!scope || scope === "p" || scope.startsWith("p:")) {
+  const prefix = scopePrefix(scope);
+
+  if (prefix === 'p') {
     return getLocalPrivateDb(selfId);
   }
-  if (scope === "g") {
-    return getLocalPrivateDb(selfId);
+
+  if (prefix === 'g') {
+    return getGlobalDb();
   }
+
+  if (prefix === 't' && scope) {
+    return getWorkspaceDb(scope);
+  }
+
+  if (prefix === 's' && scope) {
+    return getStorefrontDb(scope);
+  }
+
+  // Fallback to personal DB for unrecognized scopes
   return getLocalPrivateDb(selfId);
+}
+
+/**
+ * Return a database for a scope, ensuring it is connected and has the schema.
+ */
+export async function getPreparedDbForScope(scope: string | null): Promise<Database> {
+  const db = routeDbForEntity('form', scope);
+  const label = scope || 'p';
+  await ensureDbSchema(db, label);
+  return db;
+}
+
+/**
+ * Run a sequence of database operations inside a single SQLite transaction.
+ * Automatically COMMIT on success, ROLLBACK on failure.
+ */
+export async function withTransaction<T>(db: Database, fn: () => Promise<T>): Promise<T> {
+  await db.exec('BEGIN');
+  try {
+    const result = await fn();
+    await db.exec('COMMIT');
+    return result;
+  } catch (e) {
+    await db.exec('ROLLBACK').catch(() => {});
+    throw e;
+  }
 }
 
 /**

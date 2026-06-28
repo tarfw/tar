@@ -1,6 +1,10 @@
-import { getUserDb } from "./db";
+import { getUserDb, getPreparedDbForScope } from "./db";
 import * as SecureStore from "expo-secure-store";
 import { splitText } from "./textSplitter";
+
+async function getVectorDb(scope?: string | null) {
+  return scope ? getPreparedDbForScope(scope) : getUserDb();
+}
 
 // v5: chunked embeddings — one vector per text chunk (500/100 overlap). Bumping
 // the key forces a one-time re-index of all forms with the corrected encoding.
@@ -132,7 +136,7 @@ export async function upsertFormVector(
     const chunks = splitText(text);
     console.log(`[VEC] │  text (${text.length} chars) → ${chunks.length} chunk(s)`);
 
-    const db = getUserDb();
+    const db = await getVectorDb(form.scope);
     await db.run("DELETE FROM memory WHERE id = ?", [id]);
 
     const meta = JSON.stringify({
@@ -162,10 +166,10 @@ export async function upsertFormVector(
   }
 }
 
-export async function deleteFormVector(id: string) {
-  console.log(`[VEC] ┌─ DELETE vector form=${id}`);
+export async function deleteFormVector(id: string, scope?: string | null) {
+  console.log(`[VEC] ┌─ DELETE vector form=${id} scope=${scope ?? '-'}`);
   try {
-    const db = getUserDb();
+    const db = await getVectorDb(scope);
     const res = await db.run("DELETE FROM memory WHERE id = ?", [id]);
     console.log(`[VEC] └─ removed from memory table (changes=${res?.changes ?? '?'})`);
   } catch (e) {
@@ -175,9 +179,10 @@ export async function deleteFormVector(id: string) {
 
 export async function searchFormVectors(
   query: string,
-  limit: number = 10
+  limit: number = 10,
+  scope?: string | null
 ): Promise<{ formId: string; similarity: number }[]> {
-  console.log(`[VEC] ╔═ SEARCH q="${clip(query)}" limit=${limit}`);
+  console.log(`[VEC] ╔═ SEARCH q="${clip(query)}" limit=${limit} scope=${scope ?? '-'}`);
   if (!embeddingFn) {
     console.warn('[VEC] ╚═ ABORT: embedding function not set (model not loaded)');
     return [];
@@ -188,7 +193,7 @@ export async function searchFormVectors(
     console.log(`[VEC] ║  query vectorized in ${now() - tEmb}ms → ${previewVector(queryVector)}`);
 
     const tScan = now();
-    const db = getUserDb();
+    const db = await getVectorDb(scope);
     const rows = await db.all(
       `SELECT id, MIN(vector_distance_cos(embedding, vector32(?))) AS dist
          FROM memory GROUP BY id ORDER BY dist LIMIT ?`,
@@ -234,13 +239,14 @@ export interface VectorSearchResult {
 export async function searchFormVectorsDetailed(
   query: string,
   limit: number = 20,
-  minSimilarity: number = 0.3
+  minSimilarity: number = 0.3,
+  scope?: string | null
 ): Promise<VectorSearchResult[]> {
-  const hits = await searchFormVectors(query, limit);
+  const hits = await searchFormVectors(query, limit, scope);
   if (hits.length === 0) return [];
 
-  console.log(`[VEC] ┄ JOIN+FILTER ${hits.length} hit(s) (minSimilarity=${minSimilarity})`);
-  const db = getUserDb();
+  console.log(`[VEC] ┄ JOIN+FILTER ${hits.length} hit(s) (minSimilarity=${minSimilarity}) scope=${scope ?? '-'}`);
+  const db = await getVectorDb(scope);
   const results: VectorSearchResult[] = [];
 
   for (const hit of hits) {
@@ -275,7 +281,7 @@ export async function searchFormVectorsDetailed(
   return results;
 }
 
-export async function checkAndSyncExistingForms() {
+export async function checkAndSyncExistingForms(scope?: string | null) {
   if (!embeddingFn) {
     console.warn('[VectorStore] Embedding function not set, skipping sync');
     return;
@@ -284,7 +290,7 @@ export async function checkAndSyncExistingForms() {
     const isSynced = await SecureStore.getItemAsync(SYNC_FLAG_KEY);
     if (!isSynced) {
       console.log("[VectorStore] Initial sync flag not found. Re-indexing all existing forms...");
-      const db = getUserDb();
+      const db = await getVectorDb(scope);
       const forms = await db.all("SELECT * FROM form").catch(() => []);
 
       console.log(`[VectorStore] Found ${forms.length} forms to index`);

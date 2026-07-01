@@ -1,4 +1,0 @@
-# Antigravity Rules
-
-- **Strict Constraint**: Never run browser launch commands (`browser_subagent`) or open web browsers. Browser execution uses system resources and slows down the host PC. 
-- Always rely on static analysis, text parsing, and standard terminal command outputs.

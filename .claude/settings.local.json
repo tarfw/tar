@@ -82,7 +82,25 @@
       "Bash(npm uninstall *)",
       "Bash(echo \"EXIT: $?\")",
       "Bash(echo \"exit=$?\")",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(Select-Object FullName)",
+      "Bash(Format-Table -AutoSize -Wrap)",
+      "Bash(Select-Object Name)",
+      "Bash(echo \"===EXIT:$?===\")",
+      "WebFetch(domain:photon.codes)",
+      "WebFetch(domain:whatsappbusiness.com)",
+      "Bash(ls src/lib/tools*)",
+      "Bash(find src/lib -name \"tools*\")",
+      "Bash(grep -rn \"export.*function search\\\\|export const search\\\\|export async function search\" src/lib)",
+      "Bash(git ls-tree *)",
+      "Bash(sed -n '245,260p;335,345p' src/lib/ai.ts)",
+      "Bash(sed -n '205,245p' src/lib/db.ts)",
+      "Bash(awk '{print $NF}')",
+      "Bash(grep -qE \"^[0-9]+$\" \"C:\\\\Users\\\\tarfr\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--tarfwk-tar\\\\fc6d16ff-745d-4e77-9234-8277a6d6b59e\\\\tasks\\\\bhq6nlffo.output\")",
+      "Bash(awk -F: '/[[:space:]]+id:/{print \"----\"} {print}')",
+      "Bash(grep -vE \"^\\\\s*//\")",
+      "Bash(sed -n '1,20p' src/tools/index.ts)",
+      "Read(//c/tarfwk/flue/docs/api/**)"
     ]
   }
 }

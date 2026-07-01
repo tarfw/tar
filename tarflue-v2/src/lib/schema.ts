@@ -16,6 +16,7 @@ export const SCHEMA_STATEMENTS = [
     form    TEXT NOT NULL,
     type    TEXT NOT NULL,
     scope   TEXT NOT NULL,
+    title   TEXT,
     qty     REAL,
     value   REAL,
     active  INTEGER DEFAULT 1,
@@ -77,6 +78,7 @@ export const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_attr_key ON attr(key)`,
   `CREATE INDEX IF NOT EXISTS idx_memory_matter ON memory(matter)`,
   `ALTER TABLE matter ADD COLUMN updated TEXT`,
+  `ALTER TABLE matter ADD COLUMN title TEXT`,
   `ALTER TABLE graph ADD COLUMN data TEXT`,
   `ALTER TABLE memory ADD COLUMN matter TEXT`,
 ];

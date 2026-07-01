@@ -10,7 +10,8 @@ import { Colors } from '@/constants/theme';
 import { initDb, getSelfId } from '@/lib/db';
 import { initEmbeddings } from '@/lib/embeddings';
 import { checkAndSyncExistingForms } from '@/lib/vectorStore';
-// Flue: old seed.ts and store.ts removed - actions now use Flue defineAction
+import { ensureBuiltins } from '@/actions/seed';
+import { setActionUserId } from '@/actions/store';
 
 const T0 = Date.now();
 function ms() { return `${Date.now() - T0}ms`; }

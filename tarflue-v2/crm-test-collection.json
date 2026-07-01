@@ -1,0 +1,99 @@
+{
+  "info": {
+    "name": "tarflue CRM Testing",
+    "description": "CRM vertical test curls for tarflue-v2",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base",
+      "value": "https://tarflue.tar-54d.workers.dev"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create CRM Lead",
+      "request": {
+        "method": "POST",
+        "url": "{{base}}/agents/master/sarah-lead",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"message\":\"Create a lead for Sarah Chen, email sarah@techcorp.com, phone +1-555-0199, source referral, interested in enterprise plan, estimated value 12000, scope system\"}"
+        }
+      }
+    },
+    {
+      "name": "2. Stream Agent Response",
+      "request": {
+        "method": "GET",
+        "url": "{{base}}/agents/master/sarah-lead"
+      }
+    },
+    {
+      "name": "3. List All Leads",
+      "request": {
+        "method": "POST",
+        "url": "{{base}}/agents/master/list-leads",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"message\":\"List all leads in scope system\"}"
+        }
+      }
+    },
+    {
+      "name": "4. Stream List Leads Response",
+      "request": {
+        "method": "GET",
+        "url": "{{base}}/agents/master/list-leads"
+      }
+    },
+    {
+      "name": "5. Update Lead Status",
+      "request": {
+        "method": "POST",
+        "url": "{{base}}/agents/master/update-lead",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"message\":\"Update the Sarah Chen lead status to contacted and set score to 75\"}"
+        }
+      }
+    },
+    {
+      "name": "6. Stream Update Response",
+      "request": {
+        "method": "GET",
+        "url": "{{base}}/agents/master/update-lead"
+      }
+    },
+    {
+      "name": "7. Run Lead Scoring Workflow",
+      "request": {
+        "method": "POST",
+        "url": "{{base}}/workflows/lead-scoring",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"scope\":\"system\"}"
+        }
+      }
+    },
+    {
+      "name": "8. Verify Storefront",
+      "request": {
+        "method": "GET",
+        "url": "https://tarflue.tarai.space/"
+      }
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { flue } from '@flue/runtime/routing';
 import { renderStorefront } from './storefront/renderer';
 import { editorShell } from './storefront/editor';
+import { initClient } from './lib/db';
 
 function getDO(env: any, slug: string) {
   return env.EDITOR.get(env.EDITOR.idFromName(slug));
@@ -13,11 +14,18 @@ function storePendingPage(slug: string): string {
 
 const app = new Hono();
 
+app.use('*', async (c, next) => {
+  const url = c.env.TURSO_DATABASE_URL;
+  const token = c.env.TURSO_AUTH_TOKEN;
+  if (url) initClient(url, token);
+  await next();
+});
+
 // Mount Flue routes FIRST (agents, workflows, channels)
 app.route('/', flue());
 
 // Storefront domain-based routes (only for *.tarai.space)
-app.all('*', async (c) => {
+app.notFound(async (c) => {
   const url = new URL(c.req.url);
   const host = url.hostname;
   const storeMatch = host.match(/^([a-z0-9-]+)\.tarai\.space$/);

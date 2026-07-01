@@ -11,20 +11,14 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useDb } from '@/db/provider';
-
-// Flue: ActionDef now comes from Valibot schemas in defineAction
-type ActionDef = { id: string; name: string; description: string; [key: string]: any };
-type ExecutionState = { steps: ExecutionStep[]; currentStep: number; status: string };
-type ExecutionStep = { name: string; status: StepStatus; result?: any };
-type StepStatus = 'pending' | 'running' | 'done' | 'error';
-
-function createInitialState(steps: string[]): ExecutionState {
-  return { steps: steps.map(name => ({ name, status: 'pending' })), currentStep: 0, status: 'running' };
-}
-
-async function runActionExecution(state: ExecutionState, db: any): Promise<ExecutionState> {
-  return { ...state, status: 'done' };
-}
+import type { ActionDef } from '@/actions/definitions';
+import {
+  createInitialState,
+  runActionExecution,
+  type ExecutionState,
+  type ExecutionStep,
+  type StepStatus,
+} from '@/actions/executor-engine';
 
 interface Props {
   action: ActionDef;

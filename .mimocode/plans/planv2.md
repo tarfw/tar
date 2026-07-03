@@ -97,7 +97,7 @@ tarflue-v2 (Cloudflare Workers)
   ├── JSON actions (stored in Turso form)
   ├── Workflows (orchestrate actions)
   ├── Agents (pick workflows via cheap LLM — Groq for routing, MiMo v2.5 for site gen)
-  ├── Flue skills (markdown instructions — 11 capability modules)
+  ├── Flue skills (markdown instructions — 12 capability modules)
   ├── Channels: Telegram, Slack, Discord, WhatsApp
   ├── Global Turso (g:global) — form catalog (products, actions, workflows, skills, layouts), user profiles, vectors
   ├── WorkspaceDO (w:) — per-workspace stock, services, config (matter only — references g:global)
@@ -163,6 +163,32 @@ CREATE TABLE graph (
 
 All relationships are binary — edge exists or doesn't. No weighted edges needed.
 
+### Matter table schema
+
+```sql
+CREATE TABLE matter (
+  id       TEXT PRIMARY KEY,
+  form     TEXT,          -- FK to form.id in global Turso (null for custom items)
+  title    TEXT NOT NULL,
+  type     TEXT,          -- product, service, order, supplier, lead, payment, etc.
+  qty      REAL DEFAULT 0,
+  unit     TEXT,          -- piece, kg, litre, metre, bag, box, dozen
+  value    REAL DEFAULT 0, -- selling price
+  data     TEXT,          -- JSON: cost_price, mrp, expiry, batch, hsn, etc.
+  scope    TEXT,          -- workspace scope: w:rest-101
+  active   INTEGER DEFAULT 1,
+  start    TEXT,          -- when row was created (birth)
+  end      TEXT,          -- when row expires (death), null = perpetual
+  life     INTEGER        -- duration in seconds from start (alternative to end)
+);
+```
+
+**Time fields:** Matter exists in space and time. `start` = birth, `end` = death, `life` = duration. Perpetual items (Pepsi, cement) have `end=null`. Perishable items (milk, booking slots) have `end` set. Subscriptions (gym membership) use `life` for auto-expiry.
+
+**Unit field:** Enables weight/volume-based inventory. `qty=20, unit='litre'` means 20 litres of oil, not 20 bottles. Stock deductions use the unit: `update(qty: 18.5)` for 1.5 litres consumed.
+
+**Data JSON:** Stores optional fields per product type — `cost_price`, `mrp`, `hsn` (GST code), `expiry`, `batch`, `supplier_id`, `min_stock`. Not every product uses every field, so JSON avoids sparse columns.
+
 ### Universal form catalog (g:global)
 
 Products, actions, workflows, skills, and layouts are defined once in global Turso, referenced by all workspaces:
@@ -186,8 +212,49 @@ WorkspaceDO (matter):
   id: m_p001
   form: f_p001        -- FK to global catalog
   title: Pepsi 500ml
+  type: product
   qty: 50              -- stock count
+  unit: piece          -- unit of measure
   value: 22            -- this workspace's selling price
+  data: { cost_price: 18, mrp: 24, hsn: "2202" }
+  scope: w:rest-101
+  start: "2026-07-01T10:00:00Z"
+  end: null             -- perpetual, no expiry
+  life: null
+```
+
+**Example — Cooking oil (perishable):**
+```
+WorkspaceDO (matter):
+  id: m_oil_001
+  form: f_oil_001
+  title: Sunflower Oil
+  type: product
+  qty: 20
+  unit: litre
+  value: 180
+  data: { cost_price: 150, mrp: 195, batch: "OIL-07" }
+  scope: w:rest-101
+  start: "2026-07-01T10:00:00Z"
+  end: "2026-10-15T00:00:00Z"  -- expires in October
+  life: null
+```
+
+**Example — Biryani (shop's own item, no global FK):**
+```
+WorkspaceDO (matter):
+  id: m_bir_001
+  form: null             -- custom item, not in global catalog
+  title: Chicken Biryani
+  type: product
+  qty: 30
+  unit: piece            -- means "plate" here
+  value: 180
+  data: { cost_price: 120, prep_time_min: 25, category: "mains" }
+  scope: w:rest-101
+  start: "2026-07-01T10:00:00Z"
+  end: null
+  life: null
 ```
 
 **Pricing model:** MRP is fixed globally. Each workspace sets its own selling price between cost and MRP.
@@ -413,7 +480,398 @@ The same agent, tools, workflows, actions, skills, and schema handle **any busin
 | Add expertise | Create `SKILL.md` files or `form.type='skill'` rows |
 | Add agent behavior | Update master agent instructions or add a subagent profile |
 
-Supported verticals without new code: CRM, POS, e-commerce, inventory, food delivery, taxi/logistics, HR, payroll, attendance, bookings, services, project management, LMS, real estate.
+### 12 Capability Modules
+
+All modules are pure actions/workflows/skills stored as `form` rows. No engines, no schema changes, no new tools. Agent copies relevant modules into workspace during creation.
+
+| # | Module | What It Handles | Sub-features Merged In |
+|---|---|---|---|
+| 1 | **CRM** | Leads, follow-ups, deal pipeline, customer tracking | — |
+| 2 | **Projects** | Tasks, sprints, milestones, team assignments | **Approval chains** — multi-step approval with phase transitions, escalation, SLA timers |
+| 3 | **Bookings** | Appointments, slots, scheduling, reminders | — |
+| 4 | **Inventory** | Stock tracking, low-stock alerts, restocking | **Supplier management** — supplier profiles, purchase orders, reorder triggers. **Batch/expiry tracking** — batch IDs, expiry dates, FIFO rotation |
+| 5 | **Orders** | Order creation, status tracking, payment recording | **GST/tax** — action that reads item price, applies tax rate from form row (type='tax_config'), returns CGST+SGST or IGST breakup. **Loyalty points** — earn on purchase, redeem on next order. **Multi-currency** — currency config, exchange rate lookup |
+| 6 | **Logistics** | Delivery assignment, driver management, shipment tracking | **Route optimization** — Google Maps/OSRM API call, distance, ETA |
+| 7 | **HR** | Attendance, leave requests, payroll basics | — |
+| 8 | **LMS** | Course enrollment, assignments, completion tracking | — |
+| 9 | **Listings** | Property/product listings, inquiries, scheduling visits | — |
+| 10 | **Support** | Ticket queue, chat messages, issue resolution | — |
+| 11 | **Team Chat** | Internal team messaging, notifications, channel communication | — |
+| 12 | **Reports** | Sales summary, stock valuation, revenue breakdown, tax reports | Cross-module — reads from any module's data |
+
+#### Reports Module — First 6 Reports
+
+Reports are SQL queries over existing WorkspaceDO data (matter + motion tables). No new tables. Each report is a `form` row with `type='action'` containing query parameters. Agent runs the action, formats results, returns to user.
+
+| # | Report Name | What It Shows | Source Tables | Query Logic |
+|---|---|---|---|---|
+| 1 | **Daily Sales Summary** | Total sales count, total revenue, items sold breakdown, payment method split (UPI vs Cash) | `matter WHERE type='order' AND start >= today` + `matter WHERE type='payment'` | Group orders by payment method, sum values, count items |
+| 2 | **Stock Valuation** | Current stock quantities × selling price = total inventory value per product | `matter WHERE type='product' AND active=1` | `SUM(qty × value)` grouped by product, total across all |
+| 3 | **Tax Summary (GST)** | CGST, SGST, IGST collected over period | `matter WHERE type='payment'` + item `data.hsn` tax rates | Read tax config from `form WHERE type='tax_config'`, apply rates to order items, aggregate by tax type |
+| 4 | **Revenue by Category** | Revenue broken down by product category/type | `matter WHERE type='order'` + product `data.category` | Join order items to product categories, sum revenue per category |
+| 5 | **Low Stock Alert** | Products below their `min_stock` threshold | `matter WHERE type='product' AND active=1` | Filter: `qty <= JSON_EXTRACT(data, '$.min_stock')`, sort by qty ascending |
+| 6 | **Expiring Soon** | Products with `end` date within 7 days or already expired | `matter WHERE type='product' AND end IS NOT NULL AND active=1` | Filter: `end <= date('now', '+7 days')`, sort by end date ascending |
+
+**Report execution flow:**
+```text
+User: "Show me today's sales"
+  → Agent detects intent: run_report
+  → Agent picks action: action_report_daily_sales
+  → Action runs SQL on WorkspaceDO
+  → Formats result as text table or inline card
+  → Reply: "Today: 47 orders, ₹12,400 revenue. UPI: ₹8,200 | Cash: ₹4,200"
+```
+
+**Report parameters (all reports accept):**
+- `from`: start date (default: today for daily, first of month for monthly)
+- `end`: end date (default: now)
+- `scope`: workspace scope (auto-filled from context)
+
+**Reports as action memory cards:**
+First report query uses LLM. Every subsequent query reuses the action memory card — user edits date range and taps "Run Report". Zero LLM cost on replay.
+
+#### Skills Folder Structure (src/skills/)
+
+Each module has a SKILL.md in both `tarflue-v2/src/skills/{module}/` and `tarai/src/skills/{module}/`:
+
+| # | Module | Folder | Status | Notes |
+|---|---|---|---|---|
+| 1 | CRM | `skills/crm/` | **Rewrite needed** | Uses old `tool_create_matter`, `tool_set_attr` pattern |
+| 2 | Projects | `skills/projects/` | **Rewrite needed** | Same old pattern |
+| 3 | Bookings | `skills/booking/` | **Rewrite needed** | Same old pattern |
+| 4 | Inventory | `skills/inventory/` | **Rewrite needed** | Rewrite added above — uses 6-tool pattern + expiry scanner |
+| 5 | Orders | `skills/pos/` | **Rewrite needed** | Same old pattern |
+| 6 | Logistics | `skills/logistics/` | **Rewrite needed** | Same old pattern |
+| 7 | HR | `skills/hr/` | **Rewrite needed** | Same old pattern |
+| 8 | LMS | `skills/lms/` | **Rewrite needed** | Same old pattern |
+| 9 | Listings | `skills/realestate/` | **Rewrite needed** | Same old pattern |
+| 10 | Support | `skills/support/` | **Rewrite needed** | Same old pattern |
+| 11 | Team Chat | — | **Create new** | No folder exists yet |
+| 12 | Reports | `skills/reports/` | **Create new** | SKILL.md content added above |
+
+**Rewrite pattern:** All old skills use `tool_create_matter`, `tool_set_attr`, `tool_link_graph`, `attr` table. Rewrite to use 6 tools: `create`, `read`, `update`, `delete`, `link`, `search`. Store hot fields in `matter.data` JSON, not `attr` table.
+
+#### Reports SKILL.md (src/skills/reports/SKILL.md)
+
+```markdown
+---
+name: reports
+description: How to generate business reports — sales, stock, tax, revenue, alerts
+---
+
+# Reports Skill
+
+## Core Concepts
+
+### Report
+A SQL query over WorkspaceDO data (matter + motion). Returns aggregated results.
+- Each report is a `form` row with `type='action'`
+- Reports read from `matter` and `motion` tables only
+- No new tables. No new tools. Just `read(table='matter', ...)` calls
+
+### Report Parameters
+All reports accept these filters:
+- `from` — start date (ISO 8601). Default: today for daily reports, first of month for monthly.
+- `end` — end date (ISO 8601). Default: now.
+- `scope` — workspace scope. Auto-filled from context, user doesn't set this.
+
+## Available Reports
+
+### 1. Daily Sales Summary
+- **Intent keywords:** "today's sales", "sales report", "daily revenue", "how much did we sell"
+- **Action:** `action_report_daily_sales`
+- **Query:** `read(table='matter', type='order', start >= today)` + `read(table='matter', type='payment')`
+- **Output:** Total orders, total revenue, UPI vs Cash split, items sold breakdown
+- **Example reply:** "Today: 47 orders, ₹12,400 revenue. UPI: ₹8,200 | Cash: ₹4,200"
+
+### 2. Stock Valuation
+- **Intent keywords:** "stock value", "inventory value", "what's my stock worth", "stock valuation"
+- **Action:** `action_report_stock_valuation`
+- **Query:** `read(table='matter', type='product', active=1)` → compute `SUM(qty × value)`
+- **Output:** Per-product value, total inventory value
+- **Example reply:** "Total inventory: ₹45,200. Top: Biryani ₹12,600 (70 plates), Pepsi ₹1,100 (50 units)"
+
+### 3. Tax Summary (GST)
+- **Intent keywords:** "tax report", "GST summary", "CGST SGST", "tax collected"
+- **Action:** `action_report_tax_summary`
+- **Query:** Read tax config from `form WHERE type='tax_config'`, apply rates to `matter WHERE type='order'`, aggregate by tax type (CGST, SGST, IGST)
+- **Output:** Tax collected per type, total taxable amount, HSN-wise breakdown
+- **Example reply:** "April GST: CGST ₹1,840, SGST ₹1,840. Total taxable: ₹18,400"
+
+### 4. Revenue by Category
+- **Intent keywords:** "revenue by category", "which products sell most", "category breakdown", "best sellers"
+- **Action:** `action_report_revenue_by_category`
+- **Query:** `read(table='matter', type='order')` → group by product `data.category` → sum revenue
+- **Output:** Revenue per category, percentage share, top products per category
+- **Example reply:** "Mains: ₹8,400 (68%), Beverages: ₹2,800 (22%), Snacks: ₹1,200 (10%)"
+
+### 5. Low Stock Alert
+- **Intent keywords:** "low stock", "what's running out", "restock needed", "stock alert"
+- **Action:** `action_report_low_stock`
+- **Query:** `read(table='matter', type='product', active=1)` → filter `qty <= JSON_EXTRACT(data, '$.min_stock')`
+- **Output:** Products below threshold, current qty vs min_stock, urgency
+- **Example reply:** "3 products low: Pepsi (2/20), Oil (3/10), Sugar (5/15)"
+
+### 6. Expiring Soon
+- **Intent keywords:** "expiring products", "expiry report", "what's about to expire", "batch expiry"
+- **Action:** `action_report_expiring`
+- **Query:** `read(table='matter', type='product', active=1, end IS NOT NULL, end <= now+7d)`
+- **Output:** Products expiring within 7 days, already expired, batch IDs
+- **Example reply:** "2 products expiring: Sunflower Oil (Oct 15), Milk (Oct 8)"
+
+## Intent Matching
+
+When user asks for a report, match intent to the correct action:
+
+| User says | Match to |
+|---|---|
+| "today's sales" / "sales report" / "how much sold" | `action_report_daily_sales` |
+| "stock value" / "inventory worth" / "what's stock worth" | `action_report_stock_valuation` |
+| "tax" / "GST" / "CGST SGST" | `action_report_tax_summary` |
+| "revenue by category" / "best sellers" / "which products" | `action_report_revenue_by_category` |
+| "low stock" / "running out" / "restock" | `action_report_low_stock` |
+| "expiring" / "expiry" / "about to expire" | `action_report_expiring` |
+
+## Parameters
+
+Ask for missing parameters only when needed:
+- **Date range:** If user says "today" → from=today, end=now. If "this month" → from=first of month. If "April" → from=2026-04-01, end=2026-04-30.
+- **Product filter:** If user says "Pepsi sales" → add filter `title LIKE '%Pepsi%'`
+- **Category filter:** If user says "mains revenue" → add filter `data.category='mains'`
+
+## Output Format
+
+Format report results as a readable text table in chat:
+```
+📊 Daily Sales — July 3, 2026
+
+Orders: 47
+Revenue: ₹12,400
+
+Payment Split:
+  UPI:   ₹8,200 (66%)
+  Cash:  ₹4,200 (34%)
+
+Top Items:
+  Biryani × 28 = ₹5,040
+  Pepsi × 19 = ₹418
+  Samosa × 12 = ₹720
+```
+
+## Best Practices
+
+- Always scope queries to the current workspace
+- Default to "today" for daily reports, "this month" for monthly
+- If no data found, say "No orders today" — don't show empty tables
+- Cache report results in action memory for replay
+```
+
+### Batch/Expiry Scanner Action (Inventory Module)
+
+The expiry scanner is a scheduled action that finds products past their expiry date or expiring soon, and creates `expiry` motion events in the workspace owner's Inbox.
+
+**Scanner SQL:**
+```sql
+-- Find all active products where end (expiry) is in the past or within 7 days
+SELECT * FROM matter
+WHERE type = 'product'
+  AND active = 1
+  AND end IS NOT NULL
+  AND end <= datetime('now', '+7 days')
+ORDER BY end ASC
+```
+
+**Scanner action (`action_expiry_scan`):**
+```json
+{
+  "id": "action_expiry_scan",
+  "name": "Expiry Scanner",
+  "vertical": "inventory",
+  "steps": [
+    { "tool": "read", "table": "matter", "filter": "type='product' AND active=1 AND end IS NOT NULL AND end <= datetime('now', '+7 days')" },
+    { "loop": "$.results", "do": [
+      { "if": "$.item.end < datetime('now')", "then": [
+        { "tool": "create", "table": "motion", "type": "expiry", "data": { "productId": "$.item.id", "title": "$.item.title", "qty": "$.item.qty", "status": "expired", "expiryDate": "$.item.end" } },
+        { "tool": "link", "src": "w:{scope}", "tgt": "$.item.id", "rel": "expires" }
+      ]},
+      { "if": "$.item.end >= datetime('now')", "then": [
+        { "tool": "create", "table": "motion", "type": "expiry", "data": { "productId": "$.item.id", "title": "$.item.title", "qty": "$.item.qty", "status": "expiring_soon", "expiryDate": "$.item.end" } }
+      ]}
+    ]}
+  ]
+}
+```
+
+**Scanner schedule:**
+- Runs daily at 6 AM local time via Cloudflare Cron Trigger
+- Can also be triggered manually: "Check for expiring products"
+- Creates one `expiry` motion per product — appears on home screen as ExpiryCard
+
+**ExpiryCard actions (from home screen):**
+| Action | What Happens |
+|---|---|
+| **Discount** | Update `matter.value` to discounted price, append motion "discounted" |
+| **Discard** | Set `matter.active=0`, append motion "discarded", deduct from stock |
+| **Dismiss** | Clear the motion (mark as read), product stays active |
+
+**Batch tracking (FIFO):**
+Products with `data.batch` field are tracked by batch ID. FIFO rotation: oldest batch sold first. Scanner checks per-batch expiry:
+```sql
+SELECT * FROM matter
+WHERE type = 'product'
+  AND active = 1
+  AND data LIKE '%"batch"%'
+  AND end IS NOT NULL
+  AND end <= datetime('now', '+7 days')
+ORDER BY end ASC  -- oldest expiry first (FIFO)
+```
+
+**Cost:** Scanner runs once daily per workspace. At 1K workspaces: 1K SQL queries + 1K motion writes = ~$0.01/day. Negligible.
+
+#### Inventory SKILL.md (src/skills/inventory/SKILL.md) — Rewrite
+
+> **Note:** Current inventory skill uses old 12-tool pattern (`tool_set_attr`, `attr` table). Rewrite to 6-tool pattern using `matter.data` JSON.
+
+```markdown
+---
+name: inventory
+description: How to manage stock levels, low-stock alerts, batch/expiry tracking, and supplier management
+---
+
+# Inventory Skill
+
+## Core Concepts
+
+### Stock
+Quantity of a product stored in `matter` row.
+- `qty` column = current stock count
+- `unit` column = unit of measure (piece, kg, litre, metre, bag, box, dozen)
+- `value` column = selling price per unit
+- `data` JSON = `{ cost_price, mrp, min_stock, batch, supplier_id }`
+
+### Batch Tracking
+Products with `data.batch` field are tracked by batch ID.
+- Each batch is a separate `matter` row with same `form` FK but different `id`
+- FIFO rotation: oldest batch sold first (sorted by `start` date)
+- Scanner checks per-batch expiry
+
+### Expiry
+Products with `end` date set are perishable.
+- `end` column = expiry date (ISO 8601)
+- `end = null` = perpetual (no expiry)
+- Scanner runs daily, creates `expiry` motion events
+
+### Supplier
+Supplier profiles stored as `matter WHERE type='supplier'`.
+- Linked to products via `graph(src='supplier:{id}', rel='supplies', tgt='product:{id}')`
+
+## Common Operations (6-Tool Pattern)
+
+### Check Stock
+1. `read(table='matter', type='product', active=1, scope='w:{workspace}')`
+2. Returns all products with qty, unit, value
+
+### Update Stock (Add)
+1. `read(table='matter', id='{productId}')` — get current qty
+2. `update(table='matter', id='{productId}', qty=currentQty + addedQty)`
+3. `create(table='motion', type='restock', data:{productId, addedQty, newQty})`
+
+### Deduct Stock (Sale)
+1. `read(table='matter', id='{productId}')` — get current qty
+2. If FIFO batch tracking: `read(table='matter', type='product', form='{formId}', active=1, data LIKE '%"batch"%')` → pick oldest batch
+3. `update(table='matter', id='{batchId or productId}', qty=currentQty - soldQty)`
+4. If qty hits 0: `create(table='motion', type='stock_alert', data:{productId, title, qty:0, minStock})`
+
+### Transfer Stock
+1. `update(table='matter', id='{sourceId}', qty=sourceQty - transferQty)`
+2. `update(table='matter', id='{destId}', qty=destQty + transferQty)`
+3. `create(table='motion', type='stock_transfer', data:{from, to, qty, product})`
+
+### Set Minimum Stock Level
+1. `read(table='matter', id='{productId}')` — get current data JSON
+2. `update(table='matter', id='{productId}', data:{...currentData, min_stock: N})`
+
+### Check Low Stock
+1. `read(table='matter', type='product', active=1, scope='w:{workspace}')`
+2. Filter: `qty <= JSON_EXTRACT(data, '$.min_stock')`
+3. For each low product: `create(table='motion', type='stock_alert', data:{productId, title, qty, minStock})`
+
+### Expiry Scan (Automated)
+1. `read(table='matter', type='product', active=1, end IS NOT NULL, end <= datetime('now', '+7 days'))`
+2. For each expiring product:
+   - If `end < now`: create motion `type='expiry', status='expired'`
+   - If `end >= now`: create motion `type='expiry', status='expiring_soon'`
+3. Motion appears as ExpiryCard on home screen
+
+### Add Product
+1. `create(table='matter', type='product', form='{formId}', title='{name}', qty={qty}, unit='{unit}', value={sellingPrice}, data:{cost_price, mrp, min_stock, batch}, scope='w:{workspace}')`
+2. `link(src='w:{workspace}', tgt='{productId}', rel='stocks')`
+
+### Remove Product
+1. `update(table='matter', id='{productId}', active=0)` — soft delete
+2. `create(table='motion', type='product_removed', data:{productId, title})`
+
+## Batch/Expiry FIFO Flow
+
+```text
+User sells 5 Pepsi (batch A: qty=3, batch B: qty=4)
+  → Read batches sorted by start (FIFO): batch A first
+  → Deduct 3 from batch A (batch A depleted, set active=0)
+  → Deduct 2 from batch B (batch B: 4→2)
+  → Log sale motion
+```
+
+## Best Practices
+
+- Always check `min_stock` after deductions — trigger alert if below threshold
+- Use FIFO for batch-tracked products — oldest batch sold first
+- Set `end` date on perishable items at time of stock entry
+- Link products to suppliers via graph for reorder workflows
+- Stock alerts appear as `stock_alert` motion on home screen
+```
+
+### Module composition by business type
+
+| Business | Modules Enabled |
+|---|---|
+| Restaurant / Cafe | Orders + Inventory + Bookings + CRM + Reports |
+| Pet Salon | Bookings + CRM + Orders + Reports |
+| Dental / Clinic | Bookings + CRM + Projects + Support + Reports |
+| Retail Store | Orders + Inventory + CRM + Reports |
+| Gym / Yoga | Bookings + CRM + LMS + HR + Reports |
+| Coaching Institute | LMS + CRM + Bookings + Reports |
+| Food Delivery | Orders + Inventory + Logistics + CRM + Reports |
+| Taxi / Ride | Logistics + Orders + CRM + Reports |
+| Courier | Orders + Logistics + CRM + Reports |
+| Real Estate | Listings + CRM + Projects + Reports |
+| Salon / Spa | Bookings + CRM + Orders + Reports |
+| School / Tuition | LMS + CRM + Projects + HR + Reports |
+| Small Agency | CRM + Projects + HR + Support + Reports |
+| E-commerce | Orders + Inventory + CRM + Logistics + Reports |
+| Home Services | Bookings + CRM + Orders + Reports |
+
+### How modules install
+
+```text
+User describes business in chat
+  → Agent detects intent (cheap LLM)
+  → Agent matches business type to module set
+  → Agent copies form rows (type='action', type='skill') into workspace scope
+  → Agent generates site layout (MiMo v2.5, one call)
+  → Workspace goes live
+```
+
+Each module is a bundle of `form` rows. Installing = copying rows. No code deployment. No schema migration. No new infrastructure.
+
+### What each module contains (example: Orders)
+
+| form.type | What It Is | Count |
+|---|---|---|
+| `action` | JSON step sequences (create_order, confirm_order, cancel_order, record_payment) | ~8-12 actions |
+| `skill` | Markdown instructions for agent (how to handle orders, edge cases, refunds) | 1 skill |
+| `workflow` | Orchestration (checkout flow, refund flow, reorder flow) | ~3-5 workflows |
+
+Supported verticals without new code: CRM, POS, e-commerce, inventory, food delivery, taxi/logistics, HR, payroll, attendance, bookings, services, project management, LMS, real estate, coaching, school, gym, salon, courier, agency, home services.
 
 ### Channels
 
@@ -518,14 +976,16 @@ Pre-built workspace configs stored in Turso global. Install in seconds, zero LLM
 
 | Template | Bundled capabilities | Best for |
 |---|---|---|
-| `restaurant` | Orders + Inventory + Bookings + CRM | Cafes, food delivery |
-| `clinic` | Bookings + CRM + Projects + Support | Dentists, doctors, vets |
-| `retail` | Orders + Inventory + CRM | Clothing, electronics |
-| `salon` | Bookings + CRM + Orders | Hair, spa, grooming |
-| `gym` | Bookings + CRM + LMS + HR | Fitness, yoga |
-| `school` | LMS + CRM + Projects + HR | Coaching, training |
-| `courier` | Orders + Logistics + CRM | Delivery companies |
-| `property` | Listings + CRM + Projects | Property agents |
+| `restaurant` | Orders + Inventory + Bookings + CRM + Reports | Cafes, food delivery |
+| `clinic` | Bookings + CRM + Projects + Support + Reports | Dentists, doctors, vets |
+| `retail` | Orders + Inventory + CRM + Reports | Clothing, electronics |
+| `salon` | Bookings + CRM + Orders + Reports | Hair, spa, grooming |
+| `gym` | Bookings + CRM + LMS + HR + Reports | Fitness, yoga |
+| `school` | LMS + CRM + Projects + HR + Reports | Coaching, training |
+| `courier` | Orders + Logistics + CRM + Reports | Delivery companies |
+| `property` | Listings + CRM + Projects + Reports | Property agents |
+| `agency` | CRM + Projects + HR + Support + Reports | Small offices, agencies |
+| `home-services` | Bookings + CRM + Orders + Reports | Plumbing, AC repair, cleaning |
 
 Template installation: user describes business → agent finds matching template → confirms name → copies template rows to Turso → generates site layout with one LLM call → workspace goes live in under 10 seconds.
 
@@ -982,11 +1442,14 @@ Next time user types "Con..." in chat → autocomplete shows "Confirm order" →
 ### Inventory flow
 
 ```text
-Product: matter(type='product', data={ stock: 10 })
+Product: matter(type='product', unit='piece', qty=50)
+         matter(type='product', unit='litre', qty=20)
 
 Reserve:  WorkspaceDO memory only
-Commit:   update matter.data.stock + append motion
-Release:  update matter.data.stock + append motion
+Commit:   update matter.qty (deduct by unit: -1 piece, -1.5 litres)
+          append motion to user's Turso DB
+Release:  update matter.qty (restore)
+          append motion to user's Turso DB
 ```
 
 WorkspaceDO serializes reservations to prevent oversell. DB writes only on commit/release.
@@ -1016,6 +1479,38 @@ type: payment
 title: UPI
 value: 224
 data: {"method":"upi","txn_id":"TXN123","status":"completed"}
+```
+
+### Payment model (UPI + Cash only)
+
+Platform collects payment via UPI ID or records cash. No payment gateway integration. No transaction fees. No settlement cycles.
+
+| Method | How It Works | Platform Responsibility |
+|---|---|---|
+| **UPI** | Workspace stores UPI ID (`merchant@upi`). Invoice shows QR code or UPI collect link. Customer pays directly to owner's bank. | Generate invoice with total, show UPI link/QR, record payment_received motion |
+| **Cash** | Owner marks order as paid by cash. No digital transfer. | Record payment_received motion with method='cash' |
+
+**What platform does NOT do:**
+- No bank reconciliation
+- No accounting ledger or bookkeeping
+- No GST filing or tax returns
+- No TDS or financial compliance
+- No payment gateway fees or settlement
+
+**User responsibility:** Owner receives payment directly. Files GST returns via their CA. Manages own books. Platform only records that payment happened.
+
+**Payment matter row (stored in WorkspaceDO for simple orders, OrderDO for complex):**
+```
+id: pay_8001
+type: payment
+title: UPI
+value: 224
+data: {
+  "method": "upi",          -- "upi" or "cash"
+  "upi_id": "restaurant@upi",  -- workspace's UPI ID
+  "txn_id": "TXN123",       -- optional, user can note reference
+  "status": "completed"
+}
 ```
 
 **OrderDO state machine:**
@@ -1587,21 +2082,26 @@ Keep:
 15. Add `src/lib/slots.ts` — regex + entity lookup for slot filling.
 16. Add `GET /memory/autocomplete?q=...` endpoint.
 17. Add motion event writing from DOs to user's Turso DB via `create(table='motion', ...)`.
-18. Add 11 capability modules (CRM, Projects, Bookings, Inventory, Orders, Logistics, HR, LMS, Listings, Support, Team chat).
-19. Add workspace creation flow — agent detects intent, composes capabilities, generates config.
-20. Add marketplace templates in Turso global.
+18. Add 12 capability modules — create `form` rows (type='action', type='skill', type='workflow') in Turso global for each module.
+19. Rewrite all 11 existing SKILL.md files from 12-tool pattern (`tool_create_matter`, `tool_set_attr`, `attr` table) to 6-tool pattern (`create`, `read`, `update`, `delete`, `link`, `search`, `matter.data` JSON). Create `skills/reports/SKILL.md` and `skills/team-chat/SKILL.md` (new).
+20. Add workspace creation flow — agent detects intent, composes capabilities, generates config.
+21. Add marketplace templates in Turso global.
 
 ### Phase 3: tarai screens + workspace site
 
 21. `src/app/(tabs)/home.tsx` — role-based timeline from user's Turso DB (across all workspaces).
 22. `src/app/(tabs)/chat.tsx` — chat with action memory autocomplete + workspace creation.
 23. `src/app/(tabs)/explore.tsx` — search, marketplace, workspace settings.
-24. `src/components/ActionCard.tsx` — inline editable card for action memory replay.
-25. `src/components/ChatAutocomplete.tsx` — memory matches above keyboard.
-26. Card components: `OrderCard`, `DeliveryCard`, `TaskCard`, `StockCard`, `LeadCard`, `ChatCard`, `BookingCard`.
-27. Workspace site renderer — CF Worker reads layout JSON from Turso `form` + data from WorkspaceDO → renders HTML.
-28. KV cache layer for workspace sites (5min TTL, 95% hit rate).
-29. Two-model architecture — Groq for intent routing, MiMo v2.5 for site layout generation (~₹0.02/site).
+24. `src/app/onboarding.tsx` — 3-screen wizard: business type → services → workspace created.
+25. `src/app/auth.tsx` — Google sign-in → check existing workspaces → redirect to home or onboarding.
+26. `src/components/ActionCard.tsx` — inline editable card for action memory replay.
+27. `src/components/ChatAutocomplete.tsx` — memory matches above keyboard.
+28. Card components: `OrderCard`, `DeliveryCard`, `TaskCard`, `StockCard`, `LeadCard`, `ChatCard`, `BookingCard`.
+29. Workspace site renderer — CF Worker reads layout JSON from Turso `form` + data from WorkspaceDO → renders HTML.
+30. KV cache layer for workspace sites (5min TTL, 95% hit rate).
+31. Two-model architecture — Groq for intent routing, MiMo v2.5 for site layout generation (~₹0.02/site).
+32. Cloudflare Worker `*.tarai.space` routing — wildcard DNS, subdomain → workspace lookup, SSL.
+33. D1 `workspaces` table — subdomain → scope mapping for site routing.
 
 ### Phase 3: tarai screens
 
@@ -1632,6 +2132,17 @@ Keep:
 
 - [ ] `expo start` launches.
 - [ ] Google sign-in works.
+- [ ] New user (no workspaces) → onboarding wizard shown (3 screens).
+- [ ] Existing user (has workspaces) → home tab shown directly.
+- [ ] Onboarding Screen 1: business type selection maps to correct template.
+- [ ] Onboarding Screen 2: services pre-filled from template, user can add/remove.
+- [ ] Onboarding Screen 3: workspace created, subdomain shown, services listed.
+- [ ] Skip onboarding → empty state home screen with "Create Workspace" CTA.
+- [ ] Workspace creation: subdomain slugified, uniqueness checked, saved to D1.
+- [ ] `{name}.tarai.space` resolves via wildcard DNS → Worker → renders site.
+- [ ] SSL: `https://{name}.tarai.space` works with no cert errors (Cloudflare Universal SSL).
+- [ ] KV cache: second visit to site serves cached HTML (<10ms).
+- [ ] Worker free tier: 100K requests/day handles 1K workspaces × 100 visits.
 - [ ] Home screen shows role-based timeline across all workspaces.
 - [ ] Status update from tarai reflects in mini app and vice versa.
 - [ ] Chat detects intent and runs workflow.
@@ -1665,6 +2176,22 @@ Keep:
 - [ ] Each workspace has own WorkspaceDO (verify via Wrangler dashboard).
 - [ ] Each user has own Turso Inbox DB (verify via Turso dashboard).
 - [ ] Home screen queries user's Turso DB and merges correctly.
+- [ ] Reports skill: "Show me today's sales" → agent detects intent → runs `action_report_daily_sales` → formats result.
+- [ ] Reports skill: All 6 report types match intent keywords correctly.
+- [ ] Reports skill: Action memory card created after first report query — replay skips LLM.
+- [ ] Expiry scanner: Daily cron runs `action_expiry_scan` → creates `expiry` motions for expiring products.
+- [ ] Expiry scanner: ExpiryCard shows on home screen with Discount/Discard/Dismiss actions.
+- [ ] Expiry scanner: FIFO batch tracking — oldest batch sold first.
+- [ ] Offline POS: sale queued locally when device is offline (offline_queue table).
+- [ ] Offline POS: on reconnect, sales pushed to DO one by one (not batch).
+- [ ] Offline POS: DO validates stock before accepting — rejects if insufficient.
+- [ ] Offline POS: duplicate offlineId detected and skipped (idempotent).
+- [ ] Offline POS: partial fulfillment — some items accepted, some rejected per-item.
+- [ ] Offline POS: device shows effective stock (last known minus offline sales).
+- [ ] Offline POS: rejected sales shown to user with reason and adjust/dismiss options.
+- [ ] Offline POS: two devices offline simultaneously — first to reconnect wins, second gets stock error.
+- [ ] All 11 existing SKILL.md files rewritten from 12-tool to 6-tool pattern.
+- [ ] `skills/reports/SKILL.md` and `skills/team-chat/SKILL.md` created.
 
 ---
 
@@ -1733,8 +2260,11 @@ LLM dominates cost (85-95%). Storage is <10% of total cost.
 13. **No form table in WorkspaceDO.** Stock, services, config only. Everything else comes from global catalog.
 14. **Graph table has no weight column.** All relationships are binary.
 15. **One workspace = one WorkspaceDO.** No shared DOs across workspaces.
-16. **Capability composition over monolithic skills.** 11 capability modules compose into any workspace type.
+16. **Capability composition over monolithic skills.** 12 capability modules compose into any workspace type.
 17. **No Turso sync to devices.** POS uses local cache + DO requests. No embedded replicas.
+18. **UPI + Cash only for payments.** No payment gateway. No transaction fees. User handles accounting and tax filing.
+19. **GST/tax is an action, not a system.** Tax calculation lives in a form row (type='action'), not a separate engine or tool.
+20. **Matter has time fields.** `start`, `end`, `life` columns model when matter exists. Perpetual items have `end=null`.
 
 ---
 
@@ -1750,13 +2280,16 @@ LLM dominates cost (85-95%). Storage is <10% of total cost.
 | **Orders** | Simple: WorkspaceDO. Complex: OrderDO with state machine. |
 | **Payments** | Matter row in OrderDO with type='payment'. |
 | **Change propagation** | MRP changes globally → all workspaces see it. Selling price is per-workspace. |
-| **Capability composition** | 11 capability modules (CRM, Projects, Bookings, Inventory, Orders, Logistics, HR, LMS, Listings, Support, Team chat) compose into any workspace type. |
+| **Capability composition** | 12 capability modules (CRM, Projects, Bookings, Inventory, Orders, Logistics, HR, LMS, Listings, Support, Team chat, Reports) compose into any workspace type. GST/tax, loyalty, suppliers, routing, approvals, multi-currency merged into parent modules. |
 | **Marketplace templates** | Pre-built workspace blueprints (restaurant, clinic, retail, salon, gym, school, courier, property). Install in seconds. |
 | **Two-model architecture** | Groq GPT-OSS-120B for intent detection + routing. MiMo v2.5 for site layout generation (~₹0.02/site). |
 | **Local-first POS** | Device SQLite cache + DO requests. No Turso sync to devices. Offline sales queued and pushed on reconnect. |
 | **Channel creation** | Telegram: manual (user creates group, adds bot). Slack/Discord: bot creates via API. |
 | **Workspace site** | CF Worker renders layout JSON (from Turso form) + data (from WorkspaceDO) → HTML. KV cached (5min TTL). |
 | **Workspace customization** | All changes via chat — add/remove services, change pricing, change theme, add capabilities, create custom actions. |
+| **Matter schema** | 12 columns: `id, form, title, type, qty, unit, value, data, scope, active, start, end, life`. Unit enables weight/volume inventory. Start/end/life model matter's time dimension. |
+| **Payment model** | UPI + Cash only. No payment gateway. Workspace stores UPI ID. Invoice shows QR/collect link. User handles accounting and GST filing externally. |
+| **GST/tax** | Action stored as form row (type='action'). Reads item price, applies rate, returns breakup. Not a separate engine or tool. |
 
 ### Example data
 
@@ -1771,11 +2304,11 @@ form: storefront_happy_paws | type: storefront | data: {theme:{primary:"#4CAF50"
 
 **WorkspaceDO (w:pet-202):**
 ```
-matter: m_p001 | form: f_p001 | qty: 50 | value: 22  (selling price)
-matter: m_p002 | form: f_p002 | qty: 20 | value: 170 (selling price)
-matter: svc_grooming | type: service | title: Dog Grooming | value: 500
-matter: svc_vet | type: service | title: Vet Checkup | value: 300
-matter: svc_boarding | type: service | title: Overnight Boarding | value: 800
+matter: m_p001 | form: f_p001 | type: product | qty: 50 | unit: piece | value: 22 | start: 2026-07-01 | end: null
+matter: m_p002 | form: f_p002 | type: product | qty: 20 | unit: piece | value: 170 | start: 2026-07-01 | end: null
+matter: svc_grooming | form: null | type: service | title: Dog Grooming | qty: 0 | unit: null | value: 500 | start: 2026-07-01 | end: null
+matter: svc_vet | form: null | type: service | title: Vet Checkup | qty: 0 | unit: null | value: 300 | start: 2026-07-01 | end: null
+matter: svc_boarding | form: null | type: service | title: Overnight Boarding | qty: 0 | unit: null | value: 800 | start: 2026-07-01 | end: null
 ```
 
 **OrderDO (o:order-5001):**
@@ -1805,29 +2338,337 @@ Ideas discussed but not required for initial build. Consider adding after core l
 
 ---
 
-## Workspace creation flow
+## Onboarding flow (post sign-in)
 
-### How a workspace gets created
+### Screen sequence
 
-| Step | Who | What happens |
+```text
+Google Sign-In (auth.tsx)
+  → Check: does user have any workspaces? (graph query: rel='owner' OR rel='staff')
+  →
+  ├── YES (existing user) → Home tab (timeline)
+  │
+  └── NO (new user) → Onboarding wizard (3 screens)
+        → Screen 1: "What do you do?"
+        → Screen 2: "Tell us about your business"
+        → Screen 3: "Workspace created!" → Home tab
+```
+
+### Screen 1: What do you do?
+
+```text
+┌──────────────────────────────────────────┐
+│  Welcome to tarai! 👋                     │
+│                                          │
+│  What best describes you?                │
+│                                          │
+│  ┌────────────────────────────────────┐  │
+│  │  🍕 I run a food business          │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  💇 I run a salon or spa           │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  🏥 I run a clinic or hospital     │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  🛍️ I run a retail store           │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  📦 I deliver or ship things       │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  💼 I run an agency or office      │  │
+│  └────────────────────────────────────┘  │
+│  ┌────────────────────────────────────┐  │
+│  │  ✏️ Something else                 │  │
+│  └────────────────────────────────────┘  │
+│                                          │
+│         [ Skip — I'll explore first ]    │
+└──────────────────────────────────────────┘
+```
+
+**What happens:** User taps a category. App maps it to a template set:
+
+| Selection | Template | Modules |
 |---|---|---|
-| 1 | User | Says "build me a Pet management app" or "I run a restaurant" |
-| 2 | Master agent (Groq) | Detects intent: `create_workspace`, matches keywords to capabilities |
-| 3 | Agent | Checks marketplace for matching template |
-| 4a | Template found | Asks: "Use the restaurant template? What's the name?" |
-| 4b | No template | Asks about services, composes from capability modules |
-| 5 | User | Provides name, services, details |
-| 6 | LLM (MiMo v2.5) | One call — generates workspace config, actions, workflows, site layout |
-| 7 | 6 tools | `create(table='form')` — workspace config, actions, workflows, layout saved to Turso |
-| 8 | 6 tools | `create(table='matter')` — service/product entries saved to WorkspaceDO |
-| 9 | 6 tools | `link(src='user:{userId}', rel='owner', tgt='w:{workspaceId}')` — ownership graph |
-| 10 | Agent | Replies: "Workspace is live at {name}.tarai.space" |
+| Food business | `restaurant` | Orders + Inventory + Bookings + CRM + Reports |
+| Salon/spa | `salon` | Bookings + CRM + Orders + Reports |
+| Clinic/hospital | `clinic` | Bookings + CRM + Projects + Support + Reports |
+| Retail store | `retail` | Orders + Inventory + CRM + Reports |
+| Delivery/shipping | `courier` | Orders + Logistics + CRM + Reports |
+| Agency/office | `agency` | CRM + Projects + HR + Support + Reports |
+| Something else | None | Agent asks in chat (Screen 2 skipped) |
 
-Total LLM calls: 1-2. Total cost: ~₹0.03.
+**Skip:** Goes to Home tab with empty state — user can create workspace later via chat.
+
+### Screen 2: Tell us about your business
+
+```text
+┌──────────────────────────────────────────┐
+│  Almost there!                           │
+│                                          │
+│  Business name                           │
+│  ┌────────────────────────────────────┐  │
+│  │ Happy Paws Pet Salon              │  │
+│  └────────────────────────────────────┘  │
+│                                          │
+│  What services do you offer?             │
+│  (tap to add, or type your own)          │
+│                                          │
+│  ┌──────────┐ ┌──────────┐ ┌─────────┐  │
+│  │ Grooming │ │ Boarding  │ │ Vet     │  │
+│  └──────────┘ └──────────┘ └─────────┘  │
+│  ┌──────────┐ ┌──────────┐              │
+│  │ Training │ │ + Custom │              │
+│  └──────────┘ └──────────┘              │
+│                                          │
+│  City / Location                         │
+│  ┌────────────────────────────────────┐  │
+│  │ Chennai                           │  │
+│  └────────────────────────────────────┘  │
+│                                          │
+│         [ Create Workspace → ]           │
+└──────────────────────────────────────────┘
+```
+
+**What happens:** User fills name, taps services (pre-filled from template), adds location. Taps "Create Workspace".
+
+### Screen 3: Workspace created
+
+```text
+┌──────────────────────────────────────────┐
+│                                          │
+│         ✅ Workspace is live!             │
+│                                          │
+│  Happy Paws Pet Salon                   │
+│  happy-paws.tarai.space                 │
+│                                          │
+│  ┌────────────────────────────────────┐  │
+│  │  Grooming      ₹500               │  │
+│  │  Boarding      ₹800/night         │  │
+│  │  Vet Checkup   ₹300               │  │
+│  │  Training      ₹1,200             │  │
+│  └────────────────────────────────────┘  │
+│                                          │
+│  [ View Site ]  [ Go to Home ]           │
+│                                          │
+│  Tip: Connect Telegram to start          │
+│  receiving orders in your group.         │
+│                                          │
+└──────────────────────────────────────────┘
+```
+
+### What happens under the hood (Screen 2 → Screen 3)
+
+```text
+User taps "Create Workspace"
+  │
+  ├── 1. Create workspace matter in WorkspaceDO
+  │     create(table='matter', type='workspace', title='Happy Paws Pet Salon',
+  │            data:{template:'salon', city:'Chennai'}, scope='w:{newId}')
+  │
+  ├── 2. Link user as owner
+  │     link(src='user:{userId}', rel='owner', tgt='w:{newId}')
+  │
+  ├── 3. Copy template actions/skills/workflows to g:global form rows
+  │     read(table='form', type='action', template='salon')
+  │     → for each: create(table='form', scope='w:{newId}', ...)
+  │
+  ├── 4. Create service matter rows in WorkspaceDO
+  │     create(table='matter', type='service', title='Grooming', value=500, scope='w:{newId}')
+  │     create(table='matter', type='service', title='Boarding', value=800, scope='w:{newId}')
+  │     create(table='matter', type='service', title='Vet Checkup', value=300, scope='w:{newId}')
+  │     create(table='matter', type='service', title='Training', value=1200, scope='w:{newId}')
+  │
+  ├── 5. Generate site layout (one LLM call — MiMo v2.5)
+  │     → Layout JSON saved to form(type='storefront', scope='w:{newId}')
+  │
+  ├── 6. Generate subdomain DNS record
+  │     → happy-paws.tarai.space → Cloudflare Workers route
+  │
+  └── 7. Reply: "Workspace is live at happy-paws.tarai.space"
+```
+
+**Total LLM calls:** 1 (site layout). **Total cost:** ~₹0.02.
+
+### Onboarding vs Chat-based creation
+
+| Path | When | LLM cost |
+|---|---|---|
+| **Onboarding wizard** | First sign-in, guided 3-screen flow | ~₹0.02 (site layout only) |
+| **Chat-based** | Existing user, "build me a restaurant" | ~₹0.03 (intent + layout) |
+| **Template install** | Explore tab, "Install restaurant template" | ~₹0 (no LLM — direct copy) |
+
+### Empty state (skip onboarding)
+
+If user skips onboarding, Home tab shows:
+```text
+┌──────────────────────────────────────────┐
+│  HOME                                    │
+│                                          │
+│  No workspaces yet.                      │
+│                                          │
+│  Create your first workspace to          │
+│  start managing your business.           │
+│                                          │
+│  [ Create Workspace ]                    │
+│                                          │
+│  Or type in Chat: "I run a restaurant"   │
+│                                          │
+└──────────────────────────────────────────┘
+```
+
+---
+
+## Domain & SSL setup (tarai.space)
+
+### What is it?
+
+Each workspace gets a subdomain: `{name}.tarai.space`. This is the public-facing site where customers can view products, place orders, book services.
+
+| Component | What | Example |
+|---|---|---|
+| **Root domain** | `tarai.space` — owned by platform | DNS managed in Cloudflare |
+| **Subdomain** | `happy-paws.tarai.space` — per workspace | Auto-created on workspace setup |
+| **SSL** | Free, automatic via Cloudflare | No manual cert management |
+| **Routing** | Cloudflare Worker catches `*.tarai.space` | Reads hostname, maps to workspace |
+
+### How it works
+
+```
+Customer visits happy-paws.tarai.space
+  → DNS: *.tarai.space → Cloudflare Worker
+  → Worker reads Host header: "happy-paws.tarai.space"
+  → Worker looks up: D1 or KV → "happy-paws" → workspace w:salon_001
+  → Worker fetches layout JSON from Turso (g:global form)
+  → Worker fetches data from WorkspaceDO (products, services, prices)
+  → Worker renders HTML from layout + data
+  → Serves HTML (or KV cache hit → serve cached)
+```
+
+### DNS setup (one-time, per root domain)
+
+| Record | Type | Name | Content | Proxy |
+|---|---|---|---|---|
+| `tarai.space` | A | `@` | `192.0.2.1` (placeholder) | Proxied (orange cloud) |
+| `*.tarai.space` | CNAME | `*` | `tarai.space` | Proxied (orange cloud) |
+
+**Wildcard DNS:** The `*.tarai.space` record means any subdomain automatically routes to the Worker. No per-workspace DNS changes needed.
+
+### SSL setup
+
+| Setting | Value | Why |
+|---|---|---|
+| SSL/TLS mode | **Full (strict)** | Encrypts end-to-end |
+| Always Use HTTPS | ON | Force redirect HTTP → HTTPS |
+| Minimum TLS version | 1.2 | Security baseline |
+| Universal SSL | ON (default) | Free wildcard cert for `*.tarai.space` |
+
+**Cloudflare Universal SSL** automatically provisions a wildcard certificate for `*.tarai.space`. No manual cert renewal. No Let's Encrypt setup. Cloudflare handles everything.
+
+### Worker routing (how subdomain maps to workspace)
+
+```typescript
+// src/index.ts — Worker entry
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const hostname = url.hostname; // "happy-paws.tarai.space"
+
+    // 1. Extract subdomain
+    const subdomain = hostname.replace('.tarai.space', ''); // "happy-paws"
+
+    // 2. Look up workspace from subdomain
+    // Option A: KV cache (fast, 95% hit rate)
+    let workspaceId = await env.KV.get(`subdomain:${subdomain}`);
+    if (!workspaceId) {
+      // Option B: D1 lookup (fallback)
+      const row = await env.D1.prepare(
+        "SELECT scope FROM workspaces WHERE subdomain = ?"
+      ).bind(subdomain).first();
+      workspaceId = row?.scope;
+      if (workspaceId) await env.KV.put(`subdomain:${subdomain}`, workspaceId, { expirationTtl: 300 });
+    }
+
+    if (!workspaceId) return new Response('Workspace not found', { status: 404 });
+
+    // 3. Fetch layout + data, render HTML
+    const layout = await env.TURSO.query("SELECT data FROM form WHERE type='storefront' AND scope=?", [workspaceId]);
+    const products = await env.TURSO.query("SELECT * FROM matter WHERE type='product' AND active=1 AND scope=?", [workspaceId]);
+
+    // 4. Render HTML from layout JSON + data
+    const html = renderSite(layout, products);
+
+    // 5. Cache in KV (5min TTL)
+    await env.KV.put(`site:${subdomain}`, html, { expirationTtl: 300 });
+
+    return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+  }
+};
+```
+
+### Workspace subdomain creation (during workspace setup)
+
+When a workspace is created, the subdomain is auto-registered:
+
+```typescript
+// After workspace creation
+async function registerSubdomain(name: string, workspaceId: string) {
+  // 1. Slugify name: "Happy Paws Pet Salon" → "happy-paws-pet-salon"
+  const subdomain = slugify(name);
+
+  // 2. Check availability
+  const exists = await d1.query("SELECT 1 FROM workspaces WHERE subdomain=?", [subdomain]);
+  if (exists) return error("Name taken, try another");
+
+  // 3. Save to D1
+  await d1.query("UPDATE workspaces SET subdomain=? WHERE scope=?", [subdomain, workspaceId]);
+
+  // 4. Cache in KV
+  await kv.put(`subdomain:${subdomain}`, workspaceId, { expirationTtl: 300 });
+
+  // 5. Return URL
+  return `https://${subdomain}.tarai.space`;
+}
+```
+
+### Custom domain (future, not v1)
+
+| Feature | v1 | Future |
+|---|---|---|
+| Subdomain | `{name}.tarai.space` (auto) | Same |
+| Custom domain | Not supported | `orders.happypaws.com` (user-configured) |
+| SSL for custom | N/A | Cloudflare Origin CA + user's DNS |
+
+Custom domain requires user to point their DNS to Cloudflare. Adds complexity. Defer to post-launch.
+
+### Cloudflare config summary
+
+| Service | Purpose | Cost |
+|---|---|---|
+| Cloudflare DNS | Wildcard `*.tarai.space` routing | Free |
+| Universal SSL | Auto wildcard cert for `*.tarai.space` | Free |
+| Cloudflare Worker | Renders site from layout + data | Free (100K req/day) |
+| KV | Site cache (5min TTL) | Free (100K reads/day) |
+| D1 | Subdomain → workspace mapping | Free (5GB) |
+
+**Total domain/SSL cost: $0.** All covered by Cloudflare free tier.
+
+### Worker limits (what to watch)
+
+| Limit | Free tier | Paid tier ($5/mo) |
+|---|---|---|
+| Requests/day | 100,000 | Unlimited |
+| CPU time/request | 10ms | 30ms |
+| KV reads/day | 100,000 | 10M |
+| KV writes/day | 1,000 | 1M |
+
+At 1K workspaces × 100 visits/day = 100K requests/day — right at free tier limit. Move to paid Worker ($5/mo) when exceeding.
 
 ### Capability matching
 
-The LLM reads 11 capability descriptions loaded into context, compares against user's words, and picks the relevant ones.
+The LLM reads 12 capability descriptions loaded into context, compares against user's words, and picks the relevant ones.
 
 | User says | Capabilities enabled |
 |---|---|
@@ -1876,6 +2717,222 @@ Device holds: product snapshot, last known stock, queued offline sales. No Turso
 | DO (no sync) | Single instance | 1 write, read by all | Predictable |
 
 DO has zero sync cost. Devices send requests to DO. DO is the single source of truth.
+
+### Multi-device offline conflict
+
+**The problem:** Device A and Device B both go offline. Both sell from the same stock. Both come back online. Stock is now wrong.
+
+```text
+Time 0:  Stock = 50 Pepsi (in WorkspaceDO)
+Time 1:  Device A goes offline
+Time 2:  Device B goes offline
+Time 3:  Device A sells 30 Pepsi (stock: 50→20 locally)
+Time 4:  Device B sells 25 Pepsi (stock: 50→25 locally)
+Time 5:  Both come online — who's stock is correct?
+```
+
+**Solution: Optimistic concurrency with DO-side validation.**
+
+The DO is the source of truth. Devices queue sales locally. On reconnect, the DO **validates each sale** before committing. Invalid sales are rejected and surfaced to the user.
+
+### Offline queue schema (device local SQLite)
+
+```sql
+CREATE TABLE offline_queue (
+  id          TEXT PRIMARY KEY,    -- UUID generated on device
+  type        TEXT NOT NULL,       -- 'sale', 'stock_adjust', 'refund'
+  data        TEXT NOT NULL,       -- JSON: items, total, payment method
+  created_at  TEXT NOT NULL,       -- when sale was made on device
+  status      TEXT DEFAULT 'pending', -- 'pending', 'sent', 'accepted', 'rejected'
+  error       TEXT,                -- rejection reason if rejected
+  retry_count INTEGER DEFAULT 0
+);
+```
+
+Each offline sale gets a UUID. No device-generated IDs collide.
+
+### Reconnect flow
+
+```text
+Device comes online
+  │
+  ├── 1. Read all pending items from offline_queue (sorted by created_at)
+  │
+  ├── 2. Push each sale to WorkspaceDO ONE BY ONE (not batch)
+  │     POST /tools/create
+  │     body: { table:'matter', type:'order', data:{items, total, payment, offlineId} }
+  │
+  ├── 3. WorkspaceDO validates BEFORE committing:
+  │     a. Check stock: for each item, read current qty from matter
+  │     b. If qty >= sold qty → accept, deduct stock, create order
+  │     c. If qty < sold qty → reject with reason
+  │     d. If duplicate offlineId → skip (idempotent)
+  │
+  ├── 4. Device updates local queue status:
+  │     accepted → mark sent, show green checkmark
+  │     rejected → mark rejected, show error to user
+  │
+  └── 5. Device re-fetches current stock from DO
+        update local product snapshot
+```
+
+### WorkspaceDO validation logic
+
+```typescript
+// Inside WorkspaceDO — handles offline sale submission
+async handleOfflineSale(sale: OfflineSale): Promise<SaleResult> {
+  // 1. Idempotency check — was this sale already processed?
+  const existing = await this.ctx.storage.sql.exec(
+    "SELECT id FROM matter WHERE data->>'$.offlineId' = ?", [sale.offlineId]
+  );
+  if (existing.rows.length > 0) {
+    return { status: 'accepted', reason: 'duplicate — already processed' };
+  }
+
+  // 2. Stock check — can we fulfill this sale?
+  for (const item of sale.items) {
+    const product = await this.ctx.storage.sql.exec(
+      "SELECT qty, title FROM matter WHERE id = ?", [item.productId]
+    );
+    const currentQty = product.rows[0]?.qty ?? 0;
+
+    if (currentQty < item.qty) {
+      return {
+        status: 'rejected',
+        reason: `Insufficient stock: ${product.rows[0].title} has ${currentQty}, need ${item.qty}`
+      };
+    }
+  }
+
+  // 3. All items available — commit atomically
+  await this.ctx.storage.sql.exec("BEGIN TRANSACTION");
+
+  for (const item of sale.items) {
+    await this.ctx.storage.sql.exec(
+      "UPDATE matter SET qty = qty - ? WHERE id = ?", [item.qty, item.productId]
+    );
+  }
+
+  // Create order matter
+  const orderId = `order_${crypto.randomUUID()}`;
+  await this.ctx.storage.sql.exec(
+    "INSERT INTO matter (id, type, title, value, data, scope, active, start) VALUES (?, 'order', ?, ?, ?, ?, 1, ?)",
+    [orderId, sale.title, sale.total, JSON.stringify({ ...sale, status: 'completed' }), this.scope, new Date().toISOString()]
+  );
+
+  await this.ctx.storage.sql.exec("COMMIT");
+
+  // 4. Write motion to user's Turso DB
+  await this.writeMotion({ type: 'order', data: { orderId, total: sale.total, source: 'offline_pos' } });
+
+  return { status: 'accepted', orderId };
+}
+```
+
+### Conflict scenarios and handling
+
+| Scenario | What happens | User sees |
+|---|---|---|
+| **Stock sufficient** | Sale committed, stock deducted | "Sale recorded" (green) |
+| **Stock insufficient** | Sale rejected, stock unchanged | "Pepsi: only 5 left, you sold 10" (red) |
+| **Duplicate sale** | Same offlineId already processed | "Already recorded" (gray) |
+| **Partial fulfillment** | Some items in stock, some not | "Chips recorded. Pepsi rejected (only 3 left)." (mixed) |
+| **Network timeout** | Sale stays pending, retry on next reconnect | "Syncing..." (yellow) |
+| **DO unreachable** | Queue grows locally, sync later | "Offline — sales saved locally" |
+
+### Partial fulfillment (per-item accept/reject)
+
+```text
+Device sold: 10 Pepsi, 5 Chips, 2 Biryani
+DO has:      3 Pepsi, 8 Chips, 10 Biryani
+
+Result:
+  Pepsi:   REJECTED (need 10, have 3)
+  Chips:   ACCEPTED (need 5, have 8 → stock: 8→3)
+  Biryani: ACCEPTED (need 2, have 10 → stock: 10→8)
+
+Device shows:
+  ✅ Chips × 5 — recorded
+  ✅ Biryani × 2 — recorded
+  ❌ Pepsi × 10 — rejected (only 3 in stock)
+  
+  User action: adjust Pepsi quantity or dismiss
+```
+
+### Stock snapshot on device (what device knows)
+
+| Data | Source | Freshness |
+|---|---|---|
+| Product list | Fetched from WorkspaceDO on app open | Last open |
+| Stock quantities | Last known from DO | May be stale |
+| Offline sales | Queued locally | Real-time |
+| **Effective stock** | `lastKnownQty - offlineSalesOfThisProduct` | Calculated |
+
+Device calculates effective stock locally:
+```typescript
+function getEffectiveStock(productId: string): number {
+  const lastKnown = localProducts.find(p => p.id === productId)?.qty ?? 0;
+  const offlineSold = offlineQueue
+    .filter(s => s.status === 'pending' && s.items.some(i => i.productId === productId))
+    .reduce((sum, s) => sum + s.items.find(i => i.productId === productId)?.qty ?? 0, 0);
+  return lastKnown - offlineSold;
+}
+```
+
+This prevents overselling ACROSS devices in most cases. The DO validation is the final safety net.
+
+### Low-stock alert on device
+
+When effective stock drops below `min_stock` on any device:
+```text
+┌──────────────────────────────────────────┐
+│  ⚠️ Low Stock Alert                      │
+│                                          │
+│  Pepsi: 3 remaining (min: 20)            │
+│                                          │
+│  [ Restock ]  [ Dismiss ]                │
+└──────────────────────────────────────────┘
+```
+
+Shown even offline. Syncs to motion queue on reconnect.
+
+### Multiple device reconciliation timeline
+
+```text
+09:00  Device A online, stock: 50
+09:15  Device A goes offline
+09:20  Device B online, stock: 50
+09:25  Device B goes offline
+09:30  Device A sells 30 (queued: {offlineId: "a1", items: [{pepsi, 30}]})
+09:35  Device B sells 25 (queued: {offlineId: "b1", items: [{pepsi, 25}]})
+10:00  Device A comes online, pushes a1
+       → DO checks: stock=50, need=30 → ACCEPT → stock: 50→20
+       → Device A re-fetches stock: 20
+10:05  Device B comes online, pushes b1
+       → DO checks: stock=20, need=25 → REJECT → "Pepsi: only 20 left, need 25"
+       → Device B shows error, user adjusts to 20 or dismisses
+```
+
+**Order matters:** First device to reconnect gets its sale accepted. Second device gets rejected if stock insufficient. This is fair — first come, first served.
+
+### What device does on reject
+
+```text
+Sale rejected: "Pepsi: only 20 left, need 25"
+  │
+  ├── Option 1: "Adjust to 20" → resubmit with qty=20
+  ├── Option 2: "Remove Pepsi" → resubmit without Pepsi
+  └── Option 3: "Dismiss" → mark as rejected, don't retry
+```
+
+### Queue cleanup
+
+| Event | Action |
+|---|---|
+| Sale accepted | Move to `offline_queue_archive` (keep for audit) |
+| Sale rejected (user dismissed) | Move to `offline_queue_archive` with error |
+| Queue > 100 items | Alert user: "Many offline sales pending — connect to internet" |
+| Device storage > 50MB | Archive old queue items to R2 |
 
 ---
 

@@ -1,7 +1,7 @@
-# tarai + tarflue-v2 Unified Rebuild Plan v2
+# tarai + tarflue-v2 Unified Rebuild Plan v3 (Workspace Edition)
 
-> Single source of truth. Merged from swift-river plan + cost analysis.
-> Aligned with `docs/plan.md` cost model: ₹500/user, ₹400 profit. DO SQLite-first, Turso only for global vector search. 5 tables, 6 tools, cheap LLMs. Universal vertical support.
+> Single source of truth. Merged from swift-river plan + cost analysis + workspace system design.
+> Aligned with `docs/plan.md` cost model: ₹500/user, ₹400 profit. DO SQLite-first, Turso for form catalog + vector search. 5 tables, 6 tools, cheap LLMs. Universal workspace support.
 
 ---
 
@@ -20,30 +20,35 @@
 11. [Collaboration & Teams](#collaboration--teams)
 12. [Marketplace](#marketplace)
 13. [Home Screen / Timeline](#home-screen--timeline)
-14. [Storefront & Inventory](#storefront--inventory)
+14. [Workspace & Inventory](#workspace--inventory)
 15. [Hybrid Order Routing](#hybrid-order-routing)
-16. [Global Metadata & Channel Routing](#global-metadata--channel-routing)
-17. [Channel Routing (D1 + group-level ACL)](#channel-routing-d1--group-level-acl)
-18. [Real-time Updates](#real-time-updates)
-19. [DO Namespaces](#do-namespaces)
-20. [LLM Cost Control](#llm-cost-control)
-21. [Action Memory System (Inline Card Replay)](#action-memory-system-inline-card-replay)
-22. [Storage Cost Analysis](#storage-cost-analysis)
-23. [DO SQLite Cost Optimization](#do-sqlite-cost-optimization)
-24. [OrderDO vs Timeline DB Split](#orderdo-vs-turso-per-tenant-db--data-split)
-25. [Implementation Phases](#implementation-phases)
-26. [Verification Checklist](#verification-checklist)
-27. [Keep It Simple Rules](#keep-it-simple-rules)
-28. [Future Thoughts](#future-thoughts-not-immediate)
+16. [Channel Routing (D1 + group-level ACL)](#channel-routing-d1--group-level-acl)
+17. [Real-time Updates](#real-time-updates)
+18. [DO Namespaces](#do-namespaces)
+19. [LLM Cost Control](#llm-cost-control)
+20. [Action Memory System (Inline Card Replay)](#action-memory-system-inline-card-replay)
+21. [Storage Cost Analysis](#storage-cost-analysis)
+22. [DO SQLite Cost Optimization](#do-sqlite-cost-optimization)
+23. [OrderDO vs Inbox Split](#orderdo-vs-inbox--data-split)
+24. [Implementation Phases](#implementation-phases)
+25. [Verification Checklist](#verification-checklist)
+26. [Keep It Simple Rules](#keep-it-simple-rules)
+27. [Finalized Decisions](#finalized-decisions-2026-07-02)
+28. [Workspace Creation Flow](#workspace-creation-flow)
+29. [Local-first POS](#local-first-pos)
+30. [Workspace Site Generation](#workspace-site-generation)
+31. [Future Thoughts](#future-thoughts-not-immediate)
 
 ---
 
 ## Goal
 
 Rebuild tarai/ as a thin 3-tab Expo React Native client:
-1. **Home** — role-based timeline / inbox
-2. **Chat** — AI agent
-3. **Explore** — search, marketplace, teams, settings
+1. **Home** — role-based timeline / inbox (across all workspaces)
+2. **Chat** — AI agent (creates workspaces, runs workflows)
+3. **Explore** — search, marketplace, workspace settings
+
+One workspace = one business. Channels (Telegram, Slack, Discord) are how people reach that workspace. Users can own multiple workspaces.
 
 All business logic stays in tarflue-v2 on Cloudflare Workers + DO SQLite.
 
@@ -58,7 +63,7 @@ All business logic stays in tarflue-v2 on Cloudflare Workers + DO SQLite.
 | Max cost per user | ~₹100/month |
 | LLM budget | ₹40 per million IO tokens |
 
-This forces a **DO SQLite-first** architecture for store operations. Turso is used for per-tenant timeline DBs (unlimited databases on paid plans) and vector search.
+This forces a **DO SQLite-first** architecture for workspace operations. Turso is used for form catalog, user Inboxes (unlimited databases on paid plans), and vector search.
 
 ---
 
@@ -66,7 +71,7 @@ This forces a **DO SQLite-first** architecture for store operations. Turso is us
 
 1. **5 tables:** `form`, `matter`, `motion`, `graph`, `memory`. `attr` is removed.
 2. **6 tools:** `create`, `read`, `update`, `delete`, `link`, `search`.
-3. **DO-first for operational hot paths.** Turso only for global vector search.
+3. **DO-first for operational hot paths.** Turso only for global vector search and universal product catalog.
 4. **Actions as JSON.** User-facing business actions are JSON step sequences.
 5. **Workflows orchestrate actions.** Branches, parallel, retries, rollback.
 6. **Flue skills as markdown.** Agent instructions loaded from `SKILL.md` or `form.type='skill'`.
@@ -83,23 +88,26 @@ This forces a **DO SQLite-first** architecture for store operations. Turso is us
 
 ```
 tarai/ (thin client)
-  ├── Home tab  → role-based timeline (reads from per-tenant Turso DBs)
-  ├── Chat tab  → agent intent → workflow
-  └── Explore tab → search + marketplace + teams
+  ├── Home tab  → role-based timeline (reads from user's Inbox Turso DB)
+  ├── Chat tab  → agent intent → workflow (creates workspaces)
+  └── Explore tab → search + marketplace + workspace settings
 
 tarflue-v2 (Cloudflare Workers)
-  ├── 6 tools
-  ├── JSON actions
+  ├── 6 tools (create, read, update, delete, link, search)
+  ├── JSON actions (stored in Turso form)
   ├── Workflows (orchestrate actions)
-  ├── Agents (pick workflows via cheap LLM)
-  ├── Flue skills (markdown instructions)
+  ├── Agents (pick workflows via cheap LLM — Groq for routing, MiMo v2.5 for site gen)
+  ├── Flue skills (markdown instructions — 11 capability modules)
   ├── Channels: Telegram, Slack, Discord, WhatsApp
-  ├── StorefrontDO (s:) — per-store inventory, products, simple orders
-  ├── OrderDO      (o:) — per-order state machine (delivery, taxi, logistics)
+  ├── Global Turso (g:global) — form catalog (products, actions, workflows, skills, layouts), user profiles, vectors
+  ├── WorkspaceDO (w:) — per-workspace stock, services, config (matter only — references g:global)
+  ├── OrderDO      (o:) — per-order state machine + payment (delivery, taxi, logistics)
   ├── u:user Turso DB — per-user personal timeline + accessible scopes
   │   Note: scope-level Turso DBs removed. User DB holds timeline and scope list.
   ├── D1 — channel routing + team membership
-  └── Marketplace (global memory)
+  ├── KV — site cache (95% hit rate)
+  ├── CF Worker — renders workspace site from layout JSON
+  └── Marketplace (global memory + templates)
 ```
 
 ---
@@ -108,35 +116,81 @@ tarflue-v2 (Cloudflare Workers)
 
 | Prefix | Scope | Store | Holds |
 |---|---|---|---|
-| `s:` | Store | StorefrontDO | Products, stock, pricing, store orders. **Shared by multiple teams.** |
-| `o:` | Order | OrderDO | Per-order state machine: checkout, delivery, taxi, logistics. |
-| `p:` | Personal | Local SQLite | Cart, drafts, wishlist, personal cache |
-| `g:` | Global | Turso global DB | User profiles, marketplace vectors, agent configs |
+| `w:` | Workspace | WorkspaceDO | Stock quantities, selling price, services, workspace orders. **No product catalog — references g:global.** |
+| `o:` | Order | OrderDO | Per-order state machine: checkout, delivery, taxi, logistics + payment. |
+| `p:` | Personal | Local SQLite | Cart, drafts, wishlist, personal cache, offline POS cache |
+| `g:` | Global | Turso global DB | **Universal form catalog** (products, actions, workflows, skills, layouts), user profiles, marketplace vectors, agent configs |
 
-**Scope ID format:** `{prefix}:{identifier}` — e.g., `s:store_101`, `t:team_42`, `o:order_789`.
+**Scope ID format:** `{prefix}:{identifier}` — e.g., `w:pet_202`, `o:order_789`.
 
-> **Timeline is per-user, not per-scope.** Each user has their own Turso DB (`u:{userId}`) for their personal timeline and accessible scopes. Scope-level DBs removed — StorefrontDO holds product data, global Turso DB holds marketplace vectors.
+> **Inbox is per-user.** Each user has one Turso DB (`u:{userId}`) called their **Inbox**. All tasks, orders, deliveries, and actions assigned to them land here. Team = Telegram/Slack/Discord group for access control only — no separate team databases.
+
+> **One user, multiple workspaces.** A user can own or be staff at several workspaces. Graph table links: `user:ravanan → w:rest-101 (owner)`, `user:ravanan → w:pet-202 (owner)`.
 
 ## All databases in the system
 
 | # | Name | Scope prefix | Storage | Purpose | Schema tables |
 |---|---|---|---|---|---|
-| 1 | **StorefrontDO** | `s:` | DO SQLite | Per-store inventory, products, orders | `form`, `matter`, `motion`, `graph` |
-| 2 | **OrderDO** | `o:` | DO SQLite | Per-order state machine (delivery, taxi) | `matter`, `motion`, KV alarms |
-| 3 | **u:user Turso DB** | `u:{userId}` | Turso cloud | Personal timeline (actionable items only), accessible scopes | `motion`, `memory` |
-| 4 | **Turso global DB** | `g:global` | Turso cloud (shared) | User profiles, marketplace vectors, agent configs | `matter`, `memory`, `graph`, `form` |
-| 5 | **D1** | — | Cloudflare D1 | Channel routing (group → scope), DB connections | `channel_groups`, `tenant_dbs` tables |
-| 6 | **Local SQLite** | `p:` | Device SQLite | Cart, drafts, personal cache, offline | `form`, `matter`, `motion`, `graph` |
+| 1 | **WorkspaceDO** | `w:` | DO SQLite | Per-workspace stock, services, config (matter only) — no product catalog | `matter`, `motion`, `graph` |
+| 2 | **OrderDO** | `o:` | DO SQLite | Per-order state machine + payment (delivery, taxi) | `matter`, `motion`, KV alarms |
+| 3 | **Inbox** | `u:{userId}` | Turso cloud | Personal inbox — all assigned tasks, orders, deliveries | `motion`, `memory` |
+| 4 | **Turso global DB** | `g:global` | Turso cloud (shared) | Universal form catalog (products, actions, workflows, skills, layouts), user profiles, marketplace vectors, agent configs | `form`, `matter`, `memory`, `graph` |
+| 5 | **D1** | — | Cloudflare D1 | Channel routing (group → scope) | `channel_groups` table |
+| 6 | **Local SQLite** | `p:` | Device SQLite | POS offline cache, cart, drafts, personal cache | `form`, `matter`, `motion`, `graph` |
 
 ### Shared schema (all use the same 5 tables)
 
-| Table | StorefrontDO | OrderDO | Turso per-tenant | Local |
-|---|---|---|---|---|
-| `form` | Product definitions | Order templates | Marketplace listings, user profiles | Saved preferences |
-| `matter` | Products, stock | Order state | Cross-scope entities | Cart items |
-| `motion` | Order events, stock changes | Delivery phase changes | Unified timeline | Activity log |
-| `graph` | Product ↔ supplier links | Driver ↔ order links | User ↔ team ↔ store index | Personal links |
-| `memory` | Store-specific embeddings | — | Vector search, AI context | — |
+| Table | WorkspaceDO | OrderDO | Inbox (Turso) | Global Turso | Local |
+|---|---|---|---|---|---|
+| `form` | — (removed) | Order templates | Marketplace listings, user profiles | **Universal form catalog** (products, actions, skills, layouts) | Saved preferences |
+| `matter` | Stock quantities, selling price, services | Order state + payment | Cross-scope entities | Product variants | Cart items, offline cache |
+| `motion` | Order events, stock changes | Delivery phase changes | Unified timeline (assigned items) | — | Activity log |
+| `graph` | Stock ↔ global product links | Driver ↔ order links | User ↔ workspace index | Product relationships | Personal links |
+| `memory` | — | — | Vector search, AI context | Marketplace vectors | — |
+
+### Graph table schema (weight column removed)
+
+```sql
+CREATE TABLE graph (
+  src TEXT NOT NULL,
+  rel TEXT NOT NULL,
+  tgt TEXT NOT NULL,
+  active INTEGER DEFAULT 1,
+  time TEXT,
+  PRIMARY KEY (src, rel, tgt)
+);
+```
+
+All relationships are binary — edge exists or doesn't. No weighted edges needed.
+
+### Universal form catalog (g:global)
+
+Products, actions, workflows, skills, and layouts are defined once in global Turso, referenced by all workspaces:
+
+| Data | Location | Who sets it |
+|------|----------|-------------|
+| Product name, description, image | Global catalog (form) | Brand/manufacturer |
+| Variants (500ml, 1L, etc.) | Global catalog (form.data) | Brand/manufacturer |
+| Cost price, MRP | Global catalog (form.data) | Brand/manufacturer |
+| Selling price | WorkspaceDO matter.value | Workspace owner |
+| Stock quantity | WorkspaceDO matter.qty | Workspace owner |
+
+**Example — Pepsi:**
+```
+Global catalog (form):
+  id: f_p001
+  title: Pepsi
+  data: { variants: [{name:"500ml", cost:20, mrp:24}] }
+
+WorkspaceDO (matter):
+  id: m_p001
+  form: f_p001        -- FK to global catalog
+  title: Pepsi 500ml
+  qty: 50              -- stock count
+  value: 22            -- this workspace's selling price
+```
+
+**Pricing model:** MRP is fixed globally. Each workspace sets its own selling price between cost and MRP.
 
 ---
 
@@ -166,16 +220,20 @@ tarflue-v2 (Cloudflare Workers)
 | `tool_link_graph` | `link(src, rel, tgt)` | Internal mapping, not exposed. |
 | `tool_traverse_graph` | `read(table='graph', ...)` | Internal mapping, not exposed. |
 | `tool_set_attr` | `update(table='matter')` | Internal mapping, not exposed. |
+| `StorefrontDO` | `WorkspaceDO` | Renamed to cover all business types, not just stores. |
+| `s:{store}` | `w:{workspace}` | Scope prefix updated. |
 
 ### What changes in tarflue-v2
 
 Current tarflue-v2 uses `graph` and 12 explicit `defineTool` calls. Refactor to:
 
-1. **Keep `graph` table.** No rename to `bond`.
+1. **Keep `graph` table.** No rename to `bond`. Remove `weight` column.
 2. **Remove `attr` table.** Move all hot fields into `matter.data` or `form.data`.
-3. **Add a shared `execute(operation, table, params)` helper** for the 6-tool engine.
-4. **Drop 12 named tools from agent.** Agent sees only 6 tools: `create`, `read`, `update`, `delete`, `link`, `search`. Agent calls `create(table='matter')` not `create_matter`. Fewer tokens = cheaper LLM calls.
-5. **Add write-side ACL helper.** Every write tool (create, update, delete) calls `checkWriteACL(userId, scope)` before executing. Reads already filter by scope. Writes don't. This closes the security gap.
+3. **Remove `form` table from WorkspaceDO.** Product catalog + actions + workflows + skills move to global Turso (g:global).
+4. **Add a shared `execute(operation, table, params)` helper** for the 6-tool engine.
+5. **Drop 12 named tools from agent.** Agent sees only 6 tools: `create`, `read`, `update`, `delete`, `link`, `search`. Agent calls `create(table='matter')` not `create_matter`. Fewer tokens = cheaper LLM calls.
+6. **Access = group membership via D1.** No per-user write ACL. If you're in the Telegram group mapped to the scope, you have full access. Roles (owner/staff/viewer) are agent logic, not enforced at the tool level.
+7. **Rename `StorefrontDO` to `WorkspaceDO`.** Scope prefix changes from `s:` to `w:`.
 
 ---
 
@@ -205,8 +263,8 @@ tarflue.chat(sessionId, message)       // POST /agents/master/:sessionId
 tarflue.tool(name, input)              // POST /tools/:name
 tarflue.workflow(name, input)          // POST /workflows/:name
 tarflue.search(query)                  // vector search
-tarflue.listTeams()                    // read teams from Turso per-tenant DB
-tarflue.addTeamMember(teamId, userId)  // link graph in Turso per-tenant DB
+tarflue.listTeams()                    // read teams from D1 channel_groups
+tarflue.addTeamMember(teamId, userId)  // implicit via Telegram group membership
 tarflue.installTemplate(id, scope)     // copy marketplace skill to team scope
 ```
 
@@ -219,11 +277,11 @@ tarflue.installTemplate(id, scope)     // copy marketplace skill to team scope
 | Tool | Operation | Tables | Agent example |
 |---|---|---|---|
 | `create` | INSERT | form, matter, motion, graph | `create(table='matter', type='lead')` |
-| `read` | SELECT | form, matter, motion, graph | `read(table='matter', type='product', scope='s:store-101')` |
+| `read` | SELECT | form, matter, motion, graph | `read(table='matter', type='product', scope='w:pet-202')` |
 | `update` | UPDATE | form, matter, motion | `update(table='matter', id='m123', data:{stock:7})` |
 | `delete` | SOFT DELETE | form, matter, graph | `delete(table='matter', id='m123')` |
-| `link` | INSERT/TOGGLE graph edge | graph | `link(src='user:ravanan', tgt='team:sales', rel='member')` |
-| `search` | VECTOR SEARCH | memory (Turso) | `search(query='pepsi orders', scope='s:store-101')` |
+| `link` | INSERT/TOGGLE graph edge | graph | `link(src='user:ravanan', tgt='workspace:pet-202', rel='owner')` |
+| `search` | VECTOR SEARCH | memory (Turso) | `search(query='pepsi orders', scope='w:pet-202')` |
 
 Agent never sees `create_matter`, `append_motion`, etc. Only the 6 generic tools.
 
@@ -384,47 +442,64 @@ Telegram, Slack, and Discord mini apps are webviews that call tarflue-v2 tools/w
 
 ## Collaboration & teams
 
-Teams live in Turso per-tenant DBs (`t:{teamId}`). Store data lives in StorefrontDO (`s:{storeId}`). Multiple teams can be linked to the same store.
+**A team IS a Telegram/Slack/Discord group.** The channel group maps to a workspace scope via D1. Team membership is implicit — if you're in the group, you have access to that workspace's data.
 
-| Concept | Storage |
-|---|---|
-| Team | `matter.type='team'` in Turso per-tenant DB |
-| Store | `matter.type='store'` in StorefrontDO |
-| Team membership | `graph(src=userId, rel='member', tgt=teamId)` |
-| Team manages store | `graph(src=teamId, rel='manages', tgt=storeId)` |
-| Owner | `graph(src=userId, rel='owns', tgt=teamId)` |
-| Team-private records | `matter.scope='t:{teamId}'` (ACL-scoped, Turso per-tenant) |
-| Store records | `matter.scope='s:{storeId}'` |
-| Activity feed | `motion` table in Turso (`g:`), scoped and ACL-filtered |
-| Assignments | `graph(matterId, 'assigned_to', userId)` + `matter.data.status` |
-| Team chat | `motion.stream='chat-{teamId}'` |
-| Notifications | Push / in-app / channel message |
+### How it works
 
-> **ACL rule:** Every read/write checks `graph(user, 'member'/'owns', team)` or `graph(team, 'manages', store)`.
-
-### Shared store across multiple teams
-
-```text
-Telegram Group A → team-a
-Telegram Group B → team-b
-
-Both teams manage the same store:
-  graph(team-a, 'manages', store-101)
-  graph(team-b, 'manages', store-101)
-
-Inventory lives in StorefrontDO(s:store-101)
-Both teams read/write the same DO
+```
+Telegram Group "Kitchen Team"
+  → D1 channel_groups: chat_id(-100123456) → scope(w:rest-101)
+  → Anyone in the group = has access to w:rest-101
 ```
 
-When team-a reserves stock, StorefrontDO serializes the write. Team-b sees the updated stock because both hit the same DO.
+### What goes where
 
-### When to use Turso per-tenant DB vs StorefrontDO
+| Data | Storage | Why |
+|---|---|---|
+| Workspace inventory, products, services | WorkspaceDO (`w:{workspaceId}`) | Shared across all users with access |
+| Assignments to user | User's Inbox (`u:{userId}`) | Personal task list — like email |
+| Workspace operations | WorkspaceDO | Shared, serialized writes |
 
-| Data | Use |
+### ACL
+
+| Check | How |
 |---|---|
-| Store inventory, products, orders | StorefrontDO (`s:`) — shared across managing teams |
-| Team chat, internal tasks, HR | Turso per-tenant DB (`t:`) — ACL-scoped, team-private |
-| Cross-team assignments | StorefrontDO or global graph |
+| Can user access workspace? | D1 query: is their Telegram group mapped to this workspace scope? |
+| Can user perform action? | Agent logic: role-based (owner/staff/viewer) |
+
+### Shared workspace across multiple Telegram groups
+
+```text
+Telegram Group A → w:rest-101
+Telegram Group B → w:rest-101
+
+Both groups access the same WorkspaceDO
+Inventory lives in WorkspaceDO(w:rest-101)
+```
+
+When one group reserves stock, WorkspaceDO serializes the write. The other group sees the updated stock because both hit the same DO.
+
+### One user, multiple workspaces
+
+| Scenario | How it works |
+|---|---|
+| User owns restaurant + pet salon | 2 workspaces: `w:rest-101`, `w:pet-202` |
+| User is staff at a clinic | Workspace `w:clinic-303` with staff role |
+| User switches workspace | App dropdown — changes active scope |
+| Data isolation | Each workspace = separate WorkspaceDO instance |
+| Home screen | Shows all workspaces user has access to |
+
+Graph table holds membership:
+- `user:ravanan → w:rest-101 (owner)`
+- `user:ravanan → w:pet-202 (owner)`
+- `user:thamizhi → w:clinic-303 (staff)`
+
+### What goes where
+
+| Data | Storage |
+|---|---|
+| Workspace inventory, products, orders | WorkspaceDO (`w:`) — shared across all users with access |
+| User assignments, tasks | User's Inbox (`u:{userId}`) — personal task list |
 
 ---
 
@@ -433,8 +508,26 @@ When team-a reserves stock, StorefrontDO serializes the write. Team-b sees the u
 | Flow | Store |
 |---|---|
 | Browse / search | `memory` in Turso (global vector search) |
-| Install | Copy `form` row into team/store scope |
+| Install (actions, workflows, skills) | Copy `form` row into workspace scope |
+| Install (templates) | Copy full workspace blueprint — actions, workflows, skills, layout |
 | Use | Agent reads `form` rows from the local scope |
+
+### Marketplace templates
+
+Pre-built workspace configs stored in Turso global. Install in seconds, zero LLM cost.
+
+| Template | Bundled capabilities | Best for |
+|---|---|---|
+| `restaurant` | Orders + Inventory + Bookings + CRM | Cafes, food delivery |
+| `clinic` | Bookings + CRM + Projects + Support | Dentists, doctors, vets |
+| `retail` | Orders + Inventory + CRM | Clothing, electronics |
+| `salon` | Bookings + CRM + Orders | Hair, spa, grooming |
+| `gym` | Bookings + CRM + LMS + HR | Fitness, yoga |
+| `school` | LMS + CRM + Projects + HR | Coaching, training |
+| `courier` | Orders + Logistics + CRM | Delivery companies |
+| `property` | Listings + CRM + Projects | Property agents |
+
+Template installation: user describes business → agent finds matching template → confirms name → copies template rows to Turso → generates site layout with one LLM call → workspace goes live in under 10 seconds.
 
 ---
 
@@ -445,9 +538,9 @@ When team-a reserves stock, StorefrontDO serializes the write. Team-b sees the u
 ### How it works
 
 ```
-StorefrontDO confirms order → writes motion to user's Turso DB
+WorkspaceDO confirms order → writes motion to user's Turso DB
 OrderDO assigns driver      → writes motion to user's Turso DB
-WorkspaceDB creates task    → writes motion to user's Turso DB
+WorkspaceDO creates task    → writes motion to user's Turso DB
 Agent creates lead          → writes motion to user's Turso DB
        |
        v
@@ -483,7 +576,7 @@ const userDb = `u:${userId}`;
 // e.g., u:ravanan, u:thamizhini
 ```
 
-Scope DBs (s:store-101, t:kitchen) still exist for operational data (products, inventory) used by vector search. But the TIMELINE lives in the user's DB.
+Workspace scope (w:pet-202) holds operational data (products, inventory) for vector search. But the TIMELINE lives in the user's Inbox (u:{userId}).
 
 ### The query (single query to user's DB)
 
@@ -504,12 +597,14 @@ const timeline = await turso.query(
 
 ### Example: Ravanan has 4 roles on one screen
 
-| Role | DO that writes | motion.type | Card shown | Actions |
+| Role | Source | motion.type | Card shown | Actions |
 |---|---|---|---|---|
-| Restaurant owner (`s:store-101`) | StorefrontDO | `order` | OrderCard: 5 Burgers, 2 min ago | Confirm / Mark Ready |
-| Delivery person (`t:team-delivery`) | OrderDO | `delivery` | DeliveryCard: Order #789, Anna Nagar | Accept / Delivered |
-| Project member (`t:team-projects`) | Turso per-tenant DB | `task` | TaskCard: Fix AC, due today | Complete / Reassign |
-| Marketplace buyer (`u:ravanan`) | Agent | `order` | OrderCard: Printer, shipped | Track / Confirm receipt |
+| Restaurant owner (`w:rest-101`) | WorkspaceDO writes to `u:ravanan` | `order` | OrderCard: 5 Burgers, 2 min ago | Confirm / Mark Ready |
+| Delivery person | OrderDO writes to `u:ravanan` | `delivery` | DeliveryCard: Order #789, Anna Nagar | Accept / Delivered |
+| Project member | Task assigned writes to `u:ravanan` | `task` | TaskCard: Fix AC, due today | Complete / Reassign |
+| Marketplace buyer | Order writes to `u:ravanan` | `order` | OrderCard: Printer, shipped | Track / Confirm receipt |
+
+**All motions land in Ravanan's Inbox (`u:ravanan`).** One query to his personal DB shows everything.
 
 ### Card rendering by motion.type
 
@@ -630,7 +725,7 @@ Motion rows grow fast. Archival keeps costs manageable:
 │  HOME                                    Ravanan ● ● ●     │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
-│  ── RESTAURANT (s:store-101) ──────────────────────────  │
+│  ── RESTAURANT ORDERS ─────────────────────────────────  │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  ┌──────┐  Order #789                   2m ago     │  │
@@ -648,7 +743,7 @@ Motion rows grow fast. Archival keeps costs manageable:
 │  │            └──────────┘  └──────────┘              │  │
 │  └────────────────────────────────────────────────────┘  │
 │                                                          │
-│  ── DELIVERIES (t:team-delivery) ──────────────────────  │
+│  ── DELIVERIES ─────────────────────────────────────────  │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  ┌──────┐  Delivery #201                  5m ago   │  │
@@ -666,7 +761,7 @@ Motion rows grow fast. Archival keeps costs manageable:
 │  │            └──────────┘                             │  │
 │  └────────────────────────────────────────────────────┘  │
 │                                                          │
-│  ── MY TASKS (t:team-projects) ────────────────────────  │
+│  ── MY TASKS ───────────────────────────────────────────  │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  ┌──────┐  Fix AC in kitchen                 due  │  │
@@ -684,7 +779,7 @@ Motion rows grow fast. Archival keeps costs manageable:
 │  │            └──────────┘  └──────────┘              │  │
 │  └────────────────────────────────────────────────────┘  │
 │                                                          │
-│  ── MARKETPLACE ORDERS (u:ravanan) ──────────────────────  │
+│  ── MARKETPLACE ORDERS ──────────────────────────────────  │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  ┌──────┐  Order #ORD-123                  1h ago  │  │
@@ -700,49 +795,19 @@ Motion rows grow fast. Archival keeps costs manageable:
 └──────────────────────────────────────────────────────────┘
 ```
 
-**How it renders:** Home screen groups motions by `motion.type`, then by scope. Each section header shows which scope the cards belong to. Each card shows icon, title, subtitle (details), timestamp, and action buttons. The action buttons are determined by `motion.phase` + user's role.
+**How it renders:** Home screen queries Ravanan's Inbox (`u:ravanan`). All motions (orders, deliveries, tasks) assigned to him appear here. Grouped by type for display.
 
 ### ACL filtering
 
-| User's relation to scope | Can see | Can act |
+| User's role | Can see | Can act |
 |---|---|---|
-| `owns` (owner) | All motions in scope | All actions |
-| `member` (team member) | Team motions + assigned to them | Actions based on role |
-| `manages` (store manager) | Store motions | Store actions |
+| Workspace owner | All workspace motions | All actions |
+| Staff/member | Motions assigned to them | Role-based actions |
+| No relation | Nothing | Nothing |
+| `manages` (workspace manager) | Workspace motions | Workspace actions |
 | No relation | Nothing | Nothing |
 
 ACL check is built into the query — `WHERE scope IN user_accessible_scopes` filters by what the user can access.
-
-### Write-side ACL helper
-
-Reads are safe — filtered by scope. Writes are not — no check. This closes the gap.
-
-| Tool | ACL check |
-|---|---|
-| `create` | Before insert |
-| `update` | Before update |
-| `delete` | Before delete |
-
-```typescript
-function checkWriteACL(userId: string, scope: string): boolean {
-  const hasAccess = db.query(
-    `SELECT 1 FROM graph 
-     WHERE src = ? AND tgt = ? AND rel IN ('owns', 'member', 'manages')`,
-    [userId, scope]
-  );
-  return hasAccess !== null;
-}
-
-// In every write tool
-async function create(params) {
-  if (!checkWriteACL(userId, params.scope)) {
-    throw new Error("No write access");
-  }
-  // proceed
-}
-```
-
-Without this: Ravanan could create orders in Thamizhini's store, delete team members, or modify data he shouldn't touch. With this: every write blocked unless explicit permission via `graph`.
 
 ### Action handling from home screen
 
@@ -787,7 +852,7 @@ Each row is a `motion` event written to Turso by the relevant DO. Everyone sees 
 DOs write motion events to the tenant's Turso DB via the Worker:
 
 ```typescript
-// Inside any DO (e.g., StorefrontDO)
+// Inside any DO (e.g., WorkspaceDO)
 async onOrderConfirmed(orderId: string) {
   // 1. Update DO-internal SQLite
   await this.ctx.storage.sql.exec(
@@ -864,7 +929,7 @@ One socket per user. All DOs and agent push events through it.
 ```
 wss://tarflue.ws/user:ravanan
 
-StorefrontDO writes order   → push to Ravanan's socket
+WorkspaceDO writes order   → push to Ravanan's socket
 OrderDO writes delivery     → push to Ravanan's socket
 Turso writes task           → push to Ravanan's socket
 Agent replies to chat       → push to Ravanan's socket
@@ -901,29 +966,72 @@ Next time user types "Con..." in chat → autocomplete shows "Confirm order" →
 
 ---
 
-## Storefront & inventory
+## Workspace & inventory
 
 ### Storage
 
 | Data | Store |
 |---|---|
-| Products, catalog | `form` in StorefrontDO |
-| Stock, variants | `matter` in StorefrontDO |
-| Orders | `matter` in StorefrontDO (simple) OR OrderDO (state-machine) |
-| Cart reservations | StorefrontDO memory |
-| Checkout state | StorefrontDO for simple; OrderDO for multi-step |
+| Product catalog | `form` in Global Turso (g:global) — universal, one source of truth |
+| Stock quantities, selling price | `matter` in WorkspaceDO — references global catalog via FK |
+| Services (bookings, appointments) | `matter` in WorkspaceDO — service name, price, duration |
+| Orders | `matter` in WorkspaceDO (simple) OR OrderDO (state-machine) |
+| Cart reservations | WorkspaceDO memory |
+| Checkout state | WorkspaceDO for simple; OrderDO for multi-step |
 
 ### Inventory flow
 
 ```text
 Product: matter(type='product', data={ stock: 10 })
 
-Reserve:  StorefrontDO memory only
+Reserve:  WorkspaceDO memory only
 Commit:   update matter.data.stock + append motion
 Release:  update matter.data.stock + append motion
 ```
 
-StorefrontDO serializes reservations to prevent oversell. DB writes only on commit/release.
+WorkspaceDO serializes reservations to prevent oversell. DB writes only on commit/release.
+
+### Orders and payments
+
+**Simple orders** (POS, quick sale) — handled in WorkspaceDO:
+```
+matter row: type='order', data={items:[...], total:224, status:'completed'}
+```
+
+**Complex orders** (delivery, taxi, logistics) — handled in OrderDO:
+```
+Order: o:order-5001
+  customer: thamizhi
+  store: w:rest-101
+  items: [{form: f_p001, qty: 2, price: 22}, {form: f_p002, qty: 1, price: 180}]
+  total: ₹224
+  status: confirmed → preparing → dispatched → delivered
+  payment: pay_8001
+```
+
+**Payment** stored as matter row in OrderDO:
+```
+id: pay_8001
+type: payment
+title: UPI
+value: 224
+data: {"method":"upi","txn_id":"TXN123","status":"completed"}
+```
+
+**OrderDO state machine:**
+```
+created → confirmed → preparing → dispatched → delivered
+                                         ↓
+                                      cancelled
+```
+
+Each transition serialized through the DO — no race conditions on status updates.
+
+**Stock flow on order:**
+1. User places order → OrderDO created (status: created)
+2. WorkspaceDO: m_p001.qty decremented atomically
+3. Payment recorded in OrderDO
+4. Status transitions through state machine
 
 ---
 
@@ -931,7 +1039,7 @@ StorefrontDO serializes reservations to prevent oversell. DB writes only on comm
 
 | Order type | Store | Reason |
 |---|---|---|
-| Simple/POS orders | `s:{storeId}` | One-step create → pay → done. |
+| Simple/POS orders | `w:{workspaceId}` | One-step create → pay → done. |
 | Delivery, taxi, logistics, SCM | `o:{orderId}` | Multi-step lifecycle with async events, retries, timers. |
 
 ### Lifecycle: food delivery
@@ -939,7 +1047,7 @@ StorefrontDO serializes reservations to prevent oversell. DB writes only on comm
 ```text
 Order placed
   → create OrderDO(o:order_789)
-  → reserve stock in StorefrontDO(s:store-101)
+  → reserve stock in WorkspaceDO(w:rest-101)
   → state: confirmed
 
 Kitchen marks ready
@@ -950,16 +1058,16 @@ Driver accepts
   → OrderDO updates state → out_for_delivery
 
 Delivered
-  → OrderDO commits stock deduction in StorefrontDO
-  → OrderDO archives final state to StorefrontDO or Turso
+  → OrderDO commits stock deduction in WorkspaceDO
+  → OrderDO archives final state to WorkspaceDO or Turso
   → OrderDO can be destroyed
 ```
 
-## OrderDO vs Turso per-tenant DB — data split
+## OrderDO vs Inbox — data split
 
 ### Food delivery order #789
 
-| Data point | OrderDO SQLite | Turso per-tenant DB | Why split |
+| Data point | OrderDO SQLite | User Inbox (Turso) | Why split |
 |---|---|---|---|
 | Order ID | `o:order_789` (primary key) | `data.orderId` (reference) | DO owns identity |
 | Items | Full array with prices | Item name + qty only | Summary for display |
@@ -971,7 +1079,7 @@ Delivered
 | Phase history | Timestamp array | 5 separate motion rows | One row per state change |
 | Payment | Method + amount | Not stored | Financial data stays in DO |
 | Alarm timers | setAlarm calls | Not stored | DO-only feature |
-| Stock reservation | Reserved flag | Not stored | StorefrontDO owns stock |
+| Stock reservation | Reserved flag | Not stored | WorkspaceDO owns stock |
 
 ### Size per order
 | Database | Size | Lifecycle |
@@ -989,38 +1097,32 @@ Delivered
 | Only Turso? | No state machine, no alarms, no WebSocket, no stock safety |
 | Only OrderDO? | No timeline after order completes |
 
-### 4 tenant DBs for one food delivery order
-| Tenant DB | Who | Receives motions | What they see |
-|---|---|---|---|
-| s:store-101 | Restaurant owner | order placed, confirmed, ready | Order lifecycle from restaurant side |
-| t:kitchen-101 | Kitchen staff | order_item to prepare, mark done | Kitchen preparation view |
-| t:team-delivery | Delivery driver | delivery assigned, accepted, delivered | Delivery workflow view |
-| u:customer-123 | Customer | order placed, delivered | Customer-facing status updates |
+### How one food delivery order reaches everyone
 
-Same order, 4 different timeline views, 4 isolated Turso DBs.
+| Who | Their Inbox | What they see |
+|---|---|---|
+| Restaurant owner | `u:owner_101` | order placed, confirmed, ready |
+| Kitchen staff | `u:kitchen_456` | order_item to prepare, mark done |
+| Delivery driver | `u:driver_789` | delivery assigned, accepted, delivered |
+| Customer | `u:customer_123` | order placed, delivered |
+
+**Same order, 4 different Inboxes.** Each person sees only what's assigned to them.
 
 ---
 
 ## Channel routing (D1 + group-level ACL)
 
-One Telegram/Slack group = one scope. Members stay in the messaging platform. D1 maps group ID to scope.
+One Telegram/Slack group maps to one workspace scope. Members stay in the messaging platform. D1 maps group ID to scope.
 
 ### D1 schema
 
 ```sql
 CREATE TABLE channel_groups (
   chat_id INTEGER PRIMARY KEY,
-  scope TEXT NOT NULL,
+  scope TEXT NOT NULL,  -- e.g., 'w:rest-101'
   name TEXT,
   platform TEXT,
   created_by INTEGER,
-  created_at TEXT
-);
-
-CREATE TABLE tenant_dbs (
-  scope TEXT PRIMARY KEY,
-  url TEXT NOT NULL,
-  token TEXT NOT NULL,
   created_at TEXT
 );
 ```
@@ -1028,58 +1130,46 @@ CREATE TABLE tenant_dbs (
 Example data in channel_groups:
 | chat_id | scope | name | platform |
 |---|---|---|---|
-| -100123456 | t:kitchen | Kitchen Team | telegram |
-| -100234567 | t:marketing | Marketing Team | telegram |
-| -100345678 | s:store-101 | Store Main | telegram |
-
-Example data in tenant_dbs:
-| scope | url | token | purpose |
-|---|---|---|---|
-| u:ravanan | libsql://u-ravanan-tarapp.turso.io | eyJhbG... | Ravanan's personal timeline |
-| u:thamizhini | libsql://u-thamizhini-tarapp.turso.io | eyJhbG... | Thamizhini's personal timeline |
-| s:store-101 | libsql://s-store-101-tarapp.turso.io | eyJhbG... | Store product data for search |
-| t:kitchen | libsql://t-kitchen-tarapp.turso.io | eyJhbG... | Kitchen team data for search |
+| -100123456 | w:rest-101 | Kitchen Team | telegram |
+| -100234567 | w:rest-101 | Marketing Team | telegram |
+| -100345678 | w:pet-202 | Grooming Team | telegram |
 
 ### How it works
 
 ```
-Store owner creates Telegram group "Kitchen Team"
+Workspace owner creates Telegram group "Kitchen Team"
   → Adds tarai_bot to the group
   → First message triggers D1 insert:
-    INSERT INTO channel_groups VALUES (-100123456, 't:kitchen', 'Kitchen Team', 'telegram')
+    INSERT INTO channel_groups VALUES (-100123456, 'w:rest-101', 'Kitchen Team', 'telegram')
 
 Ravanan sends "5 Burgers order" in the group
   → Telegram POSTs to /channels/telegram/webhook
-  → chat_id -100123456 → D1 lookup → scope: t:kitchen (group-level ACL)
-  → D1 tenant_dbs lookup: t:kitchen → Turso URL + token
-  → from.id 98765 → graph lookup → user:Ravanan
-  → Agent processes with t:kitchen scope
+  → chat_id -100123456 → D1 lookup → scope: w:rest-101
+  → from.id → user identity
+  → Agent processes with w:rest-101 scope
+  → Writes motion to Ravanan's Inbox (u:ravanan)
   → Worker replies: "5 Burgers order recorded"
 ```
 
-### ACL: group-level (recommended)
+### Channel creation per platform
+
+| Platform | Bot can create group? | Setup method |
+|---|---|---|
+| Telegram | No | User creates group → adds bot → bot auto-registers in D1 |
+| Slack | Yes | Bot creates channel via `conversations.create` API |
+| Discord | Yes (channels) | Bot creates channel via Discord API |
+| WhatsApp | No | User configures WhatsApp Business API separately |
+
+Telegram deep link shortcut: bot generates `t.me/` link that opens group creation with bot pre-added. Reduces setup to 2 taps.
+
+### ACL: group-level
 
 | Level | What it checks | Use case |
 |---|---|---|
 | **Group-level** (D1) | Is this group mapped to a scope? | Channel routing — one D1 query |
-| Member-level (roles) | What can this user do within the scope? | Agent logic — not a DB query |
+| Role-level (agent logic) | What can this user do within the scope? | Owner vs staff vs viewer |
 
 If group is in D1 config, everyone in that Telegram group has access. Roles (manager/staff/viewer) are agent logic, not ACL queries.
-
-### Team membership (implicit)
-
-Team membership is implicit — if you're in the Telegram group, you have access to that scope. No separate membership table needed. Telegram handles group membership. D1 only maps group → scope.
-
-| Concept | Where it lives |
-|---|---|
-| Group identity | Telegram/Slack group (platform handles membership) |
-| Group → scope | D1 `channel_groups` table |
-| ACL check | Same D1 query — group exists = user has access |
-
-When Ravanan sends first message in Kitchen group:
-1. D1 channel_groups: -100123456 → t:kitchen
-2. Ravanan is in that group → has access to t:kitchen
-3. Done. One D1 query.
 
 ### D1 limits
 
@@ -1093,14 +1183,13 @@ When Ravanan sends first message in Kitchen group:
 
 At 10M groups: 1GB storage, ~$0.33/mo reads. At 100M groups: shard by `chat_id % N` across multiple D1 databases.
 
-### Why D1 for the tables
+### Why D1 for channel_groups
 
 | Table | Records | Writes | Reads |
 |---|---|---|---|
 | channel_groups | 1 per group | Rare (group setup) | Every channel message |
-| tenant_dbs | 1 per tenant DB | Rare (DB creation) | Every home screen load |
 
-Both tables are read-heavy, rarely written. D1 handles this pattern efficiently. One D1 database serves both channel routing and DB connection info.
+Read-heavy, rarely written. D1 handles this pattern efficiently.
 
 ### Why D1 over KV or Turso
 
@@ -1118,7 +1207,7 @@ D1 is 45× cheaper than KV and 10× cheaper than Turso for this use case.
 
 ```text
 Client A updates order phase
-  → StorefrontDO receives request
+  → WorkspaceDO receives request
   → DO updates matter + appends motion to user's Turso DB
   → DO pushes event to user's single WebSocket
   → Client B (tarai) receives update on same socket
@@ -1134,8 +1223,8 @@ For offline clients: Expo push notifications + pull-to-refresh.
 
 | Namespace | Class | Purpose |
 |---|---|---|
-| `STOREFRONT_DO` | `StorefrontDO` | Per-store inventory, products, simple orders |
-| `ORDER_DO` | `OrderDO` | Per-order state machine for complex orders |
+| `WORKSPACE_DO` | `WorkspaceDO` | Per-workspace stock, services, config (matter only), references global catalog |
+| `ORDER_DO` | `OrderDO` | Per-order state machine + payment for complex orders |
 
 ---
 
@@ -1155,10 +1244,13 @@ For offline clients: Expo push notifications + pull-to-refresh.
 
 | Use case | Model | Cost per million IO |
 |---|---|---|
-| Intent detection | DeepSeek-V3 / Gemini 2.0 Flash | ~₹40 |
+| Intent detection + routing | Groq GPT-OSS-120B | ~₹40 |
+| Site layout generation | MiMo v2.5 | ~₹12 input, ~₹24 output |
 | Simple replies | Llama 3.1 8B on Groq | ~₹15 |
 | Complex reasoning | Claude Haiku / Gemini Flash | ~₹100 |
 | Pattern extraction (one-time per action) | DeepSeek-V3 | ~₹40 |
+
+Two-model architecture: Groq handles conversations cheaply. MiMo v2.5 handles one-time site generation with premium output.
 
 Agents use L1 → L2 → L3 → L4. L5 only for exceptional cases.
 
@@ -1261,7 +1353,7 @@ LLM cost: ₹0
 |---|---|---|
 | "Create a lead for Ravanan, phone 98765" | Card: Create Lead [Name: ___] [Phone: ___] | Change name/phone, tap Create |
 | "Show me sales report for April, Pepsi" | Card: Sales Report [Item: ___] [Month: ___] | Change item/month, tap Generate |
-| "Restock 50 Pepsi at store 101" | Card: Restock [Item: ___] [Qty: ___] [Store: ___] | Change values, tap Restock |
+| "Restock 50 Pepsi at workspace 101" | Card: Restock [Item: ___] [Qty: ___] [Workspace: ___] | Change values, tap Restock |
 | "Assign task 'Fix AC' to Thamizhini" | Card: Assign Task [Task: ___] [Assignee: ___] | Change task/person, tap Assign |
 | "Order 20 chicken biryani for table 5" | Card: Place Order [Item: ___] [Qty: ___] [Table: ___] | Change values, tap Order |
 
@@ -1403,15 +1495,15 @@ When user taps autocomplete:
 
 | Data | Store | Why |
 |---|---|---|
-| Inventory, stock, reservations | DO SQLite (StorefrontDO) | Strong consistency, serialization, zero egress |
-| Orders (simple) | DO SQLite (StorefrontDO) | One store, one writer |
+| Inventory, stock, reservations | DO SQLite (WorkspaceDO) | Strong consistency, serialization, zero egress |
+| Orders (simple) | DO SQLite (WorkspaceDO) | One workspace, one writer |
 | Orders (complex/delivery) | DO SQLite (OrderDO) | State machine, WebSocket real-time |
-| Team workspace (tasks, HR) | Turso per-tenant DB | ACL-scoped, team-private |
-| **Timeline (motion events)** | **Turso per-tenant DB** | Cross-scope reads, parallel queries, embedded replicas |
-| **Vector search (marketplace, AI)** | **Turso per-tenant DB** | DO SQLite has no ANN index — irreplaceable |
-| **Global user/team index** | **Turso per-tenant DB** | Channel routing, scope mapping |
+| **User assignments, tasks** | **User Inbox (Turso)** | Personal task list — all assigned items land here |
+| **Form catalog (products, actions, skills, layouts)** | **Turso global DB** | Universal, shared across all workspaces |
+| **Vector search (marketplace, AI)** | **Turso global DB** | DO SQLite has no ANN index — irreplaceable |
+| **Channel routing** | **D1** | Group → scope mapping |
 
-### Turso per-tenant DB cost (1K tenants)
+### Turso Inbox cost (1K users)
 
 | Metric | Calculation | Cost |
 |---|---|---|
@@ -1434,7 +1526,7 @@ When user taps autocomplete:
 | Component | Cost/month |
 |---|---|
 | DO SQLite (operational) | ~$40-80 |
-| Turso per-tenant (timeline + vector) | ~$6 |
+| Turso Inbox (user assignments + vector) | ~$6 |
 | Workers base | $5 |
 | **Total storage** | **~$51-91/mo** |
 
@@ -1442,7 +1534,7 @@ When user taps autocomplete:
 
 ## DO SQLite cost optimization
 
-DO SQLite handles operational data (inventory, orders, workspace). Turso handles timeline + vector search. Optimize DO costs to keep total storage under ₹100/user:
+DO SQLite handles operational data (inventory, orders, workspace config). Turso handles form catalog, timeline + vector search. Optimize DO costs to keep total storage under ₹100/user:
 
 Apply these techniques to keep DO costs minimal:
 
@@ -1451,8 +1543,8 @@ Apply these techniques to keep DO costs minimal:
 | **DO hibernation** | DOs auto-sleep after 10s idle. Only pay for active compute time. | 60-80% compute | Built-in |
 | **Batch SQLite writes** | Group multiple INSERT/UPDATE into single transactions | 30-50% write ops | Phase 2 |
 | **Lazy timeline flush** | Buffer `motion` events in DO memory, flush every 5s or on 50 events | 40-60% write ops | Phase 2 |
-| **KV hot cache** | Cache product catalog, store config in KV. Read KV first, fall back to SQLite | 50-70% read ops | Phase 1 |
-| **DO sharding** | Group small stores by region into shared DOs (e.g., `s:in-west-001` holds 50 stores) | 80% fewer DOs | Phase 2 |
+| **KV hot cache** | Cache product catalog, workspace config in KV. Read KV first, fall back to SQLite | 50-70% read ops | Phase 1 |
+| **DO sharding** | Group small workspaces by region into shared DOs (e.g., `w:in-west-001` holds 50 workspaces) | 80% fewer DOs | Phase 2 |
 | **Column projection** | SELECT only needed columns, not `SELECT *` | 20-30% storage I/O | Phase 2 |
 | **Soft-delete cleanup** | Cron alarm to purge soft-deleted rows older than 30 days | Storage stays flat | Phase 4 |
 
@@ -1466,7 +1558,7 @@ Delete from tarai:
 - `src/app/*`, `src/components/*`, `src/hooks/*` (except theme)
 - `src/actions/*`, `src/agents/*`, `src/skills/*`, `src/tools/*`, `src/workflows/*`
 - `src/channels/*`
-- `storefront/*`
+- `storefront/*` (replaced by workspace site system)
 
 Keep:
 - Config, assets, theme
@@ -1478,22 +1570,38 @@ Keep:
 1. Simplify `src/lib/tarflue.ts`.
 2. Add `src/lib/verticals.ts` registry.
 3. Refactor tarflue-v2 tools to the 6 primitives.
-4. Add KV hot cache for product catalog and store config.
+4. Add KV hot cache for product catalog and workspace config.
+5. Rename `StorefrontDO` to `WorkspaceDO`. Update scope prefix `s:` to `w:`.
 
 ### Phase 2: tarflue-v2 backend
 
-5. Add team scope support in Turso per-tenant DBs.
-6. Add `OrderDO` for complex order lifecycles.
-7. Add JSON action definitions.
-8. Add workflow engine.
-9. Add cheap LLM agent intent detection.
-10. Add `GET /verticals` endpoint.
-11. Implement batch SQLite writes and lazy timeline flush.
-12. Implement DO sharding for small stores.
-13. Add `src/lib/memory.ts` — pattern extraction after agent success.
-14. Add `src/lib/slots.ts` — regex + entity lookup for slot filling.
-15. Add `GET /memory/autocomplete?q=...` endpoint.
-16. Add motion event writing from DOs to user's Turso DB via `create(table='motion', ...)`.
+6. Add Inbox support — user Turso DBs for assignments.
+7. Add `OrderDO` for complex order lifecycles.
+8. Add JSON action definitions (stored in Turso `form`).
+9. Add workflow engine.
+10. Add cheap LLM agent intent detection (Groq GPT-OSS-120B).
+11. Add `GET /workspaces` endpoint.
+12. Implement batch SQLite writes and lazy timeline flush.
+13. Implement DO sharding for small workspaces.
+14. Add `src/lib/memory.ts` — pattern extraction after agent success.
+15. Add `src/lib/slots.ts` — regex + entity lookup for slot filling.
+16. Add `GET /memory/autocomplete?q=...` endpoint.
+17. Add motion event writing from DOs to user's Turso DB via `create(table='motion', ...)`.
+18. Add 11 capability modules (CRM, Projects, Bookings, Inventory, Orders, Logistics, HR, LMS, Listings, Support, Team chat).
+19. Add workspace creation flow — agent detects intent, composes capabilities, generates config.
+20. Add marketplace templates in Turso global.
+
+### Phase 3: tarai screens + workspace site
+
+21. `src/app/(tabs)/home.tsx` — role-based timeline from user's Turso DB (across all workspaces).
+22. `src/app/(tabs)/chat.tsx` — chat with action memory autocomplete + workspace creation.
+23. `src/app/(tabs)/explore.tsx` — search, marketplace, workspace settings.
+24. `src/components/ActionCard.tsx` — inline editable card for action memory replay.
+25. `src/components/ChatAutocomplete.tsx` — memory matches above keyboard.
+26. Card components: `OrderCard`, `DeliveryCard`, `TaskCard`, `StockCard`, `LeadCard`, `ChatCard`, `BookingCard`.
+27. Workspace site renderer — CF Worker reads layout JSON from Turso `form` + data from WorkspaceDO → renders HTML.
+28. KV cache layer for workspace sites (5min TTL, 95% hit rate).
+29. Two-model architecture — Groq for intent routing, MiMo v2.5 for site layout generation (~₹0.02/site).
 
 ### Phase 3: tarai screens
 
@@ -1524,12 +1632,17 @@ Keep:
 
 - [ ] `expo start` launches.
 - [ ] Google sign-in works.
-- [ ] Home screen shows role-based timeline.
+- [ ] Home screen shows role-based timeline across all workspaces.
 - [ ] Status update from tarai reflects in mini app and vice versa.
 - [ ] Chat detects intent and runs workflow.
-- [ ] Explore tab searches marketplace actions/workflows/skills.
-- [ ] Installing an item copies it into team scope.
+- [ ] User can create a workspace by describing their business in chat.
+- [ ] Agent matches capabilities from user description (bookings, CRM, orders, etc.).
+- [ ] Explore tab searches marketplace actions/workflows/skills/templates.
+- [ ] Installing a template copies all form rows into workspace scope.
+- [ ] Installing an action/workflow copies it into workspace scope.
 - [ ] Telegram/Slack/Discord messages dispatch to agent.
+- [ ] Telegram group setup: user creates group → adds bot → bot registers in D1.
+- [ ] Slack/Discord: bot creates channel via API.
 - [ ] Stock reservation prevents oversell.
 - [ ] `wrangler deploy` succeeds.
 - [ ] DOs hibernate after 10s idle (verify in dashboard).
@@ -1542,8 +1655,15 @@ Keep:
 - [ ] Tapping autocomplete shows inline card with editable slot fields.
 - [ ] Editing card fields and tapping "Execute" runs workflow without LLM.
 - [ ] Action memory usage count increments on each replay.
+- [ ] Workspace site renders from layout JSON (Turso form) + data (WorkspaceDO).
+- [ ] KV cache serves 95% of site requests without hitting DO.
+- [ ] Workspace site generation: MiMo v2.5 produces layout JSON (~₹0.02).
+- [ ] Groq handles intent detection, MiMo v2.5 handles site generation.
+- [ ] User can customize workspace via chat (add service, change price, change theme).
+- [ ] One user can own multiple workspaces.
 - [ ] Motion archival cron moves rows > 7 days to `motion_archive` table (runs daily).
-- [ ] Each tenant has own Turso DB (verify via Turso dashboard).
+- [ ] Each workspace has own WorkspaceDO (verify via Wrangler dashboard).
+- [ ] Each user has own Turso Inbox DB (verify via Turso dashboard).
 - [ ] Home screen queries user's Turso DB and merges correctly.
 
 ---
@@ -1567,7 +1687,7 @@ Keep:
 |---|---|---|---|
 | Workers base | Cloudflare | $5 | $5 |
 | DO compute + storage | DO SQLite | ~$100–300 | ~$40–80 |
-| Turso per-tenant DBs | Turso (unlimited DBs) | ~$50–100 | ~$6 |
+| Turso Inbox (user assignments) | Turso (unlimited DBs) | ~$50–100 | ~$6 |
 | LLM (DeepSeek/Gemini Flash) | Groq/OpenRouter | ~$3,000–5,000 | ~$3,000–5,000 |
 | Push/email/telegram | Free | $0 | $0 |
 | **Total** | | **~$3,200–5,500** | **~$3,050–5,090** |
@@ -1600,15 +1720,69 @@ LLM dominates cost (85-95%). Storage is <10% of total cost.
 
 1. **5 tables only.** No new tables for teams, marketplace, or channels.
 2. **6 tools only.** All CRUD goes through `create/read/update/delete/link/search`. Agent sees only these 6 — no wrappers.
-3. **DO SQLite for operational data.** Turso per-tenant DBs for timeline + vector search.
+3. **DO SQLite for operational data.** Turso for form catalog, user assignments + vector search.
 4. **Batch writes, cache reads.** Group SQLite writes in transactions, cache hot reads in KV.
 5. **Let DOs hibernate.** Don't keep-alive. Wake on demand, sleep after 10s.
 6. **Skills are JSON.** No code changes to add new business actions.
 7. **Agents only detect intent.** Workflows do the work deterministically.
-8. **Cheap LLMs.** DeepSeek/Gemini Flash/Llama 8B for 95% of calls.
+8. **Cheap LLMs.** Groq for intent routing. MiMo v2.5 for site generation only.
 9. **Free channels first.** Telegram, Slack, Discord, push, email.
 10. **Mini apps bypass LLM.** Direct tool calls keep costs low.
 11. **Cache decisions, not answers.** Action memory replays skip the LLM entirely.
+12. **Universal form catalog.** Products, actions, workflows, skills, layouts defined once in g:global, referenced by all workspaces via FK.
+13. **No form table in WorkspaceDO.** Stock, services, config only. Everything else comes from global catalog.
+14. **Graph table has no weight column.** All relationships are binary.
+15. **One workspace = one WorkspaceDO.** No shared DOs across workspaces.
+16. **Capability composition over monolithic skills.** 11 capability modules compose into any workspace type.
+17. **No Turso sync to devices.** POS uses local cache + DO requests. No embedded replicas.
+
+---
+
+## Finalized decisions (2026-07-02)
+
+| Decision | Details |
+|----------|---------|
+| **Naming** | Workspace (not storefront). WorkspaceDO (not StorefrontDO). Scope prefix `w:` (not `s:`). |
+| **Universal form catalog** | Products, actions, workflows, skills, layouts defined in g:global (form table). WorkspaceDO references via FK. |
+| **WorkspaceDO = stock + services** | matter table: qty, selling price (value), service configs. No form table. |
+| **Pricing model** | Global: cost_price, MRP. Workspace: selling price (matter.value). |
+| **Graph table simplified** | `src, rel, tgt, active, time` — no weight column. |
+| **Orders** | Simple: WorkspaceDO. Complex: OrderDO with state machine. |
+| **Payments** | Matter row in OrderDO with type='payment'. |
+| **Change propagation** | MRP changes globally → all workspaces see it. Selling price is per-workspace. |
+| **Capability composition** | 11 capability modules (CRM, Projects, Bookings, Inventory, Orders, Logistics, HR, LMS, Listings, Support, Team chat) compose into any workspace type. |
+| **Marketplace templates** | Pre-built workspace blueprints (restaurant, clinic, retail, salon, gym, school, courier, property). Install in seconds. |
+| **Two-model architecture** | Groq GPT-OSS-120B for intent detection + routing. MiMo v2.5 for site layout generation (~₹0.02/site). |
+| **Local-first POS** | Device SQLite cache + DO requests. No Turso sync to devices. Offline sales queued and pushed on reconnect. |
+| **Channel creation** | Telegram: manual (user creates group, adds bot). Slack/Discord: bot creates via API. |
+| **Workspace site** | CF Worker renders layout JSON (from Turso form) + data (from WorkspaceDO) → HTML. KV cached (5min TTL). |
+| **Workspace customization** | All changes via chat — add/remove services, change pricing, change theme, add capabilities, create custom actions. |
+
+### Example data
+
+**Global catalog (g:global):**
+```
+form: f_p001 | Pepsi | data: {variants:[{name:"500ml",cost:20,mrp:24}]}
+form: f_p002 | Biryani | data: {variants:[{name:"plate",cost:120,mrp:180}]}
+form: action_book_grooming | type: action | data: {steps:[...]}
+form: skill_pet_mgmt | type: skill | data: {content:"..."}
+form: storefront_happy_paws | type: storefront | data: {theme:{primary:"#4CAF50"},sections:[...]}
+```
+
+**WorkspaceDO (w:pet-202):**
+```
+matter: m_p001 | form: f_p001 | qty: 50 | value: 22  (selling price)
+matter: m_p002 | form: f_p002 | qty: 20 | value: 170 (selling price)
+matter: svc_grooming | type: service | title: Dog Grooming | value: 500
+matter: svc_vet | type: service | title: Vet Checkup | value: 300
+matter: svc_boarding | type: service | title: Overnight Boarding | value: 800
+```
+
+**OrderDO (o:order-5001):**
+```
+matter: items | data: [{form:f_p001,qty:2,price:22},{form:f_p002,qty:1,price:170}]
+matter: pay_8001 | type: payment | value: 214 | data: {method:"upi",status:"completed"}
+```
 
 ---
 
@@ -1619,7 +1793,9 @@ LLM dominates cost (85-95%). Storage is <10% of total cost.
 | `flue.md` | Original architecture paper: 6 tables, 12 tools, Flue primitives | **Conceptual foundation** |
 | `flueprojtask.md` | Project/task management example mapped to the schema | **Valid vertical example** |
 | `docs/plan.md` | Cost-optimized implementation: 5 tables, 6 tools, DO SQLite-first | **Primary baseline** |
-| `tarflue-v2/` | Existing Flue runtime codebase | **Refactor to match this plan** |
+| `docs/storefront.md` | AI-generated storefront site design | **Merged into workspace site system** |
+| `fluepos.md` | POS vertical generation example | **Valid capability composition example** |
+| `tarflue-v2/` | Existing Flue runtime codebase | **Refactor to match this plan (WorkspaceDO, 6 tools, 11 capabilities)** |
 
 ---
 
@@ -1627,7 +1803,129 @@ LLM dominates cost (85-95%). Storage is <10% of total cost.
 
 Ideas discussed but not required for initial build. Consider adding after core launch.
 
-### Timeline vector search
+---
+
+## Workspace creation flow
+
+### How a workspace gets created
+
+| Step | Who | What happens |
+|---|---|---|
+| 1 | User | Says "build me a Pet management app" or "I run a restaurant" |
+| 2 | Master agent (Groq) | Detects intent: `create_workspace`, matches keywords to capabilities |
+| 3 | Agent | Checks marketplace for matching template |
+| 4a | Template found | Asks: "Use the restaurant template? What's the name?" |
+| 4b | No template | Asks about services, composes from capability modules |
+| 5 | User | Provides name, services, details |
+| 6 | LLM (MiMo v2.5) | One call — generates workspace config, actions, workflows, site layout |
+| 7 | 6 tools | `create(table='form')` — workspace config, actions, workflows, layout saved to Turso |
+| 8 | 6 tools | `create(table='matter')` — service/product entries saved to WorkspaceDO |
+| 9 | 6 tools | `link(src='user:{userId}', rel='owner', tgt='w:{workspaceId}')` — ownership graph |
+| 10 | Agent | Replies: "Workspace is live at {name}.tarai.space" |
+
+Total LLM calls: 1-2. Total cost: ~₹0.03.
+
+### Capability matching
+
+The LLM reads 11 capability descriptions loaded into context, compares against user's words, and picks the relevant ones.
+
+| User says | Capabilities enabled |
+|---|---|
+| "Pet salon with grooming and boarding" | Bookings + CRM + Orders |
+| "Restaurant with delivery" | Orders + Inventory + Logistics |
+| "Dentist clinic" | Bookings + CRM + Projects |
+| "Clothing store" | Orders + Inventory + CRM |
+| "Coaching classes" | LMS + Bookings + CRM |
+| "Real estate agent" | Listings + CRM + Projects |
+| "Gym with classes" | Bookings + CRM + LMS + HR |
+
+### Workspace customization (post-creation)
+
+All changes via chat. No admin panel needed.
+
+| Change | User says | Agent does |
+|---|---|---|
+| Add service | "Add teeth whitening for ₹2000" | `create(table='matter', type='service')` |
+| Remove service | "Remove boarding option" | `delete(table='matter', id='boarding')` |
+| Change pricing | "Grooming is now ₹600" | `update(table='matter', id='grooming', value:600)` |
+| Add team member | "Add Kamal as staff" | `link(src='user:kamal', rel='staff', tgt='w:xxx')` |
+| Change site theme | "Make the site dark blue" | `update(table='form', type='storefront', data:{theme:{primary:'#0a2463'}})` |
+| Add capability | "We need inventory tracking" | Copies inventory actions/workflows into workspace |
+| Custom action | "I need a pet report card" | LLM generates action JSON, saves to form |
+
+---
+
+## Local-first POS
+
+### How it works
+
+| State | Device behavior | Cost |
+|---|---|---|
+| Online sale | POST to WorkspaceDO, get response | ~₹0 |
+| Offline sale | Queue in local SQLite `motion` table | ₹0 |
+| Reconnect | Push queued sales to DO one by one | ~₹0 |
+| Product refresh | Fetch from Turso on app open | ~₹0 |
+
+Device holds: product snapshot, last known stock, queued offline sales. No Turso sync to devices — just a local cache copy. Like Shopify POS.
+
+### Why not Turso sync to devices
+
+| Approach | 30 devices × 500 products | Every stock change | Monthly cost |
+|---|---|---|---|
+| Turso sync to all devices | 30 replicas syncing | 30 × every write | Uncontrollable |
+| DO (no sync) | Single instance | 1 write, read by all | Predictable |
+
+DO has zero sync cost. Devices send requests to DO. DO is the single source of truth.
+
+---
+
+## Workspace site generation
+
+### Two-model architecture
+
+| Task | Model | Why |
+|---|---|---|
+| Intent detection + routing | Groq GPT-OSS-120B | Fast, cheap, handles most conversations |
+| Site layout generation (one-time) | MiMo v2.5 | Best design quality for ₹0.02 per site |
+
+### How site generation works in Flue
+
+| Step | Flue Primitive | What happens |
+|---|---|---|
+| User says "build my site" | Agent input | Intent detected |
+| Agent loads skill | Skill | Instructions for site generation |
+| Agent calls workflow | Workflow | `wf_generate_site` |
+| Workflow calls LLM | LLM (MiMo v2.5) | One call — generates layout JSON |
+| Workflow saves result | Tool | `create(table='form', type='storefront')` |
+| CF Worker renders | Runtime | Layout JSON → server-side HTML |
+
+### Site rendering
+
+```
+Customer hits {name}.tarai.space
+  → KV cache check → HIT → serve cached HTML (~10ms)
+  → KV miss → CF Worker reads:
+      form (layout JSON, product details) from Turso
+      matter (stock, price, services) from WorkspaceDO
+    → Renders HTML from layout JSON + data
+    → Writes to KV (5min TTL)
+    → Serves HTML
+```
+
+### Store types as templates
+
+The same system handles all business types. Store type determines which components load and what data fills them.
+
+| Business | Components | Data Source |
+|---|---|---|
+| Retail | Product grid, cart, checkout | `form` (products) + `matter` (stock) |
+| Restaurant | Menu sections, table booking | `form` (menu items) + `matter` (availability) |
+| Services | Service list, booking calendar | `form` (services) + `matter` (slots) |
+| Booking | Availability grid, appointment form | `form` (providers) + `matter` (schedule) |
+
+---
+
+## Timeline vector search
 
 Each motion event can have a semantic summary stored in the `memory` table with an embedding. This enables natural language search across motion history.
 
@@ -1660,7 +1958,7 @@ After each `create(table='motion')` call, also call `create(table='memory')` wit
 await storeMemory({
   text: `Order #789: 5 Burgers confirmed at Store-101`,
   embedding: await embed(`Order #789: 5 Burgers confirmed at Store-101`),
-  scope: 's:store-101',
+  scope: 'w:rest-101',
   meta: { type: 'motion_summary', motionId: motion.id }
 });
 ```
@@ -1703,3 +2001,33 @@ Current plan uses daily cron. Continuous alternative: when a motion row is creat
 | Continuous | Inline on every write | None | Medium |
 
 **Why future:** Daily cron is simple and sufficient at small scale. Continuous is cleaner for 10K+ tenants. Low priority.
+
+### Platform-native template commands
+
+Use Telegram/Slack/Discord/WhatsApp built-in features instead of free-text chat for common actions. Zero LLM cost.
+
+| Platform | Feature | How it works |
+|---|---|---|
+| Telegram | Slash commands (`/add-stock`) | User types `/` → picks command → fills params → sends |
+| Slack | Shortcuts + Workflow Builder | User clicks shortcut → fills form → submits |
+| Discord | Slash commands (`/add-stock`) | User types `/` → picks command → fills params → sends |
+| WhatsApp | Interactive Messages | Buttons + list messages → user taps to select |
+
+**Example flow (Telegram):**
+```
+User types "/" in group
+  → Bot shows: /add-stock, /record-sale, /check-inventory
+  → User picks /add-stock
+  → Bot asks: "Which product?" "How many?"
+  → User replies: "icecream" "40"
+  → Bot executes workflow directly
+```
+
+**Cost comparison:**
+| Path | LLM cost |
+|---|---|
+| Free text ("add icecream stock by 40") | LLM runs once, stores pattern |
+| Slash command or button | ₹0 — no LLM |
+| Replay from autocomplete card | ₹0 — no LLM |
+
+**Why future:** Requires platform-specific bot setup for each channel. Add after core channels are working. Prioritize Telegram first (free, largest user base in target market).

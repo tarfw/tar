@@ -1,6 +1,6 @@
 ---
 name: hr
-description: How to manage employees, attendance, leave, and payroll
+description: How to manage employees, attendance, leave requests, and payroll
 ---
 
 # HR Skill
@@ -8,60 +8,43 @@ description: How to manage employees, attendance, leave, and payroll
 ## Core Concepts
 
 ### Employee
-Person working for the organization.
-- Has role and department
-- Has hire date
-- Has salary
-- Has attendance records
+A staff member stored as `matter` with `type='employee'`.
+- `data` = `{ phone, role, department, joinDate, salary }`
 
 ### Attendance
-Daily clock in/out record.
-- Has clock-in time
-- Has clock-out time
-- Has total hours
+Daily check-in/out stored as `matter` with `type='attendance'`.
+- `data` = `{ employeeId, date, checkIn, checkOut, hours }`
 
-### Leave
-Time off request.
-- Has type (sick, vacation, personal)
-- Has start/end dates
-- Has approval status
+### Leave Request
+A leave application stored as `matter` with `type='leave'`.
+- `data` = `{ employeeId, type, startDate, endDate, reason, status }`
 
-## Common Operations
+## Common Operations (6-Tool Pattern)
 
 ### Clock In
-1. action_clock_in(employeeId)
-2. Creates attendance matter
-3. Sets status='in'
+1. `create(table='matter', type='attendance', title='Clock In', data:{employeeId, date: today, checkIn: now}, scope='{scope}')`
+2. `create(table='motion', stream:'{employeeId}', action=99993, data:{event:'clock_in'}, scope='{scope}')`
 
 ### Clock Out
-1. action_clock_out(attendanceId)
-2. Advances to phase 2
-3. Calculates total hours
+1. `read(table='matter', type='attendance', scope='{scope}', filters:[{key:'employeeId', val:'{employeeId}'}, {key:'date', val: today}])`
+2. `update(table='matter', id='{attendanceId}', patch:{data:{...currentData, checkOut: now, hours: calculated}})`
+3. `create(table='motion', stream:'{employeeId}', action=99993, data:{event:'clock_out'}, scope='{scope}')`
 
 ### Request Leave
-1. tool_create_matter(type='leave', data={employee, type, start, end})
-2. tool_set_attr(status='pending')
-3. action_notify(manager, template='leave-request')
+1. `create(table='matter', type='leave', title='Leave Request', data:{employeeId, type, startDate, endDate, reason, status:'pending'}, scope='{scope}')`
+2. `create(table='motion', stream:'{employeeId}', action=99993, data:{event:'leave_requested'}, scope='{scope}')`
 
 ### Approve Leave
-1. action_advance_stage(targetPhase=2)
-2. tool_set_attr(status='approved')
-3. action_notify(employee, template='leave-approved')
+1. `read(table='matter', id='{leaveId}')` — get current data
+2. `update(table='matter', id='{leaveId}', patch:{data:{...currentData, status:'approved'}})`
+3. `create(table='motion', stream:'{leaveId}', action=99993, data:{event:'leave_approved'}, scope='{scope}')`
 
-### Generate Payroll
-1. Query attendance for period
-2. Calculate hours worked
-3. Apply deductions
-4. Generate pay slip matter
+### List Employees
+1. `read(table='matter', type='employee', scope='{scope}')`
 
 ## Best Practices
 
-### Attendance
-- Track daily consistently
-- Review weekly
-- Address patterns
-
-### Leave Management
-- Set clear policies
-- Track balances
-- Plan coverage
+- Store attendance in `data` JSON for time calculations
+- Link employees to department via `graph(rel='member_of')`
+- Log clock in/out to motion for audit
+- Use `data.status` for leave workflow: pending → approved/rejected

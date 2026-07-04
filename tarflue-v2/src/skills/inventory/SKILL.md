@@ -1,6 +1,6 @@
 ---
 name: inventory
-description: How to manage stock levels, warehouses, and reordering
+description: How to manage stock levels, batch/expiry tracking, and supplier management
 ---
 
 # Inventory Skill
@@ -8,52 +8,60 @@ description: How to manage stock levels, warehouses, and reordering
 ## Core Concepts
 
 ### Stock
-Quantity of a product at a location.
-- Stored in attr: key='stock-{location}', num=quantity
-- Indexed for fast queries
-- Tracked per product per location
+Quantity of a product stored in `matter` row.
+- `qty` column = current stock count
+- `unit` column = unit of measure (piece, kg, litre, metre, bag, box, dozen)
+- `value` column = selling price per unit
+- `data` JSON = `{ cost_price, mrp, min_stock, batch, supplier_id }`
 
-### Warehouse
-Physical storage location.
-- Has address
-- Has capacity
-- Has products
+### Batch Tracking
+Products with `data.batch` field are tracked by batch ID.
+- FIFO rotation: oldest batch sold first (sorted by `start` date)
 
-### Reorder Point
-Minimum stock level that triggers restocking.
-- Stored in attr: key='reorder_point', num=N
-- Checked periodically
+### Expiry
+Products with `end` date set are perishable.
+- `end` column = expiry date (ISO 8601)
+- `end = null` = perpetual (no expiry)
 
-## Common Operations
+## Common Operations (6-Tool Pattern)
 
 ### Check Stock
-1. tool_set_attr(matterId, key='stock-{location}')
-2. Query: attr WHERE key LIKE 'stock-%'
+1. `read(table='matter', type='product', active=1, scope='{scope}')`
 
-### Update Stock
-1. tool_set_attr(matterId, key='stock-{location}', num=newQty)
-2. Append motion with delta
+### Update Stock (Add)
+1. `read(table='matter', id='{productId}')` — get current qty
+2. `update(table='matter', id='{productId}', patch:{qty: currentQty + addedQty})`
+3. `create(table='motion', stream='{productId}', action=99993, data:{event:'restock', addedQty, newQty: currentQty + addedQty}, scope='{scope}')`
+
+### Deduct Stock (Sale)
+1. `read(table='matter', id='{productId}')` — get current qty
+2. `update(table='matter', id='{productId}', patch:{qty: currentQty - soldQty})`
+3. `create(table='motion', stream='{productId}', action=99993, data:{event:'stock_deducted', soldQty, newQty: currentQty - soldQty}, scope='{scope}')`
 
 ### Transfer Stock
-1. Decrease source: tool_set_attr(stock-source, num=-qty)
-2. Increase destination: tool_set_attr(stock-dest, num=+qty)
-3. Log transfer to motion
+1. `update(table='matter', id='{sourceId}', patch:{qty: sourceQty - transferQty})`
+2. `update(table='matter', id='{destId}', patch:{qty: destQty + transferQty})`
+3. `create(table='motion', stream:'stock_transfer', action=99993, data:{from: sourceId, to: destId, qty: transferQty}, scope='{scope}')`
 
-### Set Reorder Point
-1. tool_set_attr(matterId, key='reorder_point', num=N)
+### Set Minimum Stock Level
+1. `read(table='matter', id='{productId}')` — get current data
+2. `update(table='matter', id='{productId}', patch:{data:{...currentData, min_stock: N}})`
 
 ### Check Low Stock
-1. Query attr WHERE key='stock-*' AND num < reorder_point
-2. action_notify for each low item
+1. `read(table='matter', type='product', active=1, scope='{scope}')`
+2. Filter: `qty <= data.min_stock`
+
+### Add Product
+1. `create(table='matter', type='product', form='{formId}', title='{name}', qty={qty}, unit='{unit}', value={sellingPrice}, data:{cost_price, mrp, min_stock, batch}, scope='{scope}')`
+2. `link(src='{scope}', rel='stocks', tgt='{productId}')`
+
+### Remove Product
+1. `update(table='matter', id='{productId}', patch:{active: 0})`
+2. `create(table='motion', stream:'{productId}', action=99993, data:{event:'product_removed'}, scope='{scope}')`
 
 ## Best Practices
 
-### Accuracy
-- Count regularly
-- Investigate variances
-- Audit weekly
-
-### Forecasting
-- Track sales velocity
-- Seasonal adjustments
-- Lead time planning
+- Always check `min_stock` after deductions
+- Use FIFO for batch-tracked products
+- Set `end` date on perishable items at time of stock entry
+- Store cost data in `matter.data` JSON

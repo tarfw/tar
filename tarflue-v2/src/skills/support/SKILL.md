@@ -1,6 +1,6 @@
 ---
 name: support
-description: How to manage support tickets, customer service, and knowledge base
+description: How to manage support tickets, customer inquiries, and issue resolution
 ---
 
 # Support Skill
@@ -8,72 +8,44 @@ description: How to manage support tickets, customer service, and knowledge base
 ## Core Concepts
 
 ### Ticket
-Customer service request.
-- Has status (open, in_progress, resolved, closed)
-- Has priority (low, medium, high, urgent)
-- Has category
-- Has assignee
-- Has SLA deadline
+A support request stored as `matter` with `type='ticket'`.
+- `data` = `{ customerId, subject, description, priority, status, assignedTo }`
 
-### Knowledge Base
-Collection of help articles.
-- Has title, content, tags
-- Embeddable for semantic search
-- Versioned
-
-## Common Operations
+## Common Operations (6-Tool Pattern)
 
 ### Create Ticket
-1. action_create_ticket(title, description, priority)
-2. Creates ticket matter
-3. Sets status='open'
-4. Notifies support team
+1. `create(table='matter', type='ticket', title='{subject}', data:{customerId, description, priority:'medium', status:'open'}, scope='{scope}')`
+2. `link(src='{customerId}', rel='submitted', tgt='{ticketId}')`
+3. `create(table='motion', stream:'{ticketId}', action=99993, data:{event:'ticket_created', subject}, scope='{scope}')`
+
+### Assign Ticket
+1. `read(table='matter', id='{ticketId}')` — get current data
+2. `update(table='matter', id='{ticketId}', patch:{data:{...currentData, assignedTo: agentId, status:'assigned'}})`
+3. `link(src='{agentId}', rel='handling', tgt='{ticketId}')`
 
 ### Reply to Ticket
-1. action_reply_ticket(ticketId, reply)
-2. Appends motion
-3. Notifies customer
+1. `create(table='matter', type='ticket_reply', title='Re: {subject}', data:{ticketId, message, repliedBy}, scope='{scope}')`
+2. `link(src='{ticketId}', rel='has_reply', tgt='{replyId}')`
+3. `create(table='motion', stream:'{ticketId}', action:99993, data:{event:'ticket_replied'}, scope='{scope}')`
 
 ### Resolve Ticket
-1. action_resolve_ticket(ticketId, resolution)
-2. Advances to resolved
-3. Sets status='resolved'
+1. `read(table='matter', id='{ticketId}')` — get current data
+2. `update(table='matter', id='{ticketId}', patch:{data:{...currentData, status:'resolved'}})`
+3. `create(table='motion', stream:'{ticketId}', action:99993, data:{event:'ticket_resolved'}, scope='{scope}')`
 
-### Create KB Article
-1. tool_create_matter(type='kb-article', title, content)
-2. action_embed(text=content)
-3. Embeds for semantic search
+### List Open Tickets
+1. `read(table='matter', type='ticket', scope='{scope}', filters:[{key:'status', val:'open'}])`
 
-## Ticket Pipeline
+### Search Tickets
+1. `search(query='{searchTerm}', scope='{scope}')`
 
-### Stages
-1. Open (phase 1)
-2. In Progress (phase 2)
-3. Waiting on Customer (phase 3)
-4. Resolved (phase 4)
-5. Closed (phase 5)
+## Ticket Status
 
-## SLA Tracking
-
-### Priority Levels
-- Urgent: 1 hour response
-- High: 4 hours response
-- Medium: 1 business day
-- Low: 3 business days
-
-### Tracking
-- Set attr(sla_deadline=...)
-- Check motion for first response time
-- Alert when approaching deadline
+1. open → assigned → in_progress → resolved → closed
 
 ## Best Practices
 
-### Triage
-- Categorize on creation
-- Assign based on category
-- Prioritize by impact
-
-### Resolution
-- Document solution in KB
-- Link related tickets
-- Follow up after resolution
+- Link tickets to customers via `graph(rel='submitted')`
+- Store priority in `data.priority`: low, medium, high, urgent
+- Log all replies to motion for history
+- Use `data.status` for workflow tracking

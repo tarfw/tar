@@ -1,107 +1,57 @@
 ---
 name: projects
-description: How to manage projects, tasks, sprints, and team workflows
+description: How to manage tasks, sprints, milestones, and team assignments
 ---
 
 # Projects Skill
 
 ## Core Concepts
 
-### Project
-Top-level container for work.
-- Has start/end dates
-- Has team members
-- Contains tasks and milestones
-
 ### Task
-Work item to be completed.
-- Has status (todo, in_progress, review, done, blocked)
-- Has priority (low, medium, high)
-- Has assignee
-- Has estimate
-- Has dependencies
+A work item stored as `matter` with `type='task'`.
+- `data` = `{ assignee, dueDate, priority, status, sprintId }`
 
 ### Sprint
-Time-boxed iteration.
-- Has capacity (total hours)
-- Has start/end dates
-- Contains tasks
+A time-boxed iteration stored as `matter` with `type='sprint'`.
+- `data` = `{ startDate, endDate, goal, status }`
 
 ### Milestone
-Significant point in project.
-- Has criteria
-- Links to tasks
+A checkpoint stored as `matter` with `type='milestone'`.
+- `data` = `{ dueDate, status }`
 
-## Common Operations
-
-### Create Project
-1. action_create_project(title, description, start, end)
-2. Creates project matter
-3. Sets status='active'
+## Common Operations (6-Tool Pattern)
 
 ### Create Task
-1. action_create_task(title, assigneeId, projectId, priority, due)
-2. Creates task matter
-3. Sets status='todo'
-4. Links to project via graph
+1. `create(table='matter', type='task', title='{title}', data:{assignee, dueDate, priority:'medium', status:'todo'}, scope='{scope}')`
+2. `link(src='{userId}', rel='assigned', tgt='{taskId}')`
+3. `create(table='motion', stream:'{taskId}', action=99993, data:{event:'task_created', title}, scope='{scope}')`
 
 ### Assign Task
-1. action_assign_task(taskId, assigneeId, assignedBy)
-2. Sets assignee attr
-3. Creates graph edge
-4. Notifies assignee
+1. `read(table='matter', id='{taskId}')` — get current data
+2. `update(table='matter', id='{taskId}', patch:{data:{...currentData, assignee: newAssignee}})`
+3. `link(src='{newAssigneeId}', rel='assigned', tgt='{taskId}')`
 
 ### Complete Task
-1. action_complete_task(taskId, completedBy)
-2. Advances to phase 6
-3. Sets status='done'
+1. `read(table='matter', id='{taskId}')` — get current data
+2. `update(table='matter', id='{taskId}', patch:{data:{...currentData, status:'done'}})`
+3. `create(table='motion', stream:'{taskId}', action=99993, data:{event:'task_completed'}, scope='{scope}')`
 
 ### Create Sprint
-1. action_create_sprint(title, projectId, start, end, capacity)
-2. Creates sprint matter
-3. Sets capacity attr
+1. `create(table='matter', type='sprint', title='{name}', data:{startDate, endDate, goal, status:'active'}, scope='{scope}')`
 
-## Task Pipeline
+### List Open Tasks
+1. `read(table='matter', type='task', scope='{scope}', filters:[{key:'status', val:'todo'}])`
 
-### Stages
-1. Backlog (phase 1)
-2. Todo (phase 2)
-3. In Progress (phase 3)
-4. Review (phase 4)
-5. Testing (phase 5)
-6. Done (phase 6)
-7. Blocked (phase 7)
+### List Tasks by Assignee
+1. `search(query='{assigneeName}', scope='{scope}')`
 
-### Transitions
-- todo → in_progress: Start work
-- in_progress → review: Submit for review
-- review → testing: QA testing
-- testing → done: Approved
-- any → blocked: Block
+## Task Status
 
-## Dependencies
-
-### Types
-- Finish-to-start (most common)
-- Start-to-start
-- Finish-to-finish
-
-### Tracking
-- tool_link_graph(task, depends_on, other_task)
-- Query ready tasks: NOT IN depends_on targets
+1. todo → in_progress → done
 
 ## Best Practices
 
-### Decomposition
-- Break tasks into 2-4 hour chunks
-- Define acceptance criteria
-- Estimate effort
-
-### Standups
-- What did you do yesterday?
-- What will you do today?
-- Any blockers?
-
-### Burndown
-- Track daily completions via motion
-- Review at sprint end
+- Link tasks to sprints via `graph(rel='in_sprint')`
+- Store priority in `data.priority`: low, medium, high, urgent
+- Log status changes to motion table
+- Use `data.assignee` for filtering

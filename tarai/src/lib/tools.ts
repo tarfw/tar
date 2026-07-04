@@ -114,7 +114,7 @@ export async function create(opts: {
   start?: string;
   end?: string;
   data?: any;
-  links?: { src: string; rel: string; tgt: string; weight?: number }[];
+  links?: { src: string; rel: string; tgt: string }[];
   motion?: { action: number; phase?: number; delta?: number };
   embed?: boolean;
   client_ref?: string;
@@ -205,9 +205,9 @@ export async function create(opts: {
         const src = link.src === '$id' ? id : link.src;
         const tgt = link.tgt === '$id' ? id : link.tgt;
         await db.run(
-          `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
-           VALUES (?, ?, ?, ?, 1, ?)`,
-          [src, link.rel, tgt, link.weight ?? 1.0, nowStr]
+          `INSERT OR REPLACE INTO graph (src, rel, tgt, active, time)
+           VALUES (?, ?, ?, 1, ?)`,
+          [src, link.rel, tgt, nowStr]
         );
       }
     }
@@ -677,13 +677,12 @@ export async function del(opts: {
 
 /**
  * Tool 5: link
- * Connects two entity nodes via weight-attributed graph edges.
+ * Connects two entity nodes via graph edges.
  */
 export async function link(opts: {
   src: string;
   rel: string;
   tgt: string;
-  weight?: number;
   bidirectional?: boolean;
   active?: boolean;
   scope: string;
@@ -696,7 +695,6 @@ export async function link(opts: {
   const db = await getPreparedDbForScope(opts.scope);
   const nowStr = new Date().toISOString();
   const isActive = opts.active !== false ? 1 : 0;
-  const weight = opts.weight ?? 1.0;
 
   // Authorization check
   await requireCanCreate(opts.scope);
@@ -719,16 +717,16 @@ export async function link(opts: {
 
   await withTransaction(db, async () => {
     await db.run(
-      `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [opts.src, opts.rel, opts.tgt, weight, isActive, nowStr]
+      `INSERT OR REPLACE INTO graph (src, rel, tgt, active, time)
+       VALUES (?, ?, ?, ?, ?)`,
+      [opts.src, opts.rel, opts.tgt, isActive, nowStr]
     );
 
     if (opts.bidirectional) {
       await db.run(
-        `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [opts.tgt, opts.rel, opts.src, weight, isActive, nowStr]
+        `INSERT OR REPLACE INTO graph (src, rel, tgt, active, time)
+         VALUES (?, ?, ?, ?, ?)`,
+        [opts.tgt, opts.rel, opts.src, isActive, nowStr]
       );
     }
 
@@ -742,7 +740,7 @@ export async function link(opts: {
         opts.src,
         nextSeq,
         opts.client_ref || null,
-        JSON.stringify({ rel: opts.rel, tgt: opts.tgt, weight, active: isActive }),
+        JSON.stringify({ rel: opts.rel, tgt: opts.tgt, active: isActive }),
         nowStr
       ]
     );
@@ -941,7 +939,7 @@ export async function search(opts: {
   const limit = opts.limit ?? 10;
   const threshold = opts.threshold ?? 0.3;
   const mode = opts.mode ?? 'hybrid';
-  const db = await getPreparedDbForScope(opts.scope);
+  const db = await getPreparedDbForScope(opts.scope ?? null);
 
   if (mode === 'structured') {
     return searchStructured(db, opts, limit);

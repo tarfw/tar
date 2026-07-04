@@ -1,73 +1,60 @@
 ---
 name: ecommerce
-description: How to manage online stores, products, orders, and payments
+description: How to manage products, orders, carts, and online sales
 ---
 
-# E-Commerce Skill
+# E-commerce Skill
 
 ## Core Concepts
 
 ### Product
-Item available for sale online.
-- Has name, description, price
-- Has images
-- Has variants (size, color)
-- Has stock per location
-- Has SEO metadata
+A product stored as `matter` with `type='product'`.
+- `qty` = stock quantity
+- `value` = selling price
+- `data` = `{ cost_price, mrp, category, images, description }`
 
 ### Order
-Customer purchase.
-- Has line items
-- Has shipping address
-- Has payment status
-- Has fulfillment status
+A customer order stored as `matter` with `type='order'`.
+- `value` = total amount
+- `data` = `{ items, shippingAddress, paymentMethod, status }`
 
-### Cart
-Session-based collection of items.
-- Stored as motion stream
-- Temporary until checkout
+## Common Operations (6-Tool Pattern)
 
-## Common Operations
+### List Products
+1. `read(table='matter', type='product', active=1, scope='{scope}')`
 
-### Create Product
-1. action_create_product(name, price, stock, description, storeId)
-2. Creates product + stock + embed
+### Search Products
+1. `search(query='{searchTerm}', scope='{scope}')`
 
 ### Add to Cart
-1. action_add_to_cart(sessionId, product, price, qty)
-2. Appends to cart motion stream
+1. `create(table='matter', type='cart', title='Cart Item', data:{productId, qty, price}, scope='p:{userId}')`
 
-### Checkout
-1. action_checkout(storeId, items, email, paymentMethod)
-2. Full checkout flow
+### Place Order
+1. `create(table='matter', type='order', title='Order #{id}', value={total}, data:{items, shippingAddress, paymentMethod, status:'pending'}, scope='{scope}')`
+2. For each item: `update(table='matter', id='{productId}', patch:{qty: currentQty - orderedQty})`
+3. `link(src='{customerId}', rel='placed', tgt='{orderId}')`
+4. `create(table='motion', stream:'{orderId}', action=99993, data:{event:'order_placed', total}, scope='{scope}')`
 
-### Process Payment
-1. Create payment matter
-2. Link to order
-3. Update status
+### Confirm Order
+1. `read(table='matter', id='{orderId}')` — get current data
+2. `update(table='matter', id='{orderId}', patch:{data:{...currentData, status:'confirmed'}})`
+3. `create(table='motion', stream:'{orderId}', action:99993, data:{event:'order_confirmed'}, scope='{scope}')`
 
-## Storefront
+### Ship Order
+1. `read(table='matter', id='{orderId}')` — get current data
+2. `update(table='matter', id='{orderId}', patch:{data:{...currentData, status:'shipped'}})`
+3. `create(table='motion', stream:'{orderId}', action:99993, data:{event:'order_shipped'}, scope='{scope}')`
 
-### Publishing
-1. Generate layout via AI
-2. Save to form.type='storefront'
-3. Publish to CF Worker
+### List Orders
+1. `read(table='matter', type='order', scope='{scope}', limit:50)`
 
-### Templates
-- streetwear-dark
-- luxury-black
-- minimal-white
-- modern-gradient
-- editorial
+## Order Status
+
+1. pending → confirmed → shipped → delivered
 
 ## Best Practices
 
-### Product Descriptions
-- Clear, detailed
-- Include dimensions, materials
-- SEO-optimized
-
-### Checkout
-- Minimize steps
-- Show total clearly
-- Multiple payment options
+- Deduct stock when order is confirmed
+- Store items array in `data.items`
+- Link orders to customers via `graph(rel='placed')`
+- Log status changes to motion table

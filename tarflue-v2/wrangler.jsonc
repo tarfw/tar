@@ -3,6 +3,19 @@
   "name": "tarflue",
   "compatibility_date": "2026-06-28",
   "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tarflue-db",
+      "database_id": "495e30a0-02f0-4e6a-afa7-12c5b588465c"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "STOREFRONT_CACHE",
+      "id": "9fcfbb6bc68542e7a6a3762dd61c6c10"
+    }
+  ],
   "migrations": [
     {
       "tag": "v1",
@@ -15,7 +28,7 @@
         "FlueInventoryAlertWorkflow",
         "FlueLeadScoringWorkflow",
         "FlueSprintPlanningWorkflow",
-        "StorefrontDO",
+        "WorkspaceDO",
         "OrderDO",
         "EditorDO"
       ]

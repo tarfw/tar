@@ -1,5 +1,5 @@
 /**
- * Cloud MCP client interface for `t:` (workspace) and `s:` (storefront) scopes.
+ * Cloud MCP client interface for `w:` (workspace) scopes.
  *
  * Currently a placeholder interface. When a Cloudflare Worker / Durable Object
  * MCP server is configured, set the client via `setCloudMcpClient()`.
@@ -25,7 +25,7 @@ export function getCloudMcpClient(): CloudMcpClient | null {
  * Returns null for local scopes or when no cloud client is set.
  */
 function isCloudScope(scope: string): boolean {
-  return scope === 't' || scope === 's' || scope.startsWith('t:') || scope.startsWith('s:');
+  return scope === 'w' || scope.startsWith('w:') || scope === 'o' || scope.startsWith('o:');
 }
 
 export async function forwardToCloud<T>(

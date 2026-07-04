@@ -18,3 +18,7 @@ yarn-error.log*
 *.db-journal
 nul
 SECRETS.md
+
+# Wrangler local state
+.wrangler/
+.mimocode/

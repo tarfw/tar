@@ -1,60 +1,49 @@
 ---
 name: realestate
-description: How to manage property listings, showings, and offers
+description: How to manage property listings, inquiries, showings, and offers
 ---
 
 # Real Estate Skill
 
 ## Core Concepts
 
-### Property
-Real estate listing.
-- Has address, type, size
-- Has price
-- Has status (available, under_contract, sold)
-- Has features
+### Listing
+A property listing stored as `matter` with `type='listing'`.
+- `data` = `{ address, price, type, bedrooms, area, description }`
 
-### Showing
-Property viewing appointment.
-- Has scheduled date/time
-- Has agent and client
-- Has feedback
+### Inquiry
+A buyer inquiry stored as `matter` with `type='inquiry'`.
+- `data` = `{ listingId, buyerName, phone, budget, notes }`
 
-### Offer
-Purchase proposal.
-- Has offer price
-- Has conditions
-- Has status (pending, accepted, rejected)
+## Common Operations (6-Tool Pattern)
 
-## Common Operations
+### Create Listing
+1. `create(table='matter', type='listing', title='{address}', value={price}, data:{address, price, type, bedrooms, area, description}, scope='{scope}')`
+2. `create(table='motion', stream:'{listingId}', action:99993, data:{event:'listing_created'}, scope='{scope}')`
 
-### List Property
-1. tool_create_matter(type='property', title, data={address, type, size, price})
-2. tool_set_attr(status='available')
-3. action_embed(text=property description)
+### Record Inquiry
+1. `create(table='matter', type='inquiry', title='Inquiry: {buyerName}', data:{listingId, buyerName, phone, budget, notes}, scope='{scope}')`
+2. `link(src='{buyerId}', rel='interested_in', tgt='{listingId}')`
+3. `create(table='motion', stream:'{listingId}', action:99993, data:{event:'inquiry_received', buyerName}, scope='{scope}')`
 
 ### Schedule Showing
-1. action_book_slot(resourceId=propertyId, start, end)
-2. Links agent and client
+1. `create(table='matter', type='showing', title='Showing: {listingAddress}', data:{listingId, buyerId, date, time, status:'scheduled'}, scope='{scope}')`
+2. `create(table='motion', stream:'{listingId}', action:99993, data:{event:'showing_scheduled'}, scope='{scope}')`
 
-### Make Offer
-1. tool_create_matter(type='offer', value=offerPrice)
-2. tool_link_graph(client, made_offer, property)
-3. action_notify(seller, template='new-offer')
+### Mark Sold
+1. `read(table='matter', id='{listingId}')` — get current data
+2. `update(table='matter', id='{listingId}', patch:{data:{...currentData, status:'sold'}})`
+3. `create(table='motion', stream:'{listingId}', action:99993, data:{event:'listing_sold'}, scope='{scope}')`
 
-### Accept Offer
-1. action_advance_stage(targetPhase=2)
-2. tool_set_attr(status='under_contract')
-3. action_notify(buyer, template='offer-accepted')
+### List Properties
+1. `read(table='matter', type='listing', scope='{scope}')`
+
+### Search Properties
+1. `search(query='{location}', scope='{scope}')`
 
 ## Best Practices
 
-### Listings
-- Quality photos
-- Detailed descriptions
-- Accurate pricing
-
-### Showings
-- Confirm 24h before
-- Collect feedback
-- Follow up within 24h
+- Store property details in `data` JSON
+- Link buyers to listings via `graph(rel='interested_in')`
+- Log showings and offers to motion
+- Use `data.status`: available, under_offer, sold

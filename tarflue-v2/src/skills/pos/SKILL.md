@@ -1,101 +1,57 @@
 ---
 name: pos
-description: How to manage retail point of sale, stores, products, and transactions
+description: How to handle point-of-sale operations, orders, payments, and receipts
 ---
 
 # POS Skill
 
 ## Core Concepts
 
-### Store
-Physical or virtual location where sales happen.
-- Has registers (POS terminals)
-- Has inventory (stock)
-- Has staff (cashiers)
-- Has tax rules
-
-### Product
-Item available for sale.
-- Has price
-- Has variants (size, color)
-- Has stock per location
-- Has SKU/barcode
-
 ### Order
-Single transaction (sale).
-- Contains line items
-- Calculates: subtotal + tax - discount = total
-- Links to payment
+A customer order stored as `matter` with `type='order'`.
+- `value` = total amount
+- `data` = `{ items, paymentMethod, status }`
 
-### Shift
-Cashier work period.
-- Opens with starting cash
-- Tracks sales during shift
-- Closes with ending cash + variance
+### Payment
+Payment record stored as `matter` with `type='payment'`.
+- `value` = amount paid
+- `data` = `{ method, txn_id, status }`
 
-## Common Operations
+## Common Operations (6-Tool Pattern)
 
-### Create Product
-1. action_create_product(name, price, stock, description, storeId)
-2. Creates product matter
-3. Sets price + stock in attr
-4. Embeds for search
+### Record Sale
+1. `create(table='matter', type='order', title='Order #{id}', value={total}, data:{items, paymentMethod, status:'completed'}, scope='{scope}')`
+2. For each item: `update(table='matter', id='{productId}', patch:{qty: currentQty - soldQty})`
+3. `create(table='motion', stream:'{orderId}', action=99993, data:{event:'sale_recorded', total, items: items.length}, scope='{scope}')`
 
-### Ring Sale (Checkout)
-1. action_checkout(storeId, items, paymentMethod)
-2. Creates order matter
-3. Links products via graph
-4. Calculates total
-5. Updates inventory via attr
-6. Sends receipt via action_notify
+### Refund Order
+1. `read(table='matter', id='{orderId}')` — get order details
+2. `update(table='matter', id='{orderId}', patch:{data:{...currentData, status:'refunded'}})`
+3. For each item: `update(table='matter', id='{productId}', patch:{qty: currentQty + returnedQty})`
+4. `create(table='motion', stream:'{orderId}', action=99993, data:{event:'order_refunded'}, scope='{scope}')`
 
-### Open Shift
-1. action_start_shift(registerId, cashierId, startingCash)
-2. Creates shift matter
-3. Sets status='open'
+### Start Shift
+1. `create(table='matter', type='shift', title='Shift', data:{startTime, cashier}, scope='{scope}')`
 
-### Close Shift
-1. action_end_shift(shiftId, endingCash)
-2. Calculates variance
-3. Sets status='closed'
+### End Shift
+1. `update(table='matter', id='{shiftId}', patch:{data:{...currentData, endTime, totalSales, variance}})`
+2. `create(table='motion', stream:'{shiftId}', action=99993, data:{event:'shift_ended'}, scope='{scope}')`
 
-### Add to Cart
-1. action_add_to_cart(sessionId, product, price, qty)
-2. Appends to motion stream
+### List Today's Orders
+1. `read(table='matter', type='order', scope='{scope}', limit:100)`
 
-## Inventory Management
+### Get Order by ID
+1. `read(table='matter', id='{orderId}')`
 
-### Stock Levels
-- Store in attr: key='stock-{storeId}', num=quantity
-- Query: tool_list_matters(type='product') + tool_set_attr filters
-- Reorder: set attr(reorder_point=N), alert when stock < N
+## Payment Methods
 
-### Restock
-1. Receive shipment
-2. tool_set_attr(stock+quantity)
-3. Log to motion
-
-### Low Stock Alert
-1. Check attr(num) < reorder_point
-2. action_notify(channel='email', template='restock-needed')
-
-## Tax & Discounts
-
-### Tax Rules
-- Store in form.type='tax-rule'
-- Apply during checkout calculation
-
-### Discounts
-- Store in form.type='discount'
-- Apply before tax calculation
+- UPI: Record `data.method='upi'`, `data.txn_id`
+- Cash: Record `data.method='cash'`
+- Card: Record `data.method='card'`
 
 ## Best Practices
 
-### Receipts
-- Always send/email receipt
-- Log to motion for audit
-
-### Security
-- Each shift is its own matter
-- Cashier logged per transaction
-- Variance tracking
+- Always deduct stock when recording a sale
+- Use `data` JSON for items array, payment details
+- Log every sale to motion for audit trail
+- Soft-delete orders (set `active=0`) for refunds, don't hard-delete

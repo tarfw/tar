@@ -1,55 +1,51 @@
 ---
 name: booking
-description: How to manage reservations, appointments, and resource allocation
+description: How to manage appointments, reservations, slots, and scheduling
 ---
 
 # Booking Skill
 
 ## Core Concepts
 
-### Reservation
-Booked time slot for a resource.
-- Has start/end time
-- Has resource
-- Has customer
-- Has status (booked, confirmed, cancelled)
+### Booking
+An appointment stored as `matter` with `type='booking'`.
+- `title` = service name
+- `data` = `{ date, time, customer, phone, status, notes }`
 
 ### Resource
-Bookable item (room, equipment, person).
-- Has availability schedule
-- Has capacity
-- Has pricing
+A bookable resource (room, chair, table) stored as `matter` with `type='resource'`.
+- `data` = `{ capacity, amenities }`
 
-## Common Operations
+## Common Operations (6-Tool Pattern)
 
-### Book Slot
-1. action_book_slot(resourceId, start, end, customerName)
-2. Creates reservation matter
-3. Sets status='booked'
-4. Links to resource
+### Create Booking
+1. `create(table='matter', type='booking', title='{service}', data:{date, time, customer, phone, status:'confirmed'}, scope='{scope}')`
+2. `link(src='{customerId}', rel='booked', tgt='{bookingId}')`
+3. `create(table='motion', stream:'{bookingId}', action=99993, data:{event:'booking_created', service, date, time}, scope='{scope}')`
 
-### Confirm Reservation
-1. action_advance_stage(targetPhase=2)
-2. tool_set_attr(status='confirmed')
-3. action_notify(customer, template='booking-confirmed')
+### Cancel Booking
+1. `read(table='matter', id='{bookingId}')` — get current data
+2. `update(table='matter', id='{bookingId}', patch:{data:{...currentData, status:'cancelled'}})`
+3. `create(table='motion', stream:'{bookingId}', action=99993, data:{event:'booking_cancelled'}, scope='{scope}')`
 
-### Cancel Reservation
-1. action_advance_stage(targetPhase=3)
-2. tool_set_attr(status='cancelled')
-3. action_notify(customer, template='booking-cancelled')
+### Reschedule Booking
+1. `read(table='matter', id='{bookingId}')` — get current data
+2. `update(table='matter', id='{bookingId}', patch:{data:{...currentData, date: newDate, time: newTime, status:'rescheduled'}})`
+3. `create(table='motion', stream:'{bookingId}', action=99993, data:{event:'booking_rescheduled'}, scope='{scope}')`
+
+### List Bookings for Date
+1. `read(table='matter', type='booking', scope='{scope}', filters:[{key:'date', val:'{date}'}])`
 
 ### Check Availability
-1. tool_list_matters(type='reservation', filters=[resource, date])
-2. Check for conflicts
+1. `read(table='matter', type='booking', scope='{scope}', filters:[{key:'date', val:'{date}'}, {key:'time', val:'{time}'}])`
+2. If no results → slot is available
+
+### List Today's Bookings
+1. `read(table='matter', type='booking', scope='{scope}', limit:50)`
 
 ## Best Practices
 
-### Scheduling
-- Block buffer time between bookings
-- Set cancellation policies
-- Send reminders
-
-### Resources
-- Track utilization rates
-- Optimize pricing by demand
-- Maintain equipment
+- Store date/time in `data` JSON for filtering
+- Link bookings to customers via `graph(rel='booked')`
+- Check availability before confirming
+- Use `status` field: confirmed, cancelled, completed, no-show

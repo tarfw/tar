@@ -9,9 +9,6 @@ import { EmbeddingsProvider } from '@/db/embeddings-provider';
 import { Colors } from '@/constants/theme';
 import { initDb, getSelfId } from '@/lib/db';
 import { initEmbeddings } from '@/lib/embeddings';
-import { checkAndSyncExistingForms } from '@/lib/vectorStore';
-import { ensureBuiltins } from '@/actions/seed';
-import { setActionUserId } from '@/actions/store';
 
 const T0 = Date.now();
 function ms() { return `${Date.now() - T0}ms`; }
@@ -35,15 +32,7 @@ function RootLayoutInner() {
 
         console.log(`[BOOT] ${ms()} — getSelfId() START`);
         const userId = await getSelfId();
-        setActionUserId(userId);
         console.log(`[BOOT] ${ms()} — getSelfId() DONE: ${userId}`);
-
-        console.log(`[BOOT] ${ms()} — ensureBuiltins() START`);
-        await ensureBuiltins();
-        console.log(`[BOOT] ${ms()} — ensureBuiltins() DONE`);
-
-        console.log(`[BOOT] ${ms()} — vector sync START (fire & forget)`);
-        checkAndSyncExistingForms().catch(e => console.warn(`[BOOT] ${ms()} — Vector sync error:`, e));
       } catch (e) {
         console.error(`[BOOT] ${ms()} — Init FAILED:`, e);
       } finally {
@@ -68,18 +57,8 @@ function RootLayoutInner() {
           }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="auth" />
-        <Stack.Screen name="actions" />
-        <Stack.Screen name="(nav)" />
-        <Stack.Screen name="settings" />
-        <Stack.Screen name="workspace" />
-        <Stack.Screen name="add" />
-        <Stack.Screen name="add-item" />
-        <Stack.Screen name="browse" />
-        <Stack.Screen name="chat" />
-        <Stack.Screen name="actions-catalog" />
-        <Stack.Screen name="entity" />
-        <Stack.Screen name="product" />
-        <Stack.Screen name="personal" />
+        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="(tabs)" />
       </Stack>
     </View>
   );

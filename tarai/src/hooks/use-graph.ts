@@ -5,7 +5,6 @@ export interface GraphRow {
   src: string;
   rel: string;
   tgt: string;
-  weight: number;
   active: number;
 }
 
@@ -19,7 +18,7 @@ export function useGraph(src?: string, rel?: string) {
     const params: any[] = [];
     if (src) { query += ' AND src = ?'; params.push(src); }
     if (rel) { query += ' AND rel = ?'; params.push(rel); }
-    query += ' ORDER BY weight ASC';
+    query += ' ORDER BY time DESC';
     setRows(await db.getAllAsync<GraphRow>(query, params));
     setLoading(false);
   }, [db, src, rel]);
@@ -27,10 +26,10 @@ export function useGraph(src?: string, rel?: string) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { refresh(); }, [refresh]);
 
-  const link = useCallback(async (srcId: string, tgtId: string, linkRel: string, weight = 0) => {
+  const link = useCallback(async (srcId: string, tgtId: string, linkRel: string) => {
     await db.runAsync(
-      'INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active) VALUES (?, ?, ?, ?, 1)',
-      srcId, linkRel, tgtId, weight
+      'INSERT OR REPLACE INTO graph (src, rel, tgt, active, time) VALUES (?, ?, ?, 1, ?)',
+      srcId, linkRel, tgtId, new Date().toISOString()
     );
     await refresh();
   }, [db, refresh]);

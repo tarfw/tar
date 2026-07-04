@@ -18,6 +18,32 @@ if (!GROQ_API_KEY) {
   console.warn('[AI] Missing EXPO_PUBLIC_GROQ_API_KEY');
 }
 
+export interface ActionDef {
+  id: string;
+  type: string;
+  name: string;
+  description: string;
+  vertical: string;
+  icon: string;
+  keywords: string[];
+  fields: Array<{
+    name: string;
+    type: string;
+    label: string;
+    required: boolean;
+    placeholder: string;
+    options?: string[];
+  }>;
+  creates: {
+    table: string;
+    formType: string;
+    formScope: string;
+    titleTemplate: string;
+    dataFields: string[];
+  };
+  custom?: boolean;
+}
+
 export const COMMERCE_CATEGORIES = [
   'Electronics',
   'Clothing & Apparel',
@@ -246,7 +272,7 @@ Rules:
  * description. Returns a normalized ActionDef (with `custom: true`, timestamped
  * id, and forced creates.table='form').
  */
-export async function generateActionDefinition(userInput: string): Promise<import('@/actions/definitions').ActionDef> {
+export async function generateActionDefinition(userInput: string): Promise<ActionDef> {
   console.log(`[AI] generateActionDefinition: "${userInput}"`);
 
   const content = await chatCompletion(ACTION_SYSTEM_PROMPT, userInput);
@@ -335,9 +361,9 @@ Rules:
  * Takes the current action + user's edit instruction, returns modified action.
  */
 export async function editActionDefinition(
-  currentAction: import('@/actions/definitions').ActionDef,
+  currentAction: ActionDef,
   editInstruction: string
-): Promise<import('@/actions/definitions').ActionDef> {
+): Promise<ActionDef> {
   console.log(`[AI] editActionDefinition: "${editInstruction}" on "${currentAction.name}"`);
 
   const currentJson = JSON.stringify({

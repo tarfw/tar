@@ -1,5 +1,5 @@
 /**
- * Helper functions for calling tools and actions directly.
+ * Helper functions for the 6 generic tools.
  * Uses Turso HTTP API via db.ts — no React Native dependencies.
  */
 
@@ -11,55 +11,121 @@ function parseJson(v: any): any {
 }
 
 // ============================================================
-// createMatter — Insert into form or matter table
+// executeCreate — Insert into any table
 // ============================================================
-export async function createMatter(input: {
-  table: 'form' | 'matter'; scope: string; type: string; form?: string;
-  title?: string; value?: number; qty?: number; mark?: number;
-  data?: Record<string, any>; owner?: string; [key: string]: any;
+export async function executeCreate(input: {
+  table: string; scope?: string; type?: string; form?: string;
+  title?: string; value?: number; qty?: number; unit?: string;
+  data?: Record<string, any>; owner?: string;
+  src?: string; rel?: string; tgt?: string;
+  text?: string; embedding?: string; meta?: Record<string, any>;
+  stream?: string; action?: number; phase?: number; delta?: number;
+  [key: string]: any;
 }) {
-  const id = input.table === 'form'
-    ? (input.code ? `form_${input.code}` : `form_${Date.now()}`)
-    : `matter_${Date.now()}`;
   const now = new Date().toISOString();
 
   if (input.table === 'form') {
+    const id = `form_${Date.now()}`;
     await dbRun(
       `INSERT INTO form (id, type, scope, title, data, time, active) VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [id, input.type, input.scope, input.title || null, JSON.stringify(input.data || {}), now]
+      [id, input.type || 'unknown', input.scope || '', input.title || null, JSON.stringify(input.data || {}), now]
     );
-  } else {
-    await dbRun(
-      `INSERT INTO matter (id, form, type, scope, title, value, qty, mark, data, owner, time, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-      [id, input.form || '', input.type, input.scope, input.title || null, input.value ?? null, input.qty ?? null, input.mark ?? 0, JSON.stringify(input.data || {}), input.owner || null, now]
-    );
+    return { id, time: now, status: 'created' };
   }
 
-  return { id, time: now, status: 'created' };
+  if (input.table === 'matter') {
+    const id = `matter_${Date.now()}`;
+    await dbRun(
+      `INSERT INTO matter (id, form, type, scope, title, value, qty, data, owner, time, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [id, input.form || '', input.type || 'unknown', input.scope || '', input.title || null, input.value ?? null, input.qty ?? null, JSON.stringify(input.data || {}), input.owner || null, now]
+    );
+    return { id, time: now, status: 'created' };
+  }
+
+  if (input.table === 'motion') {
+    const stream = input.stream || input.scope || 'default';
+    const nextSeqRes = await dbGet('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM motion WHERE stream = ?', [stream]);
+    const seq = Number(nextSeqRes?.next ?? 1);
+    await dbRun(
+      `INSERT INTO motion (stream, seq, action, phase, delta, data, time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [stream, seq, input.action ?? 0, input.phase ?? null, input.delta ?? null, JSON.stringify(input.data || {}), now]
+    );
+    return { stream, seq, status: 'created' };
+  }
+
+  if (input.table === 'graph') {
+    if (!input.src || !input.rel || !input.tgt) return { error: 'src, rel, tgt required for graph' };
+    await dbRun(
+      `INSERT OR REPLACE INTO graph (src, rel, tgt, active, time) VALUES (?, ?, ?, 1, ?)`,
+      [input.src, input.rel, input.tgt, now]
+    );
+    return { src: input.src, rel: input.rel, tgt: input.tgt, status: 'linked' };
+  }
+
+  if (input.table === 'memory') {
+    const id = input.text ? `mem_${Date.now()}` : `mem_${Date.now()}`;
+    await dbRun(
+      `INSERT OR REPLACE INTO memory (id, chunk, matter, text, embedding, meta) VALUES (?, 0, ?, ?, ?, ?)`,
+      [id, null, input.text || '', input.embedding || '', JSON.stringify(input.meta || {})]
+    );
+    return { id, status: 'stored' };
+  }
+
+  return { error: `Unknown table: ${input.table}` };
 }
 
 // ============================================================
-// getMatter — Read one record
+// executeRead — Select from any table
 // ============================================================
-export async function getMatter(input: { table: string; scope?: string; id: string }) {
-  const row = await dbGet(`SELECT * FROM ${input.table} WHERE id = ?`, [input.id]);
-  if (row?.data) row.data = parseJson(row.data);
-  return { rows: row ? [row] : [], count: row ? 1 : 0 };
-}
-
-// ============================================================
-// listMatters — Read filtered list
-// ============================================================
-export async function listMatters(input: {
-  table: string; scope?: string; type?: string; id?: string;
-  active?: boolean; limit?: number; offset?: number;
+export async function executeRead(input: {
+  table: string; id?: string; scope?: string; type?: string;
+  src?: string; rel?: string; tgt?: string;
+  stream?: string; active?: boolean;
+  limit?: number; offset?: number;
   filters?: Array<{ key: string; val: any }>;
+  [key: string]: any;
 }) {
+  if (input.table === 'graph') {
+    let sql = 'SELECT * FROM graph WHERE 1=1';
+    const args: any[] = [];
+    if (input.src) { sql += ' AND src = ?'; args.push(input.src); }
+    if (input.rel) { sql += ' AND rel = ?'; args.push(input.rel); }
+    if (input.tgt) { sql += ' AND tgt = ?'; args.push(input.tgt); }
+    sql += ' AND active = 1';
+    sql += ' LIMIT ?';
+    args.push(input.limit ?? 50);
+    const rows = await dbAll(sql, args);
+    return { rows, count: rows.length };
+  }
+
+  if (input.table === 'motion') {
+    let sql = 'SELECT * FROM motion WHERE 1=1';
+    const args: any[] = [];
+    if (input.stream) { sql += ' AND stream = ?'; args.push(input.stream); }
+    if (input.id) { sql += ' AND stream = ?'; args.push(input.id); }
+    sql += ' ORDER BY seq DESC LIMIT ?';
+    args.push(input.limit ?? 50);
+    const rows = await dbAll(sql, args);
+    return { rows: rows.map(r => ({ ...r, data: parseJson(r.data) })), count: rows.length };
+  }
+
+  if (input.table === 'memory') {
+    let sql = 'SELECT * FROM memory WHERE 1=1';
+    const args: any[] = [];
+    if (input.id) { sql += ' AND id = ?'; args.push(input.id); }
+    if (input.scope) { sql += " AND json_extract(meta, '$.scope') = ?"; args.push(input.scope); }
+    sql += ' LIMIT ?';
+    args.push(input.limit ?? 50);
+    const rows = await dbAll(sql, args);
+    return { rows: rows.map(r => ({ ...r, meta: parseJson(r.meta) })), count: rows.length };
+  }
+
+  // form or matter
   let sql = `SELECT * FROM ${input.table} WHERE 1=1`;
   const args: any[] = [];
 
-  if (input.scope) { sql += ' AND scope = ?'; args.push(input.scope); }
   if (input.id) { sql += ' AND id = ?'; args.push(input.id); }
+  if (input.scope) { sql += ' AND scope = ?'; args.push(input.scope); }
   if (input.type) { sql += ' AND type = ?'; args.push(input.type); }
   if (input.active !== undefined) { sql += ' AND active = ?'; args.push(input.active ? 1 : 0); }
 
@@ -71,7 +137,7 @@ export async function listMatters(input: {
   }
 
   sql += ' ORDER BY time DESC';
-  sql += ` LIMIT ? OFFSET ?`;
+  sql += ' LIMIT ? OFFSET ?';
   args.push(input.limit ?? 50, input.offset ?? 0);
 
   const rows = await dbAll(sql, args);
@@ -79,11 +145,12 @@ export async function listMatters(input: {
 }
 
 // ============================================================
-// updateMatter — Update a record
+// executeUpdate — Update any table
 // ============================================================
-export async function updateMatter(input: {
-  table: string; id: string; scope: string;
-  patch: Record<string, any>; phase?: number; reason?: string;
+export async function executeUpdate(input: {
+  table: string; id?: string; scope?: string; type?: string;
+  patch: Record<string, any>;
+  [key: string]: any;
 }) {
   const now = new Date().toISOString();
   const sets: string[] = ['updated = ?'];
@@ -92,8 +159,11 @@ export async function updateMatter(input: {
   for (const [key, val] of Object.entries(input.patch)) {
     if (val !== undefined) {
       if (key === 'data') {
+        // Merge with existing data
+        const existing = input.id ? await dbGet(`SELECT data FROM ${input.table} WHERE id = ?`, [input.id]) : null;
+        const merged = { ...parseJson(existing?.data), ...val };
         sets.push('data = ?');
-        args.push(JSON.stringify(val));
+        args.push(JSON.stringify(merged));
       } else {
         sets.push(`${key} = ?`);
         args.push(val);
@@ -101,145 +171,95 @@ export async function updateMatter(input: {
     }
   }
 
-  args.push(input.id);
-  await dbRun(`UPDATE ${input.table} SET ${sets.join(', ')} WHERE id = ?`, args);
+  let whereClause = 'WHERE 1=1';
+  if (input.id) { whereClause += ' AND id = ?'; args.push(input.id); }
+  if (input.scope) { whereClause += ' AND scope = ?'; args.push(input.scope); }
+  if (input.type) { whereClause += ' AND type = ?'; args.push(input.type); }
 
-  // Log update to motion
-  if (input.table === 'matter') {
+  await dbRun(`UPDATE ${input.table} SET ${sets.join(', ')} ${whereClause}`, args);
+
+  // Log update to motion for matter table
+  if (input.table === 'matter' && input.id) {
     const seq = Date.now();
     await dbRun(
       `INSERT INTO motion (stream, seq, action, phase, data, time) VALUES (?, ?, 1001, ?, ?, ?)`,
-      [input.id, seq, input.phase ?? null, JSON.stringify({ reason: input.reason || '', changed: Object.keys(input.patch) }), new Date().toISOString()]
+      [input.id, seq, null, JSON.stringify({ changed: Object.keys(input.patch) }), now]
     );
   }
 
-  return { success: true, id: input.id, time: now };
+  return { success: true, time: now };
 }
 
 // ============================================================
-// appendMotion — Log event to motion table
+// executeDelete — Soft delete (set active=0)
 // ============================================================
-export async function appendMotion(input: {
-  stream: string; action: number; phase?: number; delta?: number;
-  client_ref?: string; data?: Record<string, any>; scope?: string;
+export async function executeDelete(input: {
+  table: string; id?: string; scope?: string;
+  src?: string; rel?: string; tgt?: string;
+  [key: string]: any;
 }) {
-  const nextSeqRes = await dbGet('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM motion WHERE stream = ?', [input.stream]);
-  const seq = Number(nextSeqRes?.next ?? 1);
   const now = new Date().toISOString();
 
-  await dbRun(
-    `INSERT INTO motion (stream, seq, action, phase, delta, client_ref, data, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [input.stream, seq, input.action, input.phase ?? null, input.delta ?? null, input.client_ref || null, JSON.stringify(input.data || {}), now]
-  );
+  if (input.table === 'graph') {
+    if (input.src && input.rel && input.tgt) {
+      await dbRun(
+        `UPDATE graph SET active = 0, time = ? WHERE src = ? AND rel = ? AND tgt = ?`,
+        [now, input.src, input.rel, input.tgt]
+      );
+      return { success: true, status: 'deactivated' };
+    }
+    return { error: 'src, rel, tgt required for graph delete' };
+  }
 
-  return { stream: input.stream, seq };
+  let whereClause = 'WHERE 1=1';
+  const args: any[] = [now];
+  if (input.id) { whereClause += ' AND id = ?'; args.push(input.id); }
+  if (input.scope) { whereClause += ' AND scope = ?'; args.push(input.scope); }
+
+  await dbRun(`UPDATE ${input.table} SET active = 0, updated = ? ${whereClause}`, args);
+  return { success: true, status: 'soft_deleted' };
 }
 
 // ============================================================
-// setAttr — Set hot field (upsert)
+// executeLink — Create or toggle graph edge
 // ============================================================
-export async function setAttr(input: {
-  matterId: string; key: string; val?: string; num?: number; ref?: string; scope?: string;
+export async function executeLink(input: {
+  src: string; rel: string; tgt: string; active?: boolean;
 }) {
   const now = new Date().toISOString();
-  await dbRun(
-    `INSERT INTO attr (matter, key, val, num, ref, time) VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(matter, key) DO UPDATE SET val=excluded.val, num=excluded.num, ref=excluded.ref, time=excluded.time`,
-    [input.matterId, input.key, input.val ?? null, input.num ?? null, input.ref ?? null, now]
-  );
-  return { matter: input.matterId, key: input.key, status: 'set' };
-}
+  const active = input.active !== undefined ? (input.active ? 1 : 0) : 1;
 
-// ============================================================
-// linkGraph — Create relationship edge
-// ============================================================
-export async function linkGraph(input: {
-  src: string; rel: string; tgt: string; scope?: string;
-  weight?: number; bidirectional?: boolean;
-}) {
-  const now = new Date().toISOString();
-  await dbRun(
-    `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time) VALUES (?, ?, ?, ?, 1, ?)`,
-    [input.src, input.rel, input.tgt, input.weight ?? 1.0, now]
+  // Check if edge exists
+  const existing = await dbGet(
+    'SELECT active FROM graph WHERE src = ? AND rel = ? AND tgt = ?',
+    [input.src, input.rel, input.tgt]
   );
-  if (input.bidirectional) {
+
+  if (existing) {
+    // Toggle or set
     await dbRun(
-      `INSERT OR REPLACE INTO graph (src, rel, tgt, weight, active, time) VALUES (?, ?, ?, ?, 1, ?)`,
-      [input.tgt, input.rel, input.src, input.weight ?? 1.0, now]
+      'UPDATE graph SET active = ?, time = ? WHERE src = ? AND rel = ? AND tgt = ?',
+      [active, now, input.src, input.rel, input.tgt]
     );
+    return { src: input.src, rel: input.rel, tgt: input.tgt, status: active ? 'activated' : 'deactivated' };
   }
+
+  // Create new edge
+  await dbRun(
+    'INSERT INTO graph (src, rel, tgt, active, time) VALUES (?, ?, ?, ?, ?)',
+    [input.src, input.rel, input.tgt, active, now]
+  );
   return { src: input.src, rel: input.rel, tgt: input.tgt, status: 'linked' };
 }
 
 // ============================================================
-// readMotions — Read event history
+// executeSearch — Text search on memory table
 // ============================================================
-export async function readMotions(input: {
-  scope?: string; stream: string; seq_from?: number; seq_to?: number; limit?: number;
-}) {
-  let sql = 'SELECT * FROM motion WHERE stream = ?';
-  const args: any[] = [input.stream];
-
-  if (input.seq_from !== undefined) { sql += ' AND seq >= ?'; args.push(input.seq_from); }
-  if (input.seq_to !== undefined) { sql += ' AND seq <= ?'; args.push(input.seq_to); }
-
-  sql += ' ORDER BY seq ASC LIMIT ?';
-  args.push(input.limit ?? 50);
-
-  const rows = await dbAll(sql, args);
-  return { rows: rows.map(r => ({ ...r, data: parseJson(r.data) })), count: rows.length };
-}
-
-// ============================================================
-// traverseGraph — Find relationships
-// ============================================================
-export async function traverseGraph(input: {
-  scope: string; src?: string; rel?: string; tgt?: string; depth?: number; limit?: number;
-}) {
-  let sql = 'SELECT * FROM graph WHERE 1=1';
-  const args: any[] = [];
-
-  if (input.src) { sql += ' AND src = ?'; args.push(input.src); }
-  if (input.rel) { sql += ' AND rel = ?'; args.push(input.rel); }
-  if (input.tgt) { sql += ' AND tgt = ?'; args.push(input.tgt); }
-
-  sql += ' AND active = 1';
-  sql += ' LIMIT ?';
-  args.push(input.limit ?? 50);
-
-  const rows = await dbAll(sql, args);
-  return { rows: rows.map(r => ({ ...r, data: parseJson(r.data) })), count: rows.length };
-}
-
-// ============================================================
-// readForm — Read config from form table
-// ============================================================
-export async function readForm(input: {
-  scope: string; id?: string; type?: string; active?: boolean; limit?: number;
-}) {
-  let sql = 'SELECT * FROM form WHERE 1=1';
-  const args: any[] = [];
-
-  if (input.scope) { sql += ' AND scope = ?'; args.push(input.scope); }
-  if (input.id) { sql += ' AND id = ?'; args.push(input.id); }
-  if (input.type) { sql += ' AND type = ?'; args.push(input.type); }
-  if (input.active !== undefined) { sql += ' AND active = ?'; args.push(input.active ? 1 : 0); }
-
-  sql += ' ORDER BY time DESC LIMIT ?';
-  args.push(input.limit ?? 50);
-
-  const rows = await dbAll(sql, args);
-  return { rows: rows.map(r => ({ ...r, data: parseJson(r.data) })), count: rows.length };
-}
-
-// ============================================================
-// searchMemory — Semantic search
-// ============================================================
-export async function searchMemory(input: {
+export async function executeSearch(input: {
   query: string; scope?: string; type?: string; limit?: number;
 }) {
   const words = input.query.toLowerCase().split(/\s+/).filter(w => w.trim());
-  if (words.length === 0) return [];
+  if (words.length === 0) return { rows: [], count: 0 };
 
   let sql = 'SELECT m.id, m.text, m.meta FROM memory m';
   const args: any[] = [];
@@ -257,26 +277,70 @@ export async function searchMemory(input: {
   args.push(input.limit ?? 10);
 
   const rows = await dbAll(sql, args);
-  return rows.map(r => ({
-    id: r.id,
-    text: r.text || '',
-    meta: parseJson(r.meta),
-    similarity: 0.8,
-    source: 'fts',
-  }));
+  return {
+    rows: rows.map(r => ({
+      id: r.id,
+      text: r.text || '',
+      meta: parseJson(r.meta),
+      similarity: 0.8,
+      source: 'fts',
+    })),
+    count: rows.length,
+  };
 }
 
 // ============================================================
-// storeMemory — Store embedding
+// Legacy helpers (kept for backward compatibility with actions)
 // ============================================================
-export async function storeMemory(input: {
-  id: string; chunk?: number; matter?: string; text: string;
-  embedding: string; meta?: Record<string, any>; scope?: string;
-}) {
-  const chunk = input.chunk ?? 0;
-  await dbRun(
-    `INSERT OR REPLACE INTO memory (id, chunk, matter, text, embedding, meta) VALUES (?, ?, ?, ?, ?, ?)`,
-    [input.id, chunk, input.matter ?? null, input.text, input.embedding, JSON.stringify(input.meta || {})]
-  );
-  return { id: input.id, chunk, status: 'stored' };
+export async function createMatter(input: any) {
+  return executeCreate({ ...input, table: input.table || 'matter' });
+}
+
+export async function getMatter(input: any) {
+  return executeRead({ ...input, table: input.table || 'matter' });
+}
+
+export async function listMatters(input: any) {
+  return executeRead({ ...input, table: input.table || 'matter' });
+}
+
+export async function updateMatter(input: any) {
+  return executeUpdate({ ...input, table: input.table || 'matter', patch: input.patch || {} });
+}
+
+export async function appendMotion(input: any) {
+  return executeCreate({ ...input, table: 'motion' });
+}
+
+export async function readMotions(input: any) {
+  return executeRead({ ...input, table: 'motion' });
+}
+
+export async function linkGraph(input: any) {
+  return executeLink(input);
+}
+
+export async function traverseGraph(input: any) {
+  return executeRead({ ...input, table: 'graph' });
+}
+
+export async function setAttr(input: any) {
+  // Redirect to matter.data JSON update
+  const matter = await dbGet('SELECT data FROM matter WHERE id = ?', [input.matterId]);
+  const data = parseJson(matter?.data);
+  data[input.key] = input.val ?? input.num ?? null;
+  await dbRun('UPDATE matter SET data = ?, updated = ? WHERE id = ?', [JSON.stringify(data), new Date().toISOString(), input.matterId]);
+  return { matter: input.matterId, key: input.key, status: 'set' };
+}
+
+export async function readForm(input: any) {
+  return executeRead({ ...input, table: 'form' });
+}
+
+export async function searchMemory(input: any) {
+  return executeSearch(input);
+}
+
+export async function storeMemory(input: any) {
+  return executeCreate({ ...input, table: 'memory' });
 }

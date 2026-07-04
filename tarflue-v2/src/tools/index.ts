@@ -1,136 +1,110 @@
 import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
-import { createMatter, getMatter, listMatters, updateMatter, appendMotion, readMotions, linkGraph, traverseGraph, setAttr, searchMemory, storeMemory, readForm } from '../lib/helpers';
+import { executeCreate, executeRead, executeUpdate, executeDelete, executeLink, executeSearch } from '../lib/helpers';
 
-export const createMatterTool = defineTool({
-  name: 'create_matter',
-  description: 'Create a new entity (matter) in the database. Use for leads, orders, products, tasks, etc.',
-  input: v.object({
-    table: v.picklist(['form', 'matter']),
-    scope: v.string(),
-    type: v.string(),
-    title: v.optional(v.string()),
-    value: v.optional(v.number()),
-    data: v.optional(v.record(v.string(), v.any())),
-  }),
-  async run({ input }) {
-    return createMatter(input);
-  },
-});
+// ============================================================
+// 6 Generic Tools — Agent sees only these
+// ============================================================
 
-export const getMatterTool = defineTool({
-  name: 'get_matter',
-  description: 'Read a single entity by ID from form or matter table.',
+export const createTool = defineTool({
+  name: 'create',
+  description: 'Insert a row into any table (form, matter, motion, graph, memory).',
   input: v.object({
-    table: v.string(),
-    id: v.string(),
-  }),
-  async run({ input }) {
-    return getMatter(input);
-  },
-});
-
-export const listMattersTool = defineTool({
-  name: 'list_matters',
-  description: 'List entities from form or matter table with optional filters.',
-  input: v.object({
-    table: v.string(),
+    table: v.picklist(['form', 'matter', 'motion', 'graph', 'memory']),
     scope: v.optional(v.string()),
     type: v.optional(v.string()),
-    limit: v.optional(v.number()),
+    form: v.optional(v.string()),
+    title: v.optional(v.string()),
+    value: v.optional(v.number()),
+    qty: v.optional(v.number()),
+    unit: v.optional(v.string()),
+    data: v.optional(v.record(v.string(), v.any())),
+    src: v.optional(v.string()),
+    rel: v.optional(v.string()),
+    tgt: v.optional(v.string()),
+    text: v.optional(v.string()),
+    embedding: v.optional(v.string()),
+    meta: v.optional(v.record(v.string(), v.any())),
+    stream: v.optional(v.string()),
+    action: v.optional(v.number()),
+    phase: v.optional(v.number()),
+    delta: v.optional(v.number()),
   }),
   async run({ input }) {
-    return listMatters(input);
+    return executeCreate(input);
   },
 });
 
-export const updateMatterTool = defineTool({
-  name: 'update_matter',
-  description: 'Update an existing entity in form or matter table.',
+export const readTool = defineTool({
+  name: 'read',
+  description: 'Select rows from any table (form, matter, motion, graph, memory). Supports filters by scope, type, id, and JSON fields.',
   input: v.object({
-    table: v.string(),
-    id: v.string(),
-    scope: v.string(),
+    table: v.picklist(['form', 'matter', 'motion', 'graph', 'memory']),
+    id: v.optional(v.string()),
+    scope: v.optional(v.string()),
+    type: v.optional(v.string()),
+    src: v.optional(v.string()),
+    rel: v.optional(v.string()),
+    tgt: v.optional(v.string()),
+    stream: v.optional(v.string()),
+    active: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+    offset: v.optional(v.number()),
+    filters: v.optional(v.array(v.object({ key: v.string(), val: v.any() }))),
+  }),
+  async run({ input }) {
+    return executeRead(input);
+  },
+});
+
+export const updateTool = defineTool({
+  name: 'update',
+  description: 'Update rows in any table (form, matter, motion). Provide an id or scope+type to target, and a patch object with fields to change.',
+  input: v.object({
+    table: v.picklist(['form', 'matter', 'motion']),
+    id: v.optional(v.string()),
+    scope: v.optional(v.string()),
+    type: v.optional(v.string()),
     patch: v.record(v.string(), v.any()),
   }),
   async run({ input }) {
-    return updateMatter(input);
+    return executeUpdate(input);
   },
 });
 
-export const appendMotionTool = defineTool({
-  name: 'append_motion',
-  description: 'Log an event to the motion table (audit trail).',
+export const deleteTool = defineTool({
+  name: 'delete',
+  description: 'Soft-delete a row by setting active=0. Works on form, matter, and graph tables.',
   input: v.object({
-    stream: v.string(),
-    action: v.number(),
-    data: v.optional(v.record(v.string(), v.any())),
+    table: v.picklist(['form', 'matter', 'graph']),
+    id: v.optional(v.string()),
     scope: v.optional(v.string()),
-  }),
-  async run({ input }) {
-    return appendMotion(input);
-  },
-});
-
-export const readMotionsTool = defineTool({
-  name: 'read_motions',
-  description: 'Read event history from the motion table.',
-  input: v.object({
-    stream: v.string(),
-    scope: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  }),
-  async run({ input }) {
-    return readMotions(input);
-  },
-});
-
-export const linkGraphTool = defineTool({
-  name: 'link_graph',
-  description: 'Create a relationship between two entities in the graph table.',
-  input: v.object({
-    src: v.string(),
-    rel: v.string(),
-    tgt: v.string(),
-    scope: v.string(),
-  }),
-  async run({ input }) {
-    return linkGraph(input);
-  },
-});
-
-export const traverseGraphTool = defineTool({
-  name: 'traverse_graph',
-  description: 'Find relationships by traversing the graph table.',
-  input: v.object({
-    scope: v.string(),
     src: v.optional(v.string()),
     rel: v.optional(v.string()),
     tgt: v.optional(v.string()),
   }),
   async run({ input }) {
-    return traverseGraph(input);
+    return executeDelete(input);
   },
 });
 
-export const setAttrTool = defineTool({
-  name: 'set_attr',
-  description: 'Set a hot field on a matter (indexed for fast lookups).',
+export const linkTool = defineTool({
+  name: 'link',
+  description: 'Create or toggle a relationship edge in the graph table. If the edge exists, toggle its active state.',
   input: v.object({
-    matterId: v.string(),
-    key: v.string(),
-    val: v.optional(v.string()),
-    num: v.optional(v.number()),
-    scope: v.optional(v.string()),
+    src: v.string(),
+    rel: v.string(),
+    tgt: v.string(),
+    active: v.optional(v.boolean()),
   }),
   async run({ input }) {
-    return setAttr(input);
+    return executeLink(input);
   },
 });
 
-export const searchMemoryTool = defineTool({
-  name: 'search_memory',
-  description: 'Search for entities using vector similarity or text matching.',
+export const searchTool = defineTool({
+  name: 'search',
+  description: 'Vector/text search across the memory table. Use for semantic search on marketplace items, motion history, or stored knowledge.',
   input: v.object({
     query: v.string(),
     scope: v.optional(v.string()),
@@ -138,50 +112,8 @@ export const searchMemoryTool = defineTool({
     limit: v.optional(v.number()),
   }),
   async run({ input }) {
-    return searchMemory(input);
+    return executeSearch(input);
   },
 });
 
-export const storeMemoryTool = defineTool({
-  name: 'store_memory',
-  description: 'Store a text chunk with embedding for semantic search.',
-  input: v.object({
-    id: v.string(),
-    matter: v.optional(v.string()),
-    text: v.string(),
-    embedding: v.string(),
-    meta: v.optional(v.record(v.string(), v.any())),
-    scope: v.optional(v.string()),
-  }),
-  async run({ input }) {
-    return storeMemory(input);
-  },
-});
-
-export const readFormTool = defineTool({
-  name: 'read_form',
-  description: 'Read configuration from the form table.',
-  input: v.object({
-    scope: v.string(),
-    type: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  }),
-  async run({ input }) {
-    return readForm(input);
-  },
-});
-
-export const allTools = [
-  createMatterTool,
-  getMatterTool,
-  listMattersTool,
-  updateMatterTool,
-  appendMotionTool,
-  readMotionsTool,
-  linkGraphTool,
-  traverseGraphTool,
-  setAttrTool,
-  searchMemoryTool,
-  storeMemoryTool,
-  readFormTool,
-];
+export const allTools = [createTool, readTool, updateTool, deleteTool, linkTool, searchTool];

@@ -51,10 +51,10 @@ export function getUserDb(): Database {
 
 export const getDbClient = getUserDb;
 
-export function scopePrefix(scope: string | null): 'p' | 't' | 's' | 'g' {
+export function scopePrefix(scope: string | null): 'p' | 'w' | 'o' | 'g' {
   if (!scope || scope === 'p' || scope.startsWith('p:')) return 'p';
-  if (scope === 't' || scope.startsWith('t:')) return 't';
-  if (scope === 's' || scope.startsWith('s:')) return 's';
+  if (scope === 'w' || scope.startsWith('w:')) return 'w';
+  if (scope === 'o' || scope.startsWith('o:')) return 'o';
   return 'g';
 }
 
@@ -67,9 +67,9 @@ export function getWorkspaceDb(workspaceId: string): Database {
   return createDbConnection(`workspace_${id}`, `workspace_${id}.db`);
 }
 
-export function getStorefrontDb(storefrontId: string): Database {
-  const id = extractScopeId(storefrontId);
-  return createDbConnection(`storefront_${id}`, `storefront_${id}.db`);
+export function getOrderDb(orderId: string): Database {
+  const id = extractScopeId(orderId);
+  return createDbConnection(`order_${id}`, `order_${id}.db`);
 }
 
 /**
@@ -95,12 +95,12 @@ export function routeDbForEntity(_type: string | null, scope: string | null): Da
     return getGlobalDb();
   }
 
-  if (prefix === 't' && scope) {
+  if (prefix === 'w' && scope) {
     return getWorkspaceDb(scope);
   }
 
-  if (prefix === 's' && scope) {
-    return getStorefrontDb(scope);
+  if (prefix === 'o' && scope) {
+    return getOrderDb(scope);
   }
 
   // Fallback to personal DB for unrecognized scopes
@@ -159,12 +159,12 @@ async function migrateMemoryTable(db: Database, label: string) {
   try {
     const cols = await db.all(`PRAGMA table_info(graph)`).catch(() => [] as any[]);
     if (Array.isArray(cols) && cols.length > 0) {
-      const hasTypeCol = cols.some((c: any) => c.name === 'type');
-      if (hasTypeCol) {
-        console.log(`[DB] migrating graph table (${label}) → target schema`);
+      const hasWeightCol = cols.some((c: any) => c.name === 'weight');
+      if (hasWeightCol) {
+        console.log(`[DB] migrating graph table (${label}) → removing weight column`);
         await db.exec(`DROP TABLE IF EXISTS graph`);
         await db.exec(
-          `CREATE TABLE IF NOT EXISTS graph (src TEXT NOT NULL, rel TEXT NOT NULL, tgt TEXT NOT NULL, weight REAL DEFAULT 1.0, active INTEGER DEFAULT 1, time TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (src, rel, tgt))`
+          `CREATE TABLE IF NOT EXISTS graph (src TEXT NOT NULL, rel TEXT NOT NULL, tgt TEXT NOT NULL, active INTEGER DEFAULT 1, data TEXT, time TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (src, rel, tgt))`
         );
         console.log(`[DB] graph table migrated (${label})`);
       }
@@ -211,13 +211,6 @@ export async function switchUser(userId: string): Promise<Database> {
   console.log(`[DB] switchUser START: switching session to user = ${userId}`);
   cachedSelfId = userId;
 
-  try {
-    const { setActionUserId } = await import('@/actions/store');
-    setActionUserId(userId);
-  } catch (e) {
-    console.warn('[DB] Failed to set action user ID:', e);
-  }
-
   const db = getLocalPrivateDb(userId);
   try {
     await db.connect();
@@ -228,20 +221,6 @@ export async function switchUser(userId: string): Promise<Database> {
   } catch (e) {
     console.error(`[DB] switchUser DB init FAILED:`, e);
     throw e;
-  }
-
-  try {
-    const { ensureBuiltins } = await import('@/actions/seed');
-    await ensureBuiltins();
-  } catch (e) {
-    console.warn('[DB] Failed to ensure built-in actions:', e);
-  }
-
-  try {
-    const { seedActions } = await import('@/actions/store');
-    await seedActions();
-  } catch (e) {
-    console.warn('[DB] Failed to seed action embeddings:', e);
   }
 
   console.log(`[DB] switchUser DONE: switched and initialized in ${Date.now() - t0}ms`);

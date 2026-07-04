@@ -21,7 +21,7 @@ export function isPersonalScope(scope: string): boolean {
 /**
  * Determine the caller's role in a scope.
  * - Owner of the scope form/matter record → 3
- * - Graph edge member_of / works_for / customer_of / owns → weight from graph
+ * - Graph edge member_of / works_for / customer_of / owns → 1 (exists)
  * - No relation → -1 (no access, except public reads)
  */
 export async function getRole(
@@ -41,14 +41,14 @@ export async function getRole(
   if (owner?.owner === personId) return 3;
 
   const edge = await db.get(
-    `SELECT weight FROM graph
+    `SELECT active FROM graph
       WHERE src = ? AND tgt = ? AND rel IN ('member_of','works_for','customer_of','owns')
       AND active = 1
-      ORDER BY weight DESC LIMIT 1`,
+      LIMIT 1`,
     [personId, scope]
   ).catch(() => null);
 
-  return (edge?.weight ?? -1) as RoleWeight;
+  return edge ? 1 : -1;
 }
 
 /**

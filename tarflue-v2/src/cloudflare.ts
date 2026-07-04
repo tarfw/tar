@@ -3,7 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 export interface Env {
   STOREFRONT_CACHE: KVNamespace;
   EDITOR: DurableObjectNamespace;
-  STOREFRONT_DO: DurableObjectNamespace;
+  WORKSPACE_DO: DurableObjectNamespace;
   ORDER_DO: DurableObjectNamespace;
 }
 
@@ -21,9 +21,10 @@ interface Reservation {
 }
 
 /**
- * StorefrontDO — Persistent inventory stock tracking.
+ * WorkspaceDO — Per-workspace stock, services, config (matter only).
+ * Renamed from StorefrontDO. Scope prefix: w:
  */
-export class StorefrontDO extends DurableObject<Env> {
+export class WorkspaceDO extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -110,59 +111,162 @@ export class StorefrontDO extends DurableObject<Env> {
 }
 
 /**
- * OrderDO — Ephemeral workflow coordinator for checkouts.
+ * OrderDO — Per-order state machine + payment for complex orders.
+ * State machine: created → confirmed → preparing → dispatched → delivered → cancelled
  */
 export class OrderDO extends DurableObject<Env> {
+  // Valid state transitions
+  private static TRANSITIONS: Record<string, string[]> = {
+    'created': ['confirmed', 'cancelled'],
+    'confirmed': ['preparing', 'cancelled'],
+    'preparing': ['dispatched', 'cancelled'],
+    'dispatched': ['delivered', 'cancelled'],
+    'delivered': [],
+    'cancelled': [],
+  };
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // POST /create — create new order
     if (path === '/create' && request.method === 'POST') {
-      const body = await request.json() as { storeSlug: string; items: CartItem[]; email: string };
+      const body = await request.json() as {
+        storeSlug: string;
+        items: CartItem[];
+        email: string;
+        customerName?: string;
+        address?: string;
+      };
       if (!body?.storeSlug || !body?.items) return new Response('Bad request', { status: 400 });
 
-      const storefrontId = this.env.STOREFRONT_DO.idFromName(body.storeSlug);
-      const storefrontDO = this.env.STOREFRONT_DO.get(storefrontId);
-      const res = await storefrontDO.fetch('https://do/reserve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: body.items }) });
-      if (!res.ok) { const errBody = await res.text(); return new Response(errBody, { status: res.status, headers: { 'Content-Type': 'application/json' } }); }
+      // Reserve stock in WorkspaceDO
+      const workspaceId = this.env.WORKSPACE_DO.idFromName(body.storeSlug);
+      const workspaceDO = this.env.WORKSPACE_DO.get(workspaceId);
+      const res = await workspaceDO.fetch('https://do/reserve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: body.items }),
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        return new Response(errBody, { status: res.status, headers: { 'Content-Type': 'application/json' } });
+      }
       const { reservationId, expiresAt } = await res.json() as { reservationId: string; expiresAt: number };
-      const orderData = { id: this.ctx.id.toString(), storeSlug: body.storeSlug, items: body.items, email: body.email, reservationId, status: 'pending_payment', createdAt: Date.now(), expiresAt };
+
+      const orderData = {
+        id: this.ctx.id.toString(),
+        storeSlug: body.storeSlug,
+        items: body.items,
+        email: body.email,
+        customerName: body.customerName || '',
+        address: body.address || '',
+        reservationId,
+        status: 'created',
+        payment: null,
+        statusHistory: [{ status: 'created', time: Date.now() }],
+        createdAt: Date.now(),
+        expiresAt,
+      };
       await this.ctx.storage.put('data', orderData);
       await this.ctx.storage.setAlarm(expiresAt);
       return new Response(JSON.stringify(orderData), { headers: { 'Content-Type': 'application/json' } });
     }
 
-    if (path === '/pay' && request.method === 'POST') {
+    // POST /transition — advance order state
+    if (path === '/transition' && request.method === 'POST') {
+      const body = await request.json() as { status: string; note?: string };
       const orderData = await this.ctx.storage.get<any>('data');
       if (!orderData) return new Response('Order not found', { status: 404 });
-      if (orderData.status !== 'pending_payment') return new Response(JSON.stringify({ error: `Cannot pay order in state ${orderData.status}` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-      const storefrontId = this.env.STOREFRONT_DO.idFromName(orderData.storeSlug);
-      const storefrontDO = this.env.STOREFRONT_DO.get(storefrontId);
-      const res = await storefrontDO.fetch('https://do/commit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reservationId: orderData.reservationId }) });
-      if (!res.ok) return new Response('Failed to commit stock reservation', { status: 500 });
-      orderData.status = 'paid';
+
+      const validNext = OrderDO.TRANSITIONS[orderData.status] || [];
+      if (!validNext.includes(body.status)) {
+        return new Response(JSON.stringify({
+          error: `Cannot transition from ${orderData.status} to ${body.status}`,
+          validTransitions: validNext,
+        }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      orderData.status = body.status;
+      orderData.statusHistory.push({ status: body.status, time: Date.now(), note: body.note });
+
+      // On delivery: commit stock, release alarm
+      if (body.status === 'delivered') {
+        const workspaceId = this.env.WORKSPACE_DO.idFromName(orderData.storeSlug);
+        const workspaceDO = this.env.WORKSPACE_DO.get(workspaceId);
+        await workspaceDO.fetch('https://do/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reservationId: orderData.reservationId }),
+        });
+        await this.ctx.storage.deleteAlarm();
+      }
+
+      // On cancellation: release stock
+      if (body.status === 'cancelled') {
+        const workspaceId = this.env.WORKSPACE_DO.idFromName(orderData.storeSlug);
+        const workspaceDO = this.env.WORKSPACE_DO.get(workspaceId);
+        await workspaceDO.fetch('https://do/release', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reservationId: orderData.reservationId }),
+        });
+        await this.ctx.storage.deleteAlarm();
+      }
+
       await this.ctx.storage.put('data', orderData);
-      await this.ctx.storage.deleteAlarm();
       return new Response(JSON.stringify(orderData), { headers: { 'Content-Type': 'application/json' } });
     }
 
+    // POST /pay — record payment
+    if (path === '/pay' && request.method === 'POST') {
+      const body = await request.json() as { method: string; amount: number; txnId?: string };
+      const orderData = await this.ctx.storage.get<any>('data');
+      if (!orderData) return new Response('Order not found', { status: 404 });
+
+      orderData.payment = {
+        method: body.method,
+        amount: body.amount,
+        txnId: body.txnId || '',
+        paidAt: Date.now(),
+      };
+      orderData.statusHistory.push({ status: 'paid', time: Date.now() });
+
+      await this.ctx.storage.put('data', orderData);
+      return new Response(JSON.stringify(orderData), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // GET /status — get order status
     if (path === '/status' && request.method === 'GET') {
       const orderData = await this.ctx.storage.get<any>('data');
       if (!orderData) return new Response('Order not found', { status: 404 });
       return new Response(JSON.stringify(orderData), { headers: { 'Content-Type': 'application/json' } });
     }
 
+    // GET /history — get status history
+    if (path === '/history' && request.method === 'GET') {
+      const orderData = await this.ctx.storage.get<any>('data');
+      if (!orderData) return new Response('Order not found', { status: 404 });
+      return new Response(JSON.stringify({ history: orderData.statusHistory }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
     return new Response('Not found', { status: 404 });
   }
 
+  // Alarm: auto-cancel if payment not received
   async alarm(): Promise<void> {
     const orderData = await this.ctx.storage.get<any>('data');
     if (!orderData) return;
-    if (orderData.status === 'pending_payment') {
-      const storefrontId = this.env.STOREFRONT_DO.idFromName(orderData.storeSlug);
-      const storefrontDO = this.env.STOREFRONT_DO.get(storefrontId);
-      await storefrontDO.fetch('https://do/release', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reservationId: orderData.reservationId }) });
+    if (orderData.status !== 'delivered' && orderData.status !== 'cancelled') {
+      const workspaceId = this.env.WORKSPACE_DO.idFromName(orderData.storeSlug);
+      const workspaceDO = this.env.WORKSPACE_DO.get(workspaceId);
+      await workspaceDO.fetch('https://do/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reservationId: orderData.reservationId }),
+      });
       orderData.status = 'cancelled';
+      orderData.statusHistory.push({ status: 'cancelled', time: Date.now(), note: 'Auto-cancelled: timeout' });
       await this.ctx.storage.put('data', orderData);
     }
   }

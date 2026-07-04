@@ -8,54 +8,46 @@ description: How to manage courses, lessons, enrollments, and student progress
 ## Core Concepts
 
 ### Course
-Collection of lessons on a topic.
-- Has title, description
-- Has modules/lessons
-- Has enrollment count
-- Has completion rate
-
-### Lesson
-Individual learning unit.
-- Has title, content
-- Has order within module
-- Has duration
+A learning course stored as `matter` with `type='course'`.
+- `data` = `{ description, duration, price, instructor }`
 
 ### Enrollment
-Student registration for a course.
-- Has enrollment date
-- Has progress percentage
-- Has completion status
+Student enrollment stored as `matter` with `type='enrollment'`.
+- `data` = `{ courseId, studentId, enrollDate, progress, status }`
 
-## Common Operations
+### Assignment
+A task for students stored as `matter` with `type='assignment'`.
+- `data` = `{ courseId, title, dueDate, maxScore }`
+
+## Common Operations (6-Tool Pattern)
 
 ### Create Course
-1. tool_create_matter(type='course', title, data={description, modules})
-2. tool_set_attr(status='draft')
-3. action_embed(text=course content)
+1. `create(table='matter', type='course', title='{name}', value={price}, data:{description, duration, instructor}, scope='{scope}')`
+2. `create(table='motion', stream:'{courseId}', action=99993, data:{event:'course_created'}, scope='{scope}')`
 
 ### Enroll Student
-1. tool_create_matter(type='enrollment')
-2. tool_link_graph(student, enrolled_in, course)
-3. tool_set_attr(progress=0)
-4. action_notify(student, template='enrollment-confirmation')
+1. `create(table='matter', type='enrollment', title='{studentName} → {courseName}', data:{courseId, studentId, enrollDate, progress:0, status:'active'}, scope='{scope}')`
+2. `link(src='{studentId}', rel='enrolled_in', tgt='{courseId}')`
+3. `create(table='motion', stream:'{courseId}', action=99993, data:{event:'student_enrolled'}, scope='{scope}')`
 
-### Track Progress
-1. Update attr(progress=percentage)
-2. Log completion events to motion
+### Update Progress
+1. `read(table='matter', id='{enrollmentId}')` — get current data
+2. `update(table='matter', id='{enrollmentId}', patch:{data:{...currentData, progress: newProgress}})`
 
 ### Complete Course
-1. action_advance_stage(targetPhase=6)
-2. tool_set_attr(status='completed')
-3. action_notify(student, template='course-completion')
+1. `read(table='matter', id='{enrollmentId}')` — get current data
+2. `update(table='matter', id='{enrollmentId}', patch:{data:{...currentData, progress:100, status:'completed'}})`
+3. `create(table='motion', stream:'{enrollmentId}', action:99993, data:{event:'course_completed'}, scope='{scope}')`
+
+### List Courses
+1. `read(table='matter', type='course', scope='{scope}')`
+
+### List Student Enrollments
+1. `search(query='{studentName}', scope='{scope}')`
 
 ## Best Practices
 
-### Content
-- Break into small chunks
-- Include assessments
-- Provide resources
-
-### Engagement
-- Track completion rates
-- Send reminders
-- Celebrate milestones
+- Link students to courses via `graph(rel='enrolled_in')`
+- Store progress as percentage in `data.progress`
+- Log completions to motion for certificates
+- Use `data.status`: active, completed, dropped

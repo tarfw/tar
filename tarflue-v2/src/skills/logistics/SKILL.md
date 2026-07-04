@@ -1,78 +1,51 @@
 ---
 name: logistics
-description: How to manage shipments, routes, deliveries, and tracking
+description: How to manage deliveries, drivers, shipments, and route tracking
 ---
 
 # Logistics Skill
 
 ## Core Concepts
 
-### Shipment
-A package being sent to a destination.
-- Has destination address
-- Has items
-- Has status (pending, dispatched, in_transit, delivered)
-- Has assigned driver
-
-### Route
-Path for delivery.
-- Has multiple stops
-- Has optimized order
-- Has estimated time
+### Delivery
+A delivery order stored as `matter` with `type='delivery'`.
+- `data` = `{ orderId, pickup, drop, driver, status, eta }`
 
 ### Driver
-Person delivering shipments.
-- Has current location
-- Has assigned shipments
-- Has availability
+A driver profile stored as `matter` with `type='driver'`.
+- `data` = `{ phone, vehicle, rating, available }`
 
-## Common Operations
+## Common Operations (6-Tool Pattern)
 
-### Create Shipment
-1. action_create_shipment(destination, items)
-2. Creates shipment matter
-3. Sets status='pending'
+### Create Delivery
+1. `create(table='matter', type='delivery', title='Delivery #{id}', data:{orderId, pickup, drop, status:'pending'}, scope='{scope}')`
+2. `link(src='{orderId}', rel='has_delivery', tgt='{deliveryId}')`
+3. `create(table='motion', stream:'{deliveryId}', action=99993, data:{event:'delivery_created'}, scope='{scope}')`
 
 ### Assign Driver
-1. tool_link_graph(driver, assigned_to, shipment)
-2. tool_set_attr(shipment, driver=driverId)
-3. action_notify(driver, channel='sms')
+1. `read(table='matter', id='{deliveryId}')` — get current data
+2. `update(table='matter', id='{deliveryId}', patch:{data:{...currentData, driver: driverId, status:'assigned'}})`
+3. `link(src='{driverId}', rel='driving', tgt='{deliveryId}')`
+4. `create(table='motion', stream:'{deliveryId}', action=99993, data:{event:'driver_assigned'}, scope='{scope}')`
 
-### Update ETA
-1. tool_set_attr(shipment, eta=...)
-2. action_notify(customer, template='eta-update')
+### Mark Delivered
+1. `read(table='matter', id='{deliveryId}')` — get current data
+2. `update(table='matter', id='{deliveryId}', patch:{data:{...currentData, status:'delivered'}})`
+3. `create(table='motion', stream:'{deliveryId}', action=99993, data:{event:'delivery_completed'}, scope='{scope}')`
 
-### Deliver Shipment
-1. action_deliver_shipment(shipmentId)
-2. Advances to delivered
-3. Notifies customer
+### List Pending Deliveries
+1. `read(table='matter', type='delivery', scope='{scope}', filters:[{key:'status', val:'pending'}])`
 
-### Handle Return
-1. Create return matter
-2. Link to original shipment
-3. Update inventory
-4. Process refund
+### List Driver's Deliveries
+1. `search(query='{driverName}', scope='{scope}')`
 
-## Tracking
+## Status Flow
 
-### Status Updates
-- Log every status change to motion
-- Include timestamp and location
-- Notify relevant parties
-
-### Proof of Delivery
-- Capture signature
-- Log delivery photo
-- Store in motion data
+1. pending → assigned → picked_up → in_transit → delivered
 
 ## Best Practices
 
-### Route Optimization
-- Cluster deliveries by area
-- Minimize backtracking
-- Consider time windows
-
-### Exception Handling
-- Failed delivery: reschedule
-- Damaged item: file claim
-- Wrong address: contact customer
+- Link deliveries to orders via `graph(rel='has_delivery')`
+- Link drivers to deliveries via `graph(rel='driving')`
+- Store pickup/drop addresses in `data` JSON
+- Log status changes to motion table

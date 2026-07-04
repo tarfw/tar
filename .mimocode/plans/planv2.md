@@ -37,7 +37,8 @@
 28. [Workspace Creation Flow](#workspace-creation-flow)
 29. [Local-first POS](#local-first-pos)
 30. [Workspace Site Generation](#workspace-site-generation)
-31. [Future Thoughts](#future-thoughts-not-immediate)
+31. [OKF File Storage & Integration](#okf-file-storage--integration)
+32. [Future Thoughts](#future-thoughts-not-immediate)
 
 ---
 
@@ -90,7 +91,8 @@ This forces a **DO SQLite-first** architecture for workspace operations. Turso i
 tarai/ (thin client)
   ├── Home tab  → role-based timeline (reads from user's Inbox Turso DB)
   ├── Chat tab  → agent intent → workflow (creates workspaces)
-  └── Explore tab → search + marketplace + workspace settings
+  ├── Explore tab → search + marketplace + workspace settings
+  └── OKF client bundle (src/okf/client/) — screens, components, navigation docs
 
 tarflue-v2 (Cloudflare Workers)
   ├── 6 tools (create, read, update, delete, link, search)
@@ -99,13 +101,15 @@ tarflue-v2 (Cloudflare Workers)
   ├── Agents (pick workflows via cheap LLM — Groq for routing, MiMo v2.5 for site gen)
   ├── Flue skills (markdown instructions — 12 capability modules)
   ├── Channels: Telegram, Slack, Discord, WhatsApp
+  ├── OKF system bundle (src/okf/system/) — architecture, tools, modules, schemas, workflows, channels
   ├── Global Turso (g:global) — form catalog (products, actions, workflows, skills, layouts), user profiles, vectors
   ├── WorkspaceDO (w:) — per-workspace stock, services, config (matter only — references g:global)
   ├── OrderDO      (o:) — per-order state machine + payment (delivery, taxi, logistics)
   ├── u:user Turso DB — per-user personal timeline + accessible scopes
   │   Note: scope-level Turso DBs removed. User DB holds timeline and scope list.
   ├── D1 — channel routing + team membership
-  ├── KV — site cache (95% hit rate)
+  ├── KV — site cache + OKF cache (5min TTL, 95% hit rate)
+  ├── Railway S3 — workspace OKF files (workspaces/{scope}/*.md with index.md) + documents
   ├── CF Worker — renders workspace site from layout JSON
   └── Marketplace (global memory + templates)
 ```
@@ -135,8 +139,9 @@ tarflue-v2 (Cloudflare Workers)
 | 2 | **OrderDO** | `o:` | DO SQLite | Per-order state machine + payment (delivery, taxi) | `matter`, `motion`, KV alarms |
 | 3 | **Inbox** | `u:{userId}` | Turso cloud | Personal inbox — all assigned tasks, orders, deliveries | `motion`, `memory` |
 | 4 | **Turso global DB** | `g:global` | Turso cloud (shared) | Universal form catalog (products, actions, workflows, skills, layouts), user profiles, marketplace vectors, agent configs | `form`, `matter`, `memory`, `graph` |
-| 5 | **D1** | — | Cloudflare D1 | Channel routing (group → scope) | `channel_groups` table |
+| 5 | **D1** | — | Cloudflare D1 | Channel routing (group → scope) | `channel_groups` |
 | 6 | **Local SQLite** | `p:` | Device SQLite | POS offline cache, cart, drafts, personal cache | `form`, `matter`, `motion`, `graph` |
+| 7 | **Railway S3** | — | Railway S3 | Workspace OKF files (with `index.md`) + documents (receipts, invoices) | Files (not tables) |
 
 ### Shared schema (all use the same 5 tables)
 
@@ -333,6 +338,10 @@ tarflue.search(query)                  // vector search
 tarflue.listTeams()                    // read teams from D1 channel_groups
 tarflue.addTeamMember(teamId, userId)  // implicit via Telegram group membership
 tarflue.installTemplate(id, scope)     // copy marketplace skill to team scope
+tarflue.uploadOkf(scope, path, content) // POST /okf/upload — upload OKF file to S3
+tarflue.editOkf(scope, path, content)  // POST /okf/edit — update OKF file in S3
+tarflue.readOkf(scope, path)           // GET /okf/read — fetch OKF file from S3
+tarflue.readOkfIndex(scope)            // GET /okf/index — fetch root index.md from S3
 ```
 
 ---
@@ -480,7 +489,7 @@ The same agent, tools, workflows, actions, skills, and schema handle **any busin
 | Add expertise | Create `SKILL.md` files or `form.type='skill'` rows |
 | Add agent behavior | Update master agent instructions or add a subagent profile |
 
-### 12 Capability Modules
+### 14 Capability Modules
 
 All modules are pure actions/workflows/skills stored as `form` rows. No engines, no schema changes, no new tools. Agent copies relevant modules into workspace during creation.
 
@@ -498,6 +507,8 @@ All modules are pure actions/workflows/skills stored as `form` rows. No engines,
 | 10 | **Support** | Ticket queue, chat messages, issue resolution | — |
 | 11 | **Team Chat** | Internal team messaging, notifications, channel communication | — |
 | 12 | **Reports** | Sales summary, stock valuation, revenue breakdown, tax reports | Cross-module — reads from any module's data |
+| 13 | **Expenses** | Expense tracking, categories, receipts, vendor payments | **Bill management** — supplier bills, payment status, due dates. **Recurring expenses** — rent, salaries, subscriptions with auto-creation |
+| 14 | **Documents** | File attachments, document storage, receipts, invoices | **Railway S3 storage** — R2-compatible object storage for files. **Inline previews** — images, PDFs shown in chat/cards. **Document linking** — attach files to any matter (orders, expenses, projects) |
 
 #### Reports Module — First 6 Reports
 
@@ -548,6 +559,8 @@ Each module has a SKILL.md in both `tarflue-v2/src/skills/{module}/` and `tarai/
 | 10 | Support | `skills/support/` | **Rewrite needed** | Same old pattern |
 | 11 | Team Chat | — | **Create new** | No folder exists yet |
 | 12 | Reports | `skills/reports/` | **Create new** | SKILL.md content added above |
+| 13 | Expenses | `skills/expenses/` | **Create new** | Expense tracking, recurring, bill management |
+| 14 | Documents | `skills/documents/` | **Create new** | Railway S3 file storage, linking, presigned URLs |
 
 **Rewrite pattern:** All old skills use `tool_create_matter`, `tool_set_attr`, `tool_link_graph`, `attr` table. Rewrite to use 6 tools: `create`, `read`, `update`, `delete`, `link`, `search`. Store hot fields in `matter.data` JSON, not `attr` table.
 
@@ -830,25 +843,311 @@ User sells 5 Pepsi (batch A: qty=3, batch B: qty=4)
 - Stock alerts appear as `stock_alert` motion on home screen
 ```
 
+#### Expenses Module — Actions & Schema
+
+Expenses are stored as `matter` rows with `type='expense'`. No new tables. Each expense links to a category via `graph` and optionally attaches a document via `graph(rel='attached_to')`.
+
+**Expense matter row:**
+```
+id: exp_8001
+form: null
+title: Office Rent - July
+type: expense
+qty: 1
+unit: null
+value: 15000
+data: {
+  "category": "rent",
+  "vendor": "Landlord - Rajesh",
+  "payment_method": "upi",
+  "txn_id": "TXN456",
+  "receipt_doc_id": "doc_receipt_001",
+  "recurring": true,
+  "recurring_interval": "monthly",
+  "due_date": "2026-07-05",
+  "status": "paid"
+}
+scope: w:rest-101
+start: "2026-07-01T00:00:00Z"
+end: null
+life: null
+```
+
+**Expense categories (form rows in g:global):**
+| Category | type | description |
+|---|---|---|
+| `rent` | expense_category | Office/shop rent |
+| `salary` | expense_category | Staff salaries |
+| `utilities` | expense_category | Electricity, water, internet |
+| `supplies` | expense_category | Office supplies, packaging |
+| `marketing` | expense_category | Ads, promotions |
+| `maintenance` | expense_category | Repairs, servicing |
+| `transport` | expense_category | Fuel, logistics costs |
+| `misc` | expense_category | Uncategorized expenses |
+
+**Actions:**
+| Action | Steps |
+|---|---|
+| `action_create_expense` | `create(table='matter', type='expense', data:{category, vendor, payment_method, ...})` → `link(src='w:{scope}', tgt='{expenseId}', rel='has_expense')` → `create(table='motion', type='expense_recorded')` |
+| `action_record_recurring` | Cron trigger: reads `matter WHERE type='expense' AND data.recurring=true AND data.due_date <= today` → auto-creates new expense row for next period |
+| `action_attach_receipt` | `update(table='matter', id='{expenseId}', data:{...currentData, receipt_doc_id: '{docId}'})` → `link(src='{expenseId}', tgt='{docId}', rel='attached_to')` |
+| `action_pay_expense` | `update(table='matter', id='{expenseId}', data:{...currentData, status:'paid', txn_id:'{txn}'})` → `create(table='motion', type='expense_paid')` |
+
+**Expense reports (added to Reports module):**
+| # | Report | Query Logic |
+|---|---|---|
+| 7 | **Monthly Expense Summary** | `read(table='matter', type='expense', start >= first_of_month)` → group by `data.category` → sum `value` |
+| 8 | **Expense vs Revenue** | Expenses `SUM(value)` from matter + Revenue from orders → profit/loss |
+| 9 | **Outstanding Bills** | `read(table='matter', type='expense', data.status='unpaid')` → list with due dates, sort by urgency |
+
+#### Expenses SKILL.md (src/skills/expenses/SKILL.md)
+
+```markdown
+---
+name: expenses
+description: How to track expenses, manage bills, handle recurring payments, and generate expense reports
+---
+
+# Expenses Skill
+
+## Core Concepts
+
+### Expense
+A business expense stored as `matter` row with `type='expense'`.
+- `value` column = expense amount
+- `data` JSON = `{ category, vendor, payment_method, txn_id, receipt_doc_id, recurring, due_date, status }`
+- Categories: rent, salary, utilities, supplies, marketing, maintenance, transport, misc
+
+### Recurring Expense
+Expenses with `data.recurring=true` auto-create next period's expense on due date.
+- `data.recurring_interval` = monthly, weekly, yearly
+- `data.due_date` = when next payment is due
+- Cron job runs daily, creates new expense row when due_date <= today
+
+### Bill
+A supplier bill stored as `matter` with `type='expense'` and `data.category='supplies'`.
+- Linked to supplier via `graph(rel='supplies', tgt='supplier:{id}')`
+- Status: unpaid → paid
+
+## Common Operations
+
+### Record Expense
+1. `create(table='matter', type='expense', title='{description}', value={amount}, data:{category, vendor, payment_method, status:'paid'}, scope='w:{workspace}')`
+2. `link(src='w:{workspace}', tgt='{expenseId}', rel='has_expense')`
+3. `create(table='motion', type='expense_recorded', data:{expenseId, title, amount, category})`
+
+### Record Recurring Expense
+1. Same as above, with `data:{recurring:true, recurring_interval:'monthly', due_date:'2026-08-01'}`
+
+### Attach Receipt (Document)
+1. Upload file via Documents module → get `docId`
+2. `update(table='matter', id='{expenseId}', data:{...currentData, receipt_doc_id: '{docId}'})`
+3. `link(src='{expenseId}', tgt='{docId}', rel='attached_to')`
+
+### Pay Unpaid Bill
+1. `read(table='matter', id='{expenseId}')` — get current data
+2. `update(table='matter', id='{expenseId}', data:{...currentData, status:'paid', txn_id:'{reference}'})`
+3. `create(table='motion', type='expense_paid', data:{expenseId, title, amount})`
+
+### Monthly Expense Summary
+1. `read(table='matter', type='expense', start >= first_of_month, scope='w:{workspace}')`
+2. Group by `data.category` → sum `value`
+3. Return: category, total, percentage of overall
+
+### Outstanding Bills
+1. `read(table='matter', type='expense', data LIKE '%"status":"unpaid"%', scope='w:{workspace}')`
+2. Sort by `data.due_date` ASC
+3. Return: vendor, amount, due date, days overdue
+
+## Best Practices
+
+- Always categorize expenses at time of recording
+- Attach receipts via Documents module for audit trail
+- Set recurring flag for rent, salaries, subscriptions
+- Link expenses to suppliers via graph for supplier spend analysis
+- Expense alerts appear as `expense_recorded` motion on home screen
+```
+
+#### Documents Module — Railway S3 Storage
+
+Documents use Railway as S3-compatible object storage (R2-compatible API). Files are uploaded from the client, stored in Railway, and linked to any matter via the `graph` table.
+
+**Storage architecture:**
+```
+tarai client (Expo)
+  → upload file to tarflue-v2 Worker endpoint
+  → Worker uploads to Railway S3 bucket
+  → Worker creates matter row (type='document') in WorkspaceDO
+  → Worker links document to parent matter via graph
+  → Returns docId to client
+```
+
+**Railway S3 config (env vars):**
+```
+RAILWAY_S3_ENDPOINT=https://s3.ap-south-1.amazonaws.com
+RAILWAY_S3_BUCKET=tarai-storage
+RAILWAY_S3_ACCESS_KEY=xxx
+RAILWAY_S3_SECRET_KEY=xxx
+```
+
+**Document matter row:**
+```
+id: doc_receipt_001
+form: null
+title: rent-receipt-july-2026.pdf
+type: document
+qty: 1
+unit: null
+value: 0
+data: {
+  "file_name": "rent-receipt-july-2026.pdf",
+  "mime_type": "application/pdf",
+  "size_bytes": 245000,
+  "storage_key": "w:rest-101/receipts/2026/07/doc_receipt_001.pdf",
+  "uploaded_by": "user:ravanan",
+  "linked_to": "exp_8001"
+}
+scope: w:rest-101
+start: "2026-07-03T10:00:00Z"
+end: null
+life: null
+```
+
+**Storage key pattern:** `{scope}/{category}/{year}/{month}/{docId}.{ext}`
+- Organizes files by workspace, type, and date
+- Prevents name collisions via UUID-based docId
+- Easy to list all docs for a workspace or date range
+
+**Actions:**
+| Action | Steps |
+|---|---|
+| `action_upload_document` | Client sends file → Worker uploads to Railway S3 → `create(table='matter', type='document')` → `link(src='w:{scope}', tgt='{docId}', rel='has_document')` |
+| `action_link_document` | `link(src='{parentMatterId}', tgt='{docId}', rel='attached_to')` — attach existing doc to any matter |
+| `action_delete_document` | `update(table='matter', id='{docId}', active=0)` — soft delete. Railway file stays (cleanup cron later) |
+| `action_download_document` | `read(table='matter', id='{docId}')` → generate presigned URL from Railway S3 → return to client |
+
+**File size limits:**
+| Type | Max Size | Allowed Types |
+|---|---|---|
+| Receipts/invoices | 5 MB | pdf, jpg, png, webp |
+| Documents | 10 MB | pdf, doc, docx, xls, xlsx, csv |
+| Images | 10 MB | jpg, png, webp, gif |
+| Any other | 5 MB | All types |
+
+**Where documents attach:**
+| Parent Matter | Use Case | Example |
+|---|---|---|
+| `type='expense'` | Receipt/bill attachment | rent-receipt.pdf attached to expense |
+| `type='order'` | Invoice/receipt | order-invoice.pdf attached to order |
+| `type='lead'` | Customer document | passport.pdf attached to lead |
+| `type='task'` | Task deliverable | design-mockup.png attached to task |
+| `type='product'` | Product image/manual | product-photo.jpg attached to product |
+
+**Cost (Railway S3):**
+| Metric | Value |
+|---|---|
+| Railway S3 pricing | ~$0.023/GB/month storage, $0.09/GB transfer |
+| Avg file size | ~200 KB (receipts, invoices) |
+| Files per tenant/month | ~100 |
+| Storage per tenant/month | ~20 MB |
+| Storage at 1K tenants | ~20 GB |
+| Monthly cost at 1K tenants | ~$0.46 storage + ~$0.18 transfer = **~$0.64/mo** |
+
+#### Documents SKILL.md (src/skills/documents/SKILL.md)
+
+```markdown
+---
+name: documents
+description: How to upload, store, link, and retrieve documents and file attachments
+---
+
+# Documents Skill
+
+## Core Concepts
+
+### Document
+A file stored in Railway S3, tracked as `matter` row with `type='document'`.
+- `data.file_name` = original filename
+- `data.mime_type` = file MIME type
+- `data.size_bytes` = file size
+- `data.storage_key` = Railway S3 key
+- `data.uploaded_by` = user who uploaded
+- `data.linked_to` = parent matter ID (if attached to something)
+
+### Document Linking
+Documents attach to any matter via graph:
+- `link(src='{expenseId}', tgt='{docId}', rel='attached_to')` — receipt on expense
+- `link(src='{orderId}', tgt='{docId}', rel='attached_to')` — invoice on order
+- `link(src='{taskId}', tgt='{docId}', rel='attached_to')` — deliverable on task
+
+## Common Operations
+
+### Upload Document
+1. Client selects file (image, PDF, etc.)
+2. Client POSTs to `POST /documents/upload` with file + metadata
+3. Worker uploads to Railway S3 at `w:{scope}/{category}/{year}/{month}/{docId}.{ext}`
+4. Worker creates: `create(table='matter', type='document', title='{fileName}', data:{file_name, mime_type, size_bytes, storage_key, uploaded_by})`
+5. Worker links: `link(src='w:{scope}', tgt='{docId}', rel='has_document')`
+6. Returns: `{ docId, url, fileName, size }`
+
+### Attach to Expense
+1. Upload document (above) or use existing docId
+2. `link(src='{expenseId}', tgt='{docId}', rel='attached_to')`
+3. `update(table='matter', id='{expenseId}', data:{...currentData, receipt_doc_id: '{docId}'})`
+
+### Attach to Order
+1. Upload invoice/receipt document
+2. `link(src='{orderId}', tgt='{docId}', rel='attached_to')`
+
+### Download / View
+1. `read(table='matter', id='{docId}')` — get storage_key
+2. Generate presigned URL from Railway S3 (valid for 1 hour)
+3. Return URL to client for download/preview
+
+### List Documents for Workspace
+1. `read(table='matter', type='document', scope='w:{workspace}', active=1)`
+2. Filter by category if needed (e.g., data.storage_key LIKE '%receipts%')
+
+### Delete Document
+1. `update(table='matter', id='{docId}', active=0)` — soft delete
+2. File remains in Railway S3 (cleanup cron removes after 30 days)
+
+## File Types & Limits
+
+| Type | Max Size | Extensions |
+|---|---|---|
+| Receipts/invoices | 5 MB | pdf, jpg, png, webp |
+| Documents | 10 MB | pdf, doc, docx, xls, xlsx, csv |
+| Images | 10 MB | jpg, png, webp, gif |
+
+## Best Practices
+
+- Always link documents to parent matter (expense, order, task) via graph
+- Use storage key pattern: `{scope}/{category}/{year}/{month}/{docId}.{ext}`
+- Soft-delete documents, don't hard-delete (audit trail)
+- Generate presigned URLs for downloads (no direct S3 access from client)
+- Receipts auto-linked to expenses at recording time
+```
+
 ### Module composition by business type
 
 | Business | Modules Enabled |
 |---|---|
-| Restaurant / Cafe | Orders + Inventory + Bookings + CRM + Reports |
-| Pet Salon | Bookings + CRM + Orders + Reports |
-| Dental / Clinic | Bookings + CRM + Projects + Support + Reports |
-| Retail Store | Orders + Inventory + CRM + Reports |
-| Gym / Yoga | Bookings + CRM + LMS + HR + Reports |
-| Coaching Institute | LMS + CRM + Bookings + Reports |
-| Food Delivery | Orders + Inventory + Logistics + CRM + Reports |
-| Taxi / Ride | Logistics + Orders + CRM + Reports |
-| Courier | Orders + Logistics + CRM + Reports |
-| Real Estate | Listings + CRM + Projects + Reports |
-| Salon / Spa | Bookings + CRM + Orders + Reports |
-| School / Tuition | LMS + CRM + Projects + HR + Reports |
-| Small Agency | CRM + Projects + HR + Support + Reports |
-| E-commerce | Orders + Inventory + CRM + Logistics + Reports |
-| Home Services | Bookings + CRM + Orders + Reports |
+| Restaurant / Cafe | Orders + Inventory + Bookings + CRM + Reports + Expenses + Documents |
+| Pet Salon | Bookings + CRM + Orders + Reports + Expenses + Documents |
+| Dental / Clinic | Bookings + CRM + Projects + Support + Reports + Expenses + Documents |
+| Retail Store | Orders + Inventory + CRM + Reports + Expenses + Documents |
+| Gym / Yoga | Bookings + CRM + LMS + HR + Reports + Expenses + Documents |
+| Coaching Institute | LMS + CRM + Bookings + Reports + Expenses + Documents |
+| Food Delivery | Orders + Inventory + Logistics + CRM + Reports + Expenses + Documents |
+| Taxi / Ride | Logistics + Orders + CRM + Reports + Expenses + Documents |
+| Courier | Orders + Logistics + CRM + Reports + Expenses + Documents |
+| Real Estate | Listings + CRM + Projects + Reports + Expenses + Documents |
+| Salon / Spa | Bookings + CRM + Orders + Reports + Expenses + Documents |
+| School / Tuition | LMS + CRM + Projects + HR + Reports + Expenses + Documents |
+| Small Agency | CRM + Projects + HR + Support + Reports + Expenses + Documents |
+| E-commerce | Orders + Inventory + CRM + Logistics + Reports + Expenses + Documents |
+| Home Services | Bookings + CRM + Orders + Reports + Expenses + Documents |
 
 ### How modules install
 
@@ -1612,6 +1911,7 @@ One Telegram/Slack group maps to one workspace scope. Members stay in the messag
 ### D1 schema
 
 ```sql
+-- Channel routing
 CREATE TABLE channel_groups (
   chat_id INTEGER PRIMARY KEY,
   scope TEXT NOT NULL,  -- e.g., 'w:rest-101'
@@ -1620,6 +1920,64 @@ CREATE TABLE channel_groups (
   created_by INTEGER,
   created_at TEXT
 );
+
+-- OKF metadata (pointers to Railway S3 files)
+-- Uses existing matter table with type='okf'
+-- Example rows:
+-- id: okf_daily_sales_rest101
+-- type: okf
+-- title: Daily Sales Report
+-- scope: w:rest-101
+-- data: {"s3_key": "workspaces/w:rest-101/reports/daily-sales.md", "version": 3}
+```
+
+### Workspace OKF Storage (Turso Global)
+
+Workspace-specific OKF data (business profile, products, policies, reports, macros) is stored as `matter` rows with `type='okf'` in the Turso global DB (g:global).
+
+**Example — Restaurant workspace OKF:**
+```
+matter: okf_business_profile
+  type: okf
+  title: "Business Profile"
+  data: {
+    "content": "# Business Profile\n\n**Name:** Happy Bites\n**Type:** Restaurant\n**Hours:** 10 AM - 10 PM\n**UPI:** happybites@upi"
+  }
+  scope: w:rest-101
+
+matter: okf_product_catalog
+  type: okf
+  title: "Product Catalog"
+  data: {
+    "content": "# Products\n\n| Item | Price | Stock |\n|------|-------|-------|\n| Biryani | ₹180 | 30 |\n| Pepsi | ₹22 | 50 |"
+  }
+  scope: w:rest-101
+
+matter: okf_return_policy
+  type: okf
+  title: "Return Policy"
+  data: {
+    "content": "# Return Policy\n\n- Refund within 24 hours if food quality issue\n- Cash refund only\n- Manager approval required"
+  }
+  scope: w:rest-101
+
+matter: okf_daily_sales_report
+  type: okf
+  title: "Daily Sales Report"
+  data: {
+    "content": "# Daily Sales Report\n\n**SQL:** SELECT * FROM matter WHERE type='order' AND start >= date('now')\n**Output:** Total orders, revenue, UPI vs Cash split"
+  }
+  scope: w:rest-101
+```
+
+**How agents read workspace OKF:**
+```
+Agent receives: "Show me today's sales"
+  → Agent reads: matter WHERE type='okf' AND title='Daily Sales Report' AND scope='w:rest-101'
+  → Agent gets: SQL query + output format from data.content
+  → Agent executes: read(table='matter', type='order', start >= today)
+  → Agent formats: per the template in the OKF content
+  → Reply: "Today: 47 orders, ₹12,400 revenue"
 ```
 
 Example data in channel_groups:
@@ -1997,6 +2355,8 @@ When user taps autocomplete:
 | **Form catalog (products, actions, skills, layouts)** | **Turso global DB** | Universal, shared across all workspaces |
 | **Vector search (marketplace, AI)** | **Turso global DB** | DO SQLite has no ANN index — irreplaceable |
 | **Channel routing** | **D1** | Group → scope mapping |
+| **Workspace OKF files** | **Railway S3** | Editable, versioned, portable markdown files with `index.md` |
+| **Documents (receipts, invoices)** | **Railway S3** | File storage, same bucket as OKF |
 
 ### Turso Inbox cost (1K users)
 
@@ -2022,8 +2382,9 @@ When user taps autocomplete:
 |---|---|
 | DO SQLite (operational) | ~$40-80 |
 | Turso Inbox (user assignments + vector) | ~$6 |
+| Railway S3 (workspace OKF + documents) | ~$0.67 |
 | Workers base | $5 |
-| **Total storage** | **~$51-91/mo** |
+| **Total storage** | **~$51-92/mo** |
 
 ---
 
@@ -2067,64 +2428,60 @@ Keep:
 3. Refactor tarflue-v2 tools to the 6 primitives.
 4. Add KV hot cache for product catalog and workspace config.
 5. Rename `StorefrontDO` to `WorkspaceDO`. Update scope prefix `s:` to `w:`.
+6. Add OKF system bundle to `tarflue-v2/src/okf/system/` (~30 files).
+7. Add OKF client bundle to `tarai/src/okf/client/` (~10 files).
 
 ### Phase 2: tarflue-v2 backend
 
-6. Add Inbox support — user Turso DBs for assignments.
-7. Add `OrderDO` for complex order lifecycles.
-8. Add JSON action definitions (stored in Turso `form`).
-9. Add workflow engine.
-10. Add cheap LLM agent intent detection (Groq GPT-OSS-120B).
-11. Add `GET /workspaces` endpoint.
-12. Implement batch SQLite writes and lazy timeline flush.
-13. Implement DO sharding for small workspaces.
-14. Add `src/lib/memory.ts` — pattern extraction after agent success.
-15. Add `src/lib/slots.ts` — regex + entity lookup for slot filling.
-16. Add `GET /memory/autocomplete?q=...` endpoint.
-17. Add motion event writing from DOs to user's Turso DB via `create(table='motion', ...)`.
-18. Add 12 capability modules — create `form` rows (type='action', type='skill', type='workflow') in Turso global for each module.
-19. Rewrite all 11 existing SKILL.md files from 12-tool pattern (`tool_create_matter`, `tool_set_attr`, `attr` table) to 6-tool pattern (`create`, `read`, `update`, `delete`, `link`, `search`, `matter.data` JSON). Create `skills/reports/SKILL.md` and `skills/team-chat/SKILL.md` (new).
-20. Add workspace creation flow — agent detects intent, composes capabilities, generates config.
-21. Add marketplace templates in Turso global.
+8. Add Inbox support — user Turso DBs for assignments.
+9. Add `OrderDO` for complex order lifecycles.
+10. Add JSON action definitions (stored in Turso `form`).
+11. Add workflow engine.
+12. Add cheap LLM agent intent detection (Groq GPT-OSS-120B).
+13. Add `GET /workspaces` endpoint.
+14. Implement batch SQLite writes and lazy timeline flush.
+15. Implement DO sharding for small workspaces.
+16. Add `src/lib/memory.ts` — pattern extraction after agent success.
+17. Add `src/lib/slots.ts` — regex + entity lookup for slot filling.
+18. Add `GET /memory/autocomplete?q=...` endpoint.
+19. Add motion event writing from DOs to user's Turso DB via `create(table='motion', ...)`.
+20. Add 14 capability modules — create `form` rows (type='action', type='skill', type='workflow') in Turso global for each module.
+21. Rewrite all 11 existing SKILL.md files from 12-tool pattern (`tool_create_matter`, `tool_set_attr`, `attr` table) to 6-tool pattern (`create`, `read`, `update`, `delete`, `link`, `search`, `matter.data` JSON). Create `skills/reports/SKILL.md`, `skills/team-chat/SKILL.md`, `skills/expenses/SKILL.md`, `skills/documents/SKILL.md` (new).
+22. Add workspace creation flow — agent detects intent, composes capabilities, generates config.
+23. Add marketplace templates in Turso global.
+24. Add workspace OKF template — copy to Turso global as `matter` rows with `type='okf'` during workspace creation.
+25. Add OKF upload endpoint (`POST /okf/upload`) — upload workspace OKF files to Railway S3.
+26. Add OKF edit flow — agent reads current OKF, user edits, agent uploads new version.
 
 ### Phase 3: tarai screens + workspace site
 
-21. `src/app/(tabs)/home.tsx` — role-based timeline from user's Turso DB (across all workspaces).
-22. `src/app/(tabs)/chat.tsx` — chat with action memory autocomplete + workspace creation.
-23. `src/app/(tabs)/explore.tsx` — search, marketplace, workspace settings.
-24. `src/app/onboarding.tsx` — 3-screen wizard: business type → services → workspace created.
-25. `src/app/auth.tsx` — Google sign-in → check existing workspaces → redirect to home or onboarding.
-26. `src/components/ActionCard.tsx` — inline editable card for action memory replay.
-27. `src/components/ChatAutocomplete.tsx` — memory matches above keyboard.
-28. Card components: `OrderCard`, `DeliveryCard`, `TaskCard`, `StockCard`, `LeadCard`, `ChatCard`, `BookingCard`.
-29. Workspace site renderer — CF Worker reads layout JSON from Turso `form` + data from WorkspaceDO → renders HTML.
-30. KV cache layer for workspace sites (5min TTL, 95% hit rate).
-31. Two-model architecture — Groq for intent routing, MiMo v2.5 for site layout generation (~₹0.02/site).
-32. Cloudflare Worker `*.tarai.space` routing — wildcard DNS, subdomain → workspace lookup, SSL.
-33. D1 `workspaces` table — subdomain → scope mapping for site routing.
-
-### Phase 3: tarai screens
-
-17. `src/app/(tabs)/home.tsx` — role-based timeline from user's Turso DB.
-18. `src/app/(tabs)/chat.tsx` — chat with action memory autocomplete.
-19. `src/app/(tabs)/explore.tsx` — search, teams, marketplace.
-20. `src/components/ActionCard.tsx` — inline editable card for action memory replay.
-21. `src/components/ChatAutocomplete.tsx` — memory matches above keyboard.
-22. Card components: `OrderCard`, `DeliveryCard`, `TaskCard`, `StockCard`, `LeadCard`, `ChatCard`.
+27. `src/app/(tabs)/home.tsx` — role-based timeline from user's Turso DB (across all workspaces).
+28. `src/app/(tabs)/chat.tsx` — chat with action memory autocomplete + workspace creation.
+29. `src/app/(tabs)/explore.tsx` — search, marketplace, workspace settings.
+30. `src/app/onboarding.tsx` — 3-screen wizard: business type → services → workspace created.
+31. `src/app/auth.tsx` — Google sign-in → check existing workspaces → redirect to home or onboarding.
+32. `src/components/ActionCard.tsx` — inline editable card for action memory replay.
+33. `src/components/ChatAutocomplete.tsx` — memory matches above keyboard.
+34. Card components: `OrderCard`, `DeliveryCard`, `TaskCard`, `StockCard`, `LeadCard`, `ChatCard`, `BookingCard`.
+35. Workspace site renderer — CF Worker reads layout JSON from Turso `form` + data from WorkspaceDO → renders HTML.
+36. KV cache layer for workspace sites (5min TTL, 95% hit rate).
+37. Two-model architecture — Groq for intent routing, MiMo v2.5 for site layout generation (~₹0.02/site).
+38. Cloudflare Worker `*.tarai.space` routing — wildcard DNS, subdomain → workspace lookup, SSL.
+39. D1 `workspaces` table — subdomain → scope mapping for site routing.
 
 ### Phase 4: Channels & mini apps
 
-23. Add Telegram channel.
-24. Add Slack channel.
-25. Add Discord channel.
-26. Build Telegram mini app for direct skill execution.
-27. Add soft-delete cleanup cron.
-28. Add motion archival cron (daily at 3 AM UTC, moves rows > 7 days to `motion_archive`).
+40. Add Telegram channel.
+41. Add Slack channel.
+42. Add Discord channel.
+43. Build Telegram mini app for direct skill execution.
+44. Add soft-delete cleanup cron.
+45. Add motion archival cron (daily at 3 AM UTC, moves rows > 7 days to `motion_archive`).
 
 ### Phase 5: Marketplace
 
-29. Seed marketplace actions/workflows/skills in global `memory`.
-30. Add install helper.
+46. Seed marketplace actions/workflows/skills in global `memory`.
+47. Add install helper.
 
 ---
 
@@ -2192,6 +2549,29 @@ Keep:
 - [ ] Offline POS: two devices offline simultaneously — first to reconnect wins, second gets stock error.
 - [ ] All 11 existing SKILL.md files rewritten from 12-tool to 6-tool pattern.
 - [ ] `skills/reports/SKILL.md` and `skills/team-chat/SKILL.md` created.
+- [ ] `skills/expenses/SKILL.md` created — expense recording, recurring, bill management.
+- [ ] `skills/documents/SKILL.md` created — Railway S3 upload, linking, presigned URLs.
+- [ ] Expenses: "Record rent ₹15,000" → agent creates expense matter + motion + links to workspace.
+- [ ] Expenses: Recurring expense auto-creates next period on due date via cron.
+- [ ] Expenses: Monthly expense summary groups by category, shows totals.
+- [ ] Expenses: Outstanding bills sorted by due date, shows overdue count.
+- [ ] Documents: Upload receipt → stored in Railway S3 → linked to expense via graph.
+- [ ] Documents: Upload invoice → stored in Railway S3 → linked to order via graph.
+- [ ] Documents: Download generates presigned URL, file not directly accessible.
+- [ ] Documents: File size limits enforced (5MB receipts, 10MB documents/images).
+- [ ] Documents: Storage key pattern `{scope}/{category}/{year}/{month}/{docId}.{ext}` works.
+- [ ] Documents: Soft delete keeps audit trail, cleanup cron removes after 30 days.
+- [ ] OKF: System bundle exists at `tarflue-v2/src/okf/system/` with ~30 concept files + index.md.
+- [ ] OKF: Client bundle exists at `tarai/src/okf/client/` with ~10 concept files + index.md.
+- [ ] OKF: Workspace OKF files stored in Railway S3 (`workspaces/{scope}/`) with index.md in each folder.
+- [ ] OKF: Root index.md lists all folders (business, products, policies, reports, macros).
+- [ ] OKF: Each folder has index.md listing its files.
+- [ ] OKF: Master agent reads system OKF at startup to understand modules, tools, workflows.
+- [ ] OKF: Agent fetches index.md from S3 (or KV cache) to find target files.
+- [ ] OKF: KV cache serves 95% of index.md reads without hitting S3.
+- [ ] OKF: Module install copies OKF concepts from system bundle to workspace S3 folder.
+- [ ] OKF: Action memory caches OKF-guided decisions for zero-cost replay.
+- [ ] OKF: User can edit workspace OKF files directly in S3 dashboard.
 
 ---
 
@@ -2215,9 +2595,12 @@ Keep:
 | Workers base | Cloudflare | $5 | $5 |
 | DO compute + storage | DO SQLite | ~$100–300 | ~$40–80 |
 | Turso Inbox (user assignments) | Turso (unlimited DBs) | ~$50–100 | ~$6 |
+| Railway S3 (documents) | Railway | $0 | ~$0.64 |
+| Railway S3 (workspace OKF) | Railway | $0 | ~$0.03 |
+| OKF system/client bundles | Bundled with code | $0 | $0 |
 | LLM (DeepSeek/Gemini Flash) | Groq/OpenRouter | ~$3,000–5,000 | ~$3,000–5,000 |
 | Push/email/telegram | Free | $0 | $0 |
-| **Total** | | **~$3,200–5,500** | **~$3,050–5,090** |
+| **Total** | | **~$3,200–5,500** | **~$3,050–5,091** |
 
 ### Per-user economics
 
@@ -2260,11 +2643,15 @@ LLM dominates cost (85-95%). Storage is <10% of total cost.
 13. **No form table in WorkspaceDO.** Stock, services, config only. Everything else comes from global catalog.
 14. **Graph table has no weight column.** All relationships are binary.
 15. **One workspace = one WorkspaceDO.** No shared DOs across workspaces.
-16. **Capability composition over monolithic skills.** 12 capability modules compose into any workspace type.
+16. **Capability composition over monolithic skills.** 14 capability modules compose into any workspace type.
 17. **No Turso sync to devices.** POS uses local cache + DO requests. No embedded replicas.
 18. **UPI + Cash only for payments.** No payment gateway. No transaction fees. User handles accounting and tax filing.
 19. **GST/tax is an action, not a system.** Tax calculation lives in a form row (type='action'), not a separate engine or tool.
 20. **Matter has time fields.** `start`, `end`, `life` columns model when matter exists. Perpetual items have `end=null`.
+21. **OKF files bundled with code.** System bundle in tarflue-v2, client bundle in tarai. No extra storage.
+22. **Workspace OKF in Railway S3.** Per-business knowledge stored as `.md` files in S3. Editable, versioned, portable.
+23. **OKF uses index.md method.** Each folder has `index.md` listing its files. Standard OKF approach.
+24. **OKF cache in KV.** 5min TTL caches index.md for fast reads. 95% hit rate.
 
 ---
 
@@ -2280,7 +2667,7 @@ LLM dominates cost (85-95%). Storage is <10% of total cost.
 | **Orders** | Simple: WorkspaceDO. Complex: OrderDO with state machine. |
 | **Payments** | Matter row in OrderDO with type='payment'. |
 | **Change propagation** | MRP changes globally → all workspaces see it. Selling price is per-workspace. |
-| **Capability composition** | 12 capability modules (CRM, Projects, Bookings, Inventory, Orders, Logistics, HR, LMS, Listings, Support, Team chat, Reports) compose into any workspace type. GST/tax, loyalty, suppliers, routing, approvals, multi-currency merged into parent modules. |
+| **Capability composition** | 14 capability modules (CRM, Projects, Bookings, Inventory, Orders, Logistics, HR, LMS, Listings, Support, Team chat, Reports, Expenses, Documents) compose into any workspace type. GST/tax, loyalty, suppliers, routing, approvals, multi-currency, bill management, file storage merged into parent modules. |
 | **Marketplace templates** | Pre-built workspace blueprints (restaurant, clinic, retail, salon, gym, school, courier, property). Install in seconds. |
 | **Two-model architecture** | Groq GPT-OSS-120B for intent detection + routing. MiMo v2.5 for site layout generation (~₹0.02/site). |
 | **Local-first POS** | Device SQLite cache + DO requests. No Turso sync to devices. Offline sales queued and pushed on reconnect. |
@@ -2290,6 +2677,9 @@ LLM dominates cost (85-95%). Storage is <10% of total cost.
 | **Matter schema** | 12 columns: `id, form, title, type, qty, unit, value, data, scope, active, start, end, life`. Unit enables weight/volume inventory. Start/end/life model matter's time dimension. |
 | **Payment model** | UPI + Cash only. No payment gateway. Workspace stores UPI ID. Invoice shows QR/collect link. User handles accounting and GST filing externally. |
 | **GST/tax** | Action stored as form row (type='action'). Reads item price, applies rate, returns breakup. Not a separate engine or tool. |
+| **Expenses** | Matter row with type='expense'. Categories: rent, salary, utilities, supplies, marketing, maintenance, transport, misc. Recurring expenses auto-create on due date via cron. Linked to suppliers via graph. 3 expense reports added to Reports module. |
+| **Documents** | Railway S3 for object storage (R2-compatible API). Matter row with type='document'. Storage key: `{scope}/{category}/{year}/{month}/{docId}.{ext}`. Linked to any matter via graph(rel='attached_to'). Presigned URLs for downloads. ~$0.64/mo at 1K tenants. |
+| **OKF (Open Knowledge Format)** | System bundle (~30 files with `index.md`) bundled in `tarflue-v2/src/okf/`. Client bundle (~10 files with `index.md`) bundled in `tarai/src/okf/`. Workspace OKF (~12 files with `index.md` per workspace) stored in **Railway S3** (`workspaces/{scope}/`). Uses standard OKF `index.md` method — each folder has `index.md` listing its files. KV cache (5min TTL) caches `index.md` for fast reads. Agents fetch `index.md` from S3, then fetch target files. Zero LLM cost on replay. |
 
 ### Example data
 
@@ -2329,6 +2719,9 @@ matter: pay_8001 | type: payment | value: 214 | data: {method:"upi",status:"comp
 | `docs/storefront.md` | AI-generated storefront site design | **Merged into workspace site system** |
 | `fluepos.md` | POS vertical generation example | **Valid capability composition example** |
 | `tarflue-v2/` | Existing Flue runtime codebase | **Refactor to match this plan (WorkspaceDO, 6 tools, 11 capabilities)** |
+| `OKF/system/` | System OKF bundle — architecture, tools, modules, schemas, workflows | **Bundled in tarflue-v2, deploys with Worker** |
+| `OKF/client/` | Client OKF bundle — screens, components, navigation | **Bundled in tarai, ships with Expo** |
+| `OKF/workspace-template/` | Workspace OKF template — business, products, policies, reports | **Copied to Railway S3 per workspace** |
 
 ---
 
@@ -2668,17 +3061,17 @@ At 1K workspaces × 100 visits/day = 100K requests/day — right at free tier li
 
 ### Capability matching
 
-The LLM reads 12 capability descriptions loaded into context, compares against user's words, and picks the relevant ones.
+The LLM reads 14 capability descriptions loaded into context, compares against user's words, and picks the relevant ones. Expenses + Documents are enabled by default for all business types.
 
 | User says | Capabilities enabled |
 |---|---|
-| "Pet salon with grooming and boarding" | Bookings + CRM + Orders |
-| "Restaurant with delivery" | Orders + Inventory + Logistics |
-| "Dentist clinic" | Bookings + CRM + Projects |
-| "Clothing store" | Orders + Inventory + CRM |
-| "Coaching classes" | LMS + Bookings + CRM |
-| "Real estate agent" | Listings + CRM + Projects |
-| "Gym with classes" | Bookings + CRM + LMS + HR |
+| "Pet salon with grooming and boarding" | Bookings + CRM + Orders + Expenses + Documents |
+| "Restaurant with delivery" | Orders + Inventory + Logistics + Expenses + Documents |
+| "Dentist clinic" | Bookings + CRM + Projects + Expenses + Documents |
+| "Clothing store" | Orders + Inventory + CRM + Expenses + Documents |
+| "Coaching classes" | LMS + Bookings + CRM + Expenses + Documents |
+| "Real estate agent" | Listings + CRM + Projects + Expenses + Documents |
+| "Gym with classes" | Bookings + CRM + LMS + HR + Expenses + Documents |
 
 ### Workspace customization (post-creation)
 
@@ -3088,3 +3481,704 @@ User types "/" in group
 | Replay from autocomplete card | ₹0 — no LLM |
 
 **Why future:** Requires platform-specific bot setup for each channel. Add after core channels are working. Prioritize Telegram first (free, largest user base in target market).
+
+---
+
+## OKF File Storage & Integration
+
+> Open Knowledge Format (OKF) — structured markdown files that AI agents read directly to understand your system. Think of it as "documentation that agents use instead of guessing."
+
+### What OKF Gives Us
+
+| Benefit | How It Works |
+|---|---|
+| **Agent onboarding** | New agent joins → reads OKF files → knows everything. No training. |
+| **Zero LLM cost** | "Show sales" → agent reads SQL from file → runs it. No LLM call needed. |
+| **Action memory cache** | User runs same action 3 times → cached. 4th time = zero cost. |
+| **Module marketplace** | Install CRM = copy markdown files. No code deploy. |
+
+### Where OKF Files Live (Hybrid Approach)
+
+| Bundle | Location | Why |
+|---|---|---|
+| **System bundle** | `tarflue-v2/src/okf/` | Changes with code, deploys with Worker |
+| **Client bundle** | `tarai/src/okf/` | Changes with app, ships with Expo |
+| **Workspace OKF** | **Railway S3** | Editable, versioned, portable |
+| **OKF index** | `index.md` in each S3 folder | Standard OKF method — tells agent what files exist |
+| **OKF cache** | **KV** (5min TTL) | Cache `index.md` for fast reads |
+
+### Why Railway S3 for Workspace OKF?
+
+| Benefit | How |
+|---|---|
+| **Editable** | User can edit `.md` files directly in S3 dashboard |
+| **Versioned** | S3 versioning tracks changes automatically |
+| **Portable** | Download entire workspace knowledge base as zip |
+| **Consistent** | Same storage as Documents module (already using Railway S3) |
+| **Cost** | ~$0.03/mo for 1K workspaces (negligible) |
+
+### Three OKF Bundles
+
+#### Bundle 1: System (tarflue-v2)
+
+Documents the backend. Agent reads this to understand how the platform works.
+
+```
+tarflue-v2/src/okf/system/
+├── index.md                    # Bundle map
+├── log.md                      # Change history
+├── architecture/
+│   ├── overview.md             # Workers + DO + Turso + D1
+│   ├── data-model.md           # 5 tables: form, matter, motion, graph, memory
+│   └── scopes.md               # w:, o:, p:, g: data routing
+├── tools/
+│   ├── create.md               # INSERT any table
+│   ├── read.md                 # SELECT any table
+│   ├── update.md               # UPDATE any table
+│   ├── delete.md               # SOFT DELETE
+│   ├── link.md                 # Graph edge toggle
+│   └── search.md               # Vector search
+├── agents/
+│   ├── master.md               # Intent detection → workflow routing
+│   └── action-memory.md        # Inline card replay, zero LLM on replay
+├── modules/
+│   ├── crm.md                  # Leads, follow-ups, deal pipeline
+│   ├── orders.md               # POS, state machine, payment
+│   ├── inventory.md            # Stock, batch/expiry, suppliers
+│   ├── bookings.md             # Appointments, slots, reminders
+│   ├── logistics.md            # Delivery, drivers, routing
+│   ├── projects.md             # Tasks, sprints, milestones
+│   ├── hr.md                   # Attendance, leave, payroll
+│   ├── lms.md                  # Courses, assignments
+│   ├── listings.md             # Property/products, inquiries
+│   ├── support.md              # Tickets, escalation
+│   ├── reports.md              # SQL queries over matter+motion
+│   ├── expenses.md             # Tracking, recurring, bills
+│   └── documents.md            # Railway S3, linking
+├── schemas/
+│   ├── matter.md               # Columns, types, time fields, data JSON
+│   ├── motion.md               # 32 motion types across 11 verticals
+│   └── graph.md                # Edges, relationships, ACL
+├── workflows/
+│   ├── record-sale.md          # Check stock → deduct → receipt
+│   ├── checkout.md             # Cart → payment → order
+│   └── workspace-creation.md   # Describe business → install modules → go live
+└── channels/
+    ├── telegram.md             # Group → scope mapping via D1
+    ├── slack.md
+    ├── discord.md
+    └── whatsapp.md
+```
+
+**~30 concept files**
+
+#### Bundle 2: Client (tarai)
+
+Documents the frontend. Agent reads this to understand the app structure.
+
+```
+tarai/src/okf/client/
+├── index.md
+├── log.md
+├── screens/
+│   ├── home.md                 # Role-based timeline, motion cards
+│   ├── chat.md                 # Agent chat, autocomplete, action cards
+│   ├── explore.md              # Search, marketplace, settings
+│   ├── workspace.md            # Workspace detail view
+│   └── auth.md                 # Google sign-in
+├── components/
+│   ├── action-executor.md      # Runs workflows from cards
+│   ├── action-form.md          # Dynamic form from action schema
+│   └── storefront-tab.md       # Product listing view
+├── navigation/
+│   ├── tabs.md                 # Bottom tab: Home | Chat | Explore
+│   └── screens.md              # Full screen map
+└── api/
+    └── tarflue-client.md       # How tarai talks to tarflue-v2
+```
+
+**~10 concept files**
+
+#### Bundle 3: Workspace Template
+
+Copied per business. Filled with their specific knowledge. Stored in D1/Turso.
+
+```
+workspace-template/
+├── index.md
+├── log.md
+├── business/
+│   ├── profile.md              # Name, type, hours, UPI ID
+│   ├── team.md                 # Staff roles
+│   └── channels.md             # Telegram groups → scope
+├── products/
+│   ├── catalog.md              # Items with prices, stock
+│   └── categories.md           # Groupings
+├── policies/
+│   ├── returns.md              # Refund rules
+│   ├── delivery.md             # Zones, timing, fees
+│   └── payments.md             # UPI, cash handling
+├── workflows/
+│   ├── order-flow.md           # State machine for this workspace
+│   └── delivery-flow.md        # Driver assignment
+├── reports/
+│   ├── daily-sales.md          # SQL + output format
+│   └── stock-valuation.md      # Current inventory value
+└── macros/
+    ├── order-confirm.md        # "Your order is confirmed"
+    └── out-of-stock.md         # "Sorry, we're out"
+```
+
+**~12 concept files**
+
+### How OKF Integrates with Our Code
+
+#### tarflue-v2 Integration
+
+| Component | How It Uses OKF |
+|---|---|
+| **Master agent** (`src/agents/master.ts`) | Reads `system/modules/*.md` to understand what each module does before routing |
+| **Workflows** (`src/workflows/*.ts`) | Read `system/workflows/*.md` for step-by-step procedures |
+| **Skills** (`src/skills/*/SKILL.md`) | Reference `system/tools/*.md` for tool usage patterns |
+| **Module install** | Copies `system/modules/*.md` into workspace bundle |
+
+#### tarai Integration
+
+| Component | How It Uses OKF |
+|---|---|
+| **Home screen** (`src/app/(tabs)/home.tsx`) | Reads workspace `reports/*.md` to know what reports are available |
+| **Chat screen** (`src/app/(tabs)/chat.tsx`) | Reads workspace `macros/*.md` for template replies |
+| **Explore** (`src/app/(tabs)/explore.tsx`) | Reads `system/modules/*.md` to show available modules |
+| **ActionExecutor** (`src/components/ActionExecutor.tsx`) | Reads workspace `workflows/*.md` to execute actions |
+
+### Agent Flow with OKF (Railway S3)
+
+```
+User: "Show me today's sales"
+  → Step 1: Fetch root index.md from S3 (or KV cache)
+    → Gets: list of all folders and files
+  → Step 2: Fetch reports/index.md
+    → Gets: "daily-sales.md contains SQL query + output format"
+  → Step 3: Fetch reports/daily-sales.md
+    → Returns: markdown with SQL query + output format
+  → Step 4: Execute query + format result
+    → Agent executes: read(table='matter', type='order', start >= today)
+    → Agent formats: per the template in daily-sales.md
+  → Reply: "47 orders, ₹12,400. UPI: ₹8,200"
+```
+
+Without OKF, the agent would need LLM to figure out the SQL. With OKF, it reads the curated query from S3. Zero LLM cost.
+
+### OKF + Action Memory
+
+| Layer | What | Cost |
+|---|---|---|
+| **OKF bundle** | Curated knowledge — "how to run daily sales" | Write once (S3) |
+| **OKF index** | `index.md` tells agent what files exist | Read from S3 (or KV cache) |
+| **Action memory** | Cached decision — user ran it 3 times | Read from cache |
+| **Agent** | First time: reads OKF + LLM. Replay: memory card only | ₹0 on replay |
+
+The OKF bundle is the **training data**. Action memory is the **cached output**.
+
+### OKF Upload/Edit Flow
+
+**Upload (during workspace creation):**
+```
+Agent creates workspace
+  → Agent copies OKF template to Railway S3 (workspaces/{scope}/)
+  → Includes index.md files in each folder
+  → Workspace now has complete knowledge base
+```
+
+**Edit (via chat):**
+```
+User: "Update my return policy"
+  → Agent detects: edit_okf intent
+  → Agent reads current OKF from S3
+  → Agent shows current content
+  → User edits
+  → Agent uploads new version to S3
+  → Reply: "Return policy updated"
+```
+
+**Upload via API:**
+```typescript
+// POST /okf/upload
+{
+  scope: "w:rest-101",
+  path: "policies/returns.md",
+  content: "# Return Policy\n\n- Refund within 24 hours..."
+}
+
+// Response
+{
+  ok: true,
+  s3_key: "workspaces/w:rest-101/policies/returns.md"
+}
+```
+
+### Workspace OKF in Railway S3
+
+```
+Railway S3 Bucket: tarai-storage
+├── workspaces/
+│   ├── w:rest-101/
+│   │   ├── index.md                    # Workspace map
+│   │   ├── business/
+│   │   │   ├── profile.md              # Name, type, hours, UPI
+│   │   │   ├── team.md                 # Staff roles
+│   │   │   └── channels.md             # Telegram groups
+│   │   ├── products/
+│   │   │   ├── catalog.md              # Items with prices
+│   │   │   └── categories.md           # Groupings
+│   │   ├── policies/
+│   │   │   ├── returns.md              # Refund rules
+│   │   │   ├── delivery.md             # Zones, timing
+│   │   │   └── payments.md             # UPI, cash
+│   │   ├── workflows/
+│   │   │   ├── order-flow.md           # State machine
+│   │   │   └── delivery-flow.md        # Driver assignment
+│   │   ├── reports/
+│   │   │   ├── daily-sales.md          # SQL + format
+│   │   │   └── stock-valuation.md      # Inventory value
+│   │   └── macros/
+│   │       ├── order-confirm.md        # Template reply
+│   │       └── out-of-stock.md         # Template reply
+│   └── w:pet-202/
+│       └── ...
+```
+
+### OKF Index Method
+
+OKF uses `index.md` files as the standard index method. Each folder has an `index.md` that lists its contents.
+
+**S3 structure with index.md:**
+```
+workspaces/w:rest-101/
+├── index.md                    ← ROOT INDEX (lists all subfolders)
+├── business/
+│   ├── index.md                ← lists: profile.md, team.md, channels.md
+│   ├── profile.md
+│   ├── team.md
+│   └── channels.md
+├── products/
+│   ├── index.md                ← lists: catalog.md, categories.md
+│   ├── catalog.md
+│   └── categories.md
+├── reports/
+│   ├── index.md                ← lists: daily-sales.md, stock-valuation.md
+│   ├── daily-sales.md
+│   └── stock-valuation.md
+└── macros/
+    ├── index.md                ← lists: order-confirm.md, out-of-stock.md
+    ├── order-confirm.md
+    └── out-of-stock.md
+```
+
+**Root index.md example:**
+```markdown
+# Workspace Knowledge Base
+
+## Folders
+- [business](./business/) — Profile, team, channels
+- [products](./products/) — Catalog, categories
+- [policies](./policies/) — Returns, delivery, payments
+- [workflows](./workflows/) — Order flow, delivery flow
+- [reports](./reports/) — SQL queries and output formats
+- [macros](./macros/) — Template replies
+```
+
+**Reports index.md example:**
+```markdown
+# Reports
+
+## Available Reports
+- [daily-sales.md](./daily-sales.md) — SQL query for daily sales summary
+- [stock-valuation.md](./stock-valuation.md) — SQL query for inventory value
+```
+
+**How agent uses index:**
+```
+1. Fetch root index.md → knows all folders
+2. Fetch reports/index.md → knows all report files
+3. Fetch reports/daily-sales.md → gets actual SQL query
+4. Execute query → reply
+```
+
+**S3 file content:**
+```markdown
+# Daily Sales Report
+
+## SQL Query
+SELECT * FROM matter 
+WHERE type='order' 
+  AND start >= date('now')
+
+## Output Format
+Today: {count} orders, ₹{total} revenue
+UPI: ₹{upi} | Cash: ₹{cash}
+
+## Top Items
+{item} × {qty} = ₹{amount}
+```
+
+### How Agent Reads Workspace OKF
+
+```typescript
+// Step 1: Fetch root index.md from S3 (or KV cache, ~10ms)
+const rootIndex = await fetchFromS3OrCache("workspaces/w:rest-101/index.md");
+// Returns: list of all folders (business, products, reports, etc.)
+
+// Step 2: Fetch reports/index.md
+const reportsIndex = await fetchFromS3OrCache("workspaces/w:rest-101/reports/index.md");
+// Returns: list of report files (daily-sales.md, stock-valuation.md)
+
+// Step 3: Fetch daily-sales.md
+const reportContent = await fetchFromS3OrCache("workspaces/w:rest-101/reports/daily-sales.md");
+// Returns: markdown with SQL query + output format
+
+// Step 4: Parse and execute
+const sql = extractSql(reportContent);  // "SELECT * FROM matter WHERE type='order'..."
+const result = await executeSql(sql);
+// Returns: 47 orders, ₹12,400
+```
+
+### Implementation Phases
+
+| Phase | What | Storage |
+|---|---|---|
+| **Phase 1** | System bundle (tarflue-v2) | Bundled in `src/okf/` (~30 files with index.md) |
+| **Phase 2** | Client bundle (tarai) | Bundled in `src/okf/` (~10 files with index.md) |
+| **Phase 3** | Workspace template | Railway S3 (`workspaces/{scope}/` ~12 files with index.md per workspace) |
+| **Phase 4** | OKF cache | KV (5min TTL for index.md) |
+| **Phase 5** | Agent integration | Connect OKF to master agent + action memory |
+
+---
+
+## Memory System Integration (Google OKF + RAG + AI Memory)
+
+> Research from: Google OKF announcement, Honcho.dev, HydraDB, AlphaMatch OKF vs RAG 2026, SuperMemory.
+> Goal: Integrate structured knowledge representation (OKF) with retrieval-augmented generation (RAG) and AI memory systems to enhance the tarai agent's contextual awareness.
+
+### Current Memory Architecture (planv2)
+
+The existing plan has:
+
+| Component | What It Does | Storage |
+|---|---|---|
+| **Action Memory** | Cache agent decisions as inline replay cards. First time = LLM, every replay = zero cost. | Turso `memory` table |
+| **Intent Hash** | Fast lookup for action memory (sha256 of intent + slot keys). | Turso `memory` table |
+| **Vector Search** | Semantic search on marketplace items, motion history. | Turso global DB (g:global) |
+| **Tiered AI (L1-L5)** | Static dict → action memory → semantic cache → cheap LLM → strong LLM. | Multiple layers |
+
+**What's missing:**
+
+1. **Structured Knowledge Representation** — No ontology/schema for how entities relate (products, customers, orders, suppliers).
+2. **Cross-Session Memory** — Agent forgets context between sessions. No conversation summaries.
+3. **User Behavior Learning** — No personalization based on user patterns.
+4. **Cross-Workspace Knowledge** — No shared learning across tenants (anonymized).
+5. **RAG for Workspace Queries** — No retrieval-augmented generation for "what happened with Pepsi last week?"
+
+### Google OKF (Open Knowledge Format) Integration
+
+Google's OKF is a structured format for representing knowledge as entities and relationships. It's more structured than vector-based RAG — explicitly modeling ontology, facts, and relationships.
+
+**How OKF maps to tarai's existing schema:**
+
+| OKF Concept | tarai Equivalent | Implementation |
+|---|---|---|
+| **Ontology** (entity types, properties) | `form` table (g:global) | Products, actions, workflows, skills defined once |
+| **Entities** (instances) | `matter` table | Specific products, orders, customers |
+| **Relations** | `graph` table | `src → rel → tgt` edges |
+| **Facts** (attribute values) | `matter.data` JSON | `{ cost_price, mrp, batch, hsn }` |
+| **Temporal facts** | `matter.start/end/life` | When entity exists in time |
+
+**tarai already has OKF-compatible structure.** The 5-table schema (form, matter, motion, graph, memory) IS an ontology + knowledge graph. What's missing is:
+
+1. **Explicit ontology definitions** — `form` rows that define entity types and their allowed properties.
+2. **Relationship traversal queries** — Agent can't ask "show me all products from supplier X" without graph traversal.
+3. **Temporal queries** — "What was stock level last Tuesday?" requires motion history queries.
+
+**OKF Enhancement (add to g:global form table):**
+
+```sql
+-- Ontology definition rows in form table
+INSERT INTO form (id, type, data) VALUES
+  ('ont_product', 'ontology', '{"entity":"product","properties":["title","qty","unit","value","data"],"relations":["supplied_by","stocks","belongs_to"]}'),
+  ('ont_order', 'ontology', '{"entity":"order","properties":["title","value","data"],"relations":["placed_by","contains","paid_by"]}'),
+  ('ont_customer', 'ontology', '{"entity":"customer","properties":["title","data"],"relations":["placed_order","belongs_to"]}'),
+  ('ont_supplier', 'ontology', '{"entity":"supplier","properties":["title","data"],"relations":["supplies","located_in"]}');
+```
+
+**Agent uses ontology for structured queries:**
+
+```typescript
+// Agent reads ontology before generating SQL
+const ontology = await read("form", { type: "ontology" });
+// Agent now knows: product has relations "supplied_by", "stocks", "belongs_to"
+// Agent generates: SELECT * FROM matter WHERE type='product' AND form IN (SELECT id FROM form WHERE type='product')
+```
+
+### RAG Integration (Retrieval-Augmented Generation)
+
+RAG retrieves relevant context before LLM generation. Instead of dumping all data into context, RAG finds the most relevant pieces.
+
+**Three RAG layers in tarai:**
+
+| Layer | What It Retrieves | Where | When |
+|---|---|---|---|
+| **L1: Action Memory RAG** | Autocomplete cards for repeated actions | Turso `memory` (intent hash) | User types in chat |
+| **L2: Workspace Context RAG** | Relevant products, orders, customers | Turso `memory` (vector search) | Agent answers questions |
+| **L3: Session History RAG** | Past conversation summaries | Turso `memory` (vector search) | New session startup |
+
+**L2 RAG implementation (workspace context):**
+
+```typescript
+// After each significant event, store context summary in memory
+async function storeContext(event: Event) {
+  const summary = await summarize(event); // cheap LLM
+  const embedding = await embed(summary); // embedding model
+  await create("memory", {
+    text: summary,
+    embedding: embedding,
+    scope: event.scope,
+    meta: { type: "context", eventType: event.type }
+  });
+}
+
+// When agent needs context, retrieve relevant memories
+async function retrieveContext(query: string, scope: string) {
+  const results = await search(query, { scope, limit: 5 });
+  return results.map(r => r.text).join("\n");
+}
+
+// Agent uses retrieved context
+const context = await retrieveContext("Pepsi orders last week", "w:rest-101");
+// Returns: "Order #789: 5 Pepsi on July 1. Order #790: 12 Pepsi on July 2..."
+```
+
+**L3 RAG implementation (session history):**
+
+```typescript
+// At session end, summarize conversation
+async function summarizeSession(sessionId: string) {
+  const messages = await getSessionMessages(sessionId);
+  const summary = await summarize(messages); // cheap LLM
+  const embedding = await embed(summary);
+  
+  await create("memory", {
+    text: summary,
+    embedding: embedding,
+    scope: "global",
+    meta: { type: "session_summary", sessionId, userId }
+  });
+}
+
+// At session start, retrieve relevant summaries
+async function loadSessionContext(userId: string) {
+  const recentSessions = await search("recent activity", { 
+    scope: "global",
+    filter: { userId },
+    limit: 3
+  });
+  return recentSessions.map(s => s.text).join("\n");
+}
+```
+
+### Honcho.dev Integration
+
+Honcho.dev is a platform for managing AI memory/context across sessions. It provides:
+- Persistent conversation memory
+- User behavior tracking
+- Cross-session context retention
+- Memory search and retrieval
+
+**How Honcho maps to tarai:**
+
+| Honcho Feature | tarai Equivalent | Implementation |
+|---|---|---|
+| **Conversation Memory** | Session summaries in `memory` table | Store after each session |
+| **User Behavior** | Action memory + usage counts | Already implemented |
+| **Cross-Session Context** | L3 RAG (session history retrieval) | Vector search on session summaries |
+| **Memory Search** | `search` tool with vector embeddings | Already implemented |
+
+**Honcho-style memory schema (add to memory table):**
+
+```json
+{
+  "id": "mem_session_abc123",
+  "text": "Ravanan discussed restocking Pepsi and biryani. Mentioned oil running low. Asked about expense tracking.",
+  "embedding": [...],
+  "scope": "u:ravanan",
+  "meta": {
+    "type": "session_summary",
+    "sessionId": "ses_xyz",
+    "timestamp": "2026-07-03T18:00:00Z",
+    "topics": ["restock", "inventory", "expenses"],
+    "sentiment": "positive"
+  }
+}
+```
+
+**Memory decay (like Honcho):**
+
+```typescript
+// Memories lose relevance over time
+function calculateRelevance(memory: Memory, now: Date): number {
+  const age = now - new Date(memory.meta.timestamp);
+  const daysSinceCreation = age / (1000 * 60 * 60 * 24);
+  const usageBoost = memory.meta.usageCount * 0.1;
+  return Math.max(0, 1 - (daysSinceCreation / 30) + usageBoost);
+}
+```
+
+### HydraDB Integration
+
+HydraDB is a database designed for AI memory workloads — optimized for:
+- Fast vector search
+- Time-series memory storage
+- Efficient embedding storage
+- Low-latency retrieval
+
+**How HydraDB maps to tarai:**
+
+| HydraDB Feature | tarai Equivalent | Implementation |
+|---|---|---|
+| **Vector Storage** | Turso `memory.embedding` column | Already using Turso for vectors |
+| **Time-Series Memory** | `motion` table with timestamps | Already implemented |
+| **Fast Retrieval** | Turso vector index | Already using Turso ANN |
+| **Low Latency** | DO SQLite for hot data | Already using DOs |
+
+**tarai already uses HydraDB-compatible architecture.** Turso provides:
+- Vector search (ANN index on embeddings)
+- Time-series queries (motion table with timestamps)
+- Low latency (DO SQLite for operational data)
+- Scalable storage (Turso unlimited databases)
+
+**Enhancement: Add memory indexing (like HydraDB):**
+
+```sql
+-- Add index for faster memory retrieval
+CREATE INDEX idx_memory_type ON memory(type);
+CREATE INDEX idx_memory_scope ON memory(scope);
+CREATE INDEX idx_memory_timestamp ON memory(JSON_EXTRACT(meta, '$.timestamp'));
+```
+
+### SuperMemory Integration
+
+SuperMemory is an AI memory system for long-term context retention. It provides:
+- Automatic memory extraction
+- Semantic search on memories
+- Memory consolidation (merge similar memories)
+- Context-aware retrieval
+
+**How SuperMemory maps to tarai:**
+
+| SuperMemory Feature | tarai Equivalent | Implementation |
+|---|---|---|
+| **Auto Extraction** | Action memory extraction | Already implemented |
+| **Semantic Search** | Vector search on `memory` table | Already implemented |
+| **Memory Consolidation** | **Missing** — need to merge similar memories | New feature |
+| **Context-Aware Retrieval** | RAG with scope filtering | Partially implemented |
+
+**SuperMemory-style consolidation (add to memory system):**
+
+```typescript
+// After storing new memory, check for similar existing memories
+async function consolidateMemory(newMemory: Memory) {
+  const similar = await search(newMemory.text, { limit: 3, threshold: 0.8 });
+  
+  if (similar.length > 0) {
+    // Merge with most similar memory
+    const target = similar[0];
+    const merged = mergeMemories(target, newMemory);
+    await update("memory", { id: target.id, ...merged });
+  } else {
+    // Store as new memory
+    await create("memory", newMemory);
+  }
+}
+
+function mergeMemories(a: Memory, b: Memory): Memory {
+  return {
+    text: `${a.text}\n${b.text}`,
+    embedding: averageEmbeddings(a.embedding, b.embedding),
+    scope: a.scope,
+    meta: {
+      ...a.meta,
+      mergedCount: (a.meta.mergedCount || 1) + 1,
+      lastUpdated: new Date().toISOString()
+    }
+  };
+}
+```
+
+### Hybrid Memory Architecture (Recommended)
+
+Combining all systems into a unified architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    TIER 1: HOT MEMORY                        │
+│  Action memory cards (autocomplete)                         │
+│  Current session context                                    │
+│  Intent hash lookup                                         │
+│  Cost: $0 (zero LLM on replay)                              │
+│  Latency: <1ms                                              │
+│  Storage: Turso memory table                                │
+├─────────────────────────────────────────────────────────────┤
+│                    TIER 2: WARM MEMORY                       │
+│  Session summaries (last 7 days)                            │
+│  Workspace context (products, orders, customers)            │
+│  User behavior patterns                                     │
+│  Cost: ~₹0.001/query (Turso vector search)                 │
+│  Latency: ~20ms                                             │
+│  Storage: Turso memory table + motion_archive               │
+├─────────────────────────────────────────────────────────────┤
+│                    TIER 3: COLD MEMORY                       │
+│  Full conversation transcripts                              │
+│  Archived motion rows (90+ days)                            │
+│  Cross-workspace knowledge (anonymized)                     │
+│  Cost: ~$0.023/GB/month (Railway S3)                        │
+│  Latency: ~500ms (on-demand fetch)                          │
+│  Storage: Railway S3                                         │
+├─────────────────────────────────────────────────────────────┤
+│                    TIER 4: ONTOLOGY                          │
+│  Entity type definitions (form table)                       │
+│  Relationship schemas (graph table)                         │
+│  Knowledge graph structure                                  │
+│  Cost: $0 (already in schema)                               │
+│  Latency: ~5ms                                              │
+│  Storage: Turso global DB (g:global)                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Implementation Plan
+
+| Phase | What | Storage | Cost | Priority |
+|---|---|---|---|---|
+| **Phase 1** | Session summaries (L3 RAG) | Turso memory | ~₹60/mo at 1K tenants | High |
+| **Phase 2** | Ontology definitions (OKF) | Turso form (g:global) | $0 | Medium |
+| **Phase 3** | Memory consolidation (SuperMemory) | Turso memory | ~₹10/mo | Medium |
+| **Phase 4** | Cold storage archival (S3) | Railway S3 | ~$0.50/mo | Low |
+| **Phase 5** | Cross-workspace knowledge (anonymized) | Turso global | ~₹20/mo | Low |
+
+### Cost Impact
+
+| Addition | Monthly Cost (1K tenants) | LLM Savings |
+|---|---|---|
+| Session summaries | ~₹60 | Faster context loading = fewer input tokens |
+| RAG skill retrieval | ~₹20 | Only load relevant skills = 50% fewer tokens |
+| Memory consolidation | ~₹10 | Fewer duplicate memories = faster search |
+| Cold storage (S3) | ~$0.50 | 80% cheaper than Turso for old data |
+| **Total** | **~₹90 + $0.50** | **~10-20% LLM cost reduction** |
+
+### Recommendation
+
+1. **Start with Session Summaries** (L3 RAG) — biggest impact, easiest to build
+2. **Add Ontology Definitions** (OKF) — leverage existing schema, zero cost
+3. **Implement Memory Consolidation** (SuperMemory) — reduce memory bloat
+4. **Add Cold Storage** (S3) — extend Documents module to archive old memories
+5. **Cross-Workspace Knowledge** — anonymized learnings across tenants (future)
+
+All systems use existing Turso infrastructure. No new databases needed. The hybrid approach (Turso for hot/warm, S3 for cold) provides optimal cost-performance balance.

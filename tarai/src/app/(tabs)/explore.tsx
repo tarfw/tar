@@ -1,7 +1,9 @@
 import { View, Text, ScrollView, StyleSheet, Pressable, TextInput } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useDb } from '@/db/provider';
 
 const TARFLUE_URL = process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://tarflue.tar-54d.workers.dev';
 
@@ -12,12 +14,41 @@ interface Template {
   modules: string[];
 }
 
+interface Workspace {
+  id: string;
+  title: string;
+  scope: string;
+  code: string;
+  data: string;
+}
+
 export default function ExploreScreen() {
   const theme = useTheme();
+  const router = useRouter();
+  const db = useDb();
+
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState<string | null>(null);
+
+  const fetchWorkspaces = useCallback(async () => {
+    try {
+      const rows = await db.getAllAsync<Workspace>(
+        "SELECT id, title, scope, code, data FROM form WHERE type = 'workspace' AND active = 1 ORDER BY time DESC"
+      );
+      setWorkspaces(rows);
+    } catch (e) {
+      console.warn('[Explore] Failed to fetch workspaces:', e);
+    }
+  }, [db]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchWorkspaces();
+    }, [fetchWorkspaces])
+  );
 
   useEffect(() => {
     fetchTemplates();
@@ -60,6 +91,32 @@ export default function ExploreScreen() {
     }
   };
 
+  const handleWorkspacePress = (w: Workspace) => {
+    let subdomain = w.code;
+    try {
+      const parsed = JSON.parse(w.data);
+      if (parsed.subdomain) subdomain = parsed.subdomain;
+    } catch {}
+
+    router.push({
+      pathname: '/workspace',
+      params: {
+        id: w.id,
+        name: w.title,
+        subdomain,
+        scope: w.scope,
+      },
+    });
+  };
+
+  const handleQuickAction = (action: string) => {
+    if (action === 'onboarding') {
+      router.push('/onboarding');
+    } else if (action === 'settings') {
+      router.push('/(tabs)/settings');
+    }
+  };
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.background }]} contentContainerStyle={styles.content}>
       <Text style={[styles.header, { color: theme.text }]}>Explore</Text>
@@ -76,6 +133,55 @@ export default function ExploreScreen() {
           onSubmitEditing={handleSearch}
           returnKeyType="search"
         />
+      </View>
+
+      {/* My Workspaces */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>MY WORKSPACES</Text>
+        {workspaces.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+            <Ionicons name="briefcase-outline" size={28} color={theme.textMuted} />
+            <Text style={[styles.emptyText, { color: theme.textMuted, fontSize: 14 }]}>
+              No workspaces created yet.
+            </Text>
+            <Pressable
+              style={[styles.createBtn, { backgroundColor: theme.primary }]}
+              onPress={() => router.push('/onboarding')}>
+              <Text style={styles.createBtnText}>Create Workspace</Text>
+            </Pressable>
+          </View>
+        ) : (
+          workspaces.map((w) => {
+            let vertical = 'general';
+            let subdomain = w.code;
+            try {
+              const parsed = JSON.parse(w.data);
+              if (parsed.vertical) vertical = parsed.parsedVertical || parsed.vertical;
+              if (parsed.subdomain) subdomain = parsed.subdomain;
+            } catch {}
+
+            return (
+              <Pressable
+                key={w.id}
+                style={({ pressed }) => [
+                  styles.workspaceCard,
+                  { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+                  pressed && { opacity: 0.8 },
+                ]}
+                onPress={() => handleWorkspacePress(w)}>
+                <View style={styles.workspaceInfo}>
+                  <Text style={[styles.workspaceTitle, { color: theme.text }]}>{w.title}</Text>
+                  <Text style={[styles.workspaceSubdomain, { color: theme.textMuted }]}>
+                    {subdomain}.tarai.space
+                  </Text>
+                </View>
+                <View style={[styles.verticalTag, { backgroundColor: theme.primary + '15' }]}>
+                  <Text style={[styles.verticalTagText, { color: theme.primary }]}>{vertical}</Text>
+                </View>
+              </Pressable>
+            );
+          })
+        )}
       </View>
 
       {/* Templates */}
@@ -122,13 +228,17 @@ export default function ExploreScreen() {
         <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>QUICK ACTIONS</Text>
         <View style={styles.grid}>
           {[
-            { icon: 'add-circle-outline', label: 'New Workspace', action: 'chat' },
-            { icon: 'storefront-outline', label: 'Marketplace', action: 'explore' },
+            { icon: 'add-circle-outline', label: 'New Workspace', action: 'onboarding' },
             { icon: 'settings-outline', label: 'Settings', action: 'settings' },
           ].map((item, i) => (
             <Pressable
               key={i}
-              style={[styles.gridItem, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+              style={({ pressed }) => [
+                styles.gridItem,
+                { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+                pressed && { opacity: 0.7 }
+              ]}
+              onPress={() => handleQuickAction(item.action)}>
               <Ionicons name={item.icon as any} size={24} color={theme.primary} />
               <Text style={[styles.gridLabel, { color: theme.text }]}>{item.label}</Text>
             </Pressable>
@@ -141,15 +251,23 @@ export default function ExploreScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 16, paddingTop: 60 },
+  content: { padding: 16, paddingTop: 60, paddingBottom: 40 },
   header: { fontSize: 32, fontWeight: '800', marginBottom: 16 },
   searchBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, gap: 8, marginBottom: 24 },
   searchInput: { flex: 1, fontSize: 16 },
   section: { marginBottom: 24 },
   sectionTitle: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
   loading: { fontSize: 14, textAlign: 'center', paddingVertical: 20 },
-  emptyCard: { padding: 32, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
-  emptyText: { fontSize: 16, fontWeight: '600', marginTop: 12 },
+  emptyCard: { padding: 24, borderRadius: 12, borderWidth: 1, alignItems: 'center', gap: 8 },
+  emptyText: { fontSize: 16, fontWeight: '600', marginTop: 4, textAlign: 'center' },
+  createBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
+  createBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  workspaceCard: { flexDirection: 'row', padding: 16, borderRadius: 12, borderWidth: 1, marginBottom: 8, alignItems: 'center', justifyContent: 'space-between' },
+  workspaceInfo: { flex: 1, gap: 2 },
+  workspaceTitle: { fontSize: 16, fontWeight: '600' },
+  workspaceSubdomain: { fontSize: 13 },
+  verticalTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  verticalTagText: { fontSize: 12, fontWeight: '600', textTransform: 'capitalize' },
   card: { padding: 16, borderRadius: 12, borderWidth: 1, marginBottom: 12 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   cardTitle: { fontSize: 18, fontWeight: '600' },
@@ -163,3 +281,4 @@ const styles = StyleSheet.create({
   gridItem: { flex: 1, padding: 16, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
   gridLabel: { fontSize: 12, marginTop: 8, textAlign: 'center' },
 });
+

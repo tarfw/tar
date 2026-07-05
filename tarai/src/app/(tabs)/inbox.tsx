@@ -72,7 +72,10 @@ export default function InboxScreen() {
     }
   }, [loadLocal]);
 
-  useEffect(() => { fetchTimeline(); }, [fetchTimeline]);
+  useEffect(() => {
+    fetchTimeline();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

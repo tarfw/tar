@@ -1,48 +1,63 @@
-import { Tabs } from 'expo-router';
-import { useTheme } from '@/hooks/use-theme';
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
 
-export default function TabsLayout() {
-  const theme = useTheme();
+import { useThemeMode } from '@/hooks/use-theme-context';
+import { Colors } from '@/constants/theme';
+
+export default function TabLayout() {
+  const { resolvedScheme } = useThemeMode();
+  const colors = Colors[resolvedScheme];
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: theme.primary,
-        tabBarInactiveTintColor: theme.textMuted,
-        tabBarStyle: {
-          backgroundColor: theme.background,
-          borderTopColor: theme.border,
-        },
-      }}>
-      <Tabs.Screen
-        name="inbox"
-        options={{
-          title: 'Inbox',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="mail-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="search-outline" size={size} color={color} />
-          ),
-        }}
-      />
-    </Tabs>
+    <NativeTabs
+      backgroundColor={colors.background}
+      iconColor={{
+        default: colors.textSecondary,
+        selected: colors.primary,
+      }}
+      labelVisibilityMode="unlabeled"
+      indicatorColor={colors.primary + '25'}
+      rippleColor="rgba(128,128,128,0.3)">
+      
+      <NativeTabs.Trigger name="inbox">
+        <NativeTabs.Trigger.Label>Inbox</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          sf={{ default: 'tray', selected: 'tray.fill' }}
+          md={{ default: 'inbox', selected: 'inbox' }}
+        />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="workspaces">
+        <NativeTabs.Trigger.Label>Workspaces</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          sf={{ default: 'briefcase', selected: 'briefcase.fill' }}
+          md={{ default: 'work_outline', selected: 'work' }}
+        />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="chat">
+        <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          sf={{ default: 'message', selected: 'message.fill' }}
+          md={{ default: 'chat_bubble_outline', selected: 'chat_bubble' }}
+        />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="explore">
+        <NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          sf={{ default: 'compass', selected: 'compass.fill' }}
+          md={{ default: 'explore', selected: 'explore' }}
+        />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="settings">
+        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          sf={{ default: 'gearshape', selected: 'gearshape.fill' }}
+          md={{ default: 'settings', selected: 'settings' }}
+        />
+      </NativeTabs.Trigger>
+      
+    </NativeTabs>
   );
 }

@@ -13,6 +13,8 @@ import { initEmbeddings } from '@/lib/embeddings';
 const T0 = Date.now();
 function ms() { return `${Date.now() - T0}ms`; }
 
+import { Host } from '@expo/ui';
+
 function RootLayoutInner() {
   const { resolvedScheme } = useThemeMode();
   const colors = Colors[resolvedScheme];
@@ -47,20 +49,20 @@ function RootLayoutInner() {
   if (!ready) return null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            animation: 'fade',
-            animationDuration: 0,
-            contentStyle: { backgroundColor: colors.background },
-          }}>
+    <Host style={{ flex: 1, backgroundColor: colors.background }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'fade',
+          animationDuration: 0,
+          contentStyle: { backgroundColor: colors.background },
+        }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="auth" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(tabs)" />
       </Stack>
-    </View>
+    </Host>
   );
 }
 

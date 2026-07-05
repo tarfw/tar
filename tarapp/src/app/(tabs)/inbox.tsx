@@ -2,7 +2,6 @@ import { View, Text, ScrollView, StyleSheet, RefreshControl, Pressable } from 'r
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
-import * as SecureStore from 'expo-secure-store';
 import { useDb } from '@/db/provider';
 import { getSelfId } from '@/lib/db';
 import { OrderCard } from '@/components/cards/OrderCard';
@@ -99,22 +98,6 @@ export default function InboxScreen() {
     }
   }, [loadLocal]);
 
-  const handleSignOut = async () => {
-    try {
-      const userId = await getSelfId();
-      if (userId !== 'guest') {
-        await SecureStore.deleteItemAsync(`onb_${userId}`);
-      }
-      const { signOutGoogle } = await import('@/lib/auth');
-      const { switchUser } = await import('@/lib/db');
-      await signOutGoogle();
-      await switchUser('guest');
-      router.replace('/auth');
-    } catch {
-      router.replace('/auth');
-    }
-  };
-
   const sections = groupMotionsByType(motions);
 
   if (loading) {
@@ -132,16 +115,11 @@ export default function InboxScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
       <View style={styles.headerRow}>
         <Text style={[styles.header, { color: theme.text }]}>Inbox</Text>
-        <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
-          <Pressable onPress={onManualSync} disabled={syncing}>
-            <Text style={[styles.syncButton, { color: syncing ? theme.textMuted : theme.primary }]}>
-              {syncing ? 'Syncing...' : 'Sync'}
-            </Text>
-          </Pressable>
-          <Pressable onPress={handleSignOut}>
-            <Text style={[styles.signOut, { color: theme.primary }]}>Sign Out</Text>
-          </Pressable>
-        </View>
+        <Pressable onPress={onManualSync} disabled={syncing}>
+          <Text style={[styles.syncButton, { color: syncing ? theme.textMuted : theme.primary }]}>
+            {syncing ? 'Syncing...' : 'Sync'}
+          </Text>
+        </Pressable>
       </View>
 
       {motions.length === 0 ? (
@@ -270,7 +248,6 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
   header: { fontSize: 32, fontWeight: '800' },
   syncButton: { fontSize: 15, fontWeight: '500' },
-  signOut: { fontSize: 15, fontWeight: '500' },
   empty: { alignItems: 'center', paddingTop: 100 },
   emptyTitle: { fontSize: 18, fontWeight: '600', marginBottom: 8 },
   emptySubtitle: { fontSize: 14, textAlign: 'center', marginBottom: 24 },

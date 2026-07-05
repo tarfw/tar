@@ -173,7 +173,6 @@ const styles = StyleSheet.create({
   },
   row: {
     justifyContent: "space-between",
-    width: "100%",
     minHeight: 44,
   },
 });

@@ -5,7 +5,7 @@
  * with the mobile app via embedded replicas.
  *
  * Uses the Turso Platform API to create databases and tokens.
- * Stores the mapping in D1 (user_databases table).
+ * Stores the mapping in D1 (users table).
  * Applies schema on creation so remote DB has tables.
  */
 
@@ -32,7 +32,7 @@ export async function getOrCreateUserDb(
 ): Promise<{ url: string; authToken: string }> {
   // 1. Check D1 cache
   const existing = await db
-    .prepare('SELECT turso_db_name, turso_url, turso_auth_token FROM user_databases WHERE user_id = ?')
+    .prepare('SELECT turso_db_name, turso_url, turso_auth_token FROM users WHERE user_id = ?')
     .bind(userId)
     .first<UserDbRecord>();
 
@@ -110,7 +110,7 @@ export async function getOrCreateUserDb(
   // 5. Store in D1
   await db
     .prepare(
-      'INSERT OR REPLACE INTO user_databases (user_id, turso_db_name, turso_url, turso_auth_token) VALUES (?, ?, ?, ?)'
+      'INSERT OR REPLACE INTO users (user_id, turso_db_name, turso_url, turso_auth_token) VALUES (?, ?, ?, ?)'
     )
     .bind(userId, dbName, tursoUrl, authToken)
     .run();

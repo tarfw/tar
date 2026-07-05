@@ -1,36 +1,80 @@
 import { useState, useEffect } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useThemeMode } from "@/hooks/use-theme-context";
 import { useTheme } from "@/hooks/use-theme";
 import { getCurrentUser, signOutGoogle, type UserProfile } from "@/lib/auth";
 import { useEmbeddings } from "@/db/embeddings-provider";
-
-import {
-  Text,
-  Button,
-  Switch,
-  Row,
-  Column,
-  ListItem,
-  Card,
-  HorizontalDivider,
-} from "@expo/ui/jetpack-compose";
+import { useLLM, models } from "react-native-executorch";
+import { isHammerCached, isLfmCached } from "@/lib/hammer";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { themeMode, setThemeMode } = useThemeMode();
-  const { isReady, isLoading, downloadProgress, error, loadModel, clearModel } =
-    useEmbeddings();
-  const [notifications, setNotifications] = useState(true);
+  const { isReady, isLoading, downloadProgress, loadModel } = useEmbeddings();
   const [user, setUser] = useState<UserProfile | null>(null);
+
+  // Hammer LLM state
+  const [isHammerCachedState, setIsHammerCachedState] = useState(false);
+  const [preventHammerLoad, setPreventHammerLoad] = useState(true);
+
+  // LFM LLM state
+  const [isLfmCachedState, setIsLfmCachedState] = useState(false);
+  const [preventLfmLoad, setPreventLfmLoad] = useState(true);
 
   useEffect(() => {
     getCurrentUser().then(setUser);
+    isHammerCached().then(setIsHammerCachedState);
+    isLfmCached().then(setIsLfmCachedState);
   }, []);
+
+  const hammerLlm = useLLM({
+    model: models.llm.hammer2_1_0_5b(),
+    preventLoad: preventHammerLoad,
+  });
+
+  const lfmLlm = useLLM({
+    model: models.llm.lfm2_5_1_2b_instruct(),
+    preventLoad: preventLfmLoad,
+  });
+
+  const isHammerLoading =
+    !hammerLlm.isReady &&
+    !hammerLlm.error &&
+    !preventHammerLoad &&
+    hammerLlm.downloadProgress < 1;
+
+  const isLfmLoading =
+    !lfmLlm.isReady &&
+    !lfmLlm.error &&
+    !preventLfmLoad &&
+    lfmLlm.downloadProgress < 1;
+
+  useEffect(() => {
+    if (hammerLlm.isReady) {
+      setIsHammerCachedState(true);
+    }
+  }, [hammerLlm.isReady]);
+
+  useEffect(() => {
+    if (lfmLlm.isReady) {
+      setIsLfmCachedState(true);
+    }
+  }, [lfmLlm.isReady]);
+
+  const handleLoadHammer = () => {
+    setPreventHammerLoad(false);
+  };
+
+  const handleLoadLfm = () => {
+    setPreventLfmLoad(false);
+  };
 
   const handleSignOut = async () => {
     try {
@@ -47,159 +91,250 @@ export default function SettingsScreen() {
   };
 
   return (
-    <Column style={styles.container}>
-      {/* AI Models */}
-      <Text style={styles.sectionTitle}>AI MODELS</Text>
-      <Card style={styles.card}>
-        <Row alignment="center" style={styles.row}>
-          <Text style={styles.label}>Embedding (350M)</Text>
-          <Row alignment="center" style={{ gap: 8 }}>
-            {isReady && (
-              <>
-                <Text style={styles.valueGreen}>Ready</Text>
-                <Button label="Clear" variant="text" onPress={clearModel} />
-              </>
+    <ScrollView 
+      style={[styles.container, { backgroundColor: theme.background }]}
+      contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }}
+    >
+      
+      {/* Section 1: AI Model */}
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+        AI MODEL
+      </Text>
+      
+      <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+        <View style={styles.row}>
+          <View style={styles.rowLeft}>
+            <Text style={[styles.rowTitle, { color: theme.text }]}>Embedding Model</Text>
+            <Text style={[styles.rowSubtitle, { color: theme.textSecondary }]}>384-dim • Cosine • MiniLM</Text>
+          </View>
+          <View style={styles.rowRight}>
+            {isReady ? (
+              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Loaded</Text>
+            ) : isLoading ? (
+              <Text style={[styles.statusText, { color: theme.primary }]}>
+                {Math.round(downloadProgress * 100)}%
+              </Text>
+            ) : (
+              <TouchableOpacity
+                style={[styles.downloadButton, { backgroundColor: theme.primary }]}
+                activeOpacity={0.8}
+                onPress={loadModel}>
+                <Text style={styles.downloadButtonText}>Download</Text>
+              </TouchableOpacity>
             )}
-            {isLoading && (
-              <Text style={styles.value}>{Math.round(downloadProgress * 100)}%</Text>
+          </View>
+        </View>
+
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+        <View style={styles.row}>
+          <View style={styles.rowLeft}>
+            <Text style={[styles.rowTitle, { color: theme.text }]}>Hammer LLM</Text>
+            <Text style={[styles.rowSubtitle, { color: theme.textSecondary }]}>0.5B • Quantized • Local Chat</Text>
+          </View>
+          <View style={styles.rowRight}>
+            {hammerLlm.isReady ? (
+              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Loaded</Text>
+            ) : isHammerLoading ? (
+              <Text style={[styles.statusText, { color: theme.primary }]}>
+                {Math.round(hammerLlm.downloadProgress * 100)}%
+              </Text>
+            ) : isHammerCachedState ? (
+              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Cached</Text>
+            ) : (
+              <TouchableOpacity
+                style={[styles.downloadButton, { backgroundColor: theme.primary }]}
+                activeOpacity={0.8}
+                onPress={handleLoadHammer}>
+                <Text style={styles.downloadButtonText}>Download</Text>
+              </TouchableOpacity>
             )}
-            {error && (
-              <Text style={styles.valueRed}>Failed</Text>
+          </View>
+        </View>
+
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+        <View style={styles.row}>
+          <View style={styles.rowLeft}>
+            <Text style={[styles.rowTitle, { color: theme.text }]}>LFM 2.5 LLM</Text>
+            <Text style={[styles.rowSubtitle, { color: theme.textSecondary }]}>1.2B • Instruct • Quantized</Text>
+          </View>
+          <View style={styles.rowRight}>
+            {lfmLlm.isReady ? (
+              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Loaded</Text>
+            ) : isLfmLoading ? (
+              <Text style={[styles.statusText, { color: theme.primary }]}>
+                {Math.round(lfmLlm.downloadProgress * 100)}%
+              </Text>
+            ) : isLfmCachedState ? (
+              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Cached</Text>
+            ) : (
+              <TouchableOpacity
+                style={[styles.downloadButton, { backgroundColor: theme.primary }]}
+                activeOpacity={0.8}
+                onPress={handleLoadLfm}>
+                <Text style={styles.downloadButtonText}>Download</Text>
+              </TouchableOpacity>
             )}
-            {!isReady && !isLoading && !error && (
-              <Button label="Download" variant="filled" onPress={loadModel} />
-            )}
-          </Row>
-        </Row>
-        <HorizontalDivider />
-        <Row alignment="center" style={styles.row}>
-          <Text style={styles.label}>Model Info</Text>
-          <Text style={styles.value}>384-dim • Cosine • MiniLM</Text>
-        </Row>
-      </Card>
+          </View>
+        </View>
+      </View>
 
-      {/* Appearance */}
-      <Text style={styles.sectionTitle}>APPEARANCE</Text>
-      <Card style={styles.card}>
-        <ListItem onPress={() => setThemeMode(themeMode === "light" ? "dark" : "light")}>
-          <Text style={styles.label}>Theme</Text>
-          <Text style={styles.value}>{themeMode === "light" ? "Light" : "Dark"}</Text>
-        </ListItem>
-      </Card>
+      {/* Section 2: Appearance */}
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+        APPEARANCE
+      </Text>
+      
+      <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+        <TouchableOpacity
+          style={styles.row}
+          activeOpacity={0.7}
+          onPress={() => setThemeMode(themeMode === "light" ? "dark" : "light")}>
+          <View style={styles.rowLeftWithIcon}>
+            <Ionicons
+              name={themeMode === "light" ? "sunny" : "moon"}
+              size={20}
+              color={themeMode === "light" ? "#FFB800" : "#8B5CF6"}
+              style={styles.rowIcon}
+            />
+            <Text style={[styles.rowTitle, { color: theme.text }]}>Theme</Text>
+          </View>
+          <Text style={[styles.rowValue, { color: theme.textSecondary }]}>
+            {themeMode === "light" ? "Light" : "Dark"}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      {/* Notifications */}
-      <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
-      <Card style={styles.card}>
-        <Row alignment="center" style={styles.row}>
-          <Text style={styles.label}>Push Notifications</Text>
-          <Switch value={notifications} onValueChange={setNotifications} />
-        </Row>
-      </Card>
+      {/* Section 3: Account */}
+      {user && (
+        <>
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+            ACCOUNT
+          </Text>
+          
+          <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+            <View style={styles.row}>
+              <View style={styles.rowLeft}>
+                <Text style={[styles.rowTitle, { color: theme.text }]}>{user.name || "User"}</Text>
+                {user.email && (
+                  <Text style={[styles.rowSubtitle, { color: theme.textSecondary }]}>{user.email}</Text>
+                )}
+              </View>
+            </View>
+            
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+            
+            <TouchableOpacity
+              style={styles.row}
+              activeOpacity={0.7}
+              onPress={handleSignOut}>
+              <View style={styles.rowLeftWithIcon}>
+                <Ionicons name="log-out-outline" size={20} color="#FF3B30" style={styles.rowIcon} />
+                <Text style={[styles.rowTitle, { color: "#FF3B30" }]}>Sign Out</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
 
-      {/* General */}
-      <Text style={styles.sectionTitle}>GENERAL</Text>
-      <Card style={styles.card}>
-        <ListItem onPress={() => router.push("/actions-catalog" as any)}>
-          <Text style={styles.label}>Actions</Text>
-        </ListItem>
-        <HorizontalDivider />
-        <Row alignment="center" style={styles.row}>
-          <Text style={styles.label}>Language</Text>
-          <Text style={styles.value}>English</Text>
-        </Row>
-        <HorizontalDivider />
-        <Row alignment="center" style={styles.row}>
-          <Text style={styles.label}>Region</Text>
-          <Text style={styles.value}>India</Text>
-        </Row>
-      </Card>
+      {/* Footer */}
+      <Text style={[styles.footerText, { color: theme.textSecondary }]}>
+        Version 1.0.0
+      </Text>
 
-      {/* About */}
-      <Text style={styles.sectionTitle}>ABOUT</Text>
-      <Card style={styles.card}>
-        <Row alignment="center" style={styles.row}>
-          <Text style={styles.label}>Version</Text>
-          <Text style={styles.value}>1.0.0</Text>
-        </Row>
-        <HorizontalDivider />
-        <Row alignment="center" style={styles.row}>
-          <Text style={styles.label}>Privacy Policy</Text>
-        </Row>
-        <HorizontalDivider />
-        <Row alignment="center" style={styles.row}>
-          <Text style={styles.label}>Terms of Service</Text>
-        </Row>
-      </Card>
-
-      {/* Account */}
-      <Text style={styles.sectionTitle}>ACCOUNT</Text>
-      <Card style={styles.card}>
-        {user?.name && (
-          <>
-            <Row alignment="center" style={styles.row}>
-              <Text style={styles.label}>{user.name}</Text>
-            </Row>
-            <HorizontalDivider />
-          </>
-        )}
-        {user?.email && (
-          <>
-            <Row alignment="center" style={styles.row}>
-              <Text style={styles.value}>{user.email}</Text>
-            </Row>
-            <HorizontalDivider />
-          </>
-        )}
-        <ListItem onPress={handleSignOut}>
-          <Text style={styles.labelRed}>Sign Out</Text>
-        </ListItem>
-      </Card>
-    </Column>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    gap: 8,
+    paddingHorizontal: 16,
   },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#888",
-    marginTop: 8,
-    marginBottom: 4,
-    letterSpacing: 0.5,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 1,
+    marginTop: 24,
+    marginBottom: 8,
+    paddingLeft: 4,
   },
   card: {
-    borderRadius: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 8,
   },
   row: {
-    justifyContent: "space-between",
-    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    minHeight: 56,
   },
-  label: {
+  rowLeft: {
+    flexDirection: 'column',
+    justifyContent: 'center',
+  },
+  rowLeftWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  rowIcon: {
+    marginRight: 12,
+  },
+  rowTitle: {
     fontSize: 16,
-    color: "#fff",
+    fontWeight: '500',
   },
-  value: {
-    fontSize: 16,
-    color: "#888",
+  rowSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
   },
-  valueGreen: {
+  rowValue: {
+    fontSize: 15,
+  },
+  rowRight: {
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  statusText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  downloadButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  downloadButtonText: {
+    color: '#ffffff',
     fontSize: 14,
-    color: "#34C759",
-    fontWeight: "500",
+    fontWeight: '600',
   },
-  valueRed: {
-    fontSize: 14,
-    color: "#FF3B30",
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  labelRed: {
-    fontSize: 16,
-    color: "#FF3B30",
+  iconButton: {
+    padding: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  divider: {
+    height: 1,
+    width: '100%',
+  },
+  footerText: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 32,
+    marginBottom: 48,
   },
 });

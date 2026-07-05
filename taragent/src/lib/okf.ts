@@ -108,37 +108,66 @@ export async function deleteOkfFile(
 }
 
 /**
- * Initialize workspace OKF structure from template
+ * Copy vertical template OKF files to a new workspace.
+ * verticalFiles: array of {path, content} from the vertical template.
  */
-export async function initWorkspaceOkf(
+export async function copyVerticalToWorkspace(
   env: any,
   scope: string,
-  workspaceName: string
+  verticalFiles: Array<{ path: string; content: string }>
 ): Promise<void> {
-  const rootIndex = `# ${workspaceName} Knowledge Base
+  for (const file of verticalFiles) {
+    await uploadOkfFile(env, scope, file.path, file.content);
+  }
+}
 
-## Folders
-- [business](./business/) — Profile, team, channels
-- [products](./products/) — Catalog, categories
-- [policies](./policies/) — Returns, delivery, payments
-- [reports](./reports/) — SQL queries and output formats
-- [macros](./macros/) — Template replies
-`;
+/**
+ * List all files in a workspace OKF folder.
+ * Uses S3 list-like approach via index.md parsing.
+ */
+export async function listWorkspaceModules(
+  env: any,
+  scope: string
+): Promise<string[]> {
+  const indexContent = await readOkfIndex(env, scope);
+  if (!indexContent) return [];
 
-  const businessIndex = `# Business Profile
+  const modules: string[] = [];
+  const lines = indexContent.split('\n');
+  for (const line of lines) {
+    const match = line.match(/\[([^\]]+)\]\(.*modules\/([^/]+)\//);
+    if (match) modules.push(match[2]);
+  }
+  return modules;
+}
 
-## Files
-- [profile.md](./profile.md) — Name, type, hours, UPI
-`;
+/**
+ * Initialize workspace OKF from a vertical template (stored locally in the Worker).
+ * For now, creates a basic structure. Vertical files will be deployed separately.
+ */
+export async function initWorkspaceFromVertical(
+  env: any,
+  scope: string,
+  workspaceName: string,
+  vertical: string,
+  modules: string[]
+): Promise<void> {
+  // Build index.md listing installed modules
+  const moduleLinks = modules
+    .map((m) => `- [${m}](./modules/${m}/SKILL.md)`)
+    .join('\n');
 
-  const profile = `# Business Profile
+  const rootIndex = `# ${workspaceName}
 
-**Name:** ${workspaceName}
-**Type:** Business
-**Hours:** 9 AM - 9 PM
+**Vertical:** ${vertical}
+**Modules:** ${modules.join(', ')}
+
+## Modules
+${moduleLinks}
 `;
 
   await uploadOkfFile(env, scope, 'index.md', rootIndex);
-  await uploadOkfFile(env, scope, 'business/index.md', businessIndex);
-  await uploadOkfFile(env, scope, 'business/profile.md', profile);
+
+  // Each module SKILL.md will be uploaded by the calling code
+  // (vertical template files are read from the local filesystem or S3 /verticals/ path)
 }

@@ -1,11 +1,9 @@
 import { View, Text, ScrollView, StyleSheet, Pressable, TextInput } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useDb } from '@/db/provider';
-
-const TARFLUE_URL = process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://tarflue.tar-54d.workers.dev';
+import { tar } from '@/lib/tar';
 
 interface Template {
   id: string;
@@ -15,17 +13,15 @@ interface Template {
 }
 
 interface Workspace {
-  id: string;
-  title: string;
   scope: string;
-  code: string;
-  data: string;
+  role: string;
+  name?: string;
+  subdomain?: string;
 }
 
 export default function ExploreScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const db = useDb();
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -35,20 +31,16 @@ export default function ExploreScreen() {
 
   const fetchWorkspaces = useCallback(async () => {
     try {
-      const rows = await db.getAllAsync<Workspace>(
-        "SELECT id, title, scope, code, data FROM form WHERE type = 'workspace' AND active = 1 ORDER BY time DESC"
-      );
-      setWorkspaces(rows);
+      const data = await tar.listWorkspaces();
+      setWorkspaces(data.workspaces || []);
     } catch (e) {
       console.warn('[Explore] Failed to fetch workspaces:', e);
     }
-  }, [db]);
+  }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchWorkspaces();
-    }, [fetchWorkspaces])
-  );
+  useEffect(() => {
+    fetchWorkspaces();
+  }, [fetchWorkspaces]);
 
   useEffect(() => {
     fetchTemplates();
@@ -57,11 +49,7 @@ export default function ExploreScreen() {
   const fetchTemplates = async (query?: string) => {
     setLoading(true);
     try {
-      const url = query
-        ? `${TARFLUE_URL}/marketplace/templates?q=${encodeURIComponent(query)}`
-        : `${TARFLUE_URL}/marketplace/templates`;
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await tar.templates(query);
       setTemplates(data.templates || []);
     } catch (e) {
       console.warn('[Explore] Failed to fetch templates:', e);
@@ -77,12 +65,7 @@ export default function ExploreScreen() {
   const handleInstall = async (templateId: string) => {
     setInstalling(templateId);
     try {
-      const res = await fetch(`${TARFLUE_URL}/marketplace/install`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templateId, scope: 'global' }),
-      });
-      const data = await res.json();
+      const data = await tar.installTemplate(templateId, 'global');
       console.log('[Explore] Installed:', data);
     } catch (e) {
       console.warn('[Explore] Install failed:', e);
@@ -92,18 +75,12 @@ export default function ExploreScreen() {
   };
 
   const handleWorkspacePress = (w: Workspace) => {
-    let subdomain = w.code;
-    try {
-      const parsed = JSON.parse(w.data);
-      if (parsed.subdomain) subdomain = parsed.subdomain;
-    } catch {}
-
     router.push({
       pathname: '/workspace',
       params: {
-        id: w.id,
-        name: w.title,
-        subdomain,
+        id: w.scope,
+        name: w.name || w.scope,
+        subdomain: w.subdomain || w.scope.replace('w:', ''),
         scope: w.scope,
       },
     });
@@ -152,17 +129,10 @@ export default function ExploreScreen() {
           </View>
         ) : (
           workspaces.map((w) => {
-            let vertical = 'general';
-            let subdomain = w.code;
-            try {
-              const parsed = JSON.parse(w.data);
-              if (parsed.vertical) vertical = parsed.parsedVertical || parsed.vertical;
-              if (parsed.subdomain) subdomain = parsed.subdomain;
-            } catch {}
-
+            const subdomain = w.subdomain || w.scope.replace('w:', '');
             return (
               <Pressable
-                key={w.id}
+                key={w.scope}
                 style={({ pressed }) => [
                   styles.workspaceCard,
                   { backgroundColor: theme.backgroundElement, borderColor: theme.border },
@@ -170,13 +140,15 @@ export default function ExploreScreen() {
                 ]}
                 onPress={() => handleWorkspacePress(w)}>
                 <View style={styles.workspaceInfo}>
-                  <Text style={[styles.workspaceTitle, { color: theme.text }]}>{w.title}</Text>
+                  <Text style={[styles.workspaceTitle, { color: theme.text }]}>
+                    {w.name || subdomain}
+                  </Text>
                   <Text style={[styles.workspaceSubdomain, { color: theme.textMuted }]}>
                     {subdomain}.tarai.space
                   </Text>
                 </View>
                 <View style={[styles.verticalTag, { backgroundColor: theme.primary + '15' }]}>
-                  <Text style={[styles.verticalTagText, { color: theme.primary }]}>{vertical}</Text>
+                  <Text style={[styles.verticalTagText, { color: theme.primary }]}>{w.role}</Text>
                 </View>
               </Pressable>
             );

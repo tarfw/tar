@@ -8,7 +8,7 @@ import { executeRead, executeCreate } from './lib/helpers';
 import { handleChannelMessage, sendChannelMessage, getChannelConfig } from './channels';
 import { listTemplates, getTemplate, installTemplate, searchTemplates } from './marketplace/templates';
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
-import { uploadOkfFile, readOkfFile, readOkfIndex, deleteOkfFile } from './lib/okf';
+import { uploadOkfFile, readOkfFile, readOkfIndex, deleteOkfFile, initWorkspaceFromVertical } from './lib/okf';
 import { handleWebSocketUpgrade, pushMotionEvent } from './lib/websocket';
 import { getOrCreateUserDb } from './lib/user-db';
 
@@ -38,20 +38,72 @@ app.use('*', async (c, next) => {
 // GET /workspaces — list user's workspaces
 app.get('/workspaces', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
-  const result = await executeRead({
-    table: 'graph',
-    src: userId,
-    limit: 50,
-  });
-  const workspaces = result.rows
-    .filter((r: any) => r.rel === 'owner' || r.rel === 'staff' || r.rel === 'member')
-    .map((r: any) => ({ scope: r.tgt, role: r.rel }));
+  const result = await c.env.DB.prepare(
+    'SELECT subdomain, scope, user_id FROM workspaces WHERE user_id = ?'
+  ).bind(userId).all();
+  const workspaces = (result.results || []).map((r: any) => ({
+    scope: r.scope,
+    subdomain: r.subdomain,
+    role: r.user_id === userId ? 'owner' : 'member',
+  }));
   return c.json({ workspaces });
 });
 
-// POST /workspaces/create — create a new workspace (handled locally by app now)
+// POST /workspaces/create — create a new workspace
 app.post('/workspaces/create', async (c) => {
-  return c.json({ error: 'Workspace creation is handled locally by the app' }, 400);
+  const userId = c.req.header('X-User-Id') || 'guest';
+  const body = await c.req.json();
+  const { name, template, subdomain } = body || {};
+
+  if (!name || !template || !subdomain) {
+    return c.json({ error: 'Missing name, template, or subdomain' }, 400);
+  }
+
+  const scope = `w:${subdomain}`;
+
+  try {
+    // 1. Insert workspace into D1
+    await c.env.DB.prepare(
+      'INSERT OR IGNORE INTO workspaces (subdomain, scope, user_id) VALUES (?, ?, ?)'
+    ).bind(subdomain, scope, userId).run();
+
+    // 2. Link user as owner via graph (optional — needs Turso)
+    try {
+      await executeCreate({
+        table: 'graph',
+        src: userId,
+        rel: 'owner',
+        tgt: scope,
+      });
+    } catch (graphErr) {
+      console.warn('[workspaces] Graph link skipped (Turso not configured):', graphErr);
+    }
+
+    // 3. Initialize workspace OKF structure
+    try {
+      await initWorkspaceFromVertical(c.env, scope, name, template, []);
+    } catch (okfErr) {
+      console.warn('[workspaces] OKF init skipped (S3 not configured):', okfErr);
+    }
+
+    // 4. Create WorkspaceDO instance (optional — needs DO binding)
+    try {
+      const doId = c.env.WORKSPACE.idFromName(scope);
+      const stub = c.env.WORKSPACE.get(doId);
+      await stub.fetch('https://internal/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope, name, template }),
+      });
+    } catch (doErr) {
+      console.warn('[workspaces] DO warm-up skipped:', doErr);
+    }
+
+    return c.json({ scope, subdomain, name, template });
+  } catch (e: any) {
+    console.error('[workspaces] Create failed:', e.message);
+    return c.json({ error: e.message }, 500);
+  }
 });
 
 // ============================================================
@@ -260,7 +312,7 @@ app.post('/channels/telegram/webhook', async (c) => {
   let scope = 'global';
   if (c.env.DB) {
     const row = await c.env.DB.prepare(
-      'SELECT scope FROM channel_groups WHERE chat_id = ?'
+      'SELECT scope FROM channels WHERE chat_id = ?'
     ).bind(message.chatId).first();
     if (row?.scope) scope = row.scope;
   }
@@ -296,7 +348,7 @@ app.post('/channels/slack/events', async (c) => {
   let scope = 'global';
   if (c.env.DB) {
     const row = await c.env.DB.prepare(
-      'SELECT scope FROM channel_groups WHERE chat_id = ?'
+      'SELECT scope FROM channels WHERE chat_id = ?'
     ).bind(message.chatId).first();
     if (row?.scope) scope = row.scope;
   }
@@ -322,7 +374,7 @@ app.post('/channels/discord/webhook', async (c) => {
   let scope = 'global';
   if (c.env.DB) {
     const row = await c.env.DB.prepare(
-      'SELECT scope FROM channel_groups WHERE chat_id = ?'
+      'SELECT scope FROM channels WHERE chat_id = ?'
     ).bind(message.chatId).first();
     if (row?.scope) scope = row.scope;
   }

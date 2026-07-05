@@ -2,8 +2,7 @@ import { View, Text, ScrollView, StyleSheet, RefreshControl, Pressable } from 'r
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
-import { useDb } from '@/db/provider';
-import { getSelfId } from '@/lib/db';
+import { tar } from '@/lib/tar';
 import { OrderCard } from '@/components/cards/OrderCard';
 import { TaskCard } from '@/components/cards/TaskCard';
 import { DeliveryCard } from '@/components/cards/DeliveryCard';
@@ -13,9 +12,10 @@ import { ExpiryCard } from '@/components/cards/ExpiryCard';
 
 interface MotionEvent {
   id?: string;
-  stream: string;
-  seq: number;
-  action: number;
+  type: string;
+  scope: string;
+  title?: string;
+  form_type?: string;
   data: any;
   time: string;
 }
@@ -23,80 +23,36 @@ interface MotionEvent {
 export default function InboxScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const db = useDb();
   const [motions, setMotions] = useState<MotionEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-
-  const loadLocal = useCallback(async () => {
-    const rows = await db.getAllAsync<MotionEvent>(
-      'SELECT m.*, f.title, f.type as form_type FROM motion m LEFT JOIN form f ON m.stream = f.id ORDER BY m.time DESC LIMIT 50'
-    );
-    const parsed = rows.map((r) => {
-      let parsedData = r.data;
-      if (typeof r.data === 'string') {
-        try {
-          parsedData = JSON.parse(r.data);
-        } catch (e) {
-          console.warn('[Inbox] Failed to parse motion data JSON:', e);
-        }
-      }
-      return { ...r, data: parsedData };
-    });
-
-    console.log(`[Inbox] Fetched ${rows.length} motions from local DB:`, JSON.stringify(parsed, null, 2));
-    setMotions(parsed);
-  }, [db]);
 
   const fetchTimeline = useCallback(async () => {
     try {
-      // Load local cache immediately so the UI is highly responsive
-      await loadLocal();
-      setLoading(false);
-
-      // Fetch user identity and trigger Turso pull synchronization
-      const { pullSync } = await import('@/lib/db');
-      const userId = await getSelfId();
-      if (userId !== 'guest') {
-        await pullSync(userId);
-        // Reload local data to reflect newly synced remote motions
-        await loadLocal();
-      }
+      const result = await tar.timeline({ limit: 50 });
+      const items = (result.motions || []).map((r: any) => {
+        let parsedData = r.data;
+        if (typeof r.data === 'string') {
+          try { parsedData = JSON.parse(r.data); } catch {}
+        }
+        return { ...r, data: parsedData };
+      });
+      setMotions(items);
     } catch (e) {
       console.warn('[Inbox] Failed to fetch timeline:', e);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  }, [loadLocal]);
+  }, []);
 
   useEffect(() => {
     fetchTimeline();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchTimeline]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchTimeline();
   }, [fetchTimeline]);
-
-  const onManualSync = useCallback(async () => {
-    setSyncing(true);
-    try {
-      const { pullSync } = await import('@/lib/db');
-      const userId = await getSelfId();
-      if (userId !== 'guest') {
-        await pullSync(userId);
-        // Refresh local UI state since pullSync completed
-        await loadLocal();
-      }
-    } catch (e) {
-      console.warn('[Inbox] Manual sync failed:', e);
-    } finally {
-      setSyncing(false);
-    }
-  }, [loadLocal]);
 
   const sections = groupMotionsByType(motions);
 
@@ -113,14 +69,7 @@ export default function InboxScreen() {
       style={[styles.container, { backgroundColor: theme.background }]}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-      <View style={styles.headerRow}>
-        <Text style={[styles.header, { color: theme.text }]}>Inbox</Text>
-        <Pressable onPress={onManualSync} disabled={syncing}>
-          <Text style={[styles.syncButton, { color: syncing ? theme.textMuted : theme.primary }]}>
-            {syncing ? 'Syncing...' : 'Sync'}
-          </Text>
-        </Pressable>
-      </View>
+      <Text style={[styles.header, { color: theme.text }]}>Inbox</Text>
 
       {motions.length === 0 ? (
         <View style={styles.empty}>

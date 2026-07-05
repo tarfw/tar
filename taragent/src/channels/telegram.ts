@@ -38,7 +38,7 @@ export async function handleTelegramUpdate(
 }
 
 /**
- * Register a Telegram group in D1 channel_groups table.
+ * Register a Telegram group in D1 channels table.
  */
 async function registerGroup(
   env: { DB?: D1Database },
@@ -49,13 +49,13 @@ async function registerGroup(
   if (!env.DB) return;
 
   const existing = await env.DB.prepare(
-    'SELECT 1 FROM channel_groups WHERE chat_id = ?'
+    'SELECT 1 FROM channels WHERE chat_id = ?'
   ).bind(chatId).first();
 
   if (!existing) {
     // Default scope — will be updated when workspace is linked
     await env.DB.prepare(
-      'INSERT OR IGNORE INTO channel_groups (chat_id, scope, name, platform, created_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT OR IGNORE INTO channels (chat_id, scope, name, platform, created_at) VALUES (?, ?, ?, ?, ?)'
     ).bind(chatId, 'unassigned', name, platform, new Date().toISOString()).run();
   }
 }

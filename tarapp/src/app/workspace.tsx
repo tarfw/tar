@@ -5,8 +5,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
-import { useDb } from '@/db/provider';
-import { create } from '@/lib/tools';
+import { tar } from '@/lib/tar';
 import StorefrontTab from '@/components/StorefrontTab';
 
 interface Product {
@@ -21,7 +20,6 @@ export default function WorkspaceScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
-  const db = useDb();
 
   // Route parameters
   const { id, name, subdomain, scope } = useLocalSearchParams<{
@@ -50,17 +48,19 @@ export default function WorkspaceScreen() {
     if (!scope) return;
     setLoadingProducts(true);
     try {
-      const rows = await db.getAllAsync<Product>(
-        "SELECT id, title, qty, value, data FROM matter WHERE scope = ? AND type = 'product' AND active = 1 ORDER BY time DESC",
-        scope
-      );
-      setProducts(rows);
+      const result = await tar.tool('read', {
+        table: 'matter',
+        type: 'product',
+        active: 1,
+        scope,
+      });
+      setProducts(result.rows || []);
     } catch (e) {
       console.warn('[Workspace] Failed to fetch products:', e);
     } finally {
       setLoadingProducts(false);
     }
-  }, [db, scope]);
+  }, [scope]);
 
   useEffect(() => {
     if (activeTab === 'products') {
@@ -82,7 +82,7 @@ export default function WorkspaceScreen() {
     setAddingProduct(true);
     setFormError('');
     try {
-      await create({
+      await tar.tool('create', {
         table: 'matter',
         scope: scope,
         type: 'product',

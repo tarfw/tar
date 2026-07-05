@@ -7,8 +7,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "taragent-db",
-      "database_id": "495e30a0-02f0-4e6a-afa7-12c5b588465c"
+      "database_name": "tard1",
+      "database_id": "c8bf4ab0-d6ce-4d55-9934-285b3a7a0dec"
     }
   ],
   "kv_namespaces": [

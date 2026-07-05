@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -48,10 +48,8 @@ export default function SettingsScreen() {
         <FieldGroup style={styles.section}>
           <List>
             <ListItem>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: theme.text, fontSize: 17 }}>Embedding (350M)</Text>
-              </ListItem.HeadlineContent>
-              <ListItem.TrailingContent>
+              <Text style={{ color: theme.text, fontSize: 17 }}>Embedding (350M)</Text>
+              <ListItem.Trailing>
                 <Row alignment="center" style={{ gap: 8 }}>
                   {isReady && (
                     <>
@@ -68,21 +66,19 @@ export default function SettingsScreen() {
                     <Text style={{ color: "#FF3B30", fontSize: 13 }}>Failed</Text>
                   )}
                   {!isReady && !isLoading && !error && (
-                    <Button label="Download" variant="filledTonal" onPress={loadModel} />
+                    <Button label="Download" variant="filled" onPress={loadModel} />
                   )}
                 </Row>
-              </ListItem.TrailingContent>
+              </ListItem.Trailing>
             </ListItem>
             
             <ListItem>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: theme.text, fontSize: 17 }}>Model Info</Text>
-              </ListItem.HeadlineContent>
-              <ListItem.TrailingContent>
+              <Text style={{ color: theme.text, fontSize: 17 }}>Model Info</Text>
+              <ListItem.Trailing>
                 <Text style={{ color: theme.textSecondary, fontSize: 17 }}>
                   384-dim • Cosine • MiniLM
                 </Text>
-              </ListItem.TrailingContent>
+              </ListItem.Trailing>
             </ListItem>
           </List>
         </FieldGroup>
@@ -92,10 +88,8 @@ export default function SettingsScreen() {
         <FieldGroup style={styles.section}>
           <List>
             <ListItem onPress={() => setThemeMode(themeMode === "light" ? "dark" : "light")}>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: theme.text, fontSize: 17 }}>Theme</Text>
-              </ListItem.HeadlineContent>
-              <ListItem.TrailingContent>
+              <Text style={{ color: theme.text, fontSize: 17 }}>Theme</Text>
+              <ListItem.Trailing>
                 <Row alignment="center" style={{ gap: 8 }}>
                   <Ionicons
                     name={themeMode === "light" ? "sunny" : "moon"}
@@ -106,7 +100,7 @@ export default function SettingsScreen() {
                     {themeMode === "light" ? "Light" : "Dark"}
                   </Text>
                 </Row>
-              </ListItem.TrailingContent>
+              </ListItem.Trailing>
             </ListItem>
           </List>
         </FieldGroup>
@@ -116,12 +110,10 @@ export default function SettingsScreen() {
         <FieldGroup style={styles.section}>
           <List>
             <ListItem>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: theme.text, fontSize: 17 }}>Push Notifications</Text>
-              </ListItem.HeadlineContent>
-              <ListItem.TrailingContent>
+              <Text style={{ color: theme.text, fontSize: 17 }}>Push Notifications</Text>
+              <ListItem.Trailing>
                 <Switch value={notifications} onValueChange={setNotifications} />
-              </ListItem.TrailingContent>
+              </ListItem.Trailing>
             </ListItem>
           </List>
         </FieldGroup>
@@ -131,30 +123,24 @@ export default function SettingsScreen() {
         <FieldGroup style={styles.section}>
           <List>
             <ListItem onPress={() => router.push("/actions-catalog" as any)}>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: theme.text, fontSize: 17 }}>Actions</Text>
-              </ListItem.HeadlineContent>
-              <ListItem.TrailingContent>
+              <Text style={{ color: theme.text, fontSize: 17 }}>Actions</Text>
+              <ListItem.Trailing>
                 <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{">"}</Text>
-              </ListItem.TrailingContent>
+              </ListItem.Trailing>
             </ListItem>
             
             <ListItem>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: theme.text, fontSize: 17 }}>Language</Text>
-              </ListItem.HeadlineContent>
-              <ListItem.TrailingContent>
+              <Text style={{ color: theme.text, fontSize: 17 }}>Language</Text>
+              <ListItem.Trailing>
                 <Text style={{ color: theme.textSecondary, fontSize: 17 }}>English</Text>
-              </ListItem.TrailingContent>
+              </ListItem.Trailing>
             </ListItem>
             
             <ListItem>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: theme.text, fontSize: 17 }}>Region</Text>
-              </ListItem.HeadlineContent>
-              <ListItem.TrailingContent>
+              <Text style={{ color: theme.text, fontSize: 17 }}>Region</Text>
+              <ListItem.Trailing>
                 <Text style={{ color: theme.textSecondary, fontSize: 17 }}>United States</Text>
-              </ListItem.TrailingContent>
+              </ListItem.Trailing>
             </ListItem>
           </List>
         </FieldGroup>
@@ -164,30 +150,24 @@ export default function SettingsScreen() {
         <FieldGroup style={styles.section}>
           <List>
             <ListItem>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: theme.text, fontSize: 17 }}>Version</Text>
-              </ListItem.HeadlineContent>
-              <ListItem.TrailingContent>
+              <Text style={{ color: theme.text, fontSize: 17 }}>Version</Text>
+              <ListItem.Trailing>
                 <Text style={{ color: theme.textSecondary, fontSize: 17 }}>1.0.0</Text>
-              </ListItem.TrailingContent>
+              </ListItem.Trailing>
             </ListItem>
             
             <ListItem>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: theme.text, fontSize: 17 }}>Privacy Policy</Text>
-              </ListItem.HeadlineContent>
-              <ListItem.TrailingContent>
+              <Text style={{ color: theme.text, fontSize: 17 }}>Privacy Policy</Text>
+              <ListItem.Trailing>
                 <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{">"}</Text>
-              </ListItem.TrailingContent>
+              </ListItem.Trailing>
             </ListItem>
             
             <ListItem>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: theme.text, fontSize: 17 }}>Terms of Service</Text>
-              </ListItem.HeadlineContent>
-              <ListItem.TrailingContent>
+              <Text style={{ color: theme.text, fontSize: 17 }}>Terms of Service</Text>
+              <ListItem.Trailing>
                 <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{">"}</Text>
-              </ListItem.TrailingContent>
+              </ListItem.Trailing>
             </ListItem>
           </List>
         </FieldGroup>
@@ -198,24 +178,18 @@ export default function SettingsScreen() {
           <List>
             {user?.name && (
               <ListItem>
-                <ListItem.HeadlineContent>
-                  <Text style={{ color: theme.text, fontSize: 17 }}>{user.name}</Text>
-                </ListItem.HeadlineContent>
+                <Text style={{ color: theme.text, fontSize: 17 }}>{user.name}</Text>
               </ListItem>
             )}
             
             {user?.email && (
               <ListItem>
-                <ListItem.HeadlineContent>
-                  <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{user.email}</Text>
-                </ListItem.HeadlineContent>
+                <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{user.email}</Text>
               </ListItem>
             )}
             
             <ListItem onPress={handleSignOut}>
-              <ListItem.HeadlineContent>
-                <Text style={{ color: "#FF3B30", fontSize: 17 }}>Sign Out</Text>
-              </ListItem.HeadlineContent>
+              <Text style={{ color: "#FF3B30", fontSize: 17 }}>Sign Out</Text>
             </ListItem>
           </List>
         </FieldGroup>

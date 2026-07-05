@@ -45,6 +45,14 @@ export default function SettingsScreen() {
     }
   };
 
+  const Label = ({ children }: { children: React.ReactNode }) => (
+    <Text style={{ color: theme.text, fontSize: 17 }}>{children}</Text>
+  );
+
+  const Value = ({ children }: { children: React.ReactNode }) => (
+    <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{children}</Text>
+  );
+
   return (
     <Host style={{ flex: 1, backgroundColor: theme.background }} useViewportSizeMeasurement>
       <FieldGroup style={styles.container}>
@@ -52,18 +60,16 @@ export default function SettingsScreen() {
         {/* AI Models */}
         <FieldGroup.Section title="AI Models" titleUppercase>
           <Row alignment="center" style={styles.row}>
-            <Text style={{ color: theme.text, fontSize: 17 }}>Embedding (350M)</Text>
+            <Label>Embedding (350M)</Label>
             <Row alignment="center" style={{ gap: 8 }}>
               {isReady && (
                 <>
-                  <Text style={{ color: "#34C759", fontSize: 13, fontWeight: "500" }}>Ready</Text>
+                  <Value>Ready</Value>
                   <Button label="Clear" variant="text" onPress={clearModel} />
                 </>
               )}
               {isLoading && (
-                <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
-                  {Math.round(downloadProgress * 100)}%
-                </Text>
+                <Value>{Math.round(downloadProgress * 100)}%</Value>
               )}
               {error && (
                 <Text style={{ color: "#FF3B30", fontSize: 13 }}>Failed</Text>
@@ -74,10 +80,8 @@ export default function SettingsScreen() {
             </Row>
           </Row>
           <Row alignment="center" style={styles.row}>
-            <Text style={{ color: theme.text, fontSize: 17 }}>Model Info</Text>
-            <Text style={{ color: theme.textSecondary, fontSize: 17 }}>
-              384-dim  Cosine  MiniLM
-            </Text>
+            <Label>Model Info</Label>
+            <Value>384-dim  Cosine  MiniLM</Value>
           </Row>
         </FieldGroup.Section>
 
@@ -86,17 +90,15 @@ export default function SettingsScreen() {
           <ListItem
             onPress={() => setThemeMode(themeMode === "light" ? "dark" : "light")}
           >
-            <Text style={{ color: theme.text, fontSize: 17 }}>Theme</Text>
-            <Text style={{ color: theme.textSecondary, fontSize: 17 }}>
-              {themeMode === "light" ? "Light" : "Dark"}
-            </Text>
+            <Label>Theme</Label>
+            <Value>{themeMode === "light" ? "Light" : "Dark"}</Value>
           </ListItem>
         </FieldGroup.Section>
 
         {/* Notifications */}
         <FieldGroup.Section title="Notifications" titleUppercase>
           <Row alignment="center" style={styles.row}>
-            <Text style={{ color: theme.text, fontSize: 17 }}>Push Notifications</Text>
+            <Label>Push Notifications</Label>
             <Switch value={notifications} onValueChange={setNotifications} />
           </Row>
         </FieldGroup.Section>
@@ -104,32 +106,29 @@ export default function SettingsScreen() {
         {/* General */}
         <FieldGroup.Section title="General" titleUppercase>
           <ListItem onPress={() => router.push("/actions-catalog" as any)}>
-            <Text style={{ color: theme.text, fontSize: 17 }}>Actions</Text>
-            <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{">"}</Text>
+            <Label>Actions</Label>
           </ListItem>
           <Row alignment="center" style={styles.row}>
-            <Text style={{ color: theme.text, fontSize: 17 }}>Language</Text>
-            <Text style={{ color: theme.textSecondary, fontSize: 17 }}>English</Text>
+            <Label>Language</Label>
+            <Value>English</Value>
           </Row>
           <Row alignment="center" style={styles.row}>
-            <Text style={{ color: theme.text, fontSize: 17 }}>Region</Text>
-            <Text style={{ color: theme.textSecondary, fontSize: 17 }}>India</Text>
+            <Label>Region</Label>
+            <Value>India</Value>
           </Row>
         </FieldGroup.Section>
 
         {/* About */}
         <FieldGroup.Section title="About" titleUppercase>
           <Row alignment="center" style={styles.row}>
-            <Text style={{ color: theme.text, fontSize: 17 }}>Version</Text>
-            <Text style={{ color: theme.textSecondary, fontSize: 17 }}>1.0.0</Text>
+            <Label>Version</Label>
+            <Value>1.0.0</Value>
           </Row>
           <Row alignment="center" style={styles.row}>
-            <Text style={{ color: theme.text, fontSize: 17 }}>Privacy Policy</Text>
-            <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{">"}</Text>
+            <Label>Privacy Policy</Label>
           </Row>
           <Row alignment="center" style={styles.row}>
-            <Text style={{ color: theme.text, fontSize: 17 }}>Terms of Service</Text>
-            <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{">"}</Text>
+            <Label>Terms of Service</Label>
           </Row>
         </FieldGroup.Section>
 
@@ -137,12 +136,12 @@ export default function SettingsScreen() {
         <FieldGroup.Section title="Account" titleUppercase>
           {user?.name && (
             <Row alignment="center" style={styles.row}>
-              <Text style={{ color: theme.text, fontSize: 17 }}>{user.name}</Text>
+              <Label>{user.name}</Label>
             </Row>
           )}
           {user?.email && (
             <Row alignment="center" style={styles.row}>
-              <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{user.email}</Text>
+              <Value>{user.email}</Value>
             </Row>
           )}
           <ListItem onPress={handleSignOut}>
@@ -162,5 +161,6 @@ const styles = StyleSheet.create({
   row: {
     justifyContent: "space-between",
     minHeight: 44,
+    paddingHorizontal: 4,
   },
 });

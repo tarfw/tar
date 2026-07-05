@@ -9,12 +9,14 @@ import { getCurrentUser, signOutGoogle, type UserProfile } from "@/lib/auth";
 import { useEmbeddings } from "@/db/embeddings-provider";
 
 import {
-  FieldGroup,
-  Switch,
   Text,
   Button,
+  Switch,
   Row,
+  Column,
   ListItem,
+  Card,
+  Divider,
 } from "@expo/ui/jetpack-compose";
 
 export default function SettingsScreen() {
@@ -44,120 +46,160 @@ export default function SettingsScreen() {
     }
   };
 
-  const Label = ({ children }: { children: React.ReactNode }) => (
-    <Text style={{ color: theme.text, fontSize: 17 }}>{children}</Text>
-  );
-
-  const Value = ({ children }: { children: React.ReactNode }) => (
-    <Text style={{ color: theme.textSecondary, fontSize: 17 }}>{children}</Text>
-  );
-
   return (
-    <FieldGroup style={styles.container}>
-
+    <Column style={styles.container}>
       {/* AI Models */}
-      <FieldGroup.Section title="AI Models" titleUppercase>
+      <Text style={styles.sectionTitle}>AI MODELS</Text>
+      <Card style={styles.card}>
         <Row alignment="center" style={styles.row}>
-          <Label>Embedding (350M)</Label>
+          <Text style={styles.label}>Embedding (350M)</Text>
           <Row alignment="center" style={{ gap: 8 }}>
             {isReady && (
               <>
-                <Value>Ready</Value>
+                <Text style={styles.valueGreen}>Ready</Text>
                 <Button label="Clear" variant="text" onPress={clearModel} />
               </>
             )}
             {isLoading && (
-              <Value>{Math.round(downloadProgress * 100)}%</Value>
+              <Text style={styles.value}>{Math.round(downloadProgress * 100)}%</Text>
             )}
             {error && (
-              <Text style={{ color: "#FF3B30", fontSize: 13 }}>Failed</Text>
+              <Text style={styles.valueRed}>Failed</Text>
             )}
             {!isReady && !isLoading && !error && (
               <Button label="Download" variant="filled" onPress={loadModel} />
             )}
           </Row>
         </Row>
+        <Divider />
         <Row alignment="center" style={styles.row}>
-          <Label>Model Info</Label>
-          <Value>384-dim  Cosine  MiniLM</Value>
+          <Text style={styles.label}>Model Info</Text>
+          <Text style={styles.value}>384-dim • Cosine • MiniLM</Text>
         </Row>
-      </FieldGroup.Section>
+      </Card>
 
       {/* Appearance */}
-      <FieldGroup.Section title="Appearance" titleUppercase>
-        <ListItem
-          onPress={() => setThemeMode(themeMode === "light" ? "dark" : "light")}
-        >
-          <Label>Theme</Label>
-          <Value>{themeMode === "light" ? "Light" : "Dark"}</Value>
+      <Text style={styles.sectionTitle}>APPEARANCE</Text>
+      <Card style={styles.card}>
+        <ListItem onPress={() => setThemeMode(themeMode === "light" ? "dark" : "light")}>
+          <Text style={styles.label}>Theme</Text>
+          <Text style={styles.value}>{themeMode === "light" ? "Light" : "Dark"}</Text>
         </ListItem>
-      </FieldGroup.Section>
+      </Card>
 
       {/* Notifications */}
-      <FieldGroup.Section title="Notifications" titleUppercase>
+      <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
+      <Card style={styles.card}>
         <Row alignment="center" style={styles.row}>
-          <Label>Push Notifications</Label>
+          <Text style={styles.label}>Push Notifications</Text>
           <Switch value={notifications} onValueChange={setNotifications} />
         </Row>
-      </FieldGroup.Section>
+      </Card>
 
       {/* General */}
-      <FieldGroup.Section title="General" titleUppercase>
+      <Text style={styles.sectionTitle}>GENERAL</Text>
+      <Card style={styles.card}>
         <ListItem onPress={() => router.push("/actions-catalog" as any)}>
-          <Label>Actions</Label>
+          <Text style={styles.label}>Actions</Text>
         </ListItem>
+        <Divider />
         <Row alignment="center" style={styles.row}>
-          <Label>Language</Label>
-          <Value>English</Value>
+          <Text style={styles.label}>Language</Text>
+          <Text style={styles.value}>English</Text>
         </Row>
+        <Divider />
         <Row alignment="center" style={styles.row}>
-          <Label>Region</Label>
-          <Value>India</Value>
+          <Text style={styles.label}>Region</Text>
+          <Text style={styles.value}>India</Text>
         </Row>
-      </FieldGroup.Section>
+      </Card>
 
       {/* About */}
-      <FieldGroup.Section title="About" titleUppercase>
+      <Text style={styles.sectionTitle}>ABOUT</Text>
+      <Card style={styles.card}>
         <Row alignment="center" style={styles.row}>
-          <Label>Version</Label>
-          <Value>1.0.0</Value>
+          <Text style={styles.label}>Version</Text>
+          <Text style={styles.value}>1.0.0</Text>
         </Row>
+        <Divider />
         <Row alignment="center" style={styles.row}>
-          <Label>Privacy Policy</Label>
+          <Text style={styles.label}>Privacy Policy</Text>
         </Row>
+        <Divider />
         <Row alignment="center" style={styles.row}>
-          <Label>Terms of Service</Label>
+          <Text style={styles.label}>Terms of Service</Text>
         </Row>
-      </FieldGroup.Section>
+      </Card>
 
       {/* Account */}
-      <FieldGroup.Section title="Account" titleUppercase>
+      <Text style={styles.sectionTitle}>ACCOUNT</Text>
+      <Card style={styles.card}>
         {user?.name && (
-          <Row alignment="center" style={styles.row}>
-            <Label>{user.name}</Label>
-          </Row>
+          <>
+            <Row alignment="center" style={styles.row}>
+              <Text style={styles.label}>{user.name}</Text>
+            </Row>
+            <Divider />
+          </>
         )}
         {user?.email && (
-          <Row alignment="center" style={styles.row}>
-            <Value>{user.email}</Value>
-          </Row>
+          <>
+            <Row alignment="center" style={styles.row}>
+              <Text style={styles.value}>{user.email}</Text>
+            </Row>
+            <Divider />
+          </>
         )}
         <ListItem onPress={handleSignOut}>
-          <Text style={{ color: "#FF3B30", fontSize: 17 }}>Sign Out</Text>
+          <Text style={styles.labelRed}>Sign Out</Text>
         </ListItem>
-      </FieldGroup.Section>
-
-    </FieldGroup>
+      </Card>
+    </Column>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    padding: 16,
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#888",
+    marginTop: 8,
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  card: {
+    borderRadius: 12,
   },
   row: {
     justifyContent: "space-between",
-    minHeight: 44,
-    paddingHorizontal: 4,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  label: {
+    fontSize: 16,
+    color: "#fff",
+  },
+  value: {
+    fontSize: 16,
+    color: "#888",
+  },
+  valueGreen: {
+    fontSize: 14,
+    color: "#34C759",
+    fontWeight: "500",
+  },
+  valueRed: {
+    fontSize: 14,
+    color: "#FF3B30",
+  },
+  labelRed: {
+    fontSize: 16,
+    color: "#FF3B30",
   },
 });

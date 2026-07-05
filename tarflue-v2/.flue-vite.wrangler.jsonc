@@ -15,9 +15,15 @@
         "FlueInventoryAlertWorkflow",
         "FlueLeadScoringWorkflow",
         "FlueSprintPlanningWorkflow",
-        "WorkspaceDO",
+        "StorefrontDO",
         "OrderDO",
         "EditorDO"
+      ]
+    },
+    {
+      "tag": "v2",
+      "renamed_classes": [
+        { "from": "StorefrontDO", "to": "WorkspaceDO" }
       ]
     }
   ],
@@ -26,13 +32,13 @@
     {
       "binding": "DB",
       "database_name": "tarflue-db",
-      "database_id": "placeholder-replace-with-actual-id"
+      "database_id": "495e30a0-02f0-4e6a-afa7-12c5b588465c"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "STOREFRONT_CACHE",
-      "id": "placeholder-replace-with-actual-id"
+      "id": "9fcfbb6bc68542e7a6a3762dd61c6c10"
     }
   ],
   "durable_objects": {

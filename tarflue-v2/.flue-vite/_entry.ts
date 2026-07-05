@@ -36,17 +36,17 @@ import {
 } from '@flue/runtime/cloudflare/internal';
 import { registerApiProvider, registerProvider } from '@flue/runtime';
 
-import * as handler_master_0 from "/mnt/c/tarfwk/tar/tarflue-v2/src/agents/master.ts";
-import * as workflow_daily_report_0 from "/mnt/c/tarfwk/tar/tarflue-v2/src/workflows/daily-report.ts";
-import * as workflow_daily_standup_1 from "/mnt/c/tarfwk/tar/tarflue-v2/src/workflows/daily-standup.ts";
-import * as workflow_inventory_alert_2 from "/mnt/c/tarfwk/tar/tarflue-v2/src/workflows/inventory-alert.ts";
-import * as workflow_lead_scoring_3 from "/mnt/c/tarfwk/tar/tarflue-v2/src/workflows/lead-scoring.ts";
-import * as workflow_sprint_planning_4 from "/mnt/c/tarfwk/tar/tarflue-v2/src/workflows/sprint-planning.ts";
-import * as workflow_translate_5 from "/mnt/c/tarfwk/tar/tarflue-v2/src/workflows/translate.ts";
+import * as handler_master_0 from "../src/agents/master.ts";
+import * as workflow_daily_report_0 from "../src/workflows/daily-report.ts";
+import * as workflow_daily_standup_1 from "../src/workflows/daily-standup.ts";
+import * as workflow_inventory_alert_2 from "../src/workflows/inventory-alert.ts";
+import * as workflow_lead_scoring_3 from "../src/workflows/lead-scoring.ts";
+import * as workflow_sprint_planning_4 from "../src/workflows/sprint-planning.ts";
+import * as workflow_translate_5 from "../src/workflows/translate.ts";
 
-import userApp from "/mnt/c/tarfwk/tar/tarflue-v2/src/app.ts";
-import * as userCloudflareModule from "/mnt/c/tarfwk/tar/tarflue-v2/src/cloudflare.ts";
-export * from "/mnt/c/tarfwk/tar/tarflue-v2/src/cloudflare.ts";
+import userApp from "../src/app.ts";
+import * as userCloudflareModule from "../src/cloudflare.ts";
+export * from "../src/cloudflare.ts";
 
 // ─── Internal provider registrations ────────────────────────────────────────
 // User `app.ts` imports are hoisted above this body, so a user-supplied
@@ -272,7 +272,7 @@ function createEventStreamStoreForInstance(doInstance) {
   return store;
 }
 
-const devLifecycle = import.meta.env.DEV ? installDevLifecycleLogger() : undefined;
+const devLifecycle = typeof import.meta !== 'undefined' && import.meta.env?.DEV ? installDevLifecycleLogger() : undefined;
 const cloudflareAgents = createCloudflareAgentRuntime({
   agents,
   createContext: createAgentContextForRequest,
@@ -559,7 +559,7 @@ export { FlueRegistry };
 
 configureFlueRuntime({
   target: 'cloudflare',
-  devMode: import.meta.env.DEV,
+  devMode: typeof import.meta !== 'undefined' && import.meta.env?.DEV,
   temporaryLocalExposure: false,
   agents,
   workflows,

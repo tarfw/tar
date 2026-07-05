@@ -2,8 +2,20 @@ import { Database, getDbPath } from "@tursodatabase/sync-react-native";
 import { SCHEMA_STATEMENTS } from "./schema";
 import { getCurrentUser } from "./auth";
 
+const TARFLUE_URL = process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://tarflue.tar-54d.workers.dev';
+
 const dbConnections: Record<string, Database> = {};
 export let cachedSelfId: string | null = null;
+let syncReadyResolve: (() => void) | null = null;
+export const syncReady = new Promise<void>(r => { syncReadyResolve = r; });
+
+const PARTIAL_SYNC_QUERY = [
+  "SELECT id FROM form WHERE scope LIKE 'w:%'",
+  "SELECT id FROM matter WHERE scope LIKE 'w:%'",
+  "SELECT stream AS id FROM motion",
+  "SELECT src AS id FROM graph",
+  "SELECT id FROM memory",
+].join(" UNION ALL ");
 
 export async function getSelfId(): Promise<string> {
   if (cachedSelfId) return cachedSelfId;
@@ -24,28 +36,68 @@ export async function getSelfId(): Promise<string> {
   return "guest";
 }
 
-function createDbConnection(key: string, dbName: string): Database {
+type DbListener = (db: Database) => void;
+const dbListeners: DbListener[] = [];
+
+export function subscribeDb(listener: DbListener): () => void {
+  dbListeners.push(listener);
+  return () => {
+    const idx = dbListeners.indexOf(listener);
+    if (idx !== -1) dbListeners.splice(idx, 1);
+  };
+}
+
+function notifyDbChange(db: Database) {
+  for (const listener of dbListeners) {
+    try {
+      listener(db);
+    } catch (_) {}
+  }
+}
+
+function createLocalDbConnection(key: string, dbName: string): Database {
   if (!dbConnections[key]) {
-    const config = { path: getDbPath(dbName) };
-    const db = new Database(config);
-    (db as any).push = async () => {};
-    (db as any).pull = async () => {};
-    (db as any).sync = async () => {};
+    const db = new Database({ path: getDbPath(dbName) });
     dbConnections[key] = db;
+    notifyDbChange(db);
   }
   return dbConnections[key];
 }
 
+function createSyncDbConnection(key: string, dbName: string, url: string, authToken: string): Database {
+  if (dbConnections[key]) delete dbConnections[key];
+  const db = new Database({
+    path: getDbPath(dbName),
+    url,
+    authToken,
+    partialSyncExperimental: {
+      bootstrapStrategy: { kind: 'query', query: PARTIAL_SYNC_QUERY },
+    },
+  });
+  dbConnections[key] = db;
+  notifyDbChange(db);
+  return db;
+}
+
 export function getLocalPrivateDb(userId: string): Database {
-  return createDbConnection(`private_${userId}`, `user_${userId}.db`);
+  return createLocalDbConnection(`private_${userId}`, `user_${userId}.db`);
+}
+
+export function getUserSyncDb(userId: string, url: string, authToken: string): Database {
+  return createSyncDbConnection(`private_${userId}`, `user_${userId}.db`, url, authToken);
 }
 
 export function getGlobalDb(): Database {
-  return createDbConnection("global", "global.db");
+  return createLocalDbConnection("global", "global.db");
 }
 
 export function getUserDb(): Database {
   const userId = cachedSelfId || "guest";
+  // Return sync DB if available, otherwise local
+  const syncKey = `private_${userId}`;
+  if (dbConnections[syncKey]?.isSync) {
+    return dbConnections[syncKey];
+  }
   return getLocalPrivateDb(userId);
 }
 
@@ -64,12 +116,12 @@ function extractScopeId(scope: string): string {
 
 export function getWorkspaceDb(workspaceId: string): Database {
   const id = extractScopeId(workspaceId);
-  return createDbConnection(`workspace_${id}`, `workspace_${id}.db`);
+  return createLocalDbConnection(`workspace_${id}`, `workspace_${id}.db`);
 }
 
 export function getOrderDb(orderId: string): Database {
   const id = extractScopeId(orderId);
-  return createDbConnection(`order_${id}`, `order_${id}.db`);
+  return createLocalDbConnection(`order_${id}`, `order_${id}.db`);
 }
 
 /**
@@ -95,15 +147,15 @@ export function routeDbForEntity(_type: string | null, scope: string | null): Da
     return getGlobalDb();
   }
 
-  if (prefix === 'w' && scope) {
-    return getWorkspaceDb(scope);
+  // Workspace data lives in the user's sync DB — so it syncs to Turso
+  if (prefix === 'w') {
+    return getLocalPrivateDb(selfId);
   }
 
   if (prefix === 'o' && scope) {
     return getOrderDb(scope);
   }
 
-  // Fallback to personal DB for unrecognized scopes
   return getLocalPrivateDb(selfId);
 }
 
@@ -227,26 +279,88 @@ export async function switchUser(userId: string): Promise<Database> {
   return db;
 }
 
+export async function initUserSync(userId: string): Promise<void> {
+  const t0 = Date.now();
+  console.log(`[DB] initUserSync START for user = ${userId}`);
+
+  try {
+    console.log(`[DB] initUserSync: fetching Turso creds from ${TARFLUE_URL}/user-db`);
+    const res = await fetch(`${TARFLUE_URL}/user-db?userId=${userId}`);
+    console.log(`[DB] initUserSync: response ${res.status}`);
+    if (!res.ok) {
+      console.warn(`[DB] initUserSync: failed to fetch Turso creds (${res.status})`);
+      return;
+    }
+    const data = await res.json();
+    const { url, authToken } = data;
+    console.log(`[DB] initUserSync: got URL = ${url}`);
+    if (!url || !authToken) {
+      console.warn(`[DB] initUserSync: no Turso creds returned`, data);
+      return;
+    }
+
+    console.log(`[DB] initUserSync: creating sync DB connection...`);
+    const db = getUserSyncDb(userId, url, authToken);
+    console.log(`[DB] initUserSync: connecting...`);
+    await db.connect();
+    console.log(`[DB] initUserSync: connected, applying schema locally...`);
+    await migrateMemoryTable(db, userId);
+    for (const sql of SCHEMA_STATEMENTS) {
+      try { await db.exec(sql); } catch (_) {}
+    }
+    console.log(`[DB] initUserSync: DONE in ${Date.now() - t0}ms`);
+    syncReadyResolve?.();
+  } catch (e) {
+    console.warn(`[DB] initUserSync FAILED:`, e);
+  }
+}
+
+export async function pullSync(userId: string): Promise<void> {
+  const t0 = Date.now();
+  console.log(`[DB] pullSync START for user = ${userId}`);
+  try {
+    // Wait for sync DB to be ready (with timeout)
+    await Promise.race([syncReady, new Promise(r => setTimeout(r, 10000))]);
+
+    const db = getUserDb();
+    if (!db.isSync) {
+      console.log(`[DB] pullSync: SKIP — sync DB not ready`);
+      return;
+    }
+    console.log(`[DB] pullSync: db type = sync`);
+
+    console.log(`[DB] pullSync: calling db.push()...`);
+    try {
+      await db.push();
+      console.log(`[DB] pullSync: db.push() success`);
+    } catch (pushErr) {
+      console.warn(`[DB] pullSync: db.push() failed:`, pushErr);
+    }
+
+    console.log(`[DB] pullSync: calling db.pull()...`);
+    const changed = await db.pull();
+    console.log(`[DB] pullSync: db.pull() success, changed = ${changed}`);
+    console.log(`[DB] pullSync: DONE in ${Date.now() - t0}ms`);
+  } catch (e) {
+    console.warn(`[DB] pullSync FAILED in ${Date.now() - t0}ms:`, e);
+  }
+}
+
 export async function initDb() {
   const t0 = Date.now();
   console.log(`[DB] ${Date.now() - t0}ms — initDb START`);
 
-  // 1. Resolve current user identity first
   const userId = await getSelfId();
+  console.log(`[DB] ${Date.now() - t0}ms — initDb userId = ${userId}, cachedSelfId = ${cachedSelfId}`);
 
-  // 2. Initialize the user's private database
-  await switchUser(userId);
-
-  // 3. Keep guest DB available just in case, but no need to wait for it if logged in as user
-  if (userId !== "guest") {
-    const guestDb = getLocalPrivateDb("guest");
-    guestDb.connect().then(async () => {
-      await migrateMemoryTable(guestDb, "guest");
-      for (const sql of SCHEMA_STATEMENTS) {
-        try { await guestDb.exec(sql); } catch (_) {}
-      }
-    }).catch(() => {});
+  if (userId === "guest") {
+    console.log(`[DB] ${Date.now() - t0}ms — initDb SKIP (no profile)`);
+    return;
   }
 
-  console.log(`[DB] ${Date.now() - t0}ms — initDb DONE`);
+  await switchUser(userId);
+  initUserSync(userId).catch((err) => {
+    console.warn(`[DB] background initUserSync failed for ${userId}:`, err);
+  });
+  console.log(`[DB] ${Date.now() - t0}ms — initDb DONE, cachedSelfId = ${cachedSelfId}`);
 }

@@ -7,6 +7,7 @@ import {
   View,
   Text,
 } from "react-native";
+import * as SecureStore from "expo-secure-store";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,6 +33,9 @@ export default function SettingsScreen() {
 
   const handleSignOut = async () => {
     try {
+      if (user?.id) {
+        await SecureStore.deleteItemAsync(`onb_${user.id}`);
+      }
       await signOutGoogle();
       const { switchUser } = await import("@/lib/db");
       await switchUser("guest");

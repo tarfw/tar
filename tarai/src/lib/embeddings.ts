@@ -44,8 +44,11 @@ export async function isModelCached(): Promise<boolean> {
     const hasModel = files.some((f) => f.includes('minilm'));
     const hasTokenizer = files.some((f) => f.includes('tokenizer'));
     return hasModel && hasTokenizer;
-  } catch (e) {
-    console.warn('[embeddings] isModelCached check failed:', e);
+  } catch (e: any) {
+    const msg = e?.message || String(e);
+    if (!msg.includes("doesn't exist") && !msg.includes("isn't a directory")) {
+      console.warn('[embeddings] isModelCached check failed:', e);
+    }
     return false;
   }
 }

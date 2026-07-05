@@ -17,11 +17,11 @@ export default function TabsLayout() {
         },
       }}>
       <Tabs.Screen
-        name="home"
+        name="inbox"
         options={{
-          title: 'Home',
+          title: 'Inbox',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
+            <Ionicons name="mail-outline" size={size} color={color} />
           ),
         }}
       />

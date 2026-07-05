@@ -2,6 +2,7 @@ import { StyleSheet, View, Text, Pressable, ActivityIndicator } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
@@ -32,10 +33,12 @@ export default function AuthScreen() {
         const user = await getCurrentUser();
         console.log(`[AUTH] ${Date.now() - t}ms — getCurrentUser: ${user ? user.email : 'null'}`);
         if (user) {
-          const { switchUser } = await import('@/lib/db');
+          const { switchUser, initUserSync } = await import('@/lib/db');
           await switchUser(user.id);
-          console.log(`[AUTH] ${ms()} — navigating to /(tabs)/home`);
-          router.replace('/(tabs)/home' as any);
+          initUserSync(user.id);
+          const done = await SecureStore.getItemAsync(`onb_${user.id}`);
+          console.log(`[AUTH] ${ms()} — navigating to ${done ? '/(tabs)/inbox' : '/onboarding'}`);
+          router.replace(done ? '/(tabs)/inbox' : '/onboarding');
           return;
         }
         console.log(`[AUTH] ${ms()} — no user, trying silent sign-in...`);
@@ -43,10 +46,12 @@ export default function AuthScreen() {
         const silent = await trySilentSignIn();
         console.log(`[AUTH] ${Date.now() - t2}ms — trySilentSignIn: ${silent ? silent.email : 'null'}`);
         if (silent) {
-          const { switchUser } = await import('@/lib/db');
+          const { switchUser, initUserSync } = await import('@/lib/db');
           await switchUser(silent.id);
-          console.log(`[AUTH] ${ms()} — navigating to /(tabs)/home via silent sign-in`);
-          router.replace('/(tabs)/home' as any);
+          initUserSync(silent.id);
+          const done = await SecureStore.getItemAsync(`onb_${silent.id}`);
+          console.log(`[AUTH] ${ms()} — navigating to ${done ? '/(tabs)/inbox' : '/onboarding'}`);
+          router.replace(done ? '/(tabs)/inbox' : '/onboarding');
         } else {
           console.log(`[AUTH] ${ms()} — no silent sign-in, staying on auth screen`);
         }
@@ -55,15 +60,17 @@ export default function AuthScreen() {
       }
     })();
   }, [router]);
- 
+
   const handleGoogleAuth = async () => {
     if (loading) return;
     setLoading(true);
     try {
       const user = await signInWithGoogle();
-      const { switchUser } = await import('@/lib/db');
+      const { switchUser, initUserSync } = await import('@/lib/db');
       await switchUser(user.id);
-      router.replace('/(tabs)/home' as any);
+      initUserSync(user.id);
+      const done = await SecureStore.getItemAsync(`onb_${user.id}`);
+      router.replace(done ? '/(tabs)/inbox' : '/onboarding');
     } catch (e: any) {
       console.warn('[Auth] Google sign-in failed:', e.message);
     } finally {

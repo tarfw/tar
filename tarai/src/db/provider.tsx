@@ -1,13 +1,27 @@
-import { ReactNode, useMemo } from 'react';
-import { getUserDb } from '@/lib/db';
+import { ReactNode, useMemo, useState, useEffect, createContext, useContext } from 'react';
+import { getUserDb, subscribeDb } from '@/lib/db';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Database } from '@tursodatabase/sync-react-native';
 
 const queryClient = new QueryClient();
+const DbContext = createContext<Database | null>(null);
 
 export function DbProvider({ children }: { children: ReactNode }) {
+  const [db, setDb] = useState<Database>(() => getUserDb());
+
+  useEffect(() => {
+    // Whenever dbConnections changes or switchUser/initUserSync updates, update the state
+    const unsubscribe = subscribeDb(() => {
+      setDb(getUserDb());
+    });
+    return unsubscribe;
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
-      {children}
+      <DbContext.Provider value={db}>
+        {children}
+      </DbContext.Provider>
     </QueryClientProvider>
   );
 }
@@ -19,7 +33,7 @@ interface CompatDb {
 }
 
 export function useDb(): CompatDb {
-  const db = getUserDb();
+  const db = useContext(DbContext) || getUserDb();
   return useMemo(() => ({
     async getAllAsync<T = any>(query: string, ...params: any[]): Promise<T[]> {
       try {

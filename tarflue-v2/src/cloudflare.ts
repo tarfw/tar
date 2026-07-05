@@ -302,3 +302,6 @@ export class EditorDO extends DurableObject {
     if (text === 'ping' || text === '{"type":"ping"}') { ws.send(JSON.stringify({ type: 'pong' })); }
   }
 }
+
+// Legacy alias — migration references StorefrontDO but class was renamed to WorkspaceDO
+export { WorkspaceDO as StorefrontDO };

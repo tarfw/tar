@@ -12,6 +12,7 @@ import { listTemplates, getTemplate, installTemplate, searchTemplates } from './
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
 import { uploadOkfFile, readOkfFile, readOkfIndex, deleteOkfFile } from './lib/okf';
 import { handleWebSocketUpgrade, pushMotionEvent } from './lib/websocket';
+import { getOrCreateUserDb } from './lib/user-db';
 
 function getDO(env: any, slug: string) {
   return env.EDITOR.get(env.EDITOR.idFromName(slug));
@@ -79,6 +80,27 @@ app.get('/workspaces/match', async (c) => {
   const q = c.req.query('q') || '';
   const template = matchTemplate(q);
   return c.json({ template });
+});
+
+// ============================================================
+// User Database Routes (per-user Turso DB for sync)
+// ============================================================
+
+// GET /user-db — get or create user's Turso DB credentials
+app.get('/user-db', async (c) => {
+  const userId = c.req.query('userId') || c.req.header('X-User-Id');
+  if (!userId) return c.json({ error: 'Missing userId' }, 400);
+
+  const platformToken = c.env.TURSO_PLATFORM_TOKEN;
+  if (!platformToken) return c.json({ error: 'TURSO_PLATFORM_TOKEN not configured' }, 500);
+
+  try {
+    const { url, authToken } = await getOrCreateUserDb(c.env.DB, userId, platformToken);
+    return c.json({ url, authToken });
+  } catch (e: any) {
+    console.error('[user-db] Error:', e.message);
+    return c.json({ error: e.message }, 500);
+  }
 });
 
 // ============================================================

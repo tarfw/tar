@@ -1,51 +1,115 @@
-import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, ActivityIndicator } from 'react-native';
-import { useTheme } from '@/hooks/use-theme';
-import { useState } from 'react';
+import { StyleSheet, View, Text, Pressable, TextInput, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useState, useEffect } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import Ionicons from '@expo/vector-icons/Ionicons';
+
+import { useTheme } from '@/hooks/use-theme';
 import { getCurrentUser } from '@/lib/auth';
+import { create } from '@/lib/tools';
+import { chatCompletion } from '@/lib/ai';
+import { VERTICALS } from '@/lib/verticals';
 
-const TARFLUE_URL = process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://tarflue.tar-54d.workers.dev';
+const VERTICAL_LABELS: Record<string, string> = {
+  restaurant: 'Restaurant / Food',
+  salon: 'Salon / Spa',
+  clinic: 'Clinic / Hospital',
+  retail: 'Retail Store',
+  gym: 'Gym / Fitness',
+  agency: 'Agency / Office',
+  courier: 'Courier / Logistics',
+  school: 'School / Education',
+  property: 'Property',
+  'home-services': 'Home Services',
+  general: 'General Business',
+};
 
-const BUSINESS_TYPES = [
-  { id: 'restaurant', icon: 'restaurant-outline', label: 'Food Business' },
-  { id: 'salon', icon: 'cut-outline', label: 'Salon or Spa' },
-  { id: 'clinic', icon: 'medical-outline', label: 'Clinic or Hospital' },
-  { id: 'retail', icon: 'cart-outline', label: 'Retail Store' },
-  { id: 'gym', icon: 'barbell-outline', label: 'Gym or Fitness' },
-  { id: 'agency', icon: 'briefcase-outline', label: 'Agency or Office' },
-];
+const VERTICAL_ICONS: Record<string, string> = {
+  restaurant: 'restaurant-outline',
+  salon: 'cut-outline',
+  clinic: 'medical-outline',
+  retail: 'cart-outline',
+  gym: 'barbell-outline',
+  agency: 'briefcase-outline',
+  courier: 'bicycle-outline',
+  school: 'school-outline',
+  property: 'home-outline',
+  'home-services': 'hammer-outline',
+  general: 'briefcase-outline',
+};
 
 export default function OnboardingScreen() {
+  const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
+
   const [step, setStep] = useState(1);
-  const [businessType, setBusinessType] = useState('');
-  const [name, setName] = useState('');
+  const [businessInput, setBusinessInput] = useState('');
+  const [predictedVertical, setPredictedVertical] = useState('');
+  const [businessName, setBusinessName] = useState('');
   const [creating, setCreating] = useState(false);
-  const [created, setCreated] = useState(false);
-  const [workspaceUrl, setWorkspaceUrl] = useState('');
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    if (businessInput.length < 3) {
+      setPredictedVertical('');
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const result = await chatCompletion(
+          'You classify businesses. Return ONLY a JSON object: { "vertical": "restaurant|salon|clinic|retail|gym|agency|courier|school|property|home-services|general" }',
+          businessInput,
+        );
+        const match = result.match(/\{[^}]+\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          setPredictedVertical(VERTICALS[parsed.vertical] ? parsed.vertical : 'general');
+        } else {
+          setPredictedVertical('general');
+        }
+      } catch {
+        setPredictedVertical('general');
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [businessInput]);
+
   const handleCreate = async () => {
-    if (!name.trim() || !businessType) return;
+    if (!businessName.trim() || !predictedVertical) return;
     setCreating(true);
     setError('');
     try {
       const user = await getCurrentUser();
-      const subdomain = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const res = await fetch(`${TARFLUE_URL}/workspaces/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-User-Id': user?.id || 'guest' },
-        body: JSON.stringify({ name, template: businessType, subdomain }),
+      const userId = user?.id || 'guest';
+      const workspaceId = `workspace_${userId}_${Date.now()}`;
+      const subdomain = businessName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+      await create({
+        table: 'form',
+        scope: 'w:' + workspaceId,
+        type: 'workspace',
+        code: subdomain,
+        title: businessName,
+        data: {
+          vertical: predictedVertical,
+          modules: VERTICALS[predictedVertical]?.modules || [],
+          subdomain,
+        },
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Failed to create workspace');
-        return;
+
+      // Sync to Turso cloud (with delay for new DBs to propagate)
+      try {
+        const { pullSync } = await import('@/lib/db');
+        await new Promise(r => setTimeout(r, 3000));
+        await pullSync(userId);
+      } catch (syncErr) {
+        console.warn('[Onboarding] sync failed (will retry later):', syncErr);
       }
-      setWorkspaceUrl(data.url || `https://${subdomain}.tarai.space`);
-      setCreated(true);
+
+      await SecureStore.setItemAsync(`onb_${userId}`, 'true');
+      router.replace('/(tabs)/inbox');
     } catch (e: any) {
       setError(e.message || 'Failed to create workspace');
     } finally {
@@ -54,97 +118,87 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.background }]} contentContainerStyle={styles.content}>
-      {step === 1 && (
-        <>
-          <Text style={[styles.title, { color: theme.text }]}>Welcome to tarai!</Text>
-          <Text style={[styles.subtitle, { color: theme.textMuted }]}>What best describes you?</Text>
-          <View style={styles.options}>
-            {BUSINESS_TYPES.map((bt) => (
-              <Pressable
-                key={bt.id}
-                style={[
-                  styles.option,
-                  { backgroundColor: theme.backgroundElement, borderColor: theme.border },
-                  businessType === bt.id && { borderColor: theme.primary, backgroundColor: theme.primary + '10' },
-                ]}
-                onPress={() => { setBusinessType(bt.id); setStep(2); }}>
-                <Ionicons name={bt.icon as any} size={24} color={businessType === bt.id ? theme.primary : theme.text} />
-                <Text style={[styles.optionLabel, { color: theme.text }]}>{bt.label}</Text>
-                <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-              </Pressable>
-            ))}
-          </View>
-          <Pressable onPress={() => router.replace('/(tabs)/home' as any)}>
-            <Text style={[styles.skip, { color: theme.textMuted }]}>Skip — I'll explore first</Text>
-          </Pressable>
-        </>
-      )}
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={[styles.content, { paddingTop: insets.top + 80 }]}>
+        <Text style={[styles.title, { color: theme.text }]}>tar.</Text>
 
-      {step === 2 && !created && (
-        <>
-          <Text style={[styles.title, { color: theme.text }]}>Tell us about your business</Text>
-          <Text style={[styles.label, { color: theme.text }]}>Business name</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: theme.backgroundElement, color: theme.text, borderColor: theme.border }]}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Happy Bites"
-            placeholderTextColor={theme.textMuted}
-          />
-          {error ? (
-            <Text style={[styles.error, { color: '#f44336' }]}>{error}</Text>
-          ) : null}
+        {step === 1 ? (
+          <>
+            <Text style={[styles.subtitle, { color: theme.text }]}>What do you do?</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.backgroundElement, color: theme.text }]}
+              value={businessInput}
+              onChangeText={setBusinessInput}
+              placeholder='e.g. "I run a pizza shop"'
+              placeholderTextColor={theme.textMuted}
+            />
+            {predictedVertical ? (
+              <View style={styles.prediction}>
+                <Ionicons
+                  name={(VERTICAL_ICONS[predictedVertical] || 'briefcase-outline') as any}
+                  size={18}
+                  color={theme.primary}
+                />
+                <Text style={[styles.predictionText, { color: theme.primary }]}>
+                  {VERTICAL_LABELS[predictedVertical] || predictedVertical}
+                </Text>
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <Text style={[styles.subtitle, { color: theme.text }]}>Name your workspace</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.backgroundElement, color: theme.text }]}
+              value={businessName}
+              onChangeText={setBusinessName}
+              placeholder='e.g. "Happy Bites"'
+              placeholderTextColor={theme.textMuted}
+            />
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+          </>
+        )}
+      </View>
+
+      <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
+        {step === 1 ? (
           <Pressable
-            style={[styles.createButton, { backgroundColor: name.trim() ? theme.primary : theme.backgroundElement }]}
+            style={[styles.button, { backgroundColor: predictedVertical ? theme.primary : theme.backgroundElement }]}
+            onPress={() => setStep(2)}
+            disabled={!predictedVertical}>
+            <Text style={[styles.buttonText, { color: predictedVertical ? '#fff' : theme.textMuted }]}>
+              Continue
+            </Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            style={[styles.button, { backgroundColor: businessName.trim() ? theme.primary : theme.backgroundElement }]}
             onPress={handleCreate}
-            disabled={!name.trim() || creating}>
+            disabled={!businessName.trim() || creating}>
             {creating ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={[styles.createButtonText, { color: name.trim() ? '#fff' : theme.textMuted }]}>
+              <Text style={[styles.buttonText, { color: businessName.trim() ? '#fff' : theme.textMuted }]}>
                 Create Workspace
               </Text>
             )}
           </Pressable>
-        </>
-      )}
-
-      {created && (
-        <View style={styles.success}>
-          <Ionicons name="checkmark-circle" size={64} color="#4CAF50" />
-          <Text style={[styles.successTitle, { color: theme.text }]}>Workspace is live!</Text>
-          <Text style={[styles.successUrl, { color: theme.primary }]}>{workspaceUrl}</Text>
-          <Text style={[styles.successHint, { color: theme.textMuted }]}>
-            Your workspace is ready. You can customize it in Chat.
-          </Text>
-          <Pressable
-            style={[styles.createButton, { backgroundColor: theme.primary, marginTop: 32 }]}
-            onPress={() => router.replace('/(tabs)/home' as any)}>
-            <Text style={[styles.createButtonText, { color: '#fff' }]}>Go to Home</Text>
-          </Pressable>
-        </View>
-      )}
-    </ScrollView>
+        )}
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 24, paddingTop: 80 },
-  title: { fontSize: 28, fontWeight: '800', marginBottom: 8 },
-  subtitle: { fontSize: 16, marginBottom: 24, color: '#666' },
-  options: { gap: 12 },
-  option: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, gap: 12 },
-  optionLabel: { flex: 1, fontSize: 16, fontWeight: '500' },
-  skip: { fontSize: 14, textAlign: 'center', marginTop: 24 },
-  label: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
-  input: { borderWidth: 1, borderRadius: 12, padding: 16, fontSize: 16, marginBottom: 16 },
-  error: { fontSize: 14, marginBottom: 16 },
-  createButton: { padding: 16, borderRadius: 12, alignItems: 'center', minHeight: 52, justifyContent: 'center' },
-  createButtonText: { fontSize: 16, fontWeight: '600' },
-  success: { alignItems: 'center', paddingTop: 60 },
-  successTitle: { fontSize: 24, fontWeight: '800', marginTop: 16, marginBottom: 8 },
-  successUrl: { fontSize: 16, fontWeight: '500', marginBottom: 8 },
-  successHint: { fontSize: 14, textAlign: 'center' },
+  content: { flex: 1, paddingHorizontal: 32, justifyContent: 'flex-start' },
+  title: { fontSize: 64, fontWeight: '800', letterSpacing: -2 },
+  subtitle: { fontSize: 28, fontWeight: '700', marginTop: 4, marginBottom: 32 },
+  input: { paddingVertical: 16, paddingHorizontal: 20, borderRadius: 12, fontSize: 18 },
+  prediction: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, paddingVertical: 8 },
+  predictionText: { fontSize: 16, fontWeight: '600' },
+  bottom: { paddingHorizontal: 32 },
+  button: { paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
+  buttonText: { fontSize: 16, fontWeight: '600' },
+  error: { fontSize: 14, color: '#f44336', marginTop: 12 },
 });

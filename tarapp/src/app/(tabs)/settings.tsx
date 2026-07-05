@@ -16,7 +16,7 @@ import {
   Column,
   ListItem,
   Card,
-  Divider,
+  HorizontalDivider,
 } from "@expo/ui/jetpack-compose";
 
 export default function SettingsScreen() {
@@ -71,7 +71,7 @@ export default function SettingsScreen() {
             )}
           </Row>
         </Row>
-        <Divider />
+        <HorizontalDivider />
         <Row alignment="center" style={styles.row}>
           <Text style={styles.label}>Model Info</Text>
           <Text style={styles.value}>384-dim • Cosine • MiniLM</Text>
@@ -102,12 +102,12 @@ export default function SettingsScreen() {
         <ListItem onPress={() => router.push("/actions-catalog" as any)}>
           <Text style={styles.label}>Actions</Text>
         </ListItem>
-        <Divider />
+        <HorizontalDivider />
         <Row alignment="center" style={styles.row}>
           <Text style={styles.label}>Language</Text>
           <Text style={styles.value}>English</Text>
         </Row>
-        <Divider />
+        <HorizontalDivider />
         <Row alignment="center" style={styles.row}>
           <Text style={styles.label}>Region</Text>
           <Text style={styles.value}>India</Text>
@@ -121,11 +121,11 @@ export default function SettingsScreen() {
           <Text style={styles.label}>Version</Text>
           <Text style={styles.value}>1.0.0</Text>
         </Row>
-        <Divider />
+        <HorizontalDivider />
         <Row alignment="center" style={styles.row}>
           <Text style={styles.label}>Privacy Policy</Text>
         </Row>
-        <Divider />
+        <HorizontalDivider />
         <Row alignment="center" style={styles.row}>
           <Text style={styles.label}>Terms of Service</Text>
         </Row>
@@ -139,7 +139,7 @@ export default function SettingsScreen() {
             <Row alignment="center" style={styles.row}>
               <Text style={styles.label}>{user.name}</Text>
             </Row>
-            <Divider />
+            <HorizontalDivider />
           </>
         )}
         {user?.email && (
@@ -147,7 +147,7 @@ export default function SettingsScreen() {
             <Row alignment="center" style={styles.row}>
               <Text style={styles.value}>{user.email}</Text>
             </Row>
-            <Divider />
+            <HorizontalDivider />
           </>
         )}
         <ListItem onPress={handleSignOut}>

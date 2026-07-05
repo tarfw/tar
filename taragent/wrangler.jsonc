@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "taragent",
+  "compatibility_date": "2026-06-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "taragent-db",
+      "database_id": "495e30a0-02f0-4e6a-afa7-12c5b588465c"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "STOREFRONT_CACHE",
+      "id": "9fcfbb6bc68542e7a6a3762dd61c6c10"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "WORKSPACE", "class_name": "Workspace" },
+      { "name": "ORDER", "class_name": "Order" },
+      { "name": "EDITOR", "class_name": "Editor" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Workspace", "Order", "Editor"]
+    }
+  ]
+}

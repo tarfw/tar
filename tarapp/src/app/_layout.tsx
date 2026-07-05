@@ -49,7 +49,7 @@ function RootLayoutInner() {
   if (!ready) return null;
 
   return (
-    <Host style={{ flex: 1, backgroundColor: colors.background }}>
+    <Host style={{ flex: 1, backgroundColor: colors.background }} useViewportSizeMeasurement={true}>
       <Stack
         screenOptions={{
           headerShown: false,

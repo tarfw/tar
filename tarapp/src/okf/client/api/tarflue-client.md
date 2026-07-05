@@ -1,8 +1,8 @@
 ---
 type: API
 title: tarflue client
-description: The client API that tarai uses to communicate with tarflue-v2 backend.
-resource: tarai://src/lib/tarflue.ts
+description: The client API that tarapp uses to communicate with taragent backend.
+resource: tarapp://src/lib/tarflue.ts
 tags: [api, client, backend, http]
 timestamp: 2026-07-04T00:00:00Z
 ---

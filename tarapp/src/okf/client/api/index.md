@@ -1,5 +1,5 @@
 # API
 
-How tarai communicates with tarflue-v2.
+How tarapp communicates with taragent.
 
 - [tarflue-client](/api/tarflue-client.md) — API methods and endpoints

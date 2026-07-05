@@ -2,7 +2,7 @@
 type: Navigation
 title: Bottom tabs
 description: The 3-tab bottom navigation: Home, Chat, Explore.
-resource: tarai://src/app/(tabs)/_layout.tsx
+resource: tarapp://src/app/(tabs)/_layout.tsx
 tags: [navigation, tabs, layout]
 timestamp: 2026-07-04T00:00:00Z
 ---

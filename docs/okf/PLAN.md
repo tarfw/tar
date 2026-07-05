@@ -1,4 +1,4 @@
-# OKF Plan — tarai + tarflue-v2
+# OKF Plan — tarapp + taragent
 
 > How Open Knowledge Format applies to our system. Three bundles, concrete use cases, zero fluff.
 
@@ -22,12 +22,12 @@ Open Knowledge Format (v0.1) — Google's open spec for knowledge as markdown fi
 | Bundle | Location | Purpose | Readers |
 |---|---|---|---|
 | **System** | `OKF/system/` | Platform knowledge — tools, modules, schemas, agents | Master agent, subagents, developers |
-| **Client** | `OKF/client/` | tarai app structure — screens, components, navigation | Frontend agents, developers |
+| **Client** | `OKF/client/` | tarapp app structure — screens, components, navigation | Frontend agents, developers |
 | **Workspace** | `OKF/workspace-template/` | Per-business knowledge — products, policies, reports | Workspace agent, staff |
 
 ---
 
-## Bundle 1: System (tarflue-v2)
+## Bundle 1: System (taragent)
 
 Documents the backend. Agent reads this to understand how the platform works.
 

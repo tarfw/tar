@@ -2,7 +2,7 @@
 type: Screen
 title: Home screen
 description: Role-based timeline showing all actionable items across workspaces. Cards grouped by motion.type.
-resource: tarai://src/app/(tabs)/home.tsx
+resource: tarapp://src/app/(tabs)/home.tsx
 tags: [screen, home, timeline, cards]
 timestamp: 2026-07-04T00:00:00Z
 ---

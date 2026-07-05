@@ -1,15 +1,15 @@
 ---
 type: Architecture
 title: System overview
-description: tarai is a thin 3-tab Expo client; tarflue-v2 is the Cloudflare Workers backend handling all business logic.
-resource: https://github.com/tarfr/tarflue-v2
+description: tarapp is a thin 3-tab Expo client; taragent is the Cloudflare Workers backend handling all business logic.
+resource: https://github.com/tarfr/taragent
 tags: [architecture, system, overview]
 timestamp: 2026-07-04T00:00:00Z
 ---
 
 # System overview
 
-## tarai (thin client)
+## tarapp (thin client)
 
 Expo React Native app with 3 tabs:
 

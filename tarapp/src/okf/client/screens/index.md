@@ -1,6 +1,6 @@
 # Screens
 
-The main screens in the tarai app.
+The main screens in the tarapp app.
 
 - [Home](/screens/home.md) — role-based timeline, motion cards
 - [Chat](/screens/chat.md) — agent chat, autocomplete, action cards

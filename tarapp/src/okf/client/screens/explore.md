@@ -2,7 +2,7 @@
 type: Screen
 title: Explore screen
 description: Search, marketplace, workspace settings, and vertical browsing.
-resource: tarai://src/app/(tabs)/explore.tsx
+resource: tarapp://src/app/(tabs)/explore.tsx
 tags: [screen, explore, search, marketplace]
 timestamp: 2026-07-04T00:00:00Z
 ---

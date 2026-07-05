@@ -78,8 +78,8 @@ const hash = sha256("book_taxi:from:to");
 | Pattern extraction | `src/lib/memory.ts` | Extract intent+slots after success |
 | Slot extraction | `src/lib/slots.ts` | Regex + entity lookup |
 | Autocomplete endpoint | `src/app.ts` | `GET /memory/autocomplete?q=...` |
-| Inline card | `tarai/src/components/ActionCard.tsx` | Editable fields + execute |
-| Chat autocomplete | `tarai/src/components/ChatAutocomplete.tsx` | Shows matches above keyboard |
+| Inline card | `tarapp/src/components/ActionCard.tsx` | Editable fields + execute |
+| Chat autocomplete | `tarapp/src/components/ChatAutocomplete.tsx` | Shows matches above keyboard |
 
 ## Related
 

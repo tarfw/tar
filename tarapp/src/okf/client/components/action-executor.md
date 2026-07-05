@@ -2,7 +2,7 @@
 type: Component
 title: ActionExecutor
 description: Runs workflows when user taps an action on a card. Maps card actions to workflows.
-resource: tarai://src/components/ActionExecutor.tsx
+resource: tarapp://src/components/ActionExecutor.tsx
 tags: [component, action, workflow, executor]
 timestamp: 2026-07-04T00:00:00Z
 ---

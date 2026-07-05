@@ -2,7 +2,7 @@
 type: Screen
 title: Chat screen
 description: Conversational interface with the AI agent. Supports autocomplete from action memory and inline action cards.
-resource: tarai://src/app/(tabs)/chat.tsx
+resource: tarapp://src/app/(tabs)/chat.tsx
 tags: [screen, chat, agent, autocomplete]
 timestamp: 2026-07-04T00:00:00Z
 ---

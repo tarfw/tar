@@ -1,8 +1,8 @@
 ---
 type: Navigation
 title: Screen map
-description: All screens in the tarai app with their routes and purposes.
-resource: tarai://src/app/
+description: All screens in the tarapp app with their routes and purposes.
+resource: tarapp://src/app/
 tags: [navigation, screens, routes]
 timestamp: 2026-07-04T00:00:00Z
 ---

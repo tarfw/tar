@@ -180,7 +180,25 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* Section 2: Appearance */}
+      {/* Section 2: Workspaces */}
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+        WORKSPACES
+      </Text>
+
+      <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+        <TouchableOpacity
+          style={styles.row}
+          activeOpacity={0.7}
+          onPress={() => router.push('/onboarding')}>
+          <View style={styles.rowLeftWithIcon}>
+            <Ionicons name="add-circle-outline" size={20} color={theme.primary} style={styles.rowIcon} />
+            <Text style={[styles.rowTitle, { color: theme.text }]}>Create Workspace</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Section 3: Appearance */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
         APPEARANCE
       </Text>
@@ -205,7 +223,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Section 3: Account */}
+      {/* Section 4: Account */}
       {user && (
         <>
           <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>

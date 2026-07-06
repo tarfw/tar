@@ -7,6 +7,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { signInWithGoogle, getCurrentUser, trySilentSignIn } from '@/lib/auth';
+import { setUserId } from '@/lib/tar';
 
 const SOLUTIONS = [
   { icon: 'ellipse-outline' as const, label: 'Projects & Tasks' },
@@ -35,6 +36,7 @@ export default function AuthScreen() {
         if (user) {
           const { switchUser, initUserSync } = await import('@/lib/db');
           await switchUser(user.id);
+          setUserId(user.id);
           initUserSync(user.id);
           const done = await SecureStore.getItemAsync(`onb_${user.id}`);
           console.log(`[AUTH] ${ms()} — navigating to ${done ? '/(tabs)/inbox' : '/onboarding'}`);
@@ -48,6 +50,7 @@ export default function AuthScreen() {
         if (silent) {
           const { switchUser, initUserSync } = await import('@/lib/db');
           await switchUser(silent.id);
+          setUserId(silent.id);
           initUserSync(silent.id);
           const done = await SecureStore.getItemAsync(`onb_${silent.id}`);
           console.log(`[AUTH] ${ms()} — navigating to ${done ? '/(tabs)/inbox' : '/onboarding'}`);
@@ -68,6 +71,7 @@ export default function AuthScreen() {
       const user = await signInWithGoogle();
       const { switchUser, initUserSync } = await import('@/lib/db');
       await switchUser(user.id);
+      setUserId(user.id);
       initUserSync(user.id);
       const done = await SecureStore.getItemAsync(`onb_${user.id}`);
       router.replace(done ? '/(tabs)/inbox' : '/onboarding');

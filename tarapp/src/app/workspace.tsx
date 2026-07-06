@@ -22,8 +22,7 @@ export default function WorkspaceScreen() {
   const router = useRouter();
 
   // Route parameters
-  const { id, name, subdomain, scope } = useLocalSearchParams<{
-    id: string;
+  const { name, subdomain, scope } = useLocalSearchParams<{
     name: string;
     subdomain: string;
     scope: string;
@@ -151,9 +150,9 @@ export default function WorkspaceScreen() {
 
       {/* Tab content */}
       <View style={styles.content}>
-        {activeTab === 'storefront' && id && (
+        {activeTab === 'storefront' && scope && (
           <StorefrontTab
-            storeId={id}
+            storeId={scope}
             storeName={name || ''}
             subdomain={subdomain}
             products={products}
@@ -271,8 +270,8 @@ export default function WorkspaceScreen() {
               </View>
 
               <View style={styles.infoRow}>
-                <Text style={[styles.infoLabel, { color: theme.textMuted }]}>Form ID</Text>
-                <Text selectable style={[styles.infoVal, { color: theme.text }]}>{id}</Text>
+                <Text style={[styles.infoLabel, { color: theme.textMuted }]}>Scope</Text>
+                <Text selectable style={[styles.infoVal, { color: theme.text }]}>{scope}</Text>
               </View>
 
               <View style={styles.infoRow}>

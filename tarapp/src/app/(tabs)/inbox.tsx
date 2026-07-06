@@ -1,6 +1,5 @@
-import { View, Text, ScrollView, StyleSheet, RefreshControl, Pressable } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
-import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
 import { tar } from '@/lib/tar';
 import { OrderCard } from '@/components/cards/OrderCard';
@@ -22,7 +21,6 @@ interface MotionEvent {
 
 export default function InboxScreen() {
   const theme = useTheme();
-  const router = useRouter();
   const [motions, setMotions] = useState<MotionEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -75,13 +73,8 @@ export default function InboxScreen() {
         <View style={styles.empty}>
           <Text style={[styles.emptyTitle, { color: theme.text }]}>No activity yet</Text>
           <Text style={[styles.emptySubtitle, { color: theme.textMuted }]}>
-            Create a workspace to get started
+            Orders, tasks, and deliveries will appear here
           </Text>
-          <Pressable
-            style={[styles.emptyButton, { backgroundColor: theme.primary }]}
-            onPress={() => router.push('/onboarding')}>
-            <Text style={styles.emptyButtonText}>Create Workspace</Text>
-          </Pressable>
         </View>
       ) : (
         <>

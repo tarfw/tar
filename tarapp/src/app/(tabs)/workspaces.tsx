@@ -1,20 +1,18 @@
 import { useState, useCallback, useEffect } from 'react';
 import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
-import { useDb } from '@/db/provider';
-import { create } from '@/lib/tools';
+import { tar } from '@/lib/tar';
 import StorefrontTab from '@/components/StorefrontTab';
 
 interface Workspace {
-  id: string;
-  title: string;
   scope: string;
-  code: string;
-  data: string;
+  subdomain: string;
+  role: string;
+  name?: string;
 }
 
 interface Product {
@@ -29,7 +27,6 @@ export default function WorkspacesTabScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
-  const db = useDb();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
@@ -56,9 +53,8 @@ export default function WorkspacesTabScreen() {
   const fetchWorkspaces = useCallback(async () => {
     setLoadingWorkspaces(true);
     try {
-      const rows = await db.getAllAsync<Workspace>(
-        "SELECT id, title, scope, code, data FROM form WHERE type = 'workspace' AND active = 1 ORDER BY time DESC"
-      );
+      const data = await tar.listWorkspaces();
+      const rows = data.workspaces || [];
       setWorkspaces(rows);
 
       setSelectedWorkspace((prev) => {
@@ -66,7 +62,7 @@ export default function WorkspacesTabScreen() {
           return rows[0];
         }
         if (rows.length > 1 && prev) {
-          return rows.find(w => w.id === prev.id) || null;
+          return rows.find((w: Workspace) => w.scope === prev.scope) || null;
         }
         return null;
       });
@@ -75,29 +71,29 @@ export default function WorkspacesTabScreen() {
     } finally {
       setLoadingWorkspaces(false);
     }
-  }, [db]);
+  }, []);
 
   const fetchProducts = useCallback(async () => {
     if (!selectedWorkspace?.scope) return;
     setLoadingProducts(true);
     try {
-      const rows = await db.getAllAsync<Product>(
-        "SELECT id, title, qty, value, data FROM matter WHERE scope = ? AND type = 'product' AND active = 1 ORDER BY time DESC",
-        selectedWorkspace.scope
-      );
-      setProducts(rows);
+      const result = await tar.tool('read', {
+        table: 'matter',
+        type: 'product',
+        active: 1,
+        scope: selectedWorkspace.scope,
+      });
+      setProducts(result.rows || []);
     } catch (e) {
       console.warn('[WorkspacesTab] Failed to fetch products:', e);
     } finally {
       setLoadingProducts(false);
     }
-  }, [db, selectedWorkspace?.scope]);
+  }, [selectedWorkspace?.scope]);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchWorkspaces();
-    }, [fetchWorkspaces])
-  );
+  useEffect(() => {
+    fetchWorkspaces();
+  }, [fetchWorkspaces]);
 
   useEffect(() => {
     if (selectedWorkspace && activeDetailTab === 'products') {
@@ -119,7 +115,7 @@ export default function WorkspacesTabScreen() {
     setAddingProduct(true);
     setFormError('');
     try {
-      await create({
+      await tar.tool('create', {
         table: 'matter',
         scope: selectedWorkspace.scope,
         type: 'product',
@@ -146,21 +142,11 @@ export default function WorkspacesTabScreen() {
   };
 
   const getSubdomain = (w: Workspace) => {
-    try {
-      const parsed = JSON.parse(w.data);
-      return parsed.subdomain || w.code;
-    } catch {
-      return w.code;
-    }
+    return w.subdomain || w.scope.replace('w:', '');
   };
 
   const getVertical = (w: Workspace) => {
-    try {
-      const parsed = JSON.parse(w.data);
-      return parsed.vertical || 'general';
-    } catch {
-      return 'general';
-    }
+    return w.role || 'owner';
   };
 
   if (loadingWorkspaces) {
@@ -203,7 +189,7 @@ export default function WorkspacesTabScreen() {
           )}
           <View style={styles.headerTitleContainer}>
             <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
-              {selectedWorkspace.title}
+              {selectedWorkspace.name || subdomain}
             </Text>
             <Text style={[styles.subdomain, { color: theme.textMuted }]}>
               {subdomain}.tarai.space
@@ -237,8 +223,8 @@ export default function WorkspacesTabScreen() {
         <View style={styles.content}>
           {activeDetailTab === 'storefront' && (
             <StorefrontTab
-              storeId={selectedWorkspace.id}
-              storeName={selectedWorkspace.title}
+              storeId={selectedWorkspace.scope}
+              storeName={selectedWorkspace.name || subdomain}
               subdomain={subdomain}
               products={products}
             />
@@ -354,10 +340,10 @@ export default function WorkspacesTabScreen() {
                   <Text selectable style={[styles.infoVal, { color: theme.text }]}>{selectedWorkspace.scope}</Text>
                 </View>
 
-                <View style={styles.infoRow}>
-                  <Text style={[styles.infoLabel, { color: theme.textMuted }]}>Form ID</Text>
-                  <Text selectable style={[styles.infoVal, { color: theme.text }]}>{selectedWorkspace.id}</Text>
-                </View>
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: theme.textMuted }]}>Role</Text>
+                <Text selectable style={[styles.infoVal, { color: theme.text }]}>{selectedWorkspace.role}</Text>
+              </View>
 
                 <View style={styles.infoRow}>
                   <Text style={[styles.infoLabel, { color: theme.textMuted }]}>Domain</Text>
@@ -386,7 +372,7 @@ export default function WorkspacesTabScreen() {
           const vertical = getVertical(w);
           return (
             <Pressable
-              key={w.id}
+              key={w.scope}
               style={({ pressed }) => [
                 styles.workspaceCard,
                 { backgroundColor: theme.backgroundElement, borderColor: theme.border },
@@ -394,7 +380,9 @@ export default function WorkspacesTabScreen() {
               ]}
               onPress={() => setSelectedWorkspace(w)}>
               <View style={styles.workspaceInfo}>
-                <Text style={[styles.workspaceTitle, { color: theme.text }]}>{w.title}</Text>
+                <Text style={[styles.workspaceTitle, { color: theme.text }]}>
+                  {w.name || subdomain}
+                </Text>
                 <Text style={[styles.workspaceSubdomain, { color: theme.textMuted }]}>
                   {subdomain}.tarai.space
                 </Text>

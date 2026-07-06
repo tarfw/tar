@@ -3,14 +3,26 @@
  * Every backend call goes through this one module.
  */
 
-const TAR_URL = process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://tarflue.tar-54d.workers.dev';
+const TAR_URL = process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://taragent.tar-54d.workers.dev';
+
+let _userId = 'guest';
+
+/** Set the current user ID (called from app init). */
+export function setUserId(id: string) {
+  console.log(`[tar] setUserId: ${id}`);
+  _userId = id;
+}
 
 // ── Internal helpers ──────────────────────────────────────────
 
 async function post<T = any>(path: string, body?: Record<string, any>): Promise<T> {
+  console.log(`[tar] POST ${path} with X-User-Id: ${_userId}`);
   const res = await fetch(`${TAR_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-User-Id': _userId,
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -23,7 +35,9 @@ async function post<T = any>(path: string, body?: Record<string, any>): Promise<
 async function get<T = any>(path: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(`${TAR_URL}${path}`);
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), {
+    headers: { 'X-User-Id': _userId },
+  });
   if (!res.ok) throw new Error(`GET ${path} failed: ${await res.text()}`);
   return res.json() as Promise<T>;
 }

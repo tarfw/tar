@@ -4,7 +4,7 @@ import { editorShell } from './storefront/editor';
 import { initClient } from './lib/db';
 import { findActionMemories, incrementMemoryUsage } from './lib/memory';
 import { getUserTimeline } from './lib/inbox';
-import { executeRead, executeCreate } from './lib/helpers';
+import { executeRead, executeCreate, executeUpdate, executeDelete } from './lib/helpers';
 import { handleChannelMessage, sendChannelMessage, getChannelConfig } from './channels';
 import { listTemplates, getTemplate, installTemplate, searchTemplates } from './marketplace/templates';
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
@@ -116,7 +116,10 @@ app.get('/user-db', async (c) => {
   if (!userId) return c.json({ error: 'Missing userId' }, 400);
 
   const platformToken = c.env.TURSO_PLATFORM_TOKEN;
-  if (!platformToken) return c.json({ error: 'TURSO_PLATFORM_TOKEN not configured' }, 500);
+  if (!platformToken) {
+    // Return graceful error — sync not available yet
+    return c.json({ error: 'Turso sync not configured', synced: false }, 200);
+  }
 
   try {
     const { url, authToken } = await getOrCreateUserDb(c.env.DB, userId, platformToken);
@@ -155,6 +158,55 @@ app.post('/marketplace/install', async (c) => {
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 400);
+  }
+});
+
+// ============================================================
+// Tool Routes (6 generic tools)
+// ============================================================
+
+const TOOL_MAP: Record<string, Function> = {
+  create: executeCreate,
+  read: executeRead,
+  update: executeUpdate,
+  delete: executeDelete,
+  link: executeCreate,
+  search: executeRead,
+};
+
+// POST /tools/:name
+app.post('/tools/:name', async (c) => {
+  const name = c.req.param('name');
+  const handler = TOOL_MAP[name];
+  if (!handler) return c.json({ error: `Unknown tool: ${name}` }, 404);
+
+  const body = await c.req.json();
+  try {
+    const result = await handler(body);
+    return c.json(result);
+  } catch (e: any) {
+    // Return empty results if Turso not configured
+    if (e.message?.includes('TURSO_DATABASE_URL')) {
+      return c.json({ rows: [], count: 0 });
+    }
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ============================================================
+// Timeline Route
+// ============================================================
+
+// GET /timeline
+app.get('/timeline', async (c) => {
+  const userId = c.req.header('X-User-Id') || 'guest';
+  const limit = parseInt(c.req.query('limit') || '50');
+  try {
+    const result = await getUserTimeline(c.env.DB, userId, limit);
+    return c.json({ motions: result });
+  } catch (e: any) {
+    // Return empty if Turso not configured
+    return c.json({ motions: [] });
   }
 });
 

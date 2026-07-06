@@ -53,6 +53,20 @@ export const tar = {
     post(`/agents/master/${sessionId}`, { message }),
 
   /**
+   * Get AI Tasks for a workspace.
+   * GET /ai-tasks?scope=...
+   */
+  aiTasks: (scope: string) =>
+    get('/ai-tasks', { scope }),
+
+  /**
+   * Execute an AI Task directly.
+   * POST /ai-tasks/execute
+   */
+  executeAITask: (action: string, params: Record<string, any>, scope: string) =>
+    post('/ai-tasks/execute', { action, params, scope }),
+
+  /**
    * Run one of the 6 generic tools: create, read, update, delete, link, search.
    * POST /tools/:name
    */

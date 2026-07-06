@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { StyleSheet, View, Text, TextInput, Pressable, ActivityIndicator, ScrollView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useStorefront } from '@/hooks/use-storefront';
 import { generateStorefrontLayout, type StorefrontProduct } from '@/lib/storefront-ai';
-import { DEFAULT_LAYOUT, type StorefrontLayout, sectionSummary } from '@/lib/storefront-schema';
+import { type StorefrontLayout, sectionSummary } from '@/lib/storefront-schema';
 
 interface Props {
   storeId: string;
@@ -17,6 +18,7 @@ interface Props {
 
 export default function StorefrontTab({ storeId, storeName, subdomain, products = [] }: Props) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { draft, published, loading, saveDraft, publish } = useStorefront(storeId);
 
   const [instruction, setInstruction] = useState('');
@@ -54,10 +56,6 @@ export default function StorefrontTab({ storeId, storeName, subdomain, products 
     } finally {
       setPublishing(false);
     }
-  };
-
-  const handleUseDefault = async () => {
-    await saveDraft(DEFAULT_LAYOUT);
   };
 
   const slug = subdomain || storeName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -107,16 +105,7 @@ export default function StorefrontTab({ storeId, storeName, subdomain, products 
             </Text>
           </View>
         </ScrollView>
-      ) : (
-        <View style={styles.empty}>
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            Describe your storefront below — e.g. {'"modern dark store with a hero and product grid"'}.
-          </Text>
-          <Pressable style={styles.defaultBtn} onPress={handleUseDefault}>
-            <Text style={styles.defaultBtnText}>Start with default template</Text>
-          </Pressable>
-        </View>
-      )}
+      ) : null}
 
       {error ? (
         <Text style={styles.error}>{error}</Text>
@@ -138,8 +127,7 @@ export default function StorefrontTab({ storeId, storeName, subdomain, products 
       ) : null}
 
       {/* AI chat bar */}
-      <View style={[styles.inputBar, { backgroundColor: theme.backgroundElement }]}>
-        <Ionicons name="sparkles" size={18} color={theme.textSecondary} />
+      <View style={[styles.inputBar, { backgroundColor: theme.backgroundElement, marginBottom: insets.bottom + 8 }]}>
         <TextInput
           style={[styles.input, { color: theme.text }]}
           value={instruction}
@@ -177,10 +165,6 @@ const styles = StyleSheet.create({
   editorHint: { fontSize: 12, lineHeight: 16 },
   previewBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#111', marginTop: 4, paddingVertical: 12, borderRadius: 12 },
   previewBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  empty: { flex: 1, paddingHorizontal: 24, paddingTop: 40, alignItems: 'center' },
-  emptyText: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 16 },
-  defaultBtn: { backgroundColor: '#5E6AD2', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12 },
-  defaultBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   error: { color: '#FF3B30', fontSize: 13, paddingHorizontal: 16, paddingVertical: 6 },
   publishBtn: { backgroundColor: '#5E6AD2', marginHorizontal: 16, marginVertical: 8, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
   publishText: { color: '#fff', fontSize: 15, fontWeight: '600' },

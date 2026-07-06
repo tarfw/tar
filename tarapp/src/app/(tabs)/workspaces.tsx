@@ -6,6 +6,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
 import { tar } from '@/lib/tar';
 import StorefrontTab from '@/components/StorefrontTab';
+import { AITaskCard, AITask } from '@/components/AITaskCard';
+import { AITaskForm } from '@/components/AITaskForm';
 
 interface Workspace { scope: string; subdomain: string; role: string; name?: string; }
 interface Product { id: string; title: string; qty: number; value: number; data: string; }
@@ -19,7 +21,7 @@ export default function WorkspacesTabScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const [activeTab, setActiveTab] = useState<'storefront' | 'products' | 'info'>('storefront');
+  const [activeTab, setActiveTab] = useState<'storefront' | 'products' | 'tasks' | 'info'>('storefront');
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
 
@@ -30,6 +32,15 @@ export default function WorkspacesTabScreen() {
   const [addingProduct, setAddingProduct] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // AI Tasks State
+  const [tasks, setTasks] = useState<AITask[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [activeTask, setActiveTask] = useState<AITask | null>(null);
+  const [executingTask, setExecutingTask] = useState(false);
+  const [executionError, setExecutionError] = useState('');
 
   const fetchWorkspaces = useCallback(async () => {
     setLoading(true);
@@ -60,7 +71,33 @@ export default function WorkspacesTabScreen() {
     }
   }, [selected?.scope]);
 
-  useEffect(() => { if (activeTab === 'products') fetchProducts(); }, [activeTab, fetchProducts]);
+  const fetchTasks = useCallback(async () => {
+    if (!selected?.scope) return;
+    setLoadingTasks(true);
+    try {
+      const result = await tar.aiTasks(selected.scope);
+      setTasks(result.actions || []);
+    } catch (e) {
+      console.warn('[Workspaces] Failed to fetch tasks:', e);
+    } finally {
+      setLoadingTasks(false);
+    }
+  }, [selected?.scope]);
+
+  useEffect(() => {
+    if (activeTab === 'products') fetchProducts();
+    if (activeTab === 'tasks') fetchTasks();
+  }, [activeTab, fetchProducts, fetchTasks]);
+
+  // Reset workspace-specific states when switching workspaces
+  useEffect(() => {
+    setActiveTask(null);
+    setSearchQuery('');
+    setSelectedCategory(null);
+    setExecutionError('');
+    if (activeTab === 'products') fetchProducts();
+    if (activeTab === 'tasks') fetchTasks();
+  }, [selected?.scope]);
 
   const handleAddProduct = async () => {
     if (!productTitle.trim() || !productPrice.trim() || !selected?.scope) { setFormError('Name and price required'); return; }
@@ -79,7 +116,73 @@ export default function WorkspacesTabScreen() {
     } catch (e: any) { setFormError(e.message || 'Failed'); } finally { setAddingProduct(false); }
   };
 
+  const handleExecuteTask = async (values: Record<string, any>) => {
+    if (!activeTask || !selected?.scope) return;
+    setExecutingTask(true);
+    setExecutionError('');
+    try {
+      if (activeTask.steps === 1 && activeTask.tool && activeTask.tool !== 'custom') {
+        const toolInput: any = {
+          table: activeTask.table,
+          type: activeTask.type,
+          scope: selected.scope
+        };
+        if (values.title !== undefined) toolInput.title = values.title;
+        if (values.name !== undefined && !values.title) toolInput.title = values.name;
+        if (values.value !== undefined) toolInput.value = values.value;
+        if (values.price !== undefined && values.value === undefined) toolInput.value = values.price;
+        if (values.qty !== undefined) toolInput.qty = values.qty;
+        
+        toolInput.data = { ...values };
+
+        if (activeTask.tool === 'update') {
+          const id = values.id || values.productId || values.orderId || values.leadId || values.bookingId;
+          if (!id) throw new Error('ID parameter is required to update');
+          await tar.tool('update', {
+            table: activeTask.table,
+            id,
+            scope: selected.scope,
+            patch: values
+          });
+        } else if (activeTask.tool === 'delete') {
+          const id = values.id || values.productId || values.orderId || values.leadId || values.bookingId;
+          if (!id) throw new Error('ID parameter is required to delete');
+          await tar.tool('delete', {
+            table: activeTask.table,
+            id,
+            scope: selected.scope
+          });
+        } else {
+          await tar.tool(activeTask.tool, toolInput);
+        }
+      } else {
+        const result = await tar.executeAITask(activeTask.name, values, selected.scope);
+        if (!result.success) {
+          throw new Error(result.error || 'Execution failed');
+        }
+      }
+      setActiveTask(null);
+      if (activeTask.module === 'inventory' || activeTask.name.includes('product')) {
+        await fetchProducts();
+      }
+    } catch (e: any) {
+      setExecutionError(e.message || 'Failed to execute task');
+    } finally {
+      setExecutingTask(false);
+    }
+  };
+
   const sub = selected?.subdomain || selected?.scope?.replace('w:', '') || '';
+  const categories = Array.from(new Set(tasks.map(t => t.module)));
+  
+  const filteredTasks = tasks.filter(task => {
+    const matchesSearch =
+      task.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.purpose.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (task.intents && task.intents.some(i => i.toLowerCase().includes(searchQuery.toLowerCase())));
+    const matchesCategory = !selectedCategory || task.module === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   // ── Loading ──────────────────────────────────────────
   if (loading) {
@@ -111,11 +214,13 @@ export default function WorkspacesTabScreen() {
 
       {/* Tabs */}
       <View style={[styles.tabs, { borderBottomColor: theme.border }]}>
-        {(['storefront', 'products', 'info'] as const).map((t) => (
+        {(['storefront', 'products', 'tasks', 'info'] as const).map((t) => (
           <Pressable key={t} style={[styles.tab, activeTab === t && { borderBottomColor: theme.primary }]}
             onPress={() => setActiveTab(t)}>
             <Text style={[styles.tabText, { color: activeTab === t ? theme.primary : theme.textMuted },
-              activeTab === t && { fontWeight: '600' }]}>{t[0].toUpperCase() + t.slice(1)}</Text>
+              activeTab === t && { fontWeight: '600' }]}>
+              {t === 'tasks' ? 'AI Tasks' : t.charAt(0).toUpperCase() + t.slice(1)}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -174,6 +279,107 @@ export default function WorkspacesTabScreen() {
                   );
                 })}
               </ScrollView>
+            )}
+          </View>
+        )}
+
+        {activeTab === 'tasks' && (
+          <View style={{ flex: 1 }}>
+            {activeTask ? (
+              <ScrollView contentContainerStyle={{ padding: 16 }}>
+                <AITaskForm
+                  task={activeTask}
+                  onSubmit={handleExecuteTask}
+                  onCancel={() => { setActiveTask(null); setExecutionError(''); }}
+                  executing={executingTask}
+                />
+                {executionError ? (
+                  <Text style={[styles.error, { marginTop: 12, textAlign: 'center' }]}>{executionError}</Text>
+                ) : null}
+              </ScrollView>
+            ) : (
+              <View style={{ flex: 1 }}>
+                {/* Search Bar */}
+                <View style={[styles.searchBar, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+                  <Ionicons name="search" size={16} color={theme.textMuted} />
+                  <TextInput
+                    style={[styles.searchInput, { color: theme.text }]}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Search actions or intents..."
+                    placeholderTextColor={theme.textMuted}
+                  />
+                  {searchQuery ? (
+                    <Pressable onPress={() => setSearchQuery('')}>
+                      <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+
+                {/* Category Chips */}
+                {categories.length > 0 && (
+                  <View style={styles.chipsWrapper}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContainer}>
+                      <Pressable
+                        style={[
+                          styles.chip,
+                          {
+                            borderColor: theme.border,
+                            backgroundColor: !selectedCategory ? theme.primary : theme.backgroundElement
+                          }
+                        ]}
+                        onPress={() => setSelectedCategory(null)}
+                      >
+                        <Text style={[styles.chipText, { color: !selectedCategory ? '#fff' : theme.textSecondary }]}>
+                          All
+                        </Text>
+                      </Pressable>
+                      {categories.map(cat => (
+                        <Pressable
+                          key={cat}
+                          style={[
+                            styles.chip,
+                            {
+                              borderColor: theme.border,
+                              backgroundColor: selectedCategory === cat ? theme.primary : theme.backgroundElement
+                            }
+                          ]}
+                          onPress={() => setSelectedCategory(cat)}
+                        >
+                          <Text style={[styles.chipText, { color: selectedCategory === cat ? '#fff' : theme.textSecondary }]}>
+                            {cat}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {/* Task List */}
+                {loadingTasks ? (
+                  <ActivityIndicator style={{ marginTop: 32 }} color={theme.textSecondary} />
+                ) : filteredTasks.length === 0 ? (
+                  <View style={styles.empty}>
+                    <Ionicons name="flash-off-outline" size={40} color={theme.textMuted} />
+                    <Text style={[styles.emptyText, { color: theme.textMuted }]}>
+                      {searchQuery || selectedCategory ? 'No matching tasks' : 'No AI Tasks found'}
+                    </Text>
+                  </View>
+                ) : (
+                  <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 20 }}>
+                    {filteredTasks.map(task => (
+                      <AITaskCard
+                        key={task.name}
+                        task={task}
+                        onPress={() => {
+                          setActiveTask(task);
+                          setExecutionError('');
+                        }}
+                      />
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
             )}
           </View>
         )}
@@ -251,6 +457,7 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   error: { color: '#f44336', fontSize: 12 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 8 },
+  emptyText: { fontSize: 14 },
   productCard: { flexDirection: 'row', marginBottom: 8, padding: 14, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
   pName: { fontSize: 15, fontWeight: '500' },
   pPrice: { fontSize: 16, fontWeight: '700' },
@@ -263,4 +470,38 @@ const styles = StyleSheet.create({
   handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 16, opacity: 0.3 },
   sheetTitle: { fontSize: 18, fontWeight: '700', paddingHorizontal: 20, marginBottom: 12 },
   sheetItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10 },
+  // AI Tasks styles
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    margin: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
+  },
+  chipsWrapper: {
+    marginBottom: 8,
+  },
+  chipsContainer: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
 });

@@ -7,11 +7,12 @@ import { getUserTimeline } from './lib/inbox';
 import { executeRead, executeCreate, executeUpdate, executeDelete } from './lib/helpers';
 import { handleChannelMessage, sendChannelMessage, getChannelConfig } from './channels';
 import { listTemplates, getTemplate, installTemplate, searchTemplates } from './marketplace/templates';
-import { getSkillsForVertical } from './lib/skills';
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
-import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspaceFromVertical, uploadVerticalFile, readVerticalFile, listWorkspaceModules } from './lib/okf';
+import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspaceFromVertical, uploadVerticalFile, readVerticalFile, listWorkspaceModules, listVerticalModules } from './lib/okf';
 import { handleWebSocketUpgrade, pushMotionEvent } from './lib/websocket';
 import { getOrCreateUserDb } from './lib/user-db';
+import { parseSkillMarkdown, generateCompactActionIndex } from './lib/skill-parser';
+import { executeAITask } from './lib/action-executor';
 
 function getDO(env: any, slug: string) {
   return env.EDITOR.get(env.EDITOR.idFromName(slug));
@@ -187,14 +188,147 @@ app.post('/tools/:name', async (c) => {
   if (!handler) return c.json({ error: `Unknown tool: ${name}` }, 404);
 
   const body = await c.req.json();
+  const scope = body.scope || body.stream || body.src || body.tgt || '';
+
   try {
+    if (typeof scope === 'string' && scope.startsWith('w:')) {
+      const workspaceId = scope.replace('w:', '');
+      const stubId = c.env.WORKSPACE.idFromName(workspaceId);
+      const stub = c.env.WORKSPACE.get(stubId);
+      const res = await stub.fetch(`http://do/tools/${name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      return c.json(await res.json());
+    }
+
+    if (typeof scope === 'string' && scope.startsWith('o:')) {
+      const orderId = scope.replace('o:', '');
+      const stubId = c.env.ORDER.idFromName(orderId);
+      const stub = c.env.ORDER.get(stubId);
+      const res = await stub.fetch(`http://do/tools/${name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      return c.json(await res.json());
+    }
+
     const result = await handler(body);
     return c.json(result);
   } catch (e: any) {
     // Return empty results if Turso not configured
     if (e.message?.includes('TURSO_DATABASE_URL')) {
-      return c.json({ rows: [], count: 0 });
+      if (name === 'read' || name === 'search') {
+        return c.json({ rows: [], count: 0 });
+      }
+      return c.json({ error: 'TURSO_DATABASE_URL not configured' }, 400);
     }
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// GET /ai-tasks — list parsed tasks/actions for workspace
+app.get('/ai-tasks', async (c) => {
+  const scope = c.req.query('scope');
+  if (!scope) {
+    return c.json({ error: 'Missing scope' }, 400);
+  }
+
+  const cacheKey = `ai-tasks:${scope}`;
+  if (c.env.STOREFRONT_CACHE) {
+    try {
+      const cached = await c.env.STOREFRONT_CACHE.get(cacheKey);
+      if (cached) {
+        return c.json(JSON.parse(cached));
+      }
+    } catch (err) {
+      console.warn('[ai-tasks] Cache read failed:', err);
+    }
+  }
+
+  try {
+    let modules = await listWorkspaceModules(c.env, scope);
+    let isVerticalFallback = false;
+    let vertical = 'restaurant';
+
+    if (modules.length === 0) {
+      if (c.env.DB) {
+        const ws = await c.env.DB.prepare(
+          'SELECT vertical FROM workspaces WHERE scope = ?'
+        ).bind(scope).first();
+        if (ws?.vertical) {
+          vertical = ws.vertical;
+        }
+      }
+      try {
+        modules = await listVerticalModules(c.env, vertical);
+        isVerticalFallback = true;
+      } catch (err) {
+        console.warn('[ai-tasks] Failed to list vertical modules:', err);
+      }
+    }
+
+    const actions: any[] = [];
+    for (const mod of modules) {
+      const content = isVerticalFallback
+        ? await readVerticalFile(c.env, vertical, `${mod}.md`)
+        : await readWorkspaceFile(c.env, scope, `${mod}.md`);
+
+      if (content) {
+        const parsed = parseSkillMarkdown(content);
+        for (const action of parsed.actions) {
+          actions.push({
+            name: action.name,
+            module: mod,
+            purpose: action.purpose,
+            intents: action.intents,
+            params: action.params,
+            steps: action.steps.length,
+            tool: action.steps[0]?.tool || 'custom',
+            table: action.steps[0]?.table || '',
+            type: action.steps[0]?.type || '',
+          });
+        }
+      }
+    }
+
+    const responseData = { actions };
+
+    if (c.env.STOREFRONT_CACHE) {
+      try {
+        await c.env.STOREFRONT_CACHE.put(cacheKey, JSON.stringify(responseData), { expirationTtl: 300 });
+      } catch (err) {
+        console.warn('[ai-tasks] Cache write failed:', err);
+      }
+    }
+
+    return c.json(responseData);
+  } catch (e: any) {
+    console.error('[ai-tasks] Error listing or parsing modules:', e.message);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// POST /ai-tasks/execute — execute an action directly
+app.post('/ai-tasks/execute', async (c) => {
+  const body = await c.req.json();
+  const { action, params, scope } = body;
+  if (!action || !scope) {
+    return c.json({ error: 'Missing action or scope' }, 400);
+  }
+
+  try {
+    const result = await executeAITask(c.env, action, params || {}, scope);
+    return c.json(result);
+  } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
 });
@@ -371,24 +505,14 @@ app.get('/timeline', async (c) => {
 // Agent Routes
 // ============================================================
 
-const BASE_SYSTEM_PROMPT = `You are a business assistant for tarai. You help users manage their workspaces.
+const BASE_SYSTEM_PROMPT = `You are a business assistant.
 
-AVAILABLE TOOLS (use these exact names):
-- create: create a new record. Params: table, type, title, value, qty, data, scope
-- read: query records. Params: table, type, scope, id
-- update: modify a record. Params: table, id, data
-- delete: remove a record. Params: table, id
-- link: create a relationship. Params: src, rel, tgt
+RESPONSE FORMAT:
+When user wants to DO something, respond with ONLY:
+{"action":"action_name","params":{"key":"value"}}
 
-RULES:
-1. When user wants to DO something, respond with ONLY this JSON (no other text):
-{"action":"tool_call","tool":"create","table":"matter","type":"TYPE","title":"NAME","value":PRICE,"qty":QUANTITY,"data":{}}
-
-2. The "tool" field MUST be one of: create, read, update, delete, link. NOT action names like create_order.
-
-3. For questions, respond with plain text. For greetings, plain text.
-
-4. Be concise. One sentence answers when possible.`;
+For questions/greetings, respond with plain text.
+If params are missing, ask a follow-up.`;
 
 // POST /agents/master/:sessionId — chat with agent
 app.post('/agents/master/:sessionId', async (c) => {
@@ -420,20 +544,39 @@ app.post('/agents/master/:sessionId', async (c) => {
     }
   }
 
-  // Load SKILL.md from workspace's S3 files (not hardcoded)
-  let skillsContent = '';
+  // Load and parse skills
+  const parsedSkills = [];
   if (workspaceScope) {
-    const modules = await listWorkspaceModules(c.env, workspaceScope);
-    const skillParts: string[] = [];
-    for (const mod of modules) {
-      const content = await readWorkspaceFile(c.env, workspaceScope, `${mod}.md`);
-      if (content) skillParts.push(content);
+    try {
+      const modules = await listWorkspaceModules(c.env, workspaceScope);
+      for (const mod of modules) {
+        const content = await readWorkspaceFile(c.env, workspaceScope, `${mod}.md`);
+        if (content) {
+          parsedSkills.push(parseSkillMarkdown(content));
+        }
+      }
+    } catch (err) {
+      console.warn('[Agent] Failed to read workspace modules:', err);
     }
-    skillsContent = skillParts.join('\n\n');
   }
-  // Fallback to hardcoded if S3 has nothing
-  if (!skillsContent) skillsContent = getSkillsForVertical(vertical);
-  const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n## Installed Skills\n${skillsContent}`;
+
+  // Fallback to vertical templates if no workspace skills loaded
+  if (parsedSkills.length === 0) {
+    try {
+      const verticalModules = await listVerticalModules(c.env, vertical);
+      for (const mod of verticalModules) {
+        const content = await readVerticalFile(c.env, vertical, `${mod}.md`);
+        if (content) {
+          parsedSkills.push(parseSkillMarkdown(content));
+        }
+      }
+    } catch (err) {
+      console.warn('[Agent] Failed to load vertical modules:', err);
+    }
+  }
+
+  const compactIndex = generateCompactActionIndex(parsedSkills);
+  const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\nAVAILABLE AI TASKS:\n${compactIndex}`;
 
   const groqKey = c.env.GROQ_API_KEY;
 
@@ -458,64 +601,65 @@ app.post('/agents/master/:sessionId', async (c) => {
     const data = await res.json() as any;
     const reply = data?.choices?.[0]?.message?.content || 'Sorry, I could not process that.';
 
-    // Try to parse as tool call — strip code blocks if present
-    let toolCall = null;
+    // Try to parse as action call — strip code blocks if present
+    let actionCall = null;
     try {
       let cleanReply = reply.trim();
-      // Strip markdown code blocks
       cleanReply = cleanReply.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '');
-      // Try direct JSON parse first
       const parsed = JSON.parse(cleanReply);
-      if (parsed.action === 'tool_call' && parsed.tool) {
-        toolCall = parsed;
+      if (parsed.action && parsed.action.startsWith('action_')) {
+        actionCall = parsed;
       }
     } catch {
-      // Try to extract JSON from text
       try {
-        const jsonMatch = reply.match(/\{[\s\S]*"action"\s*:\s*"tool_call"[\s\S]*\}/);
+        const jsonMatch = reply.match(/\{[\s\S]*"action"\s*:\s*"action_[a-zA-Z0-9_]+"[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          if (parsed.action === 'tool_call' && parsed.tool) {
-            toolCall = parsed;
+          if (parsed.action && parsed.action.startsWith('action_')) {
+            actionCall = parsed;
           }
         }
       } catch {}
     }
 
-    // Execute tool call if present
-    let toolResult = null;
-    if (toolCall) {
-      const handler = TOOL_MAP[toolCall.tool];
-      if (handler) {
-        try {
-          toolResult = await handler({ ...toolCall.params, scope: toolCall.params.scope || 'global' });
-        } catch (e: any) {
-          toolResult = { error: e.message };
-        }
+    // Execute AI Task if present
+    let executorResult = null;
+    if (actionCall && workspaceScope) {
+      try {
+        executorResult = await executeAITask(
+          c.env,
+          actionCall.action,
+          actionCall.params || {},
+          workspaceScope
+        );
+      } catch (e: any) {
+        executorResult = { success: false, error: e.message };
       }
     }
 
     // Build friendly reply
     let finalReply = reply;
-    if (toolCall) {
-      if (toolCall.tool === 'create' && toolCall.table === 'matter') {
-        finalReply = `Created ${toolCall.type || 'item'}: ${toolCall.title || 'done'}`;
-      } else if (toolCall.tool === 'read') {
-        finalReply = toolResult?.rows?.length
-          ? `Found ${toolResult.rows.length} items`
-          : 'No items found';
-      } else if (toolCall.tool === 'update') {
-        finalReply = 'Updated successfully';
+    if (actionCall) {
+      if (executorResult?.success) {
+        // Find if we created a matter
+        const createHistory = executorResult.history.find((h: any) => h.raw.includes('create(') && h.raw.includes("table='matter'"));
+        if (createHistory && createHistory.result && createHistory.result.id) {
+          const typeMatch = createHistory.raw.match(/type='([a-zA-Z0-9_]+)'/);
+          const entityType = typeMatch ? typeMatch[1] : 'item';
+          finalReply = `Executed ${actionCall.action} successfully. Created ${entityType} ID: ${createHistory.result.id}`;
+        } else {
+          finalReply = `Executed ${actionCall.action} successfully.`;
+        }
       } else {
-        finalReply = 'Done';
+        finalReply = `Failed to execute ${actionCall.action}: ${executorResult?.error || 'unknown error'}`;
       }
     }
 
     return c.json({
       reply: finalReply,
       sessionId,
-      toolCall,
-      toolResult,
+      actionCall,
+      executorResult,
     });
   } catch (e: any) {
     console.error('[Agent] Error:', e.message);

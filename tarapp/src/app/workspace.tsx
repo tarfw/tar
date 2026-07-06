@@ -7,6 +7,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
 import { tar } from '@/lib/tar';
 import StorefrontTab from '@/components/StorefrontTab';
+import { AITaskCard, AITask } from '@/components/AITaskCard';
+import { AITaskForm } from '@/components/AITaskForm';
 
 interface Product {
   id: string;
@@ -24,7 +26,7 @@ export default function WorkspaceScreen() {
     name: string; subdomain: string; scope: string;
   }>();
 
-  const [activeTab, setActiveTab] = useState<'storefront' | 'products' | 'info'>('storefront');
+  const [activeTab, setActiveTab] = useState<'storefront' | 'products' | 'tasks' | 'info'>('storefront');
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
 
@@ -35,6 +37,15 @@ export default function WorkspaceScreen() {
   const [addingProduct, setAddingProduct] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // AI Tasks State
+  const [tasks, setTasks] = useState<AITask[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [activeTask, setActiveTask] = useState<AITask | null>(null);
+  const [executingTask, setExecutingTask] = useState(false);
+  const [executionError, setExecutionError] = useState('');
 
   const fetchProducts = useCallback(async () => {
     if (!scope) return;
@@ -49,9 +60,23 @@ export default function WorkspaceScreen() {
     }
   }, [scope]);
 
+  const fetchTasks = useCallback(async () => {
+    if (!scope) return;
+    setLoadingTasks(true);
+    try {
+      const result = await tar.aiTasks(scope);
+      setTasks(result.actions || []);
+    } catch (e) {
+      console.warn('[Workspace] Failed to fetch tasks:', e);
+    } finally {
+      setLoadingTasks(false);
+    }
+  }, [scope]);
+
   useEffect(() => {
     if (activeTab === 'products') fetchProducts();
-  }, [activeTab, fetchProducts]);
+    if (activeTab === 'tasks') fetchTasks();
+  }, [activeTab, fetchProducts, fetchTasks]);
 
   const handleAddProduct = async () => {
     if (!productTitle.trim() || !productPrice.trim() || !scope) { setFormError('Name and price required'); return; }
@@ -70,7 +95,73 @@ export default function WorkspaceScreen() {
     } catch (e: any) { setFormError(e.message || 'Failed'); } finally { setAddingProduct(false); }
   };
 
+  const handleExecuteTask = async (values: Record<string, any>) => {
+    if (!activeTask || !scope) return;
+    setExecutingTask(true);
+    setExecutionError('');
+    try {
+      if (activeTask.steps === 1 && activeTask.tool && activeTask.tool !== 'custom') {
+        const toolInput: any = {
+          table: activeTask.table,
+          type: activeTask.type,
+          scope
+        };
+        if (values.title !== undefined) toolInput.title = values.title;
+        if (values.name !== undefined && !values.title) toolInput.title = values.name;
+        if (values.value !== undefined) toolInput.value = values.value;
+        if (values.price !== undefined && values.value === undefined) toolInput.value = values.price;
+        if (values.qty !== undefined) toolInput.qty = values.qty;
+        
+        toolInput.data = { ...values };
+
+        if (activeTask.tool === 'update') {
+          const id = values.id || values.productId || values.orderId || values.leadId || values.bookingId;
+          if (!id) throw new Error('ID parameter is required to update');
+          await tar.tool('update', {
+            table: activeTask.table,
+            id,
+            scope,
+            patch: values
+          });
+        } else if (activeTask.tool === 'delete') {
+          const id = values.id || values.productId || values.orderId || values.leadId || values.bookingId;
+          if (!id) throw new Error('ID parameter is required to delete');
+          await tar.tool('delete', {
+            table: activeTask.table,
+            id,
+            scope
+          });
+        } else {
+          await tar.tool(activeTask.tool, toolInput);
+        }
+      } else {
+        const result = await tar.executeAITask(activeTask.name, values, scope);
+        if (!result.success) {
+          throw new Error(result.error || 'Execution failed');
+        }
+      }
+      setActiveTask(null);
+      if (activeTask.module === 'inventory' || activeTask.name.includes('product')) {
+        await fetchProducts();
+      }
+    } catch (e: any) {
+      setExecutionError(e.message || 'Failed to execute task');
+    } finally {
+      setExecutingTask(false);
+    }
+  };
+
   const sub = subdomain || scope?.replace('w:', '') || '';
+  const categories = Array.from(new Set(tasks.map(t => t.module)));
+  
+  const filteredTasks = tasks.filter(task => {
+    const matchesSearch =
+      task.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.purpose.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (task.intents && task.intents.some(i => i.toLowerCase().includes(searchQuery.toLowerCase())));
+    const matchesCategory = !selectedCategory || task.module === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -87,12 +178,12 @@ export default function WorkspaceScreen() {
 
       {/* Tabs */}
       <View style={[styles.tabs, { borderBottomColor: theme.border }]}>
-        {(['storefront', 'products', 'info'] as const).map((t) => (
+        {(['storefront', 'products', 'tasks', 'info'] as const).map((t) => (
           <Pressable key={t} style={[styles.tab, activeTab === t && { borderBottomColor: theme.primary }]}
             onPress={() => setActiveTab(t)}>
             <Text style={[styles.tabText, { color: activeTab === t ? theme.primary : theme.textMuted },
               activeTab === t && { fontWeight: '600' }]}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'tasks' ? 'AI Tasks' : t.charAt(0).toUpperCase() + t.slice(1)}
             </Text>
           </Pressable>
         ))}
@@ -162,6 +253,107 @@ export default function WorkspaceScreen() {
           </View>
         )}
 
+        {activeTab === 'tasks' && (
+          <View style={{ flex: 1 }}>
+            {activeTask ? (
+              <ScrollView contentContainerStyle={{ padding: 16 }}>
+                <AITaskForm
+                  task={activeTask}
+                  onSubmit={handleExecuteTask}
+                  onCancel={() => { setActiveTask(null); setExecutionError(''); }}
+                  executing={executingTask}
+                />
+                {executionError ? (
+                  <Text style={[styles.error, { marginTop: 12, textAlign: 'center' }]}>{executionError}</Text>
+                ) : null}
+              </ScrollView>
+            ) : (
+              <View style={{ flex: 1 }}>
+                {/* Search Bar */}
+                <View style={[styles.searchBar, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+                  <Ionicons name="search" size={16} color={theme.textMuted} />
+                  <TextInput
+                    style={[styles.searchInput, { color: theme.text }]}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Search actions or intents..."
+                    placeholderTextColor={theme.textMuted}
+                  />
+                  {searchQuery ? (
+                    <Pressable onPress={() => setSearchQuery('')}>
+                      <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+
+                {/* Category Chips */}
+                {categories.length > 0 && (
+                  <View style={styles.chipsWrapper}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContainer}>
+                      <Pressable
+                        style={[
+                          styles.chip,
+                          {
+                            borderColor: theme.border,
+                            backgroundColor: !selectedCategory ? theme.primary : theme.backgroundElement
+                          }
+                        ]}
+                        onPress={() => setSelectedCategory(null)}
+                      >
+                        <Text style={[styles.chipText, { color: !selectedCategory ? '#fff' : theme.textSecondary }]}>
+                          All
+                        </Text>
+                      </Pressable>
+                      {categories.map(cat => (
+                        <Pressable
+                          key={cat}
+                          style={[
+                            styles.chip,
+                            {
+                              borderColor: theme.border,
+                              backgroundColor: selectedCategory === cat ? theme.primary : theme.backgroundElement
+                            }
+                          ]}
+                          onPress={() => setSelectedCategory(cat)}
+                        >
+                          <Text style={[styles.chipText, { color: selectedCategory === cat ? '#fff' : theme.textSecondary }]}>
+                            {cat}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {/* Task List */}
+                {loadingTasks ? (
+                  <ActivityIndicator style={{ marginTop: 32 }} color={theme.textSecondary} />
+                ) : filteredTasks.length === 0 ? (
+                  <View style={styles.empty}>
+                    <Ionicons name="flash-off-outline" size={40} color={theme.textMuted} />
+                    <Text style={[styles.emptyText, { color: theme.textMuted }]}>
+                      {searchQuery || selectedCategory ? 'No matching tasks' : 'No AI Tasks found'}
+                    </Text>
+                  </View>
+                ) : (
+                  <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 20 }}>
+                    {filteredTasks.map(task => (
+                      <AITaskCard
+                        key={task.name}
+                        task={task}
+                        onPress={() => {
+                          setActiveTask(task);
+                          setExecutionError('');
+                        }}
+                      />
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+
         {activeTab === 'info' && (
           <ScrollView style={{ padding: 16 }}>
             <View style={[styles.infoCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
@@ -210,4 +402,38 @@ const styles = StyleSheet.create({
   infoLabel: { fontSize: 12, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 12 },
   infoVal: { fontSize: 14, fontWeight: '500', marginTop: 4 },
   divider: { height: 1, marginTop: 12 },
+  // AI Tasks styles
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    margin: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
+  },
+  chipsWrapper: {
+    marginBottom: 8,
+  },
+  chipsContainer: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
 });

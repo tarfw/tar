@@ -1,4 +1,13 @@
 import { DurableObject } from 'cloudflare:workers';
+import { SCHEMA_STATEMENTS } from './lib/schema';
+import {
+  executeDoCreate,
+  executeDoRead,
+  executeDoUpdate,
+  executeDoDelete,
+  executeDoLink,
+  executeDoSearch
+} from './lib/do-sql';
 
 export interface Env {
   STOREFRONT_CACHE: KVNamespace;
@@ -25,9 +34,56 @@ interface Reservation {
  * Scope prefix: w:
  */
 export class Workspace extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    ctx.blockConcurrencyWhile(async () => {
+      for (const statement of SCHEMA_STATEMENTS) {
+        try {
+          this.ctx.storage.sql.exec(statement);
+        } catch (err) {
+          console.warn('[Workspace DO Schema Init] Error:', err);
+        }
+      }
+    });
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
+
+    if (path.startsWith('/tools/')) {
+      const toolName = path.replace('/tools/', '');
+      try {
+        const body = await request.json() as any;
+        let result: any;
+        const sqlExecutor = this.ctx.storage.sql;
+        switch (toolName) {
+          case 'create':
+            result = executeDoCreate(sqlExecutor, body);
+            break;
+          case 'read':
+            result = executeDoRead(sqlExecutor, body);
+            break;
+          case 'update':
+            result = executeDoUpdate(sqlExecutor, body);
+            break;
+          case 'delete':
+            result = executeDoDelete(sqlExecutor, body);
+            break;
+          case 'link':
+            result = executeDoLink(sqlExecutor, body);
+            break;
+          case 'search':
+            result = executeDoSearch(sqlExecutor, body);
+            break;
+          default:
+            return new Response(JSON.stringify({ error: `Unknown tool: ${toolName}` }), { status: 404 });
+        }
+        return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      }
+    }
 
     if (path === '/stock' && request.method === 'GET') {
       const allKeys = await this.ctx.storage.list();
@@ -125,9 +181,56 @@ export class Order extends DurableObject<Env> {
     'cancelled': [],
   };
 
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    ctx.blockConcurrencyWhile(async () => {
+      for (const statement of SCHEMA_STATEMENTS) {
+        try {
+          this.ctx.storage.sql.exec(statement);
+        } catch (err) {
+          console.warn('[Order DO Schema Init] Error:', err);
+        }
+      }
+    });
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
+
+    if (path.startsWith('/tools/')) {
+      const toolName = path.replace('/tools/', '');
+      try {
+        const body = await request.json() as any;
+        let result: any;
+        const sqlExecutor = this.ctx.storage.sql;
+        switch (toolName) {
+          case 'create':
+            result = executeDoCreate(sqlExecutor, body);
+            break;
+          case 'read':
+            result = executeDoRead(sqlExecutor, body);
+            break;
+          case 'update':
+            result = executeDoUpdate(sqlExecutor, body);
+            break;
+          case 'delete':
+            result = executeDoDelete(sqlExecutor, body);
+            break;
+          case 'link':
+            result = executeDoLink(sqlExecutor, body);
+            break;
+          case 'search':
+            result = executeDoSearch(sqlExecutor, body);
+            break;
+          default:
+            return new Response(JSON.stringify({ error: `Unknown tool: ${toolName}` }), { status: 404 });
+        }
+        return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      }
+    }
 
     // POST /create — create new order
     if (path === '/create' && request.method === 'POST') {

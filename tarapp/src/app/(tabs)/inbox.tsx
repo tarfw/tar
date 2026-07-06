@@ -1,5 +1,7 @@
-import { View, Text, ScrollView, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
+import { useRouter } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState, useEffect, useCallback } from 'react';
 import { tar } from '@/lib/tar';
 import { OrderCard } from '@/components/cards/OrderCard';
@@ -21,6 +23,7 @@ interface MotionEvent {
 
 export default function InboxScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const [motions, setMotions] = useState<MotionEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,7 +70,14 @@ export default function InboxScreen() {
       style={[styles.container, { backgroundColor: theme.background }]}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-      <Text style={[styles.header, { color: theme.text }]}>Inbox</Text>
+      <View style={styles.headerRow}>
+        <Text style={[styles.header, { color: theme.text }]}>Inbox</Text>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push("/settings")}>
+          <Ionicons name="settings-outline" size={24} color={theme.text} />
+        </TouchableOpacity>
+      </View>
 
       {motions.length === 0 ? (
         <View style={styles.empty}>

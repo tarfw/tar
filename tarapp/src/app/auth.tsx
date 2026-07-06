@@ -38,9 +38,18 @@ export default function AuthScreen() {
           await switchUser(user.id);
           setUserId(user.id);
           initUserSync(user.id);
-          const done = await SecureStore.getItemAsync(`onb_${user.id}`);
-          console.log(`[AUTH] ${ms()} — navigating to ${done ? '/(tabs)/inbox' : '/onboarding'}`);
-          router.replace(done ? '/(tabs)/inbox' : '/onboarding');
+          // Check if user has any workspaces in D1
+          try {
+            const res = await fetch(`${process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://taragent.tar-54d.workers.dev'}/workspaces`, {
+              headers: { 'X-User-Id': user.id },
+            });
+            const data = await res.json();
+            const hasWorkspaces = (data.workspaces || []).length > 0;
+            console.log(`[AUTH] ${ms()} — has workspaces: ${hasWorkspaces}`);
+            router.replace(hasWorkspaces ? '/(tabs)/inbox' : '/onboarding');
+          } catch {
+            router.replace('/(tabs)/inbox');
+          }
           return;
         }
         console.log(`[AUTH] ${ms()} — no user, trying silent sign-in...`);
@@ -52,9 +61,16 @@ export default function AuthScreen() {
           await switchUser(silent.id);
           setUserId(silent.id);
           initUserSync(silent.id);
-          const done = await SecureStore.getItemAsync(`onb_${silent.id}`);
-          console.log(`[AUTH] ${ms()} — navigating to ${done ? '/(tabs)/inbox' : '/onboarding'}`);
-          router.replace(done ? '/(tabs)/inbox' : '/onboarding');
+          try {
+            const res = await fetch(`${process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://taragent.tar-54d.workers.dev'}/workspaces`, {
+              headers: { 'X-User-Id': silent.id },
+            });
+            const data = await res.json();
+            const hasWorkspaces = (data.workspaces || []).length > 0;
+            router.replace(hasWorkspaces ? '/(tabs)/inbox' : '/onboarding');
+          } catch {
+            router.replace('/(tabs)/inbox');
+          }
         } else {
           console.log(`[AUTH] ${ms()} — no silent sign-in, staying on auth screen`);
         }
@@ -73,8 +89,16 @@ export default function AuthScreen() {
       await switchUser(user.id);
       setUserId(user.id);
       initUserSync(user.id);
-      const done = await SecureStore.getItemAsync(`onb_${user.id}`);
-      router.replace(done ? '/(tabs)/inbox' : '/onboarding');
+      try {
+        const res = await fetch(`${process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://taragent.tar-54d.workers.dev'}/workspaces`, {
+          headers: { 'X-User-Id': user.id },
+        });
+        const data = await res.json();
+        const hasWorkspaces = (data.workspaces || []).length > 0;
+        router.replace(hasWorkspaces ? '/(tabs)/inbox' : '/onboarding');
+      } catch {
+        router.replace('/(tabs)/inbox');
+      }
     } catch (e: any) {
       console.warn('[Auth] Google sign-in failed:', e.message);
     } finally {

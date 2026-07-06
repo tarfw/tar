@@ -7,6 +7,8 @@ import { ChatAutocomplete } from '@/components/ChatAutocomplete';
 import { ActionCard } from '@/components/ActionCard';
 import { useLLM, models } from 'react-native-executorch';
 import { isHammerCached, isLfmCached } from '@/lib/hammer';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -22,7 +24,9 @@ interface Memory {
 }
 
 export default function ChatScreen() {
+  const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -163,9 +167,14 @@ export default function ChatScreen() {
       style={[styles.container, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={90}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <View style={styles.headerRow}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Chat</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Pressable onPress={() => router.back()} style={{ paddingRight: 4 }}>
+              <Ionicons name="arrow-back" size={24} color={theme.text} />
+            </Pressable>
+            <Text style={[styles.headerTitle, { color: theme.text }]}>Chat</Text>
+          </View>
           
           <View style={[styles.selectorContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
             <Pressable
@@ -306,7 +315,7 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingTop: 60, paddingHorizontal: 16, paddingBottom: 12 },
+  header: { paddingHorizontal: 16, paddingBottom: 12 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerTitle: { fontSize: 32, fontWeight: '800' },
   selectorContainer: { flexDirection: 'row', borderRadius: 20, borderWidth: 1, padding: 2, alignItems: 'center' },

@@ -2,6 +2,7 @@ import { StyleSheet, View, Text, Pressable, TextInput, ActivityIndicator, Scroll
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
@@ -49,6 +50,12 @@ export default function OnboardingScreen() {
         template: selectedVertical,
         subdomain,
       });
+
+      // Mark onboarding as done
+      const userId = await SecureStore.getItemAsync('google_auth_user').then(u => u ? JSON.parse(u).id : null).catch(() => null);
+      if (userId) {
+        await SecureStore.setItemAsync(`onb_${userId}`, 'true');
+      }
 
       setCreated({ scope: result.scope, subdomain });
       setStep(3);

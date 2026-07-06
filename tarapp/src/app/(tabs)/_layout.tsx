@@ -26,14 +26,6 @@ export default function TabLayout() {
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="workspaces">
-        <NativeTabs.Trigger.Label>Workspaces</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          sf={{ default: 'briefcase', selected: 'briefcase.fill' }}
-          md={{ default: 'work_outline', selected: 'work' }}
-        />
-      </NativeTabs.Trigger>
-
       <NativeTabs.Trigger name="inbox">
         <NativeTabs.Trigger.Label>Inbox</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
@@ -42,21 +34,17 @@ export default function TabLayout() {
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="chat">
-        <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="workspaces">
+        <NativeTabs.Trigger.Label>Workspaces</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          sf={{ default: 'message', selected: 'message.fill' }}
-          md={{ default: 'chat_bubble_outline', selected: 'chat_bubble' }}
+          sf={{ default: 'briefcase', selected: 'briefcase.fill' }}
+          md={{ default: 'work_outline', selected: 'work' }}
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="settings">
-        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          sf={{ default: 'gearshape', selected: 'gearshape.fill' }}
-          md={{ default: 'settings', selected: 'settings' }}
-        />
-      </NativeTabs.Trigger>
+
+
+
       
     </NativeTabs>
   );

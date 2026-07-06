@@ -7,8 +7,9 @@ import { getUserTimeline } from './lib/inbox';
 import { executeRead, executeCreate, executeUpdate, executeDelete } from './lib/helpers';
 import { handleChannelMessage, sendChannelMessage, getChannelConfig } from './channels';
 import { listTemplates, getTemplate, installTemplate, searchTemplates } from './marketplace/templates';
+import { getSkillsForVertical } from './lib/skills';
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
-import { uploadOkfFile, readOkfFile, readOkfIndex, deleteOkfFile, initWorkspaceFromVertical } from './lib/okf';
+import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspaceFromVertical, uploadVerticalFile, readVerticalFile, listWorkspaceModules } from './lib/okf';
 import { handleWebSocketUpgrade, pushMotionEvent } from './lib/websocket';
 import { getOrCreateUserDb } from './lib/user-db';
 
@@ -39,11 +40,12 @@ app.use('*', async (c, next) => {
 app.get('/workspaces', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
   const result = await c.env.DB.prepare(
-    'SELECT subdomain, scope, user_id FROM workspaces WHERE user_id = ?'
+    'SELECT subdomain, scope, user_id, vertical FROM workspaces WHERE user_id = ?'
   ).bind(userId).all();
   const workspaces = (result.results || []).map((r: any) => ({
     scope: r.scope,
     subdomain: r.subdomain,
+    vertical: r.vertical || 'restaurant',
     role: r.user_id === userId ? 'owner' : 'member',
   }));
   return c.json({ workspaces });
@@ -53,19 +55,20 @@ app.get('/workspaces', async (c) => {
 app.post('/workspaces/create', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
   const body = await c.req.json();
-  const { name, template, subdomain } = body || {};
+  const { name, template, subdomain, vertical } = body || {};
 
   if (!name || !template || !subdomain) {
     return c.json({ error: 'Missing name, template, or subdomain' }, 400);
   }
 
   const scope = `w:${subdomain}`;
+  const vert = vertical || template; // template = vertical type for now
 
   try {
-    // 1. Insert workspace into D1
+    // 1. Insert workspace into D1 with vertical type
     await c.env.DB.prepare(
-      'INSERT OR IGNORE INTO workspaces (subdomain, scope, user_id) VALUES (?, ?, ?)'
-    ).bind(subdomain, scope, userId).run();
+      'INSERT OR IGNORE INTO workspaces (subdomain, scope, user_id, vertical) VALUES (?, ?, ?, ?)'
+    ).bind(subdomain, scope, userId, vert).run();
 
     // 2. Link user as owner via graph (optional — needs Turso)
     try {
@@ -79,11 +82,14 @@ app.post('/workspaces/create', async (c) => {
       console.warn('[workspaces] Graph link skipped (Turso not configured):', graphErr);
     }
 
-    // 3. Initialize workspace OKF structure
+    // 3. Copy vertical SKILL.md files to workspace S3
+    let okfResult = 'skipped';
     try {
-      await initWorkspaceFromVertical(c.env, scope, name, template, []);
-    } catch (okfErr) {
-      console.warn('[workspaces] OKF init skipped (S3 not configured):', okfErr);
+      await initWorkspaceFromVertical(c.env, scope, name, vert);
+      okfResult = 'done';
+    } catch (okfErr: any) {
+      okfResult = `error: ${okfErr.message}`;
+      console.warn('[workspaces] OKF init error:', okfErr);
     }
 
     // 4. Create WorkspaceDO instance (optional — needs DO binding)
@@ -93,13 +99,13 @@ app.post('/workspaces/create', async (c) => {
       await stub.fetch('https://internal/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scope, name, template }),
+        body: JSON.stringify({ scope, name, vertical: vert }),
       });
     } catch (doErr) {
       console.warn('[workspaces] DO warm-up skipped:', doErr);
     }
 
-    return c.json({ scope, subdomain, name, template });
+    return c.json({ scope, subdomain, name, vertical: vert, okf: okfResult });
   } catch (e: any) {
     console.error('[workspaces] Create failed:', e.message);
     return c.json({ error: e.message }, 500);
@@ -193,22 +199,6 @@ app.post('/tools/:name', async (c) => {
   }
 });
 
-// ============================================================
-// Timeline Route
-// ============================================================
-
-// GET /timeline
-app.get('/timeline', async (c) => {
-  const userId = c.req.header('X-User-Id') || 'guest';
-  const limit = parseInt(c.req.query('limit') || '50');
-  try {
-    const result = await getUserTimeline(c.env.DB, userId, limit);
-    return c.json({ motions: result });
-  } catch (e: any) {
-    // Return empty if Turso not configured
-    return c.json({ motions: [] });
-  }
-});
 
 // ============================================================
 // Document Routes (Railway S3)
@@ -275,7 +265,7 @@ app.post('/okf/upload', async (c) => {
     return c.json({ error: 'Missing scope, path, or content' }, 400);
   }
   try {
-    const result = await uploadOkfFile(c.env, body.scope, body.path, body.content);
+    const result = await uploadWorkspaceFile(c.env, body.scope, body.path, body.content);
     return c.json({ ok: true, ...result });
   } catch (e: any) {
     return c.json({ error: e.message }, 400);
@@ -289,7 +279,7 @@ app.post('/okf/edit', async (c) => {
     return c.json({ error: 'Missing scope, path, or content' }, 400);
   }
   try {
-    const result = await uploadOkfFile(c.env, body.scope, body.path, body.content);
+    const result = await uploadWorkspaceFile(c.env, body.scope, body.path, body.content);
     return c.json({ ok: true, ...result });
   } catch (e: any) {
     return c.json({ error: e.message }, 400);
@@ -301,7 +291,7 @@ app.get('/okf/read', async (c) => {
   const scope = c.req.query('scope');
   const path = c.req.query('path');
   if (!scope || !path) return c.json({ error: 'Missing scope or path' }, 400);
-  const content = await readOkfFile(c.env, scope, path);
+  const content = await readWorkspaceFile(c.env, scope, path);
   if (content === null) return c.json({ error: 'File not found' }, 404);
   return c.json({ content });
 });
@@ -310,7 +300,7 @@ app.get('/okf/read', async (c) => {
 app.get('/okf/index', async (c) => {
   const scope = c.req.query('scope');
   if (!scope) return c.json({ error: 'Missing scope' }, 400);
-  const content = await readOkfIndex(c.env, scope);
+  const content = await readWorkspaceIndex(c.env, scope);
   if (content === null) return c.json({ error: 'Index not found' }, 404);
   return c.json({ content });
 });
@@ -320,8 +310,31 @@ app.delete('/okf/file', async (c) => {
   const scope = c.req.query('scope');
   const path = c.req.query('path');
   if (!scope || !path) return c.json({ error: 'Missing scope or path' }, 400);
-  await deleteOkfFile(c.env, scope, path);
+  await deleteWorkspaceFile(c.env, scope, path);
   return c.json({ ok: true });
+});
+
+// ============================================================
+// Verticals Routes (global templates on S3)
+// ============================================================
+
+// POST /verticals/upload — upload vertical template file
+app.post('/verticals/upload', async (c) => {
+  const body = await c.req.json();
+  const { vertical, path, content } = body || {};
+  if (!vertical || !path || !content) return c.json({ error: 'Missing vertical, path, or content' }, 400);
+  const result = await uploadVerticalFile(c.env, vertical, path, content);
+  return c.json({ ok: true, ...result });
+});
+
+// GET /verticals/read — read vertical template file
+app.get('/verticals/read', async (c) => {
+  const vertical = c.req.query('vertical');
+  const path = c.req.query('path');
+  if (!vertical || !path) return c.json({ error: 'Missing vertical or path' }, 400);
+  const content = await readVerticalFile(c.env, vertical, path);
+  if (content === null) return c.json({ error: 'File not found' }, 404);
+  return c.json({ content });
 });
 
 // GET /memory/autocomplete — find matching action memories
@@ -346,8 +359,168 @@ app.get('/timeline', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
   const limit = parseInt(c.req.query('limit') || '50');
   const since = c.req.query('since');
-  const result = await getUserTimeline(userId, { limit, since });
-  return c.json(result);
+  try {
+    const result = await getUserTimeline(userId, { limit, since });
+    return c.json({ motions: result.rows });
+  } catch (e: any) {
+    return c.json({ motions: [] });
+  }
+});
+
+// ============================================================
+// Agent Routes
+// ============================================================
+
+const BASE_SYSTEM_PROMPT = `You are a business assistant for tarai. You help users manage their workspaces.
+
+AVAILABLE TOOLS (use these exact names):
+- create: create a new record. Params: table, type, title, value, qty, data, scope
+- read: query records. Params: table, type, scope, id
+- update: modify a record. Params: table, id, data
+- delete: remove a record. Params: table, id
+- link: create a relationship. Params: src, rel, tgt
+
+RULES:
+1. When user wants to DO something, respond with ONLY this JSON (no other text):
+{"action":"tool_call","tool":"create","table":"matter","type":"TYPE","title":"NAME","value":PRICE,"qty":QUANTITY,"data":{}}
+
+2. The "tool" field MUST be one of: create, read, update, delete, link. NOT action names like create_order.
+
+3. For questions, respond with plain text. For greetings, plain text.
+
+4. Be concise. One sentence answers when possible.`;
+
+// POST /agents/master/:sessionId — chat with agent
+app.post('/agents/master/:sessionId', async (c) => {
+  const sessionId = c.req.param('sessionId');
+  const userId = c.req.header('X-User-Id') || 'guest';
+  const body = await c.req.json();
+  const message = body?.message || '';
+  const scope = body?.scope || '';
+
+  if (!message.trim()) {
+    return c.json({ reply: 'Please send a message.' });
+  }
+
+  // Look up workspace to get vertical and scope
+  let vertical = 'restaurant';
+  let workspaceScope = scope;
+  if (workspaceScope) {
+    const ws = await c.env.DB.prepare(
+      'SELECT scope, vertical FROM workspaces WHERE scope = ?'
+    ).bind(workspaceScope).first();
+    if (ws) vertical = ws.vertical || 'restaurant';
+  } else {
+    const ws = await c.env.DB.prepare(
+      'SELECT scope, vertical FROM workspaces WHERE user_id = ? LIMIT 1'
+    ).bind(userId).first();
+    if (ws) {
+      workspaceScope = ws.scope;
+      vertical = ws.vertical || 'restaurant';
+    }
+  }
+
+  // Load SKILL.md from workspace's S3 files (not hardcoded)
+  let skillsContent = '';
+  if (workspaceScope) {
+    const modules = await listWorkspaceModules(c.env, workspaceScope);
+    const skillParts: string[] = [];
+    for (const mod of modules) {
+      const content = await readWorkspaceFile(c.env, workspaceScope, `${mod}.md`);
+      if (content) skillParts.push(content);
+    }
+    skillsContent = skillParts.join('\n\n');
+  }
+  // Fallback to hardcoded if S3 has nothing
+  if (!skillsContent) skillsContent = getSkillsForVertical(vertical);
+  const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n## Installed Skills\n${skillsContent}`;
+
+  const groqKey = c.env.GROQ_API_KEY;
+
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${groqKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+      }),
+    });
+
+    const data = await res.json() as any;
+    const reply = data?.choices?.[0]?.message?.content || 'Sorry, I could not process that.';
+
+    // Try to parse as tool call — strip code blocks if present
+    let toolCall = null;
+    try {
+      let cleanReply = reply.trim();
+      // Strip markdown code blocks
+      cleanReply = cleanReply.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '');
+      // Try direct JSON parse first
+      const parsed = JSON.parse(cleanReply);
+      if (parsed.action === 'tool_call' && parsed.tool) {
+        toolCall = parsed;
+      }
+    } catch {
+      // Try to extract JSON from text
+      try {
+        const jsonMatch = reply.match(/\{[\s\S]*"action"\s*:\s*"tool_call"[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.action === 'tool_call' && parsed.tool) {
+            toolCall = parsed;
+          }
+        }
+      } catch {}
+    }
+
+    // Execute tool call if present
+    let toolResult = null;
+    if (toolCall) {
+      const handler = TOOL_MAP[toolCall.tool];
+      if (handler) {
+        try {
+          toolResult = await handler({ ...toolCall.params, scope: toolCall.params.scope || 'global' });
+        } catch (e: any) {
+          toolResult = { error: e.message };
+        }
+      }
+    }
+
+    // Build friendly reply
+    let finalReply = reply;
+    if (toolCall) {
+      if (toolCall.tool === 'create' && toolCall.table === 'matter') {
+        finalReply = `Created ${toolCall.type || 'item'}: ${toolCall.title || 'done'}`;
+      } else if (toolCall.tool === 'read') {
+        finalReply = toolResult?.rows?.length
+          ? `Found ${toolResult.rows.length} items`
+          : 'No items found';
+      } else if (toolCall.tool === 'update') {
+        finalReply = 'Updated successfully';
+      } else {
+        finalReply = 'Done';
+      }
+    }
+
+    return c.json({
+      reply: finalReply,
+      sessionId,
+      toolCall,
+      toolResult,
+    });
+  } catch (e: any) {
+    console.error('[Agent] Error:', e.message);
+    return c.json({ reply: 'Something went wrong. Please try again.', error: e.message });
+  }
 });
 
 // ============================================================

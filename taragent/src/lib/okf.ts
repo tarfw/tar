@@ -1,173 +1,109 @@
 /**
  * OKF (Open Knowledge Format) file storage and integration.
- * Workspace OKF files stored in Railway S3.
+ * Workspace OKF files stored in Railway S3 (Tigris-backed).
+ *
+ * S3 structure:
+ *   verticals/{name}/index.md          — vertical template (global, read-only)
+ *   verticals/{name}/{module}.md       — vertical skill files
+ *   workspaces/{scope}/index.md        — workspace root (per-workspace, editable)
+ *   workspaces/{scope}/{module}.md     — workspace skill files (user-customizable)
  */
 
-interface OKFConfig {
-  endpoint: string;
-  bucket: string;
-  accessKey: string;
-  secretKey: string;
+import { s3Put, s3Get, s3Delete, s3List } from './s3-client';
+
+// S3 keys can't contain colons — replace with hyphens
+function s3Scope(scope: string): string {
+  return scope.replace(/:/g, '-');
 }
 
-function getConfig(env: any): OKFConfig {
-  return {
-    endpoint: env.RAILWAY_S3_ENDPOINT || 'https://s3.ap-south-1.amazonaws.com',
-    bucket: env.RAILWAY_S3_BUCKET || 'tarai-storage',
-    accessKey: env.RAILWAY_S3_ACCESS_KEY || '',
-    secretKey: env.RAILWAY_S3_SECRET_KEY || '',
-  };
-}
+// ── Write ──────────────────────────────────────────────────────────
 
-/**
- * Upload an OKF file to S3
- */
-export async function uploadOkfFile(
+export async function uploadWorkspaceFile(
   env: any,
   scope: string,
   path: string,
   content: string
-): Promise<{ s3Key: string; url: string }> {
-  const config = getConfig(env);
-  const s3Key = `workspaces/${scope}/${path}`;
-
-  const url = `${config.endpoint}/${config.bucket}/${s3Key}`;
-  const auth = btoa(`${config.accessKey}:${config.secretKey}`);
-
-  await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'text/markdown',
-      'Authorization': `Basic ${auth}`,
-    },
-    body: content,
-  });
-
-  // Update KV cache
-  // await env.STOREFRONT_CACHE.put(`okf:${scope}:${path}`, content, { expirationTtl: 300 });
-
-  return { s3Key, url };
+): Promise<{ s3Key: string }> {
+  const s3Key = `workspaces/${s3Scope(scope)}/${path}`;
+  await s3Put(env, s3Key, content);
+  return { s3Key };
 }
 
-/**
- * Read an OKF file from S3 (or KV cache)
- */
-export async function readOkfFile(
+export async function uploadVerticalFile(
   env: any,
-  scope: string,
-  path: string
-): Promise<string | null> {
-  const config = getConfig(env);
-  const s3Key = `workspaces/${scope}/${path}`;
-
-  // Try KV cache first
-  // const cached = await env.STOREFRONT_CACHE.get(`okf:${scope}:${path}`);
-  // if (cached) return cached;
-
-  const url = `${config.endpoint}/${config.bucket}/${s3Key}`;
-  const auth = btoa(`${config.accessKey}:${config.secretKey}`);
-
-  const res = await fetch(url, {
-    headers: { 'Authorization': `Basic ${auth}` },
-  });
-
-  if (!res.ok) return null;
-
-  const content = await res.text();
-  // Cache in KV
-  // await env.STOREFRONT_CACHE.put(`okf:${scope}:${path}`, content, { expirationTtl: 300 });
-  return content;
+  vertical: string,
+  path: string,
+  content: string
+): Promise<{ s3Key: string }> {
+  const s3Key = `verticals/${vertical}/${path}`;
+  await s3Put(env, s3Key, content);
+  return { s3Key };
 }
 
-/**
- * Read the root index.md for a workspace
- */
-export async function readOkfIndex(
-  env: any,
-  scope: string
-): Promise<string | null> {
-  return readOkfFile(env, scope, 'index.md');
+// ── Read ───────────────────────────────────────────────────────────
+
+export async function readWorkspaceFile(env: any, scope: string, path: string): Promise<string | null> {
+  return s3Get(env, `workspaces/${s3Scope(scope)}/${path}`);
 }
 
-/**
- * Delete an OKF file from S3
- */
-export async function deleteOkfFile(
-  env: any,
-  scope: string,
-  path: string
-): Promise<boolean> {
-  const config = getConfig(env);
-  const s3Key = `workspaces/${scope}/${path}`;
-
-  const url = `${config.endpoint}/${config.bucket}/${s3Key}`;
-  const auth = btoa(`${config.accessKey}:${config.secretKey}`);
-
-  const res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': `Basic ${auth}` } });
-  return res.ok;
+export async function readWorkspaceIndex(env: any, scope: string): Promise<string | null> {
+  return readWorkspaceFile(env, scope, 'index.md');
 }
 
-/**
- * Copy vertical template OKF files to a new workspace.
- * verticalFiles: array of {path, content} from the vertical template.
- */
-export async function copyVerticalToWorkspace(
-  env: any,
-  scope: string,
-  verticalFiles: Array<{ path: string; content: string }>
-): Promise<void> {
-  for (const file of verticalFiles) {
-    await uploadOkfFile(env, scope, file.path, file.content);
-  }
+export async function readVerticalFile(env: any, vertical: string, path: string): Promise<string | null> {
+  return s3Get(env, `verticals/${vertical}/${path}`);
 }
 
-/**
- * List all files in a workspace OKF folder.
- * Uses S3 list-like approach via index.md parsing.
- */
-export async function listWorkspaceModules(
-  env: any,
-  scope: string
-): Promise<string[]> {
-  const indexContent = await readOkfIndex(env, scope);
-  if (!indexContent) return [];
-
-  const modules: string[] = [];
-  const lines = indexContent.split('\n');
-  for (const line of lines) {
-    const match = line.match(/\[([^\]]+)\]\(.*modules\/([^/]+)\//);
-    if (match) modules.push(match[2]);
-  }
-  return modules;
+export async function readVerticalIndex(env: any, vertical: string): Promise<string | null> {
+  return readVerticalFile(env, vertical, 'index.md');
 }
 
-/**
- * Initialize workspace OKF from a vertical template (stored locally in the Worker).
- * For now, creates a basic structure. Vertical files will be deployed separately.
- */
+// ── Delete ─────────────────────────────────────────────────────────
+
+export async function deleteWorkspaceFile(env: any, scope: string, path: string): Promise<boolean> {
+  return s3Delete(env, `workspaces/${s3Scope(scope)}/${path}`);
+}
+
+// ── List ───────────────────────────────────────────────────────────
+
+export async function listWorkspaceModules(env: any, scope: string): Promise<string[]> {
+  const keys = await s3List(env, `workspaces/${s3Scope(scope)}/`);
+  return keys
+    .map(k => k.split('/').pop()!)
+    .filter(name => name.endsWith('.md') && name !== 'index.md')
+    .map(name => name.replace('.md', ''));
+}
+
+export async function listVerticalModules(env: any, vertical: string): Promise<string[]> {
+  const keys = await s3List(env, `verticals/${vertical}/`);
+  return keys
+    .map(k => k.split('/').pop()!)
+    .filter(name => name.endsWith('.md') && name !== 'index.md')
+    .map(name => name.replace('.md', ''));
+}
+
+// ── Init workspace from vertical ───────────────────────────────────
+
 export async function initWorkspaceFromVertical(
   env: any,
   scope: string,
   workspaceName: string,
   vertical: string,
-  modules: string[]
+  modules?: string[]
 ): Promise<void> {
-  // Build index.md listing installed modules
-  const moduleLinks = modules
-    .map((m) => `- [${m}](./modules/${m}/SKILL.md)`)
-    .join('\n');
+  // Auto-detect modules from vertical template if not provided
+  const mods = modules?.length ? modules : await listVerticalModules(env, vertical);
 
-  const rootIndex = `# ${workspaceName}
+  // 1. Create workspace index.md
+  const moduleLinks = mods.map(m => `- [${m}](./${m}.md)`).join('\n');
+  const rootIndex = `# ${workspaceName}\n\n**Vertical:** ${vertical}\n**Modules:** ${mods.join(', ')}\n\n## Modules\n${moduleLinks}\n`;
+  await uploadWorkspaceFile(env, scope, 'index.md', rootIndex);
 
-**Vertical:** ${vertical}
-**Modules:** ${modules.join(', ')}
-
-## Modules
-${moduleLinks}
-`;
-
-  await uploadOkfFile(env, scope, 'index.md', rootIndex);
-
-  // Each module SKILL.md will be uploaded by the calling code
-  // (vertical template files are read from the local filesystem or S3 /verticals/ path)
+  // 2. Copy each module from vertical template to workspace
+  for (const mod of mods) {
+    const content = await readVerticalFile(env, vertical, `${mod}.md`);
+    if (content) {
+      await uploadWorkspaceFile(env, scope, `${mod}.md`, content);
+    }
+  }
 }

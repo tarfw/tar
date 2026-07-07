@@ -1,14 +1,16 @@
 /**
  * Database layer for taragent (CF Worker).
  * Uses @libsql/client HTTP transport to Turso.
- * Inside Durable Objects: uses getCloudflareContext() from Flue AsyncLocalStorage.
- * On main Worker thread: uses initClient() called by Hono middleware.
+ * Supports concurrent requests to different workspace DBs via AsyncLocalStorage context.
  */
 
 import { createClient, type ResultSet } from '@libsql/client';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { SCHEMA_STATEMENTS } from './schema';
 
-let client: ReturnType<typeof createClient> | null = null;
+export const dbContext = new AsyncLocalStorage<{ url: string; token: string }>();
+
+const clientCache = new Map<string, ReturnType<typeof createClient>>();
 let storedUrl = '';
 let storedToken = '';
 
@@ -22,10 +24,9 @@ function toRows(rs: ResultSet) {
 }
 
 async function getClient() {
-  if (client) return client;
-
-  let url = storedUrl;
-  let token = storedToken;
+  const store = dbContext.getStore();
+  let url = store?.url || storedUrl;
+  let token = store?.token || storedToken;
 
   if (!url) {
     try {
@@ -37,8 +38,13 @@ async function getClient() {
   }
 
   if (!url) throw new Error('TURSO_DATABASE_URL not configured');
-  client = createClient({ url, authToken: token });
-  return client;
+
+  let cachedClient = clientCache.get(url);
+  if (!cachedClient) {
+    cachedClient = createClient({ url, authToken: token });
+    clientCache.set(url, cachedClient);
+  }
+  return cachedClient;
 }
 
 export async function dbGet(sql: string, args: any[] = []): Promise<any | null> {
@@ -58,4 +64,16 @@ export async function ensureSchema(): Promise<void> {
   for (const sql of SCHEMA_STATEMENTS) {
     try { await dbRun(sql); } catch {}
   }
+}
+
+/**
+ * Returns a custom client for executing queries against a specific workspace URL and token.
+ */
+export function getWorkspaceClient(env: any, url: string, token: string) {
+  let cachedClient = clientCache.get(url);
+  if (!cachedClient) {
+    cachedClient = createClient({ url, authToken: token });
+    clientCache.set(url, cachedClient);
+  }
+  return cachedClient;
 }

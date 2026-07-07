@@ -94,8 +94,8 @@ export default function OnboardingScreen() {
         <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
           <Pressable
             style={[styles.button, { backgroundColor: theme.primary }]}
-            onPress={() => router.replace('/(tabs)/explore')}>
-            <Text style={[styles.buttonText, { color: '#fff' }]}>Go to Explore</Text>
+            onPress={() => router.replace('/(tabs)/workspaces')}>
+            <Text style={[styles.buttonText, { color: '#fff' }]}>Go to Workspaces</Text>
           </Pressable>
         </View>
       </View>
@@ -110,24 +110,29 @@ export default function OnboardingScreen() {
         {step === 1 ? (
           <>
             <Text style={[styles.subtitle, { color: theme.text }]}>What do you do?</Text>
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 8, paddingTop: 8 }}>
-              {VERTICAL_OPTIONS.map((v) => (
-                <Pressable
-                  key={v.key}
-                  style={[
-                    styles.verticalOption,
-                    {
-                      backgroundColor: selectedVertical === v.key ? theme.primary + '20' : theme.backgroundElement,
-                      borderColor: selectedVertical === v.key ? theme.primary : theme.border,
-                    },
-                  ]}
-                  onPress={() => setSelectedVertical(v.key)}>
-                  <Ionicons name={v.icon as any} size={22} color={selectedVertical === v.key ? theme.primary : theme.textMuted} />
-                  <Text style={[styles.verticalLabel, { color: selectedVertical === v.key ? theme.primary : theme.text }]}>
-                    {v.label}
-                  </Text>
-                </Pressable>
-              ))}
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 8 }} showsVerticalScrollIndicator={false}>
+              {VERTICAL_OPTIONS.map((v) => {
+                const isSelected = selectedVertical === v.key;
+                return (
+                  <Pressable
+                    key={v.key}
+                    style={[
+                      styles.verticalOption,
+                      {
+                        borderBottomColor: theme.border,
+                      },
+                    ]}
+                    onPress={() => setSelectedVertical(v.key)}>
+                    <Ionicons name={v.icon as any} size={20} color={isSelected ? theme.primary : theme.textMuted} />
+                    <Text style={[styles.verticalLabel, { color: isSelected ? theme.primary : theme.text }]}>
+                      {v.label}
+                    </Text>
+                    {isSelected && (
+                      <Ionicons name="checkmark" size={20} color={theme.primary} />
+                    )}
+                  </Pressable>
+                );
+              })}
             </ScrollView>
           </>
         ) : (
@@ -194,10 +199,13 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
   input: { paddingVertical: 14, paddingHorizontal: 18, borderRadius: 12, fontSize: 16, borderWidth: 1 },
   verticalOption: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 14, borderRadius: 12, borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 18,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  verticalLabel: { fontSize: 15, fontWeight: '500' },
+  verticalLabel: { fontSize: 16, fontWeight: '500', flex: 1 },
   moduleList: { gap: 6 },
   moduleChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, alignSelf: 'flex-start' },
   moduleChipText: { fontSize: 13, fontWeight: '600' },

@@ -13,7 +13,10 @@
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",
     "@cloudflare/vite-plugin": "^1.42.3",
+    "@cloudflare/workers-types": "^4.20260702.1",
     "@flue/cli": "^1.0.0-beta.7",
+    "@types/node": "^26.1.0",
+    "typescript": "^6.0.3",
     "wrangler": "^4.105.0"
   },
   "dependencies": {

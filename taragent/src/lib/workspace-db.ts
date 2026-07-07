@@ -1,12 +1,10 @@
 /**
- * Manages per-user Turso databases.
+ * Manages per-workspace Turso databases.
  *
- * Each user gets their own Turso DB for workspace data that syncs
- * with the mobile app via embedded replicas.
- *
+ * Each workspace gets its own Turso DB for operational data (products, stock, orders).
  * Uses the Turso Platform API to create databases and tokens.
- * Stores the mapping in D1 (users table).
- * Applies schema on creation so remote DB has tables.
+ * Stores mappings in D1 (workspaces table).
+ * Applies schema on creation.
  */
 
 import { SCHEMA_STATEMENTS } from './schema';
@@ -14,36 +12,46 @@ import { SCHEMA_STATEMENTS } from './schema';
 const TURSO_API = 'https://api.turso.tech/v1/organizations';
 const ORG_SLUG = 'tarapp';
 
-interface UserDbRecord {
-  user_id: string;
-  turso_db_name: string;
-  turso_url: string;
-  turso_auth_token: string;
+interface WorkspaceDbRecord {
+  subdomain: string;
+  scope: string;
+  vertical: string;
+  turso_url?: string;
+  turso_auth_token?: string;
 }
 
 /**
- * Get or create a per-user Turso database.
- * Returns { url, authToken } for the user's DB.
+ * Get or create a per-workspace Turso database.
+ * Returns { url, authToken } for the workspace DB.
  */
-export async function getOrCreateUserDb(
+export async function getOrCreateWorkspaceDb(
   db: D1Database,
-  userId: string,
-  platformToken: string,
+  subdomain: string,
+  scope: string,
+  platformToken: string
 ): Promise<{ url: string; authToken: string }> {
+  // 0. Ensure schema columns exist in D1 workspaces table
+  try {
+    await db.prepare('ALTER TABLE workspaces ADD COLUMN turso_url TEXT').run();
+  } catch {}
+  try {
+    await db.prepare('ALTER TABLE workspaces ADD COLUMN turso_auth_token TEXT').run();
+  } catch {}
+
   // 1. Check D1 cache
   const existing = await db
-    .prepare('SELECT turso_db_name, turso_url, turso_auth_token FROM users WHERE user_id = ?')
-    .bind(userId)
-    .first<UserDbRecord>();
+    .prepare('SELECT subdomain, scope, turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?')
+    .bind(subdomain)
+    .first<WorkspaceDbRecord>();
 
-  if (existing) {
-    console.log(`[user-db] Found cached DB for ${userId}: ${existing.turso_db_name}`);
+  if (existing?.turso_url && existing?.turso_auth_token) {
+    console.log(`[workspace-db] Found cached DB for ${subdomain}: ${existing.turso_url}`);
     return { url: existing.turso_url, authToken: existing.turso_auth_token };
   }
 
-  // 2. Create new Turso database
-  const dbName = userId.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
-  console.log(`[user-db] Creating Turso DB: ${dbName}`);
+  // 2. Create new Turso database in default group
+  const dbName = `ws-${subdomain.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-')}`;
+  console.log(`[workspace-db] Creating Turso DB: ${dbName}`);
 
   const createRes = await fetch(`${TURSO_API}/${ORG_SLUG}/databases`, {
     method: 'POST',
@@ -55,13 +63,13 @@ export async function getOrCreateUserDb(
   });
 
   const createBody = await createRes.text();
-  console.log(`[user-db] Create response: ${createRes.status} ${createBody}`);
+  console.log(`[workspace-db] Create response: ${createRes.status} ${createBody}`);
 
   if (!createRes.ok && createRes.status !== 409) {
     throw new Error(`Failed to create Turso DB: ${createRes.status} ${createBody}`);
   }
 
-  // 3. Get hostname — from API response or construct it
+  // 3. Get hostname from API response or fallback
   let hostname = '';
   if (createRes.ok) {
     try {
@@ -70,7 +78,6 @@ export async function getOrCreateUserDb(
     } catch {}
   }
   if (!hostname) {
-    // Fallback: construct from DB name
     hostname = `${dbName}-${ORG_SLUG}.aws-eu-west-1.turso.io`;
   }
 
@@ -78,7 +85,7 @@ export async function getOrCreateUserDb(
     ? `libsql://${hostname}`
     : `libsql://${hostname}.turso.io`;
 
-  console.log(`[user-db] Turso URL: ${tursoUrl}`);
+  console.log(`[workspace-db] Turso URL: ${tursoUrl}`);
 
   // 4. Create auth token
   const tokenRes = await fetch(`${TURSO_API}/${ORG_SLUG}/databases/${dbName}/auth/tokens`, {
@@ -87,11 +94,11 @@ export async function getOrCreateUserDb(
       'Authorization': `Bearer ${platformToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ expiration: '90d' }),
+    body: JSON.stringify({ expiration: '365d' }),
   });
 
   const tokenBody = await tokenRes.text();
-  console.log(`[user-db] Token response: ${tokenRes.status} ${tokenBody.slice(0, 100)}`);
+  console.log(`[workspace-db] Token response: ${tokenRes.status}`);
 
   if (!tokenRes.ok) {
     throw new Error(`Failed to create Turso token: ${tokenRes.status} ${tokenBody}`);
@@ -107,20 +114,21 @@ export async function getOrCreateUserDb(
     throw new Error('No token returned from Turso API');
   }
 
-  // 5. Store in D1
+  // 5. Update workspaces table in D1
   await db
     .prepare(
-      'INSERT OR REPLACE INTO users (user_id, turso_db_name, turso_url, turso_auth_token) VALUES (?, ?, ?, ?)'
+      'UPDATE workspaces SET turso_url = ?, turso_auth_token = ? WHERE subdomain = ?'
     )
-    .bind(userId, dbName, tursoUrl, authToken)
+    .bind(tursoUrl, authToken, subdomain)
     .run();
 
-  console.log(`[user-db] Stored in D1: ${userId} → ${dbName}`);
+  console.log(`[workspace-db] Stored in D1: ${subdomain} → ${tursoUrl}`);
 
-  // 6. Apply schema via Turso HTTP API (with retry — new DBs need a moment)
+  // 6. Apply schema statements to the new database
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const pipelineUrl = `https://${hostname}/v2/pipeline`;
+      const cleanHostname = hostname.replace('libsql://', '').replace('.turso.io', '') + '.turso.io';
+      const pipelineUrl = `https://${cleanHostname}/v2/pipeline`;
       const statements = SCHEMA_STATEMENTS.map(sql => ({
         type: 'execute',
         stmt: { sql },
@@ -134,11 +142,11 @@ export async function getOrCreateUserDb(
         body: JSON.stringify({ requests: statements }),
       });
       const pipeBody = await pipeRes.text();
-      console.log(`[user-db] Schema pipeline attempt ${attempt}: ${pipeRes.status} ${pipeBody.slice(0, 200)}`);
+      console.log(`[workspace-db] Schema pipeline attempt ${attempt}: ${pipeRes.status}`);
       if (pipeRes.ok) break;
       if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
     } catch (schemaErr) {
-      console.warn(`[user-db] Schema attempt ${attempt} failed:`, schemaErr);
+      console.warn(`[workspace-db] Schema attempt ${attempt} failed:`, schemaErr);
       if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
     }
   }

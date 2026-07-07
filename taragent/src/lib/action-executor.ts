@@ -1,6 +1,8 @@
 import { executeCreate, executeRead, executeUpdate, executeDelete } from './helpers';
-import { listWorkspaceModules, readWorkspaceFile, listVerticalModules, readVerticalFile } from './okf';
+import { listWorkspaceModules, readWorkspaceFile, listVerticalModules, readVerticalFile, readWithFallback } from './okf';
 import { parseSkillMarkdown, ParsedAction, ActionStep } from './skill-parser';
+import { dbContext } from './db';
+import { getOrCreateWorkspaceDb } from './workspace-db';
 
 export interface AITaskResult {
   success: boolean;
@@ -15,11 +17,11 @@ export interface AITaskResult {
 }
 
 const TOOL_FUNCTIONS: Record<string, Function> = {
-  create: executeCreate,
-  read: executeRead,
-  update: executeUpdate,
-  delete: executeDelete,
-  link: executeCreate,
+  create: executeCreate as any,
+  read: executeRead as any,
+  update: executeUpdate as any,
+  delete: executeDelete as any,
+  link: executeCreate as any,
 };
 
 function stripQuotes(str: string): string {
@@ -246,91 +248,65 @@ async function executeSingleStep(
   }
 
   const handler = TOOL_FUNCTIONS[step.tool];
-  let result;
-  
-  try {
-    if (scope && scope.startsWith('w:')) {
-      const workspaceId = scope.replace('w:', '');
-      const stubId = env.WORKSPACE.idFromName(workspaceId);
-      const stub = env.WORKSPACE.get(stubId);
-      let toolInput = substitutedArgs;
-      if (step.tool === 'link') {
-        toolInput = { ...substitutedArgs, table: 'graph' };
-      } else if (step.tool === 'update') {
-        const table = substitutedArgs.table;
-        const id = substitutedArgs.id;
-        const s = substitutedArgs.scope || scope;
-        const type = substitutedArgs.type;
-        const patch: Record<string, any> = {};
-        for (const [k, v] of Object.entries(substitutedArgs)) {
-          if (k !== 'table' && k !== 'id' && k !== 'scope' && k !== 'type') {
-            patch[k] = v;
-          }
+  if (!handler) {
+    return { error: `Unsupported tool: ${step.tool}` };
+  }
+
+  let dbUrl = '';
+  let dbToken = '';
+
+  if (env.DB && scope) {
+    const subdomain = scope.startsWith('w:')
+      ? scope.replace('w:', '')
+      : scope.startsWith('o:')
+      ? scope.replace('o:', '').split('_')[0]
+      : scope;
+
+    try {
+      const ws = await env.DB.prepare(
+        'SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
+      ).bind(subdomain).first();
+
+      if (ws?.turso_url && ws?.turso_auth_token) {
+        dbUrl = ws.turso_url;
+        dbToken = ws.turso_auth_token;
+      } else if (env.TURSO_PLATFORM_TOKEN) {
+        const credentials = await getOrCreateWorkspaceDb(env.DB, subdomain, `w:${subdomain}`, env.TURSO_PLATFORM_TOKEN);
+        dbUrl = credentials.url;
+        dbToken = credentials.authToken;
+      }
+    } catch (err) {
+      console.warn('[executor] Failed to resolve Turso workspace DB credentials:', err);
+    }
+  }
+
+  const executeFn = async () => {
+    if (step.tool === 'link') {
+      substitutedArgs.table = 'graph';
+      return executeCreate(substitutedArgs as any);
+    } else if (step.tool === 'update') {
+      const table = substitutedArgs.table;
+      const id = substitutedArgs.id;
+      const s = substitutedArgs.scope || scope;
+      const type = substitutedArgs.type;
+      const patch: Record<string, any> = {};
+      for (const [k, v] of Object.entries(substitutedArgs)) {
+        if (k !== 'table' && k !== 'id' && k !== 'scope' && k !== 'type') {
+          patch[k] = v;
         }
-        toolInput = { table, id, scope: s, type, patch };
       }
-      
-      const res = await stub.fetch(`http://do/tools/${step.tool}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(toolInput),
-      });
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-      result = await res.json();
-    } else if (scope && scope.startsWith('o:')) {
-      const orderId = scope.replace('o:', '');
-      const stubId = env.ORDER.idFromName(orderId);
-      const stub = env.ORDER.get(stubId);
-      let toolInput = substitutedArgs;
-      if (step.tool === 'link') {
-        toolInput = { ...substitutedArgs, table: 'graph' };
-      } else if (step.tool === 'update') {
-        const table = substitutedArgs.table;
-        const id = substitutedArgs.id;
-        const s = substitutedArgs.scope || scope;
-        const type = substitutedArgs.type;
-        const patch: Record<string, any> = {};
-        for (const [k, v] of Object.entries(substitutedArgs)) {
-          if (k !== 'table' && k !== 'id' && k !== 'scope' && k !== 'type') {
-            patch[k] = v;
-          }
-        }
-        toolInput = { table, id, scope: s, type, patch };
-      }
-      
-      const res = await stub.fetch(`http://do/tools/${step.tool}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(toolInput),
-      });
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-      result = await res.json();
+      return executeUpdate({ table, id, scope: s, type, patch });
     } else {
-      if (!handler) {
-        return { error: `Unsupported tool: ${step.tool}` };
-      }
-      if (step.tool === 'link') {
-        substitutedArgs.table = 'graph';
-        result = await executeCreate(substitutedArgs);
-      } else if (step.tool === 'update') {
-        const table = substitutedArgs.table;
-        const id = substitutedArgs.id;
-        const s = substitutedArgs.scope;
-        const type = substitutedArgs.type;
-        const patch: Record<string, any> = {};
-        for (const [k, v] of Object.entries(substitutedArgs)) {
-          if (k !== 'table' && k !== 'id' && k !== 'scope' && k !== 'type') {
-            patch[k] = v;
-          }
-        }
-        result = await executeUpdate({ table, id, scope: s, type, patch });
-      } else {
-        result = await handler(substitutedArgs);
-      }
+      return handler(substitutedArgs as any);
+    }
+  };
+
+  let result;
+  try {
+    if (dbUrl) {
+      result = await dbContext.run({ url: dbUrl, token: dbToken }, executeFn);
+    } else {
+      result = await executeFn();
     }
   } catch (err: any) {
     if (err.message?.includes('TURSO_DATABASE_URL')) {
@@ -366,6 +342,7 @@ async function executeSingleStep(
 
   return result;
 }
+
 
 export async function executeAITask(
   env: any,

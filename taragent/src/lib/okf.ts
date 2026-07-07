@@ -58,6 +58,17 @@ export async function readVerticalIndex(env: any, vertical: string): Promise<str
   return readVerticalFile(env, vertical, 'index.md');
 }
 
+export async function readWithFallback(
+  env: any,
+  scope: string,
+  path: string,
+  vertical: string
+): Promise<string | null> {
+  const wsContent = await readWorkspaceFile(env, scope, path);
+  if (wsContent !== null) return wsContent;
+  return readVerticalFile(env, vertical, path);
+}
+
 // ── Delete ─────────────────────────────────────────────────────────
 
 export async function deleteWorkspaceFile(env: any, scope: string, path: string): Promise<boolean> {
@@ -82,7 +93,53 @@ export async function listVerticalModules(env: any, vertical: string): Promise<s
     .map(name => name.replace('.md', ''));
 }
 
-// ── Init workspace from vertical ───────────────────────────────────
+async function personalizeModuleTemplate(
+  env: any,
+  moduleContent: string,
+  businessName: string,
+  businessType: string
+): Promise<string> {
+  const groqKey = env.GROQ_API_KEY;
+  if (!groqKey) return moduleContent;
+
+  try {
+    const prompt = `You are an AI that personalizes OKF (Open Knowledge Format) markdown skill files for businesses.
+Given this template skill markdown:
+---
+${moduleContent}
+---
+
+Personalize it for this business:
+Name: ${businessName}
+Type: ${businessType}
+
+Rules:
+1. Preserve all markdown structure, YAML frontmatter, action steps (like read/create/update), and tool calls exactly. Do not break syntax.
+2. In the headings, text, and descriptions, replace placeholders or generic business terms with "${businessName}" or specific details relevant to a ${businessType}.
+3. Return ONLY the personalized markdown content. Do not add any conversational chat wrappers.`;
+
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${groqKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
+        max_tokens: 2000,
+      }),
+    });
+
+    const data = await res.json() as any;
+    const personalized = data?.choices?.[0]?.message?.content || moduleContent;
+    return personalized.trim();
+  } catch (err) {
+    console.warn('[Personalizer] Failed to personalize module template:', err);
+    return moduleContent;
+  }
+}
 
 export async function initWorkspaceFromVertical(
   env: any,
@@ -99,10 +156,15 @@ export async function initWorkspaceFromVertical(
   const rootIndex = `# ${workspaceName}\n\n**Vertical:** ${vertical}\n**Modules:** ${mods.join(', ')}\n\n## Modules\n${moduleLinks}\n`;
   await uploadWorkspaceFile(env, scope, 'index.md', rootIndex);
 
-  // 2. Copy each module from vertical template to workspace
+  // 2. Copy each module from vertical template to workspace (with personalization)
   for (const mod of mods) {
-    const content = await readVerticalFile(env, vertical, `${mod}.md`);
+    let content = await readVerticalFile(env, vertical, `${mod}.md`);
     if (content) {
+      try {
+        content = await personalizeModuleTemplate(env, content, workspaceName, vertical);
+      } catch (err) {
+        console.warn(`[okf] Failed to personalize template for ${mod}:`, err);
+      }
       await uploadWorkspaceFile(env, scope, `${mod}.md`, content);
     }
   }

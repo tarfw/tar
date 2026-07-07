@@ -8,9 +8,10 @@ import { executeRead, executeCreate, executeUpdate, executeDelete } from './lib/
 import { handleChannelMessage, sendChannelMessage, getChannelConfig } from './channels';
 import { listTemplates, getTemplate, installTemplate, searchTemplates } from './marketplace/templates';
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
-import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspaceFromVertical, uploadVerticalFile, readVerticalFile, listWorkspaceModules, listVerticalModules } from './lib/okf';
+import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspaceFromVertical, uploadVerticalFile, readVerticalFile, listWorkspaceModules, listVerticalModules, readWithFallback } from './lib/okf';
 import { handleWebSocketUpgrade, pushMotionEvent } from './lib/websocket';
-import { getOrCreateUserDb } from './lib/user-db';
+import { getOrCreateWorkspaceDb } from './lib/workspace-db';
+import { dbContext } from './lib/db';
 import { parseSkillMarkdown, generateCompactActionIndex } from './lib/skill-parser';
 import { executeAITask } from './lib/action-executor';
 
@@ -52,6 +53,25 @@ app.get('/workspaces', async (c) => {
   return c.json({ workspaces });
 });
 
+// POST /dev/seed-templates — bootstrap S3 with golden vertical templates
+app.post('/dev/seed-templates', async (c) => {
+  const env = c.env;
+  try {
+    const { OKF_TEMPLATES } = await import('./lib/okf-templates');
+    let totalFiles = 0;
+    for (const [vertical, modules] of Object.entries(OKF_TEMPLATES)) {
+      for (const [moduleName, content] of Object.entries(modules)) {
+        await uploadVerticalFile(env, vertical, `${moduleName}.md`, content);
+        totalFiles++;
+      }
+    }
+    return c.json({ success: true, seeded: totalFiles });
+  } catch (err: any) {
+    console.error('[dev] Seeding templates failed:', err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
 // POST /workspaces/create — create a new workspace
 app.post('/workspaces/create', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
@@ -71,19 +91,43 @@ app.post('/workspaces/create', async (c) => {
       'INSERT OR IGNORE INTO workspaces (subdomain, scope, user_id, vertical) VALUES (?, ?, ?, ?)'
     ).bind(subdomain, scope, userId, vert).run();
 
-    // 2. Link user as owner via graph (optional — needs Turso)
-    try {
-      await executeCreate({
-        table: 'graph',
-        src: userId,
-        rel: 'owner',
-        tgt: scope,
-      });
-    } catch (graphErr) {
-      console.warn('[workspaces] Graph link skipped (Turso not configured):', graphErr);
+    // 2. Initialize Turso DB for workspace
+    let dbResult = 'skipped';
+    if (c.env.TURSO_PLATFORM_TOKEN) {
+      try {
+        const { url } = await getOrCreateWorkspaceDb(c.env.DB, subdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
+        dbResult = `created: ${url}`;
+      } catch (dbErr: any) {
+        dbResult = `error: ${dbErr.message}`;
+        console.warn('[workspaces] Turso DB creation failed:', dbErr);
+      }
     }
 
-    // 3. Copy vertical SKILL.md files to workspace S3
+    // 3. Link user as owner via graph (optional)
+    try {
+      if (c.env.TURSO_PLATFORM_TOKEN) {
+        const wsCreds = await getOrCreateWorkspaceDb(c.env.DB, subdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
+        await dbContext.run({ url: wsCreds.url, token: wsCreds.authToken }, async () => {
+          await executeCreate({
+            table: 'graph',
+            src: userId,
+            rel: 'owner',
+            tgt: scope,
+          });
+        });
+      } else {
+        await executeCreate({
+          table: 'graph',
+          src: userId,
+          rel: 'owner',
+          tgt: scope,
+        });
+      }
+    } catch (graphErr) {
+      console.warn('[workspaces] Graph link skipped:', graphErr);
+    }
+
+    // 4. Copy vertical SKILL.md files to workspace S3 (with personalization)
     let okfResult = 'skipped';
     try {
       await initWorkspaceFromVertical(c.env, scope, name, vert);
@@ -93,20 +137,7 @@ app.post('/workspaces/create', async (c) => {
       console.warn('[workspaces] OKF init error:', okfErr);
     }
 
-    // 4. Create WorkspaceDO instance (optional — needs DO binding)
-    try {
-      const doId = c.env.WORKSPACE.idFromName(scope);
-      const stub = c.env.WORKSPACE.get(doId);
-      await stub.fetch('https://internal/init', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scope, name, vertical: vert }),
-      });
-    } catch (doErr) {
-      console.warn('[workspaces] DO warm-up skipped:', doErr);
-    }
-
-    return c.json({ scope, subdomain, name, vertical: vert, okf: okfResult });
+    return c.json({ scope, subdomain, name, vertical: vert, okf: okfResult, db: dbResult });
   } catch (e: any) {
     console.error('[workspaces] Create failed:', e.message);
     return c.json({ error: e.message }, 500);
@@ -117,22 +148,22 @@ app.post('/workspaces/create', async (c) => {
 // User Database Routes (per-user Turso DB for sync)
 // ============================================================
 
-// GET /user-db — get or create user's Turso DB credentials
-app.get('/user-db', async (c) => {
-  const userId = c.req.query('userId') || c.req.header('X-User-Id');
-  if (!userId) return c.json({ error: 'Missing userId' }, 400);
+// GET /workspace-db — get or create workspace's Turso DB credentials
+app.get('/workspace-db', async (c) => {
+  const subdomain = c.req.query('subdomain') || c.req.header('X-Subdomain') || '';
+  if (!subdomain) return c.json({ error: 'Missing subdomain' }, 400);
 
+  const scope = `w:${subdomain}`;
   const platformToken = c.env.TURSO_PLATFORM_TOKEN;
   if (!platformToken) {
-    // Return graceful error — sync not available yet
-    return c.json({ error: 'Turso sync not configured', synced: false }, 200);
+    return c.json({ error: 'Turso workspace database not configured', synced: false }, 200);
   }
 
   try {
-    const { url, authToken } = await getOrCreateUserDb(c.env.DB, userId, platformToken);
+    const { url, authToken } = await getOrCreateWorkspaceDb(c.env.DB, subdomain, scope, platformToken);
     return c.json({ url, authToken });
   } catch (e: any) {
-    console.error('[user-db] Error:', e.message);
+    console.error('[workspace-db] Error:', e.message);
     return c.json({ error: e.message }, 500);
   }
 });
@@ -190,41 +221,47 @@ app.post('/tools/:name', async (c) => {
   const body = await c.req.json();
   const scope = body.scope || body.stream || body.src || body.tgt || '';
 
+  let dbUrl = '';
+  let dbToken = '';
+
+  if (c.env.DB && scope) {
+    const subdomain = scope.startsWith('w:')
+      ? scope.replace('w:', '')
+      : scope.startsWith('o:')
+      ? scope.replace('o:', '').split('_')[0]
+      : scope;
+
+    try {
+      const ws = await c.env.DB.prepare(
+        'SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
+      ).bind(subdomain).first();
+
+      if (ws?.turso_url && ws?.turso_auth_token) {
+        dbUrl = ws.turso_url;
+        dbToken = ws.turso_auth_token;
+      } else if (c.env.TURSO_PLATFORM_TOKEN) {
+        const credentials = await getOrCreateWorkspaceDb(c.env.DB, subdomain, `w:${subdomain}`, c.env.TURSO_PLATFORM_TOKEN);
+        dbUrl = credentials.url;
+        dbToken = credentials.authToken;
+      }
+    } catch (err) {
+      console.warn('[tools] Failed to resolve Turso workspace DB credentials:', err);
+    }
+  }
+
+  const executeFn = async () => {
+    return handler(body);
+  };
+
   try {
-    if (typeof scope === 'string' && scope.startsWith('w:')) {
-      const workspaceId = scope.replace('w:', '');
-      const stubId = c.env.WORKSPACE.idFromName(workspaceId);
-      const stub = c.env.WORKSPACE.get(stubId);
-      const res = await stub.fetch(`http://do/tools/${name}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-      return c.json(await res.json());
+    let result;
+    if (dbUrl) {
+      result = await dbContext.run({ url: dbUrl, token: dbToken }, executeFn);
+    } else {
+      result = await executeFn();
     }
-
-    if (typeof scope === 'string' && scope.startsWith('o:')) {
-      const orderId = scope.replace('o:', '');
-      const stubId = c.env.ORDER.idFromName(orderId);
-      const stub = c.env.ORDER.get(stubId);
-      const res = await stub.fetch(`http://do/tools/${name}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-      return c.json(await res.json());
-    }
-
-    const result = await handler(body);
     return c.json(result);
   } catch (e: any) {
-    // Return empty results if Turso not configured
     if (e.message?.includes('TURSO_DATABASE_URL')) {
       if (name === 'read' || name === 'search') {
         return c.json({ rows: [], count: 0 });
@@ -318,6 +355,7 @@ app.get('/ai-tasks', async (c) => {
 });
 
 // POST /ai-tasks/execute — execute an action directly
+// POST /ai-tasks/execute — execute an action directly
 app.post('/ai-tasks/execute', async (c) => {
   const body = await c.req.json();
   const { action, params, scope } = body;
@@ -330,6 +368,144 @@ app.post('/ai-tasks/execute', async (c) => {
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
+  }
+});
+
+// GET /workspace/:scope/skills — Return parsed action index for app cache
+app.get('/workspace/:scope/skills', async (c) => {
+  const scope = c.req.param('scope');
+  let modules = await listWorkspaceModules(c.env, scope);
+  let isVerticalFallback = false;
+  let vertical = 'restaurant';
+
+  if (modules.length === 0) {
+    if (c.env.DB) {
+      const ws = await c.env.DB.prepare(
+        'SELECT vertical FROM workspaces WHERE scope = ?'
+      ).bind(scope).first();
+      if (ws?.vertical) {
+        vertical = ws.vertical;
+      }
+    }
+    try {
+      modules = await listVerticalModules(c.env, vertical);
+      isVerticalFallback = true;
+    } catch (err) {
+      console.warn('[skills] Failed to list vertical modules:', err);
+    }
+  }
+
+  const actions: any[] = [];
+  for (const mod of modules) {
+    const content = isVerticalFallback
+      ? await readVerticalFile(c.env, vertical, `${mod}.md`)
+      : await readWorkspaceFile(c.env, scope, `${mod}.md`);
+
+    if (content) {
+      const parsed = parseSkillMarkdown(content);
+      for (const action of parsed.actions) {
+        actions.push({
+          name: action.name,
+          module: mod,
+          purpose: action.purpose,
+          intents: action.intents,
+          params: action.params,
+          steps: action.steps.length,
+          tool: action.steps[0]?.tool || 'custom',
+          table: action.steps[0]?.table || '',
+          type: action.steps[0]?.type || '',
+        });
+      }
+    }
+  }
+
+  return c.json({ actions });
+});
+
+// POST /workspace/:scope/customize — AI reads + edits skill .md in S3
+app.post('/workspace/:scope/customize', async (c) => {
+  const scope = c.req.param('scope');
+  const body = await c.req.json();
+  const { moduleName, prompt, userInstruction } = body || {};
+
+  if (!moduleName || !prompt) {
+    return c.json({ error: 'Missing moduleName or prompt' }, 400);
+  }
+
+  let vertical = 'restaurant';
+  if (c.env.DB) {
+    const ws = await c.env.DB.prepare(
+      'SELECT vertical FROM workspaces WHERE scope = ?'
+    ).bind(scope).first();
+    if (ws?.vertical) {
+      vertical = ws.vertical;
+    }
+  }
+
+  const filename = `${moduleName}.md`;
+  const content = await readWithFallback(c.env, scope, filename, vertical);
+
+  if (!content) {
+    return c.json({ error: `Module ${moduleName} not found` }, 404);
+  }
+
+  const groqKey = c.env.GROQ_API_KEY;
+  if (!groqKey) {
+    return c.json({ error: 'Groq API Key not configured' }, 500);
+  }
+
+  try {
+    const systemPrompt = `You are an AI expert at writing and customizing OKF (Open Knowledge Format) markdown skill files.
+You will modify the given markdown file based on the user's instructions.
+Rules:
+1. Preserve all markdown structure, YAML frontmatter, action steps (like read/create/update), and tool calls.
+2. Ensure every step has clear tool, table/type/scope, and params.
+3. Make only the changes requested by the user. Do not delete other existing actions unless requested.
+4. Return ONLY the modified markdown file content. Do not include any chat formatting, explanations, or backticks enclosing the file.`;
+
+    const userPrompt = `Existing Markdown Skill File:
+---
+${content}
+---
+
+User Instruction:
+${userInstruction || prompt}
+
+Please modify the markdown and output the complete updated markdown file.`;
+
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${groqKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.1,
+        max_tokens: 4000,
+      }),
+    });
+
+    const data = await res.json() as any;
+    const updatedContent = data?.choices?.[0]?.message?.content;
+    if (!updatedContent) {
+      return c.json({ error: 'LLM returned empty response' }, 500);
+    }
+
+    await uploadWorkspaceFile(c.env, scope, filename, updatedContent.trim());
+
+    if (c.env.STOREFRONT_CACHE) {
+      await c.env.STOREFRONT_CACHE.delete(`ai-tasks:${scope}`);
+    }
+
+    return c.json({ success: true, module: moduleName });
+  } catch (err: any) {
+    console.error('[customize] Error:', err);
+    return c.json({ error: err.message }, 500);
   }
 });
 
@@ -837,9 +1013,77 @@ app.notFound(async (c) => {
     if (url.pathname === '/api/checkout') {
       const body = await c.req.json();
       if (!body?.items) return c.text('Missing items', 400);
-      const orderId = c.env.ORDER.newUniqueId();
-      const orderDO = c.env.ORDER.get(orderId);
-      return orderDO.fetch('https://do/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ storeSlug: workspaceSlug, items: body.items, email: body.email }) });
+
+      const subdomain = workspaceSlug;
+      const scope = `w:${subdomain}`;
+      let dbUrl = '';
+      let dbToken = '';
+
+      if (c.env.DB) {
+        const ws = await c.env.DB.prepare(
+          'SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
+        ).bind(subdomain).first();
+
+        if (ws?.turso_url && ws?.turso_auth_token) {
+          dbUrl = ws.turso_url;
+          dbToken = ws.turso_auth_token;
+        } else if (c.env.TURSO_PLATFORM_TOKEN) {
+          const credentials = await getOrCreateWorkspaceDb(c.env.DB, subdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
+          dbUrl = credentials.url;
+          dbToken = credentials.authToken;
+        }
+      }
+
+      const orderId = `ord_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+      if (dbUrl) {
+        await dbContext.run({ url: dbUrl, token: dbToken }, async () => {
+          // 1. Create order row in matter table
+          await executeCreate({
+            table: 'matter',
+            id: orderId,
+            type: 'order',
+            scope,
+            title: `Order for ${body.email || 'customer'}`,
+            data: {
+              items: body.items,
+              email: body.email || '',
+              status: 'pending',
+              createdAt: new Date().toISOString()
+            }
+          });
+
+          // 2. Append creation event to motion table
+          await executeCreate({
+            table: 'motion',
+            stream: orderId,
+            action: 10001, // order_created
+            data: {
+              orderId,
+              subdomain,
+              items: body.items,
+              status: 'pending'
+            }
+          });
+        });
+
+        // 3. Trigger realtime WebSocket push via Editor DO if connected
+        try {
+          const editorDO = getDO(c.env, subdomain);
+          await editorDO.fetch('https://do/push', {
+            method: 'POST',
+            body: JSON.stringify({
+              type: 'ORDER_CREATED',
+              orderId,
+              subdomain,
+              items: body.items,
+              status: 'pending'
+            })
+          });
+        } catch {}
+      }
+
+      return c.json({ ok: true, orderId });
     }
     if (url.pathname === '/api/chat') {
       const body = await c.req.json();

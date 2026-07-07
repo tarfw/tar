@@ -19,15 +19,23 @@
   ],
   "durable_objects": {
     "bindings": [
-      { "name": "WORKSPACE", "class_name": "Workspace" },
-      { "name": "ORDER", "class_name": "Order" },
       { "name": "EDITOR", "class_name": "Editor" }
     ]
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["Workspace", "Order", "Editor"]
+      "new_sqlite_classes": ["Editor"]
+    },
+    {
+      "tag": "v2",
+      "deleted_classes": ["Workspace", "Order"]
     }
-  ]
+  ],
+  "triggers": {
+    "crons": [
+      "*/15 * * * *",
+      "0 3 * * *"
+    ]
+  }
 }

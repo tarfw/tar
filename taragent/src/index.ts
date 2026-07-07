@@ -1,8 +1,31 @@
 // Entry point for Cloudflare Worker deployment
-// Re-exports all Durable Object classes required by migrations
-
 import app from './app';
-import { Workspace, Order, Editor } from './cloudflare';
+import { Editor } from './cloudflare';
 
-export default app;
-export { Workspace, Order, Editor };
+export default {
+  fetch: app.fetch,
+  async scheduled(event: any, env: any, ctx: any) {
+    console.log(`[cron] scheduled trigger fired: ${event.cron}`);
+    ctx.waitUntil((async () => {
+      try {
+        if (event.cron === '*/15 * * * *') {
+          const { stockExpirationScanner } = await import('./cron');
+          const res = await stockExpirationScanner(env);
+          console.log(`[cron] stockExpirationScanner completed:`, res);
+        } else {
+          const { expiryScanner, motionArchival, softDeleteCleanup } = await import('./cron');
+          const [exp, arch, del] = await Promise.all([
+            expiryScanner(env),
+            motionArchival(env),
+            softDeleteCleanup(env)
+          ]);
+          console.log(`[cron] Daily scanner completed:`, { expiry: exp, archival: arch, cleanup: del });
+        }
+      } catch (err) {
+        console.error(`[cron] failed:`, err);
+      }
+    })());
+  }
+};
+
+export { Editor };

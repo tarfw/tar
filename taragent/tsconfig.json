@@ -7,10 +7,12 @@
     "noEmit": true,
     "skipLibCheck": true,
     "jsx": "react-jsx",
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
-    }
+    },
+    "types": ["@cloudflare/workers-types"]
   },
   "include": ["src"]
 }

@@ -147,13 +147,22 @@ export function routeDbForEntity(_type: string | null, scope: string | null): Da
     return getGlobalDb();
   }
 
-  // Workspace data lives in the user's sync DB — so it syncs to Turso
-  if (prefix === 'w') {
-    return getLocalPrivateDb(selfId);
+  if (prefix === 'w' && scope) {
+    const subdomain = scope.replace('w:', '');
+    const syncKey = `workspace_${subdomain}`;
+    if (dbConnections[syncKey]) {
+      return dbConnections[syncKey];
+    }
+    return getWorkspaceDb(subdomain);
   }
 
   if (prefix === 'o' && scope) {
-    return getOrderDb(scope);
+    const subdomain = scope.replace('o:', '').split('_')[0];
+    const syncKey = `workspace_${subdomain}`;
+    if (dbConnections[syncKey]) {
+      return dbConnections[syncKey];
+    }
+    return getWorkspaceDb(subdomain);
   }
 
   return getLocalPrivateDb(selfId);
@@ -279,39 +288,43 @@ export async function switchUser(userId: string): Promise<Database> {
   return db;
 }
 
-export async function initUserSync(userId: string): Promise<void> {
+export function getWorkspaceSyncDb(subdomain: string, url: string, authToken: string): Database {
+  return createSyncDbConnection(`workspace_${subdomain}`, `ws_${subdomain}.db`, url, authToken);
+}
+
+export async function initWorkspaceSync(subdomain: string): Promise<void> {
   const t0 = Date.now();
-  console.log(`[DB] initUserSync START for user = ${userId}`);
+  console.log(`[DB] initWorkspaceSync START for subdomain = ${subdomain}`);
 
   try {
-    console.log(`[DB] initUserSync: fetching Turso creds from ${TARFLUE_URL}/user-db`);
-    const res = await fetch(`${TARFLUE_URL}/user-db?userId=${userId}`);
-    console.log(`[DB] initUserSync: response ${res.status}`);
+    console.log(`[DB] initWorkspaceSync: fetching Turso creds from ${TARFLUE_URL}/workspace-db`);
+    const res = await fetch(`${TARFLUE_URL}/workspace-db?subdomain=${subdomain}`);
+    console.log(`[DB] initWorkspaceSync: response ${res.status}`);
     if (!res.ok) {
-      console.warn(`[DB] initUserSync: failed to fetch Turso creds (${res.status})`);
+      console.warn(`[DB] initWorkspaceSync: failed to fetch Turso creds (${res.status})`);
       return;
     }
     const data = await res.json();
     const { url, authToken } = data;
-    console.log(`[DB] initUserSync: got URL = ${url}`);
+    console.log(`[DB] initWorkspaceSync: got URL = ${url}`);
     if (!url || !authToken) {
-      console.warn(`[DB] initUserSync: no Turso creds returned`, data);
+      console.warn(`[DB] initWorkspaceSync: no Turso creds returned`, data);
       return;
     }
 
-    console.log(`[DB] initUserSync: creating sync DB connection...`);
-    const db = getUserSyncDb(userId, url, authToken);
-    console.log(`[DB] initUserSync: connecting...`);
+    console.log(`[DB] initWorkspaceSync: creating sync DB connection...`);
+    const db = getWorkspaceSyncDb(subdomain, url, authToken);
+    console.log(`[DB] initWorkspaceSync: connecting...`);
     await db.connect();
-    console.log(`[DB] initUserSync: connected, applying schema locally...`);
-    await migrateMemoryTable(db, userId);
+    console.log(`[DB] initWorkspaceSync: connected, applying schema locally...`);
+    await migrateMemoryTable(db, subdomain);
     for (const sql of SCHEMA_STATEMENTS) {
       try { await db.exec(sql); } catch (_) {}
     }
-    console.log(`[DB] initUserSync: DONE in ${Date.now() - t0}ms`);
+    console.log(`[DB] initWorkspaceSync: DONE in ${Date.now() - t0}ms`);
     syncReadyResolve?.();
   } catch (e) {
-    console.warn(`[DB] initUserSync FAILED:`, e);
+    console.warn(`[DB] initWorkspaceSync FAILED:`, e);
   }
 }
 
@@ -359,8 +372,5 @@ export async function initDb() {
   }
 
   await switchUser(userId);
-  initUserSync(userId).catch((err) => {
-    console.warn(`[DB] background initUserSync failed for ${userId}:`, err);
-  });
   console.log(`[DB] ${Date.now() - t0}ms — initDb DONE, cachedSelfId = ${cachedSelfId}`);
 }

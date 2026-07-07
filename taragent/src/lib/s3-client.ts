@@ -108,7 +108,7 @@ async function signRequest(
 export async function s3Put(env: any, key: string, body: string | ArrayBuffer | Uint8Array, ct = 'text/markdown'): Promise<void> {
   const c = getS3Config(env);
   const { url, headers } = await signRequest(c, 'PUT', key, body, ct);
-  const res = await fetch(url, { method: 'PUT', headers, body, redirect: 'follow' });
+  const res = await fetch(url, { method: 'PUT', headers, body: body as any, redirect: 'follow' });
   if (!res.ok) throw new Error(`S3 PUT ${key}: ${res.status} ${(await res.text()).slice(0, 200)}`);
 }
 

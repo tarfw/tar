@@ -74,6 +74,16 @@ export default function WorkspaceScreen() {
   }, [scope]);
 
   useEffect(() => {
+    if (subdomain) {
+      import('@/lib/db').then(({ initWorkspaceSync }) => {
+        initWorkspaceSync(subdomain).catch(err => {
+          console.warn('[workspace] Failed to initialize sync for', subdomain, err);
+        });
+      });
+    }
+  }, [subdomain]);
+
+  useEffect(() => {
     if (activeTab === 'products') fetchProducts();
     if (activeTab === 'tasks') fetchTasks();
   }, [activeTab, fetchProducts, fetchTasks]);
@@ -199,32 +209,7 @@ export default function WorkspaceScreen() {
           <View style={{ flex: 1 }}>
             <View style={styles.productsHeader}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Products</Text>
-              <Pressable style={[styles.addBtn, { backgroundColor: theme.primary }]}
-                onPress={() => setShowAddForm(!showAddForm)}>
-                <Ionicons name={showAddForm ? 'close' : 'add'} size={16} color="#fff" />
-                <Text style={styles.addBtnText}>{showAddForm ? 'Cancel' : 'Add'}</Text>
-              </Pressable>
             </View>
-
-            {showAddForm && (
-              <View style={[styles.form, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                <TextInput style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-                  value={productTitle} onChangeText={setProductTitle} placeholder="Name" placeholderTextColor={theme.textMuted} />
-                <View style={styles.formRow}>
-                  <TextInput style={[styles.input, { flex: 1, backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-                    value={productPrice} onChangeText={setProductPrice} placeholder="Price" placeholderTextColor={theme.textMuted} keyboardType="numeric" />
-                  <TextInput style={[styles.input, { flex: 1, backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-                    value={productQty} onChangeText={setProductQty} placeholder="Qty" placeholderTextColor={theme.textMuted} keyboardType="numeric" />
-                </View>
-                <TextInput style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-                  value={productCategory} onChangeText={setProductCategory} placeholder="Category" placeholderTextColor={theme.textMuted} />
-                {formError ? <Text style={styles.error}>{formError}</Text> : null}
-                <Pressable style={[styles.saveBtn, { backgroundColor: theme.primary }]}
-                  onPress={handleAddProduct} disabled={addingProduct}>
-                  {addingProduct ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save</Text>}
-                </Pressable>
-              </View>
-            )}
 
             {loadingProducts ? (
               <ActivityIndicator style={{ marginTop: 32 }} color={theme.textSecondary} />

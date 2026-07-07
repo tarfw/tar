@@ -34,10 +34,9 @@ export default function AuthScreen() {
         const user = await getCurrentUser();
         console.log(`[AUTH] ${Date.now() - t}ms — getCurrentUser: ${user ? user.email : 'null'}`);
         if (user) {
-          const { switchUser, initUserSync } = await import('@/lib/db');
+          const { switchUser } = await import('@/lib/db');
           await switchUser(user.id);
           setUserId(user.id);
-          initUserSync(user.id);
           // Check if user has any workspaces in D1
           try {
             const res = await fetch(`${process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://taragent.tar-54d.workers.dev'}/workspaces`, {
@@ -57,10 +56,9 @@ export default function AuthScreen() {
         const silent = await trySilentSignIn();
         console.log(`[AUTH] ${Date.now() - t2}ms — trySilentSignIn: ${silent ? silent.email : 'null'}`);
         if (silent) {
-          const { switchUser, initUserSync } = await import('@/lib/db');
+          const { switchUser } = await import('@/lib/db');
           await switchUser(silent.id);
           setUserId(silent.id);
-          initUserSync(silent.id);
           try {
             const res = await fetch(`${process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://taragent.tar-54d.workers.dev'}/workspaces`, {
               headers: { 'X-User-Id': silent.id },
@@ -85,10 +83,9 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       const user = await signInWithGoogle();
-      const { switchUser, initUserSync } = await import('@/lib/db');
+      const { switchUser } = await import('@/lib/db');
       await switchUser(user.id);
       setUserId(user.id);
-      initUserSync(user.id);
       try {
         const res = await fetch(`${process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://taragent.tar-54d.workers.dev'}/workspaces`, {
           headers: { 'X-User-Id': user.id },

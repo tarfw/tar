@@ -50,7 +50,7 @@ export async function sendSlackMessage(
         thread_ts: response.replyToMessageId,
       }),
     });
-    const data = await res.json();
+    const data = await res.json() as any;
     return data.ok === true;
   } catch (e) {
     console.error('[Slack] Send failed:', e);

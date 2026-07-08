@@ -112,7 +112,7 @@ export const tar = {
    * Create a new workspace.
    * POST /workspaces/create
    */
-  createWorkspace: (data: { name: string; template: string; subdomain: string }) =>
+  createWorkspace: (data: { name: string; template: string; subdomain: string; description?: string }) =>
     post('/workspaces/create', data),
 
   /**

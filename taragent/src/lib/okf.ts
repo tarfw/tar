@@ -97,7 +97,8 @@ async function personalizeModuleTemplate(
   env: any,
   moduleContent: string,
   businessName: string,
-  businessType: string
+  businessType: string,
+  businessDescription?: string
 ): Promise<string> {
   const groqKey = env.GROQ_API_KEY;
   if (!groqKey) return moduleContent;
@@ -112,10 +113,11 @@ ${moduleContent}
 Personalize it for this business:
 Name: ${businessName}
 Type: ${businessType}
+${businessDescription ? `Description/Focus: ${businessDescription}` : ''}
 
 Rules:
 1. Preserve all markdown structure, YAML frontmatter, action steps (like read/create/update), and tool calls exactly. Do not break syntax.
-2. In the headings, text, and descriptions, replace placeholders or generic business terms with "${businessName}" or specific details relevant to a ${businessType}.
+2. In the headings, text, and descriptions, replace placeholders or generic business terms with "${businessName}" or specific details relevant to a ${businessType} ${businessDescription ? `(specifically matching details from: ${businessDescription})` : ''}.
 3. Return ONLY the personalized markdown content. Do not add any conversational chat wrappers.`;
 
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -141,15 +143,87 @@ Rules:
   }
 }
 
+export async function classifyVertical(
+  env: any,
+  description: string
+): Promise<string> {
+  const groqKey = env.GROQ_API_KEY;
+  if (!groqKey) return 'restaurant';
+
+  try {
+    const prompt = `You are an AI that classifies a business description into one of the supported core verticals.
+Supported verticals:
+- restaurant (Use for any food, bakery, cafe, dining, bar, catering, kitchen, meal prep business)
+- salon (Use for spa, hair, nails, beauty parlor)
+- clinic (Use for dentist, doctor, clinic, healthcare, medical)
+- retail (Use for grocery store, fashion boutique, watch seller, physical product shops)
+- courier (Use for delivery, logistics, courier services)
+- agency (Use for office work, software development, marketing, consulting)
+- gym (Use for fitness, gym, yoga, workout studio)
+- school (Use for education, tutor, school, learning center)
+- property (Use for real estate, leasing, property management)
+- home-services (Use for plumbing, carpentry, cleaning, maintenance)
+
+Given this business description: "${description}"
+
+Respond with ONLY the key of the closest matching vertical from the list above (e.g. "restaurant" or "retail"). Do not add any punctuation, intro, or explanation.`;
+
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${groqKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: 10,
+      }),
+    });
+
+    const data = await res.json() as any;
+    const vertical = data?.choices?.[0]?.message?.content?.trim()?.toLowerCase() || 'restaurant';
+    
+    const valid = ['restaurant', 'salon', 'clinic', 'retail', 'courier', 'agency', 'gym', 'school', 'property', 'home-services'];
+    if (valid.includes(vertical)) {
+      return vertical;
+    }
+    return 'restaurant';
+  } catch (err) {
+    console.warn('[Classifier] Failed to classify vertical, falling back to restaurant:', err);
+    return 'restaurant';
+  }
+}
+
 export async function initWorkspaceFromVertical(
   env: any,
   scope: string,
   workspaceName: string,
   vertical: string,
-  modules?: string[]
+  modules?: string[],
+  businessDescription?: string
 ): Promise<void> {
   // Auto-detect modules from vertical template if not provided
-  const mods = modules?.length ? modules : await listVerticalModules(env, vertical);
+  let mods = modules?.length ? modules : [];
+  if (!mods.length) {
+    try {
+      mods = await listVerticalModules(env, vertical);
+    } catch (err) {
+      console.warn(`[okf] Failed to list vertical modules for ${vertical}:`, err);
+    }
+  }
+
+  // Fallback to restaurant if we found no modules
+  if (!mods.length && vertical !== 'restaurant') {
+    console.warn(`[okf] No modules found for vertical "${vertical}", falling back to restaurant`);
+    vertical = 'restaurant';
+    try {
+      mods = await listVerticalModules(env, 'restaurant');
+    } catch (err) {
+      console.warn('[okf] Failed to list fallback restaurant modules:', err);
+    }
+  }
 
   // 1. Create workspace index.md
   const moduleLinks = mods.map(m => `- [${m}](./${m}.md)`).join('\n');
@@ -161,7 +235,7 @@ export async function initWorkspaceFromVertical(
     let content = await readVerticalFile(env, vertical, `${mod}.md`);
     if (content) {
       try {
-        content = await personalizeModuleTemplate(env, content, workspaceName, vertical);
+        content = await personalizeModuleTemplate(env, content, workspaceName, vertical, businessDescription);
       } catch (err) {
         console.warn(`[okf] Failed to personalize template for ${mod}:`, err);
       }

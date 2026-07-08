@@ -21,7 +21,7 @@ export default function TabLayout() {
       <NativeTabs.Trigger name="explore">
         <NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
-          sf={{ default: 'compass', selected: 'compass.fill' }}
+          sf={{ default: 'safari' as any, selected: 'safari.fill' as any }}
           md={{ default: 'explore', selected: 'explore' }}
         />
       </NativeTabs.Trigger>

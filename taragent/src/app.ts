@@ -8,7 +8,7 @@ import { executeRead, executeCreate, executeUpdate, executeDelete } from './lib/
 import { handleChannelMessage, sendChannelMessage, getChannelConfig } from './channels';
 import { listTemplates, getTemplate, installTemplate, searchTemplates } from './marketplace/templates';
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
-import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspaceFromVertical, uploadVerticalFile, readVerticalFile, listWorkspaceModules, listVerticalModules, readWithFallback } from './lib/okf';
+import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspaceFromVertical, uploadVerticalFile, readVerticalFile, listWorkspaceModules, listVerticalModules, readWithFallback, classifyVertical } from './lib/okf';
 import { handleWebSocketUpgrade, pushMotionEvent } from './lib/websocket';
 import { getOrCreateWorkspaceDb } from './lib/workspace-db';
 import { dbContext } from './lib/db';
@@ -76,14 +76,17 @@ app.post('/dev/seed-templates', async (c) => {
 app.post('/workspaces/create', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
   const body = await c.req.json();
-  const { name, template, subdomain, vertical } = body || {};
+  const { name, template, subdomain, vertical, description } = body || {};
 
   if (!name || !template || !subdomain) {
     return c.json({ error: 'Missing name, template, or subdomain' }, 400);
   }
 
   const scope = `w:${subdomain}`;
-  const vert = vertical || template; // template = vertical type for now
+  let vert = vertical || template; // template = vertical type for now
+  if (vert === 'auto' || !vert) {
+    vert = await classifyVertical(c.env, description || name || '');
+  }
 
   try {
     // 1. Insert workspace into D1 with vertical type
@@ -130,7 +133,7 @@ app.post('/workspaces/create', async (c) => {
     // 4. Copy vertical SKILL.md files to workspace S3 (with personalization)
     let okfResult = 'skipped';
     try {
-      await initWorkspaceFromVertical(c.env, scope, name, vert);
+      await initWorkspaceFromVertical(c.env, scope, name, vert, undefined, description);
       okfResult = 'done';
     } catch (okfErr: any) {
       okfResult = `error: ${okfErr.message}`;

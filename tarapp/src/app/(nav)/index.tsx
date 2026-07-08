@@ -96,7 +96,7 @@ export default function HomeScreen() {
   );
 
   const handlePressGroup = (group: ActionGroup) => {
-    router.push({ pathname: '/entity', params: { id: group.id } });
+    router.push({ pathname: '/entity' as any, params: { id: group.id } });
   };
 
   const handlePressAction = (action: ActionItem) => {
@@ -144,10 +144,10 @@ export default function HomeScreen() {
 
       <View style={[styles.actionBar, { paddingBottom: insets.bottom - 4, backgroundColor: theme.background, borderColor: theme.backgroundElement }]}>
         <View style={styles.chipRow}>
-          <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push({ pathname: '/add', params: { type: 'task' } })}>
+          <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push({ pathname: '/add' as any, params: { type: 'task' } })}>
             <Text style={[styles.chipText, { color: theme.text }]}>+ Task</Text>
           </Pressable>
-          <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse')}>
+          <Pressable style={[styles.chip, { backgroundColor: theme.backgroundElement }]} onPress={() => router.push('/browse' as any)}>
             <Text style={[styles.chipText, { color: theme.text }]}>Browse</Text>
           </Pressable>
         </View>

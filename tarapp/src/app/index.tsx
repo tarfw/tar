@@ -13,7 +13,7 @@ export default function Index() {
         return;
       }
       const done = await SecureStore.getItemAsync(`onb_${user.id}`);
-      setTarget(done ? '/(tabs)/inbox' : '/onboarding');
+      setTarget(done ? '/inbox' : '/onboarding');
     });
   }, []);
 

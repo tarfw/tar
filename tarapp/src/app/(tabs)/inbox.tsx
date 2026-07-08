@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState, useEffect, useCallback } from 'react';
 import { tar } from '@/lib/tar';
+import * as SecureStore from 'expo-secure-store';
 import { OrderCard } from '@/components/cards/OrderCard';
 import { TaskCard } from '@/components/cards/TaskCard';
 import { DeliveryCard } from '@/components/cards/DeliveryCard';
@@ -49,6 +50,17 @@ export default function InboxScreen() {
   useEffect(() => {
     fetchTimeline();
   }, [fetchTimeline]);
+
+  useEffect(() => {
+    (async () => {
+      const redirect = await SecureStore.getItemAsync('redirect_to_workspaces').catch(() => null);
+      if (redirect === 'true') {
+        await SecureStore.deleteItemAsync('redirect_to_workspaces').catch(() => null);
+        console.log('[Inbox] Redirecting to /workspaces as requested by onboarding');
+        router.replace('/workspaces');
+      }
+    })();
+  }, [router]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

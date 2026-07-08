@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, ActivityIndic
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 
 import { useTheme } from '@/hooks/use-theme';
 import { tar } from '@/lib/tar';
@@ -50,13 +51,21 @@ export default function WorkspacesTabScreen() {
       const data = await tar.listWorkspaces();
       const rows = data.workspaces || [];
       setWorkspaces(rows);
-      if (rows.length > 0 && !selected) setSelected(rows[0]);
+      
+      const activeSub = await SecureStore.getItemAsync('active_workspace_subdomain').catch(() => null);
+      const matched = rows.find((w: any) => w.subdomain === activeSub);
+      if (matched) {
+        setSelected(matched);
+        await SecureStore.deleteItemAsync('active_workspace_subdomain').catch(() => null);
+      } else if (rows.length > 0 && !selected) {
+        setSelected(rows[0]);
+      }
     } catch (e) {
       console.warn('[Workspaces] Failed:', e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selected]);
 
   useEffect(() => { fetchWorkspaces(); }, [fetchWorkspaces]);
 

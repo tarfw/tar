@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, Pressable, TextInput, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -7,36 +7,56 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { tar } from '@/lib/tar';
-import { VERTICALS, resolveModules } from '@/lib/verticals';
 
-const VERTICAL_OPTIONS = [
-  { key: 'restaurant', label: 'Restaurant / Food', icon: 'restaurant-outline' },
-  { key: 'salon', label: 'Salon / Spa', icon: 'cut-outline' },
-  { key: 'clinic', label: 'Clinic / Hospital', icon: 'medical-outline' },
-  { key: 'retail', label: 'Retail Store', icon: 'cart-outline' },
-  { key: 'courier', label: 'Courier / Delivery', icon: 'bicycle-outline' },
-  { key: 'agency', label: 'Agency / Office', icon: 'briefcase-outline' },
-  { key: 'gym', label: 'Gym / Fitness', icon: 'barbell-outline' },
-  { key: 'school', label: 'School / Education', icon: 'school-outline' },
-  { key: 'property', label: 'Property', icon: 'home-outline' },
-  { key: 'home-services', label: 'Home Services', icon: 'hammer-outline' },
-];
+function detectVerticalLocally(text: string): string {
+  const t = text.toLowerCase();
+  if (/\b(pizza|food|cafe|bakery|coffee|restaurant|burger|sushi|dining|bar|kitchen|meal|bake|chef|eats|diner|bites|sourdough|bread|pastry)\b/.test(t)) {
+    return 'Restaurant / Food';
+  }
+  if (/\b(hair|salon|spa|nail|beauty|massage|barber|grooming|makeup|pedicure|manicure|cut)\b/.test(t)) {
+    return 'Salon / Spa';
+  }
+  if (/\b(doctor|clinic|dentist|braces|teeth|medical|hospital|health|therapy|physio|dentistry|dental)\b/.test(t)) {
+    return 'Clinic / Hospital';
+  }
+  if (/\b(shop|store|sell|buy|product|boutique|clothe|shoe|grocer|goods|market|watch|merch|clothing|apparel|retail)\b/.test(t)) {
+    return 'Retail Store';
+  }
+  if (/\b(delivery|courier|shipping|logistics|cargo|parcel|rider|ship)\b/.test(t)) {
+    return 'Courier / Delivery';
+  }
+  if (/\b(agency|consulting|design|marketing|software|office|firm|dev|studio)\b/.test(t)) {
+    return 'Agency / Office';
+  }
+  if (/\b(gym|fitness|yoga|workout|trainer|training|crossfit|pilates|barbell)\b/.test(t)) {
+    return 'Gym / Fitness';
+  }
+  if (/\b(school|tutor|education|class|course|teach|learn|academy|college)\b/.test(t)) {
+    return 'School / Education';
+  }
+  if (/\b(real estate|property|rent|apartment|house|leasing|landlord|realtor)\b/.test(t)) {
+    return 'Property';
+  }
+  if (/\b(plumbing|cleaner|carpentry|maintenance|repair|handyman|electrical|fix|carpenter|plumber)\b/.test(t)) {
+    return 'Home Services';
+  }
+  return '';
+}
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
 
-  const [step, setStep] = useState(1);
-  const [selectedVertical, setSelectedVertical] = useState('');
+  const [step, setStep] = useState(1); // 1 = setup, 2 = success
   const [businessName, setBusinessName] = useState('');
-  const [services, setServices] = useState<string>('');
+  const [businessFocus, setBusinessFocus] = useState('');
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<{ scope: string; subdomain: string } | null>(null);
   const [error, setError] = useState('');
 
   const handleCreate = async () => {
-    if (!businessName.trim() || !selectedVertical) return;
+    if (!businessName.trim() || !businessFocus.trim()) return;
     setCreating(true);
     setError('');
     try {
@@ -47,18 +67,23 @@ export default function OnboardingScreen() {
 
       const result = await tar.createWorkspace({
         name: businessName.trim(),
-        template: selectedVertical,
+        template: 'auto',
         subdomain,
+        description: businessFocus.trim(),
       });
 
       // Mark onboarding as done
-      const userId = await SecureStore.getItemAsync('google_auth_user').then(u => u ? JSON.parse(u).id : null).catch(() => null);
+      const userId = await SecureStore.getItemAsync('google_auth_user')
+        .then((u) => (u ? JSON.parse(u).id : null))
+        .catch(() => null);
       if (userId) {
         await SecureStore.setItemAsync(`onb_${userId}`, 'true');
       }
+      await SecureStore.setItemAsync('active_workspace_subdomain', subdomain);
+      await SecureStore.setItemAsync('redirect_to_workspaces', 'true');
 
       setCreated({ scope: result.scope, subdomain });
-      setStep(3);
+      setStep(2);
     } catch (e: any) {
       setError(e.message || 'Failed to create workspace');
     } finally {
@@ -66,126 +91,94 @@ export default function OnboardingScreen() {
     }
   };
 
-  // Step 3 — confirmation
-  if (step === 3 && created) {
-    const mods = resolveModules(VERTICALS[selectedVertical]?.modules || []);
+  // Screen 2 — success confirmation
+  if (step === 2 && created) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={[styles.content, { paddingTop: insets.top + 80 }]}>
-          <Ionicons name="checkmark-circle" size={64} color={theme.primary} />
-          <Text style={[styles.title, { color: theme.text, marginTop: 16 }]}>Workspace is live!</Text>
-          <Text style={[styles.subtitle, { color: theme.text, fontSize: 20, marginTop: 8 }]}>
-            {businessName}
-          </Text>
-          <Text style={[styles.subtitle, { color: theme.textMuted, fontSize: 14, marginTop: 4 }]}>
+        <View style={[styles.content, { paddingTop: insets.top + 100, alignItems: 'center', justifyContent: 'center' }]}>
+          <Ionicons name="checkmark-circle" size={80} color={theme.primary} />
+          <Text style={[styles.titleSuccess, { color: theme.text, marginTop: 24 }]}>Workspace is live!</Text>
+          <Text style={[styles.urlText, { color: theme.textMuted, marginTop: 8 }]}>
             {created.subdomain}.tarai.space
           </Text>
-
-          <View style={[styles.moduleList, { marginTop: 24 }]}>
-            <Text style={[styles.label, { color: theme.textMuted }]}>INSTALLED MODULES</Text>
-            {mods.map((m) => (
-              <View key={m} style={[styles.moduleChip, { backgroundColor: theme.primary + '15' }]}>
-                <Text style={[styles.moduleChipText, { color: theme.primary }]}>{m}</Text>
-              </View>
-            ))}
-          </View>
         </View>
 
-        <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
-          <Pressable
+        <View style={[styles.bottom, { paddingBottom: insets.bottom + 24 }]}>
+          <TouchableOpacity
+            activeOpacity={0.7}
             style={[styles.button, { backgroundColor: theme.primary }]}
-            onPress={() => router.replace('/(tabs)/workspaces')}>
-            <Text style={[styles.buttonText, { color: '#fff' }]}>Go to Workspaces</Text>
-          </Pressable>
+            onPress={() => {
+              console.log(`[Onboarding] Open Workspace pressed for "${created.subdomain}". Redirecting to /inbox`);
+              try {
+                router.replace('/inbox');
+              } catch (e) {
+                console.warn('[Onboarding] Direct /inbox failed, falling back to /:', e);
+                router.replace('/');
+              }
+            }}>
+            <Text style={[styles.buttonText, { color: '#fff' }]}>Open Workspace</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
   }
 
+  // Screen 1 — Notion-style setup
+  const canCreate = businessName.trim() && businessFocus.trim() && !creating;
+  const detectedVertical = detectVerticalLocally(businessFocus);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.content, { paddingTop: insets.top + 80 }]}>
         <Text style={[styles.title, { color: theme.text }]}>tar.</Text>
+        
+        <View style={{ marginTop: 32, gap: 16 }}>
+          <TextInput
+            style={[styles.titleInput, { color: theme.text }]}
+            value={businessName}
+            onChangeText={setBusinessName}
+            placeholder="Workspace Name"
+            placeholderTextColor={theme.textMuted}
+            editable={!creating}
+            autoFocus
+          />
+          
+          <View style={{ height: 1, backgroundColor: theme.border, opacity: 0.5 }} />
 
-        {step === 1 ? (
-          <>
-            <Text style={[styles.subtitle, { color: theme.text }]}>What do you do?</Text>
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 8 }} showsVerticalScrollIndicator={false}>
-              {VERTICAL_OPTIONS.map((v) => {
-                const isSelected = selectedVertical === v.key;
-                return (
-                  <Pressable
-                    key={v.key}
-                    style={[
-                      styles.verticalOption,
-                      {
-                        borderBottomColor: theme.border,
-                      },
-                    ]}
-                    onPress={() => setSelectedVertical(v.key)}>
-                    <Ionicons name={v.icon as any} size={20} color={isSelected ? theme.primary : theme.textMuted} />
-                    <Text style={[styles.verticalLabel, { color: isSelected ? theme.primary : theme.text }]}>
-                      {v.label}
-                    </Text>
-                    {isSelected && (
-                      <Ionicons name="checkmark" size={20} color={theme.primary} />
-                    )}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </>
-        ) : (
-          <>
-            <Text style={[styles.subtitle, { color: theme.text }]}>Name your workspace</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: theme.backgroundElement, color: theme.text, borderColor: theme.border }]}
-              value={businessName}
-              onChangeText={setBusinessName}
-              placeholder='e.g. "Happy Bites"'
-              placeholderTextColor={theme.textMuted}
-            />
-            <TextInput
-              style={[styles.input, { backgroundColor: theme.backgroundElement, color: theme.text, borderColor: theme.border, marginTop: 12 }]}
-              value={services}
-              onChangeText={setServices}
-              placeholder='Services (optional, comma separated)'
-              placeholderTextColor={theme.textMuted}
-            />
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-          </>
-        )}
+          <TextInput
+            style={[styles.bodyInput, { color: theme.text }]}
+            value={businessFocus}
+            onChangeText={setBusinessFocus}
+            placeholder="What does your business do? (e.g. sourdough bakery and cafe)"
+            placeholderTextColor={theme.textMuted}
+            editable={!creating}
+            multiline
+            numberOfLines={4}
+          />
+
+          {detectedVertical ? (
+            <Text style={[styles.detectedText, { color: theme.textMuted }]}>
+              Detected vertical: {detectedVertical}
+            </Text>
+          ) : null}
+        </View>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
       </View>
 
-      <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
-        {step === 1 ? (
-          <Pressable
-            style={[styles.button, { backgroundColor: selectedVertical ? theme.primary : theme.backgroundElement }]}
-            onPress={() => setStep(2)}
-            disabled={!selectedVertical}>
-            <Text style={[styles.buttonText, { color: selectedVertical ? '#fff' : theme.textMuted }]}>
-              Continue
+      <View style={[styles.bottom, { paddingBottom: insets.bottom + 24, paddingTop: 12 }]}>
+        <TouchableOpacity
+          activeOpacity={canCreate ? 0.7 : 1}
+          style={[styles.button, { backgroundColor: canCreate ? theme.primary : theme.border }]}
+          onPress={handleCreate}
+          disabled={!canCreate}>
+          {creating ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={[styles.buttonText, { color: canCreate ? '#fff' : theme.textMuted }]}>
+              Create Workspace
             </Text>
-          </Pressable>
-        ) : (
-          <View style={{ gap: 8 }}>
-            <Pressable
-              style={[styles.button, { backgroundColor: businessName.trim() ? theme.primary : theme.backgroundElement }]}
-              onPress={handleCreate}
-              disabled={!businessName.trim() || creating}>
-              {creating ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={[styles.buttonText, { color: businessName.trim() ? '#fff' : theme.textMuted }]}>
-                  Create Workspace
-                </Text>
-              )}
-            </Pressable>
-            <Pressable style={styles.backButton} onPress={() => setStep(1)}>
-              <Text style={[styles.backText, { color: theme.textMuted }]}>Back</Text>
-            </Pressable>
-          </View>
-        )}
+          )}
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -193,26 +186,32 @@ export default function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: 32, justifyContent: 'flex-start' },
-  title: { fontSize: 64, fontWeight: '800', letterSpacing: -2 },
-  subtitle: { fontSize: 28, fontWeight: '700', marginTop: 4, marginBottom: 16 },
-  label: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
-  input: { paddingVertical: 14, paddingHorizontal: 18, borderRadius: 12, fontSize: 16, borderWidth: 1 },
-  verticalOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 18,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  content: { flex: 1, paddingHorizontal: 32 },
+  title: { fontSize: 48, fontWeight: '800', letterSpacing: -1 },
+  titleSuccess: { fontSize: 28, fontWeight: '700', textAlign: 'center' },
+  urlText: { fontSize: 16, textAlign: 'center' },
+  titleInput: {
+    fontSize: 32,
+    fontWeight: '700',
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+    borderWidth: 0,
   },
-  verticalLabel: { fontSize: 16, fontWeight: '500', flex: 1 },
-  moduleList: { gap: 6 },
-  moduleChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, alignSelf: 'flex-start' },
-  moduleChipText: { fontSize: 13, fontWeight: '600' },
+  bodyInput: {
+    fontSize: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+    borderWidth: 0,
+    lineHeight: 24,
+    textAlignVertical: 'top',
+  },
+  detectedText: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: -8,
+  },
   bottom: { paddingHorizontal: 32 },
-  button: { paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
+  button: { paddingVertical: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   buttonText: { fontSize: 16, fontWeight: '600' },
-  backButton: { paddingVertical: 12, alignItems: 'center' },
-  backText: { fontSize: 14, fontWeight: '500' },
-  error: { fontSize: 14, color: '#f44336', marginTop: 12 },
+  error: { fontSize: 14, color: '#f44336', marginTop: 12, textAlign: 'center' },
 });

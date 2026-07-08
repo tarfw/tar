@@ -45,9 +45,9 @@ export default function AuthScreen() {
             const data = await res.json();
             const hasWorkspaces = (data.workspaces || []).length > 0;
             console.log(`[AUTH] ${ms()} — has workspaces: ${hasWorkspaces}`);
-            router.replace(hasWorkspaces ? '/(tabs)/inbox' : '/onboarding');
+            router.replace(hasWorkspaces ? '/inbox' : '/onboarding');
           } catch {
-            router.replace('/(tabs)/inbox');
+            router.replace('/inbox');
           }
           return;
         }
@@ -65,9 +65,9 @@ export default function AuthScreen() {
             });
             const data = await res.json();
             const hasWorkspaces = (data.workspaces || []).length > 0;
-            router.replace(hasWorkspaces ? '/(tabs)/inbox' : '/onboarding');
+            router.replace(hasWorkspaces ? '/inbox' : '/onboarding');
           } catch {
-            router.replace('/(tabs)/inbox');
+            router.replace('/inbox');
           }
         } else {
           console.log(`[AUTH] ${ms()} — no silent sign-in, staying on auth screen`);
@@ -92,9 +92,9 @@ export default function AuthScreen() {
         });
         const data = await res.json();
         const hasWorkspaces = (data.workspaces || []).length > 0;
-        router.replace(hasWorkspaces ? '/(tabs)/inbox' : '/onboarding');
+        router.replace(hasWorkspaces ? '/inbox' : '/onboarding');
       } catch {
-        router.replace('/(tabs)/inbox');
+        router.replace('/inbox');
       }
     } catch (e: any) {
       console.warn('[Auth] Google sign-in failed:', e.message);

@@ -24,6 +24,11 @@ export const SECTION_RENDERERS: Record<string, SectionRenderer> = {
   section_header,
   announcement_bar,
   footer,
+  menu_grid,
+  service_list,
+  booking_calendar,
+  doctor_grid,
+  class_schedule,
 };
 
 function hero(c: Record<string, any>): string {
@@ -299,3 +304,173 @@ function footer(c: Record<string, any>): string {
   <p class="text-xs opacity-30">&copy; ${new Date().getFullYear()} All rights reserved</p>
 </footer>`;
 }
+
+function menu_grid(c: Record<string, any>, products?: StorefrontProduct[]): string {
+  const title = c.title || 'Our Menu';
+  const categories = c.categories || [
+    {
+      name: 'Main Course',
+      items: (products || []).map(p => ({
+        name: p.name,
+        price: p.price,
+        description: 'Chef\'s special recipe cooked with fresh ingredients.',
+        tags: ['veg']
+      }))
+    }
+  ];
+
+  const catHtml = categories.map((cat: any) => {
+    const itemsHtml = cat.items.map((item: any) => {
+      const tagsHtml = (item.tags || []).map((t: string) => `
+        <span class="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${t === 'veg' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${t}</span>
+      `).join('');
+      return `
+      <div class="flex flex-col md:flex-row justify-between pb-4 border-b border-black/5 dark:border-white/5 gap-2" data-product-id="${item.name}">
+        <div class="flex-1">
+          <div class="flex items-center gap-2">
+            <h4 class="text-base font-semibold">${item.name}</h4>
+            ${tagsHtml}
+          </div>
+          <p class="text-sm opacity-60 mt-1">${item.description || ''}</p>
+        </div>
+        <div class="flex items-center gap-4 justify-between md:justify-end">
+          <span class="text-base font-bold">₹${item.price ?? 0}</span>
+          <button class="add-to-cart-btn border border-current px-4 py-1.5 text-xs uppercase tracking-wider hover:bg-current hover:text-white transition-colors duration-200"
+                  data-name="${item.name}" data-price="${item.price ?? 0}">
+            Add
+          </button>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `
+    <div class="mb-12">
+      <h3 class="text-xl font-bold border-b border-current pb-2 mb-6 tracking-wide">${cat.name}</h3>
+      <div class="space-y-6">${itemsHtml}</div>
+    </div>`;
+  }).join('');
+
+  return `
+<section class="px-6 py-16 max-w-4xl mx-auto">
+  <h2 class="text-3xl font-bold tracking-widest uppercase text-center mb-16">${title}</h2>
+  <div>${catHtml}</div>
+</section>`;
+}
+
+function service_list(c: Record<string, any>): string {
+  const title = c.title || 'Our Services';
+  const services = c.services || [
+    { name: 'Hair Cut & Styling', price: 800, duration: '45 mins' },
+    { name: 'Facial & Skin Care', price: 1500, duration: '60 mins' },
+    { name: 'Spa Massage', price: 2500, duration: '90 mins' }
+  ];
+
+  const itemsHtml = services.map((s: any) => `
+    <div class="flex justify-between items-center pb-4 border-b border-black/5 dark:border-white/5">
+      <div>
+        <h4 class="text-base font-semibold">${s.name}</h4>
+        <p class="text-xs opacity-50 mt-1"><svg class="inline w-3 h-3 mr-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>${s.duration}</p>
+      </div>
+      <div class="text-right flex items-center gap-4">
+        <span class="text-base font-bold">₹${s.price}</span>
+        <button onclick="toggleChat(true); document.getElementById('chat-input').value = 'I\\'d like to book ${s.name}';" class="bg-primary text-white px-4 py-1.5 rounded text-xs hover:opacity-90 transition">
+          Book
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+<section class="px-6 py-16 max-w-3xl mx-auto">
+  <h2 class="text-3xl font-bold tracking-widest uppercase text-center mb-16">${title}</h2>
+  <div class="space-y-6">${itemsHtml}</div>
+</section>`;
+}
+
+function booking_calendar(c: Record<string, any>): string {
+  const title = c.title || 'Book an Appointment';
+  const slots = c.slots || ['10:00 AM', '11:30 AM', '02:00 PM', '03:30 PM', '05:00 PM'];
+
+  const slotsHtml = slots.map((s: string) => `
+    <button onclick="toggleChat(true); document.getElementById('chat-input').value = 'I\\'d like to request a booking at ${s}';" class="border border-current px-4 py-3 rounded text-sm hover:bg-current hover:text-white transition font-medium">
+      ${s}
+    </button>
+  `).join('');
+
+  return `
+<section class="px-6 py-16 max-w-xl mx-auto text-center">
+  <h2 class="text-2xl font-bold tracking-widest uppercase mb-4">${title}</h2>
+  <p class="text-sm opacity-60 mb-8">Select an available time slot below to coordinate with our assistant.</p>
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3">${slotsHtml}</div>
+</section>`;
+}
+
+function doctor_grid(c: Record<string, any>): string {
+  const title = c.title || 'Meet Our Doctors';
+  const doctors = c.doctors || [
+    { name: 'Dr. Sarah Connor', specialty: 'Cardiologist' },
+    { name: 'Dr. John Doe', specialty: 'Pediatrician' }
+  ];
+
+  const cardsHtml = doctors.map((d: any) => `
+    <div class="bg-gray-50 dark:bg-white/5 p-6 rounded-lg text-center border border-black/5 dark:border-white/5">
+      <div class="w-24 h-24 rounded-full bg-gray-200 mx-auto mb-4 flex items-center justify-center">
+        <svg class="w-12 h-12 opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+      </div>
+      <h4 class="font-bold text-lg">${d.name}</h4>
+      <p class="text-xs opacity-60 mt-1 uppercase tracking-wider">${d.specialty}</p>
+      <button onclick="toggleChat(true); document.getElementById('chat-input').value = 'I\\'d like to consult with ${d.name}';" class="mt-4 bg-primary text-white px-4 py-2 rounded text-xs hover:opacity-90 w-full transition">
+        Book Consultation
+      </button>
+    </div>
+  `).join('');
+
+  return `
+<section class="px-6 py-16 max-w-4xl mx-auto">
+  <h2 class="text-3xl font-bold tracking-widest uppercase text-center mb-12">${title}</h2>
+  <div class="grid md:grid-cols-2 gap-6">${cardsHtml}</div>
+</section>`;
+}
+
+function class_schedule(c: Record<string, any>): string {
+  const title = c.title || 'Class Schedule';
+  const classes = c.classes || [
+    { name: 'Morning Yoga', time: '07:00 AM - 08:00 AM', trainer: 'Emma Stone' },
+    { name: 'HIIT Cardio', time: '09:30 AM - 10:30 AM', trainer: 'Chris Pratt' },
+    { name: 'Strength Training', time: '05:30 PM - 06:30 PM', trainer: 'Arnold S.' }
+  ];
+
+  const rowsHtml = classes.map((cl: any) => `
+    <tr class="border-b border-black/5 dark:border-white/5">
+      <td class="py-4 font-semibold text-sm">${cl.name}</td>
+      <td class="py-4 text-sm opacity-70">${cl.time}</td>
+      <td class="py-4 text-sm opacity-70">${cl.trainer}</td>
+      <td class="py-4 text-right">
+        <button onclick="toggleChat(true); document.getElementById('chat-input').value = 'I\\'d like to sign up for ${cl.name}';" class="bg-primary text-white px-3 py-1 rounded text-xs hover:opacity-90 transition">
+          Join
+        </button>
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+<section class="px-6 py-16 max-w-4xl mx-auto">
+  <h2 class="text-3xl font-bold tracking-widest uppercase text-center mb-12">${title}</h2>
+  <div class="overflow-x-auto">
+    <table class="w-full text-left border-collapse">
+      <thead>
+        <tr class="border-b border-current pb-2 opacity-50 text-xs uppercase tracking-wider">
+          <th class="pb-3">Class</th>
+          <th class="pb-3">Time</th>
+          <th class="pb-3">Trainer</th>
+          <th class="pb-3 text-right">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+  </div>
+</section>`;
+}
+

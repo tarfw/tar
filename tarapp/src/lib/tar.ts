@@ -49,8 +49,8 @@ export const tar = {
    * Talk to the AI agent.
    * POST /agents/master/:sessionId
    */
-  chat: (sessionId: string, message: string) =>
-    post(`/agents/master/${sessionId}`, { message }),
+  chat: (sessionId: string, message: string, scope?: string) =>
+    post(`/agents/master/${sessionId}`, { message, scope }),
 
   /**
    * Get AI Tasks for a workspace.

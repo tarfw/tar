@@ -1,494 +1,1273 @@
-import { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Modal, FlatList } from 'react-native';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Modal, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as SecureStore from 'expo-secure-store';
 
 import { useTheme } from '@/hooks/use-theme';
 import { tar } from '@/lib/tar';
-import StorefrontTab from '@/components/StorefrontTab';
-import { AITaskCard, AITask } from '@/components/AITaskCard';
-import { AITaskForm } from '@/components/AITaskForm';
+import { useSite } from '@/hooks/use-site';
+import { generateSiteLayout } from '@/lib/site-ai';
+import {
+  TextCard,
+  ErrorCard,
+  ProductListCard,
+  ProductCreatedCard,
+  OrderListCard,
+  StatsCard,
+  SiteCard,
+} from '@/components/cards/ResultCards';
 
-interface Workspace { scope: string; subdomain: string; role: string; name?: string; }
-interface Product { id: string; title: string; qty: number; value: number; data: string; }
+interface Workspace {
+  scope: string;
+  subdomain: string;
+  role: string;
+  name?: string;
+  vertical?: string;
+}
 
-export default function WorkspacesTabScreen() {
+interface CardItem {
+  id: string;
+  type: 'user_text' | 'assistant_text' | 'error' | 'product_list' | 'product_created' | 'order_list' | 'stats' | 'site_card';
+  text?: string;
+  message?: string;
+  products?: any[];
+  product?: any;
+  orders?: any[];
+  title?: string;
+  value?: string | number;
+  subtitle?: string;
+  layout?: any;
+  isDirty?: boolean;
+}
+
+export default function WorkspacesScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [selected, setSelected] = useState<Workspace | null>(null);
-  const [showPicker, setShowPicker] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
 
-  const [activeTab, setActiveTab] = useState<'storefront' | 'products' | 'tasks' | 'info'>('storefront');
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [sessionId] = useState(() => 'sess_' + Date.now());
+  const [products, setProducts] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [agentFeedback, setAgentFeedback] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [input, setInput] = useState('');
+  const [executing, setExecuting] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  
+  // Dynamic workspace blueprints/modules
+  const [loadingIndex, setLoadingIndex] = useState(false);
+  const [activeModules, setActiveModules] = useState<string[]>([]);
+  const [detectedVertical, setDetectedVertical] = useState('general');
+  const [parsedToolsList, setParsedToolsList] = useState<any[]>([]);
+  const [editableQueries, setEditableQueries] = useState<Record<string, string>>({});
+  
+  const scrollViewRef = useRef<ScrollView>(null);
+  const workspaceToolsCache = useRef<Record<string, { detectedVertical: string; activeModules: string[]; parsedToolsList: any[] }>>({});
+  
+  // Custom scope resolution to feed into useSite
+  const activeScope = currentWorkspace?.scope ?? undefined;
+  const { draft, publish, saveDraft, refresh: refreshSite } = useSite(activeScope);
 
-  const [productTitle, setProductTitle] = useState('');
-  const [productPrice, setProductPrice] = useState('');
-  const [productQty, setProductQty] = useState('');
-  const [productCategory, setProductCategory] = useState('');
-  const [addingProduct, setAddingProduct] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [formError, setFormError] = useState('');
+  // Load workspace index.md and dynamic module files from S3 when info modal opens
+  useEffect(() => {
+    if (showInfo && currentWorkspace?.scope) {
+      const scope = currentWorkspace.scope;
+      const cached = workspaceToolsCache.current[scope];
 
-  // AI Tasks State
-  const [tasks, setTasks] = useState<AITask[]>([]);
-  const [loadingTasks, setLoadingTasks] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [activeTask, setActiveTask] = useState<AITask | null>(null);
-  const [executingTask, setExecutingTask] = useState(false);
-  const [executionError, setExecutionError] = useState('');
+      if (cached) {
+        // Load immediately from cache (no loading screen)
+        setDetectedVertical(cached.detectedVertical);
+        setActiveModules(cached.activeModules);
+        setParsedToolsList(cached.parsedToolsList);
+        setLoadingIndex(false);
+      } else {
+        // First-time loading indicator
+        setLoadingIndex(true);
+      }
 
-  const fetchWorkspaces = useCallback(async () => {
-    setLoading(true);
+      tar.okf.readIndex(scope)
+        .then(async (res: any) => {
+          if (res && res.content) {
+            const { vertical, modules } = parseIndexMarkdown(res.content);
+
+            // Fetch each module's markdown content in parallel
+            try {
+              const fetchedTools = await Promise.all(
+                modules.map(async (mod) => {
+                  try {
+                    const fileRes = await tar.okf.read(scope, `${mod}.md`);
+                    if (fileRes && fileRes.content) {
+                      return parseModuleMarkdown(mod, fileRes.content);
+                    }
+                  } catch (e) {
+                    console.warn(`[OKF] Failed to fetch module ${mod}.md:`, e);
+                  }
+                  return null;
+                })
+              );
+              
+              const validTools = fetchedTools.filter(t => t !== null) as any[];
+
+              // Update cache
+              workspaceToolsCache.current[scope] = {
+                detectedVertical: vertical,
+                activeModules: modules,
+                parsedToolsList: validTools
+              };
+
+              // Update states
+              setDetectedVertical(vertical);
+              setActiveModules(modules);
+              setParsedToolsList(validTools);
+            } catch (err) {
+              console.warn('[OKF] Failed to load module details:', err);
+            }
+          }
+        })
+        .catch((err: any) => {
+          console.warn('[OKF] Failed to fetch workspace index.md:', err);
+          if (!cached) {
+            setDetectedVertical(currentWorkspace.vertical || 'general');
+            setActiveModules([]);
+            setParsedToolsList([]);
+          }
+        })
+        .finally(() => {
+          setLoadingIndex(false);
+        });
+    }
+  }, [showInfo, currentWorkspace?.scope]);
+
+  const getDynamicToolsList = () => {
+    const list: any[] = [];
+    
+    // Always include storefront website tools
+    list.push(WEBSITE_TOOLS);
+
+    // If we have successfully parsed dynamic tools from S3 md files
+    if (parsedToolsList.length > 0) {
+      list.push(...parsedToolsList);
+    } else {
+      // Fallback based on vertical (if offline or files not fetched yet)
+      const vert = detectedVertical || currentWorkspace?.vertical || 'general';
+      let fallbacks: string[] = [];
+      if (vert === 'restaurant' || vert === 'bakery' || vert === 'retail') {
+        fallbacks = ['inventory', 'orders'];
+      } else if (vert === 'services') {
+        fallbacks = ['bookings', 'crm'];
+      } else {
+        fallbacks = ['inventory', 'documents'];
+      }
+      fallbacks.forEach(mod => {
+        const tool = MODULE_TOOLS_MAP[mod];
+        if (tool) {
+          list.push(tool);
+        }
+      });
+    }
+
+    return list;
+  };
+
+  // Fetch workspaces list on mount
+  const fetchWorkspacesList = useCallback(async () => {
+    setLoadingWorkspaces(true);
     try {
       const data = await tar.listWorkspaces();
-      const rows = data.workspaces || [];
-      setWorkspaces(rows);
-      
-      const activeSub = await SecureStore.getItemAsync('active_workspace_subdomain').catch(() => null);
-      const matched = rows.find((w: any) => w.subdomain === activeSub);
-      if (matched) {
-        setSelected(matched);
-        await SecureStore.deleteItemAsync('active_workspace_subdomain').catch(() => null);
-      } else if (rows.length > 0 && !selected) {
-        setSelected(rows[0]);
+      const list: Workspace[] = data.workspaces || [];
+      setWorkspaces(list);
+
+      if (list.length > 0) {
+        // Read last active subdomain from SecureStore
+        const activeSub = await SecureStore.getItemAsync('active_workspace_subdomain').catch(() => null);
+        const found = list.find((w) => w.subdomain === activeSub);
+        if (found) {
+          setCurrentWorkspace(found);
+        } else {
+          // Default to first
+          setCurrentWorkspace(list[0]);
+          await SecureStore.setItemAsync('active_workspace_subdomain', list[0].subdomain).catch(() => null);
+        }
       }
     } catch (e) {
-      console.warn('[Workspaces] Failed:', e);
+      console.warn('[Workspaces] Failed to fetch workspaces:', e);
     } finally {
-      setLoading(false);
+      setLoadingWorkspaces(false);
     }
-  }, [selected]);
-
-  useEffect(() => { fetchWorkspaces(); }, [fetchWorkspaces]);
-
-  const fetchProducts = useCallback(async () => {
-    if (!selected?.scope) return;
-    setLoadingProducts(true);
-    try {
-      const result = await tar.tool('read', { table: 'matter', type: 'product', active: 1, scope: selected.scope });
-      setProducts(result.rows || []);
-    } catch (e) {
-      console.warn('[Products] Failed:', e);
-    } finally {
-      setLoadingProducts(false);
-    }
-  }, [selected?.scope]);
-
-  const fetchTasks = useCallback(async () => {
-    if (!selected?.scope) return;
-    setLoadingTasks(true);
-    try {
-      const result = await tar.aiTasks(selected.scope);
-      setTasks(result.actions || []);
-    } catch (e) {
-      console.warn('[Workspaces] Failed to fetch tasks:', e);
-    } finally {
-      setLoadingTasks(false);
-    }
-  }, [selected?.scope]);
+  }, []);
 
   useEffect(() => {
-    if (activeTab === 'products') fetchProducts();
-    if (activeTab === 'tasks') fetchTasks();
-  }, [activeTab, fetchProducts, fetchTasks]);
+    fetchWorkspacesList();
+  }, [fetchWorkspacesList]);
 
-  // Reset workspace-specific states when switching workspaces
+  // Sync current workspace database when selected workspace changes
   useEffect(() => {
-    setActiveTask(null);
-    setSearchQuery('');
-    setSelectedCategory(null);
-    setExecutionError('');
-    if (activeTab === 'products') fetchProducts();
-    if (activeTab === 'tasks') fetchTasks();
-  }, [selected?.scope]);
-
-  const handleAddProduct = async () => {
-    if (!productTitle.trim() || !productPrice.trim() || !selected?.scope) { setFormError('Name and price required'); return; }
-    const val = parseFloat(productPrice);
-    if (isNaN(val)) { setFormError('Invalid price'); return; }
-    setAddingProduct(true); setFormError('');
-    try {
-      await tar.tool('create', {
-        table: 'matter', scope: selected.scope, type: 'product',
-        title: productTitle.trim(), value: val,
-        qty: productQty ? parseInt(productQty, 10) : 0,
-        data: { category: productCategory.trim() || 'General' },
+    if (currentWorkspace?.subdomain) {
+      import('@/lib/db').then(({ initWorkspaceSync }) => {
+        initWorkspaceSync(currentWorkspace.subdomain).catch(err => {
+          console.warn('[Workspace] Failed to initialize sync for', currentWorkspace.subdomain, err);
+        });
       });
-      setProductTitle(''); setProductPrice(''); setProductQty(''); setProductCategory(''); setShowAddForm(false);
-      await fetchProducts();
-    } catch (e: any) { setFormError(e.message || 'Failed'); } finally { setAddingProduct(false); }
+    }
+  }, [currentWorkspace]);
+
+  const refreshProducts = async (scope: string) => {
+    try {
+      const result = await tar.tool('read', {
+        table: 'matter',
+        type: 'product',
+        active: 1,
+        scope
+      });
+      setProducts(result?.rows || []);
+    } catch (e) {
+      console.warn('[Workspace] Failed to fetch products:', e);
+    }
   };
 
-  const handleExecuteTask = async (values: Record<string, any>) => {
-    if (!activeTask || !selected?.scope) return;
-    setExecutingTask(true);
-    setExecutionError('');
+  const refreshOrders = async (scope: string) => {
     try {
-      if (activeTask.steps === 1 && activeTask.tool && activeTask.tool !== 'custom') {
-        const toolInput: any = {
-          table: activeTask.table,
-          type: activeTask.type,
-          scope: selected.scope
-        };
-        if (values.title !== undefined) toolInput.title = values.title;
-        if (values.name !== undefined && !values.title) toolInput.title = values.name;
-        if (values.value !== undefined) toolInput.value = values.value;
-        if (values.price !== undefined && values.value === undefined) toolInput.value = values.price;
-        if (values.qty !== undefined) toolInput.qty = values.qty;
-        
-        toolInput.data = { ...values };
-
-        if (activeTask.tool === 'update') {
-          const id = values.id || values.productId || values.orderId || values.leadId || values.bookingId;
-          if (!id) throw new Error('ID parameter is required to update');
-          await tar.tool('update', {
-            table: activeTask.table,
-            id,
-            scope: selected.scope,
-            patch: values
-          });
-        } else if (activeTask.tool === 'delete') {
-          const id = values.id || values.productId || values.orderId || values.leadId || values.bookingId;
-          if (!id) throw new Error('ID parameter is required to delete');
-          await tar.tool('delete', {
-            table: activeTask.table,
-            id,
-            scope: selected.scope
-          });
-        } else {
-          await tar.tool(activeTask.tool, toolInput);
-        }
+      const result = await tar.tool('read', { table: 'matter', type: 'order', active: 1, scope });
+      if (result?.rows && result.rows.length > 0) {
+        setOrders(result.rows);
       } else {
-        const result = await tar.executeAITask(activeTask.name, values, selected.scope);
-        if (!result.success) {
-          throw new Error(result.error || 'Execution failed');
+        const motionRes = await tar.tool('read', { table: 'motion', active: 1, scope });
+        setOrders(motionRes?.rows || []);
+      }
+    } catch (e) {
+      console.warn('[Workspace] Failed to fetch orders:', e);
+    }
+  };
+
+  // Load products and orders when workspace changes
+  useEffect(() => {
+    if (currentWorkspace?.scope) {
+      const scope = currentWorkspace.scope;
+      refreshProducts(scope);
+      refreshOrders(scope);
+      setAgentFeedback(null);
+    }
+  }, [currentWorkspace]);
+
+  const handleSelectWorkspace = async (item: Workspace) => {
+    setShowDropdown(false);
+    if (item.subdomain === currentWorkspace?.subdomain) return;
+    
+    setCurrentWorkspace(item);
+    await SecureStore.setItemAsync('active_workspace_subdomain', item.subdomain).catch(() => null);
+    setAgentFeedback(null);
+  };
+
+  const handleSend = async (messageText?: string) => {
+    const textToSend = messageText || input;
+    if (!textToSend.trim() || !currentWorkspace) return;
+
+    if (!messageText) setInput('');
+
+    setExecuting(true);
+    setAgentFeedback(null);
+
+    try {
+      const cleanText = textToSend.trim().toLowerCase();
+      const scope = currentWorkspace.scope;
+      const name = currentWorkspace.name || currentWorkspace.subdomain;
+      const subdomain = currentWorkspace.subdomain;
+      const vertical = currentWorkspace.vertical || 'restaurant';
+
+      if (/^(show|list|get|view)\s+(products|menu|services|inventory)/i.test(cleanText)) {
+        await refreshProducts(scope);
+        setAgentFeedback({ text: 'Loaded latest product inventory.', type: 'success' });
+      }
+      else if (/^(show|list|get|view)\s+(orders|sales)/i.test(cleanText)) {
+        await refreshOrders(scope);
+        setAgentFeedback({ text: 'Loaded latest orders.', type: 'success' });
+      }
+      else if (/^(show|view|get)\s+(site|storefront|web|website)/i.test(cleanText)) {
+        await refreshSite();
+        setAgentFeedback({ text: 'Displayed current website draft layout.', type: 'success' });
+      }
+      else if (/^publish\s+(site|storefront|website)/i.test(cleanText)) {
+        await publish();
+        setAgentFeedback({ text: `Site published successfully! It is live at: https://${subdomain}.tarai.space`, type: 'success' });
+      }
+      else if (/^(make|edit|change|update|design|customize)\s+(site|storefront|web|website)(.+)/i.test(cleanText)) {
+        const match = textToSend.match(/^(make|edit|change|update|design|customize)\s+(site|storefront|web|website)\s+(.+)/i);
+        const instruction = match ? match[3] : textToSend;
+
+        const currentProducts = await tar.tool('read', { table: 'matter', type: 'product', active: 1, scope }).then(r => r.rows || []).catch(() => []);
+        const newLayout = await generateSiteLayout(name, vertical, currentProducts, instruction, draft);
+        await saveDraft(newLayout);
+        await refreshSite();
+
+        setAgentFeedback({ text: 'Updated your website theme and draft layout! Click Publish to set it live.', type: 'success' });
+      }
+      else if (/^add\s+(.+?)\s+at\s+(\d+)/i.test(cleanText) || /^create\s+product\s+(.+?)\s+(\d+)/i.test(cleanText) || /^add\s+product\s+(.+?)\s+(\d+)/i.test(cleanText)) {
+        const addMatch = textToSend.match(/^add\s+(.+?)\s+at\s+(\d+)/i) || 
+                         textToSend.match(/^create\s+product\s+(.+?)\s+(\d+)/i) ||
+                         textToSend.match(/^add\s+product\s+(.+?)\s+(\d+)/i);
+        if (addMatch) {
+          const title = addMatch[1].trim();
+          const val = parseFloat(addMatch[2]);
+          await tar.tool('create', {
+            table: 'matter',
+            scope,
+            type: 'product',
+            title,
+            value: val,
+            qty: 10,
+            data: { category: 'General' }
+          });
+          await refreshProducts(scope);
+          setAgentFeedback({ text: `Successfully added "${title}" at ₹${val} to your inventory.`, type: 'success' });
         }
       }
-      setActiveTask(null);
-      if (activeTask.module === 'inventory' || activeTask.name.includes('product')) {
-        await fetchProducts();
+      else {
+        const response = await tar.chat(sessionId, textToSend, scope);
+        setAgentFeedback({ text: response.reply, type: 'info' });
+        
+        // Refresh states if the agent executed database modifications
+        if (response.executorResult?.success || cleanText.includes('product') || cleanText.includes('item') || cleanText.includes('add') || cleanText.includes('create') || cleanText.includes('order')) {
+          await refreshProducts(scope);
+          await refreshOrders(scope);
+          await refreshSite();
+        }
       }
     } catch (e: any) {
-      setExecutionError(e.message || 'Failed to execute task');
+      setAgentFeedback({ text: e.message || 'Something went wrong while executing the command.', type: 'error' });
     } finally {
-      setExecutingTask(false);
+      setExecuting(false);
     }
   };
 
-  const sub = selected?.subdomain || selected?.scope?.replace('w:', '') || '';
-  const categories = Array.from(new Set(tasks.map(t => t.module)));
-  
-  const filteredTasks = tasks.filter(task => {
-    const matchesSearch =
-      task.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      task.purpose.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (task.intents && task.intents.some(i => i.toLowerCase().includes(searchQuery.toLowerCase())));
-    const matchesCategory = !selectedCategory || task.module === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const handlePublishFromCard = async () => {
+    if (!currentWorkspace) return;
+    setExecuting(true);
+    setAgentFeedback(null);
+    try {
+      await publish();
+      setAgentFeedback({ text: `Site published successfully! It is live at: https://${currentWorkspace.subdomain}.tarai.space`, type: 'success' });
+    } catch (e: any) {
+      setAgentFeedback({ text: e.message || 'Failed to publish site.', type: 'error' });
+    } finally {
+      setExecuting(false);
+    }
+  };
 
-  // ── Loading ──────────────────────────────────────────
-  if (loading) {
-    return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator color={theme.primary} /></View>;
+  const hints = [
+    { label: 'Menu', text: 'show products' },
+    { label: 'Show Site', text: 'show site' },
+    { label: 'Publish Site', text: 'publish site' },
+    { label: 'Orders', text: 'show orders' },
+  ];
+
+  if (loadingWorkspaces) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
   }
 
-  // ── No workspaces ────────────────────────────────────
+  // Handle case where user has no workspaces created
   if (workspaces.length === 0) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.background, gap: 12 }]}>
-        <Ionicons name="briefcase-outline" size={40} color={theme.textMuted} />
-        <Text style={{ color: theme.textMuted }}>No workspaces</Text>
+      <View style={[styles.center, { backgroundColor: theme.background, paddingHorizontal: 32 }]}>
+        <View style={styles.emptyContainer}>
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>Welcome to tar.</Text>
+          <Text style={[styles.emptySubtitle, { color: theme.textMuted }]}>
+            Create a workspace to start managing your storefront with agentic AI.
+          </Text>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push('/onboarding')}
+            style={[styles.emptyButton, { backgroundColor: theme.primary }]}
+          >
+            <Ionicons name="add" size={20} color="#ffffff" style={{ marginRight: 4 }} />
+            <Text style={styles.emptyButtonText}>Create Workspace</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Picker header */}
-      <Pressable style={[styles.pickerHeader, { paddingTop: insets.top + 12, borderBottomColor: theme.border }]} onPress={() => setShowPicker(true)}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.pickerTitle, { color: theme.text }]} numberOfLines={1}>
-            {selected?.name || sub}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      {/* Header with Switcher */}
+      <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: theme.border }]}>
+        <Pressable onPress={() => setShowDropdown(true)} style={styles.switcherButton}>
+          <Text style={[styles.switcherText, { color: theme.text }]} numberOfLines={1}>
+            {currentWorkspace?.name || currentWorkspace?.subdomain}
           </Text>
-          <Text style={[styles.pickerSub, { color: theme.textMuted }]}>{sub}.tarai.space</Text>
-        </View>
-        <Ionicons name="chevron-down" size={18} color={theme.textMuted} />
-      </Pressable>
+          <Ionicons name="chevron-down" size={16} color={theme.textMuted} style={{ marginLeft: 4 }} />
+        </Pressable>
 
-      {/* Tabs */}
-      <View style={[styles.tabs, { borderBottomColor: theme.border }]}>
-        {(['storefront', 'products', 'tasks', 'info'] as const).map((t) => (
-          <Pressable key={t} style={[styles.tab, activeTab === t && { borderBottomColor: theme.primary }]}
-            onPress={() => setActiveTab(t)}>
-            <Text style={[styles.tabText, { color: activeTab === t ? theme.primary : theme.textMuted },
-              activeTab === t && { fontWeight: '600' }]}>
-              {t === 'tasks' ? 'AI Tasks' : t.charAt(0).toUpperCase() + t.slice(1)}
-            </Text>
-          </Pressable>
-        ))}
+        <View style={{ flex: 1 }} />
+
+        <Pressable onPress={() => setShowInfo(true)} style={styles.infoBtn}>
+          <Ionicons name="information-circle-outline" size={24} color={theme.text} />
+        </Pressable>
       </View>
 
-      {/* Content */}
-      <View style={{ flex: 1 }}>
-        {activeTab === 'storefront' && selected && (
-          <StorefrontTab storeId={selected.scope} storeName={selected.name || sub} subdomain={sub} products={products} />
+      {/* Results Scroll Area */}
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.resultsArea}
+        contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+      >
+        {/* 1. Live Site Status Widget */}
+        {draft && (
+          <SiteCard
+            storeName={currentWorkspace?.name || currentWorkspace?.subdomain || ''}
+            subdomain={currentWorkspace?.subdomain || ''}
+            layout={draft}
+            isDirty={true}
+            onPublish={handlePublishFromCard}
+          />
         )}
 
-        {activeTab === 'products' && (
-          <View style={{ flex: 1 }}>
-            <View style={styles.productsHeader}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Products</Text>
-            </View>
-            {loadingProducts ? (
-              <ActivityIndicator style={{ marginTop: 32 }} color={theme.textSecondary} />
-            ) : products.length === 0 ? (
-              <View style={styles.empty}><Ionicons name="cube-outline" size={40} color={theme.textMuted} />
-                <Text style={{ color: theme.textMuted }}>No products</Text></View>
-            ) : (
-              <ScrollView contentContainerStyle={{ padding: 16 }}>
-                {products.map((p) => {
-                  let cat = 'General'; try { cat = JSON.parse(p.data)?.category || cat; } catch {}
-                  return (
-                    <View key={p.id} style={[styles.productCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                      <View style={{ flex: 1 }}><Text style={[styles.pName, { color: theme.text }]}>{p.title}</Text>
-                        <Text style={{ fontSize: 12, color: theme.textMuted }}>{cat}</Text></View>
-                      <View style={{ alignItems: 'flex-end' }}><Text style={[styles.pPrice, { color: theme.primary }]}>{(p.value ?? 0).toFixed(0)}</Text>
-                        <Text style={{ fontSize: 12, color: theme.textMuted }}>x{p.qty ?? 0}</Text></View>
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            )}
-          </View>
-        )}
+        <View style={{ height: 12 }} />
 
-        {activeTab === 'tasks' && (
-          <View style={{ flex: 1 }}>
-            {activeTask ? (
-              <ScrollView contentContainerStyle={{ padding: 16 }}>
-                <AITaskForm
-                  task={activeTask}
-                  onSubmit={handleExecuteTask}
-                  onCancel={() => { setActiveTask(null); setExecutionError(''); }}
-                  executing={executingTask}
+        {/* 2. Inventory Section */}
+        <ProductListCard products={products} />
+
+        <View style={{ height: 12 }} />
+
+        {/* 3. Recent Orders Section */}
+        <OrderListCard orders={orders} />
+      </ScrollView>
+
+      {/* Input Section */}
+      <View style={[styles.inputContainer, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: Platform.OS === 'ios' ? 12 : 24 }]}>
+        {/* Agent Response Feedback Alert */}
+        {agentFeedback && (
+          <View style={[styles.feedbackContainer, { backgroundColor: theme.background, borderColor: theme.border, marginBottom: 12 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <Ionicons 
+                  name={agentFeedback.type === 'error' ? "alert-circle" : "sparkles"} 
+                  size={15} 
+                  color={agentFeedback.type === 'error' ? "#ff4d4f" : theme.primary} 
                 />
-                {executionError ? (
-                  <Text style={[styles.error, { marginTop: 12, textAlign: 'center' }]}>{executionError}</Text>
-                ) : null}
-              </ScrollView>
-            ) : (
-              <View style={{ flex: 1 }}>
-                {/* Search Bar */}
-                <View style={[styles.searchBar, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
-                  <Ionicons name="search" size={16} color={theme.textMuted} />
-                  <TextInput
-                    style={[styles.searchInput, { color: theme.text }]}
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    placeholder="Search actions or intents..."
-                    placeholderTextColor={theme.textMuted}
-                  />
-                  {searchQuery ? (
-                    <Pressable onPress={() => setSearchQuery('')}>
-                      <Ionicons name="close-circle" size={16} color={theme.textMuted} />
-                    </Pressable>
-                  ) : null}
-                </View>
-
-                {/* Category Chips */}
-                {categories.length > 0 && (
-                  <View style={styles.chipsWrapper}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContainer}>
-                      <Pressable
-                        style={[
-                          styles.chip,
-                          {
-                            borderColor: theme.border,
-                            backgroundColor: !selectedCategory ? theme.primary : theme.backgroundElement
-                          }
-                        ]}
-                        onPress={() => setSelectedCategory(null)}
-                      >
-                        <Text style={[styles.chipText, { color: !selectedCategory ? '#fff' : theme.textSecondary }]}>
-                          All
-                        </Text>
-                      </Pressable>
-                      {categories.map(cat => (
-                        <Pressable
-                          key={cat}
-                          style={[
-                            styles.chip,
-                            {
-                              borderColor: theme.border,
-                              backgroundColor: selectedCategory === cat ? theme.primary : theme.backgroundElement
-                            }
-                          ]}
-                          onPress={() => setSelectedCategory(cat)}
-                        >
-                          <Text style={[styles.chipText, { color: selectedCategory === cat ? '#fff' : theme.textSecondary }]}>
-                            {cat}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-
-                {/* Task List */}
-                {loadingTasks ? (
-                  <ActivityIndicator style={{ marginTop: 32 }} color={theme.textSecondary} />
-                ) : filteredTasks.length === 0 ? (
-                  <View style={styles.empty}>
-                    <Ionicons name="flash-off-outline" size={40} color={theme.textMuted} />
-                    <Text style={[styles.emptyText, { color: theme.textMuted }]}>
-                      {searchQuery || selectedCategory ? 'No matching tasks' : 'No AI Tasks found'}
-                    </Text>
-                  </View>
-                ) : (
-                  <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 20 }}>
-                    {filteredTasks.map(task => (
-                      <AITaskCard
-                        key={task.name}
-                        task={task}
-                        onPress={() => {
-                          setActiveTask(task);
-                          setExecutionError('');
-                        }}
-                      />
-                    ))}
-                  </ScrollView>
-                )}
+                <Text style={[
+                  styles.feedbackTitle, 
+                  { 
+                    color: agentFeedback.type === 'error' ? "#ff4d4f" : theme.text, 
+                    marginLeft: 6 
+                  }
+                ]}>
+                  {agentFeedback.type === 'error' ? "Error" : "Agent Response"}
+                </Text>
               </View>
-            )}
+              <Pressable onPress={() => setAgentFeedback(null)} hitSlop={12}>
+                <Ionicons name="close" size={18} color={theme.textMuted} />
+              </Pressable>
+            </View>
+            <Text style={[styles.feedbackText, { color: theme.text }]}>
+              {agentFeedback.text}
+            </Text>
           </View>
         )}
 
-        {activeTab === 'info' && (
-          <ScrollView style={{ padding: 16 }}>
-            <View style={[styles.infoCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-              {[['Scope', selected?.scope], ['Domain', `https://${sub}.tarai.space`]].map(([l, v]) => (
-                <View key={l as string}>
-                  <Text style={[styles.infoLabel, { color: theme.textMuted }]}>{l}</Text>
-                  <Text selectable style={[styles.infoVal, { color: theme.text }]}>{v}</Text>
-                  <View style={[styles.divider, { backgroundColor: theme.border }]} />
-                </View>
-              ))}
-            </View>
-          </ScrollView>
+        {/* Loading Spinner during execution */}
+        {executing && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 }}>
+            <ActivityIndicator size="small" color={theme.primary} />
+            <Text style={{ color: theme.textMuted, fontSize: 13, marginLeft: 8 }}>Agent executing action...</Text>
+          </View>
         )}
+
+        {/* Autocomplete chips */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hintsContainer}>
+          {hints.map((hint, idx) => (
+            <Pressable
+              key={idx}
+              onPress={() => handleSend(hint.text)}
+              style={[styles.hintChip, { borderColor: theme.border, backgroundColor: theme.background, borderWidth: 1 }]}
+            >
+              <Text style={[styles.hintText, { color: theme.textSecondary }]}>{hint.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        {/* Text Input Bar */}
+        <View style={[styles.textInputWrapper, { borderColor: theme.border, backgroundColor: theme.background, borderWidth: 1 }]}>
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="Ask agent to add products, show orders, or build site..."
+            placeholderTextColor={theme.textMuted}
+            style={[styles.textInput, { color: theme.text }]}
+            multiline={true}
+            onSubmitEditing={() => handleSend()}
+          />
+          <Pressable
+            onPress={() => handleSend()}
+            style={[styles.sendButton, { backgroundColor: input.trim() ? theme.primary : theme.border }]}
+            disabled={!input.trim()}
+          >
+            <Ionicons name="arrow-up" size={18} color="#ffffff" />
+          </Pressable>
+        </View>
       </View>
 
-      {/* Picker modal */}
-      <Modal visible={showPicker} transparent animationType="slide">
-        <View style={styles.overlay}>
-          <View style={[styles.sheet, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
-            <View style={[styles.handle, { backgroundColor: theme.textMuted }]} />
-            <Text style={[styles.sheetTitle, { color: theme.text }]}>Workspaces</Text>
-            <FlatList
-              data={workspaces}
-              keyExtractor={(i) => i.scope}
-              renderItem={({ item }) => {
-                const s = item.subdomain || item.scope.replace('w:', '');
-                const active = item.scope === selected?.scope;
+      {/* Workspace Switcher Dropdown Modal */}
+      <Modal
+        visible={showDropdown}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDropdown(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowDropdown(false)}>
+          <View style={[styles.dropdownContent, { backgroundColor: theme.background, borderColor: theme.border }]}>
+            <View style={styles.dropdownHeader}>
+              <Text style={[styles.dropdownTitle, { color: theme.text }]}>Switch Workspace</Text>
+              <Pressable onPress={() => { setShowDropdown(false); router.push('/onboarding'); }} style={styles.dropdownAddBtn}>
+                <Ionicons name="add" size={20} color={theme.primary} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 300 }}>
+              {workspaces.map((w) => {
+                const isActive = w.subdomain === currentWorkspace?.subdomain;
                 return (
-                  <Pressable style={[styles.sheetItem, { borderBottomColor: theme.border }, active && { backgroundColor: theme.primary + '10' }]}
-                    onPress={() => { setSelected(item); setShowPicker(false); }}>
+                  <Pressable
+                    key={w.scope}
+                    onPress={() => handleSelectWorkspace(w)}
+                    style={({ pressed }) => [
+                      styles.workspaceOption,
+                      {
+                        backgroundColor: isActive ? theme.border + '20' : 'transparent',
+                        opacity: pressed ? 0.8 : 1
+                      }
+                    ]}
+                  >
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '500', color: active ? theme.primary : theme.text }}>{item.name || s}</Text>
-                      <Text style={{ fontSize: 13, color: theme.textMuted }}>{s}.tarai.space</Text>
+                      <Text style={[styles.workspaceOptionName, { color: theme.text, fontWeight: isActive ? '700' : '500' }]}>
+                        {w.name || w.subdomain}
+                      </Text>
+                      <Text style={[styles.workspaceOptionSubdomain, { color: theme.textMuted }]}>
+                        {w.subdomain}.tarai.space
+                      </Text>
                     </View>
-                    {active && <Ionicons name="checkmark" size={18} color={theme.primary} />}
+                    {isActive && (
+                      <Ionicons name="checkmark" size={18} color={theme.primary} />
+                    )}
                   </Pressable>
                 );
-              }}
-              ListFooterComponent={
-                <Pressable style={[styles.sheetItem, { borderBottomColor: theme.border }]}
-                  onPress={() => { setShowPicker(false); router.push('/onboarding'); }}>
-                  <Ionicons name="add-circle-outline" size={20} color={theme.primary} />
-                  <Text style={{ fontSize: 16, fontWeight: '500', color: theme.primary, marginLeft: 10 }}>New Workspace</Text>
-                </Pressable>
-              }
-            />
+              })}
+            </ScrollView>
           </View>
+        </Pressable>
+      </Modal>
+      {/* Workspace Details Info & AI Tools Full-Screen Modal */}
+      <Modal
+        visible={showInfo}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={() => setShowInfo(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: theme.background, paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 16 }}>
+          {/* Full Screen Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
+            <Pressable onPress={() => setShowInfo(false)} style={{ padding: 4 }}>
+              <Ionicons name="close" size={26} color={theme.text} />
+            </Pressable>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>Workspace & AI Tools</Text>
+            <View style={{ width: 26 }} />
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1, marginTop: 16 }}>
+            {/* Info Section - Flat Design */}
+            <View style={{ marginBottom: 24 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: theme.primary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                Workspace Information
+              </Text>
+              
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
+                <Text style={{ fontSize: 14, color: theme.textSecondary }}>Scope ID</Text>
+                <Text selectable style={{ fontSize: 14, color: theme.text, fontWeight: '500' }}>{currentWorkspace?.scope}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
+                <Text style={{ fontSize: 14, color: theme.textSecondary }}>Vertical</Text>
+                <Text style={{ fontSize: 14, color: theme.text, fontWeight: '500', textTransform: 'capitalize' }}>{currentWorkspace?.vertical}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
+                <Text style={{ fontSize: 14, color: theme.textSecondary }}>Live Domain</Text>
+                <Text selectable style={{ fontSize: 14, color: theme.primary, fontWeight: '500' }}>https://{currentWorkspace?.subdomain}.tarai.space</Text>
+              </View>
+            </View>
+
+            {/* Tools Section Title */}
+            <Text style={{ fontSize: 13, fontWeight: '700', color: theme.text, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4, marginTop: 12 }}>
+              AI Agent Tools
+            </Text>
+            <Text style={{ color: theme.textMuted, fontSize: 13, marginBottom: 12 }}>
+              Edit and run queries in real time to interact with your AI agent.
+            </Text>
+
+            {loadingIndex ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={theme.primary} />
+                <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>Reading S3 workspace blueprints...</Text>
+              </View>
+            ) : (
+              getDynamicToolsList().map((cat: any, catIdx: number) => (
+                <View key={catIdx} style={{ marginBottom: 24 }}>
+                  {/* Flat category header */}
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: theme.primary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, marginTop: 12 }}>
+                    {cat.category}
+                  </Text>
+                  
+                  {cat.items.map((item: any, itemIdx: number) => {
+                    const uniqueKey = `${cat.category}_${item.name}`;
+                    const currentValue = editableQueries[uniqueKey] !== undefined ? editableQueries[uniqueKey] : item.example;
+
+                    return (
+                      <View 
+                        key={itemIdx} 
+                        style={{ 
+                          paddingVertical: 14, 
+                          borderBottomWidth: StyleSheet.hairlineWidth, 
+                          borderBottomColor: theme.border 
+                        }}
+                      >
+                        {/* Title & Description */}
+                        <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>
+                          {item.name}
+                        </Text>
+                        {item.desc ? (
+                          <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2, marginBottom: 8 }}>
+                            {item.desc}
+                          </Text>
+                        ) : null}
+                        
+                        {/* Dynamic editable input row */}
+                        <View style={{ 
+                          flexDirection: 'row', 
+                          alignItems: 'center', 
+                          backgroundColor: theme.backgroundElement, 
+                          borderColor: theme.border, 
+                          borderWidth: 1, 
+                          borderRadius: 8, 
+                          paddingHorizontal: 8,
+                          height: 38
+                        }}>
+                          <TextInput
+                            style={{ 
+                              flex: 1, 
+                              fontSize: 13, 
+                              color: theme.text, 
+                              paddingVertical: 0,
+                              height: '100%'
+                            }}
+                            value={currentValue}
+                            onChangeText={(text) => {
+                              setEditableQueries(prev => ({
+                                ...prev,
+                                [uniqueKey]: text
+                              }));
+                            }}
+                            placeholder="Enter command..."
+                            placeholderTextColor={theme.textMuted}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                          />
+                          <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={() => {
+                              setShowInfo(false);
+                              handleSend(currentValue);
+                            }}
+                            style={{ 
+                              backgroundColor: theme.primary, 
+                              paddingHorizontal: 12, 
+                              paddingVertical: 4, 
+                              borderRadius: 6,
+                              justifyContent: 'center',
+                              alignItems: 'center'
+                            }}
+                          >
+                            <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>Try</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))
+            )}
+          </ScrollView>
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
+const WEBSITE_TOOLS = {
+  category: 'Storefront Website',
+  items: [
+    {
+      name: 'Generate Site',
+      desc: 'Modifies the design layout or color scheme based on instructions.',
+      example: 'make the website look like a luxury storefront',
+    },
+    {
+      name: 'Preview Storefront',
+      desc: 'Brings up the live storefront preview status card.',
+      example: 'show site',
+    },
+    {
+      name: 'Publish Website',
+      desc: 'Deploys all local changes to the live web domain.',
+      example: 'publish site',
+    },
+  ]
+};
+
+const MODULE_TOOLS_MAP: Record<string, {
+  category: string;
+  items: { name: string; desc: string; example: string }[];
+}> = {
+  inventory: {
+    category: 'Inventory & Products',
+    items: [
+      {
+        name: 'Add Product',
+        desc: 'Creates a new product with custom price in the store database.',
+        example: 'add chocolate muffin at 180',
+      },
+      {
+        name: 'Show Inventory',
+        desc: 'Fetches and displays the complete list of active products.',
+        example: 'show products',
+      },
+    ]
+  },
+  orders: {
+    category: 'Orders & Sales',
+    items: [
+      {
+        name: 'Show Orders',
+        desc: 'Fetches client orders list from the database.',
+        example: 'show orders',
+      },
+    ]
+  },
+  bookings: {
+    category: 'Bookings & Schedules',
+    items: [
+      {
+        name: 'Show Bookings',
+        desc: 'Lists scheduled customer appointments and bookings.',
+        example: 'show bookings',
+      },
+    ]
+  },
+  crm: {
+    category: 'Customer & Leads',
+    items: [
+      {
+        name: 'View CRM Leads',
+        desc: 'Displays active sales leads and customer contacts.',
+        example: 'show crm leads',
+      },
+    ]
+  },
+  expenses: {
+    category: 'Expenses & Finance',
+    items: [
+      {
+        name: 'Track Expenses',
+        desc: 'Lists tracked business expenses and financial records.',
+        example: 'show expenses',
+      },
+    ]
+  },
+  reports: {
+    category: 'Reports & Analytics',
+    items: [
+      {
+        name: 'View Reports',
+        desc: 'Summarizes sales performance and analytics reports.',
+        example: 'show reports',
+      },
+    ]
+  },
+  documents: {
+    category: 'Knowledge Base Documents',
+    items: [
+      {
+        name: 'Semantic Query',
+        desc: 'Performs natural language vector search on your workspace documents.',
+        example: 'search sourdough',
+      },
+    ]
+  }
+};
+
+function parseIndexMarkdown(md: string) {
+  let vertical = 'general';
+  let modules: string[] = [];
+
+  const verticalMatch = md.match(/\*\*Vertical:\*\*\s*(.+)/i);
+  if (verticalMatch) {
+    vertical = verticalMatch[1].trim().toLowerCase();
+  }
+
+  const modulesMatch = md.match(/\*\*Modules:\*\*\s*(.+)/i);
+  if (modulesMatch) {
+    modules = modulesMatch[1]
+      .split(',')
+      .map(m => m.trim().toLowerCase())
+      .filter(m => m.length > 0);
+  }
+
+  return { vertical, modules };
+}
+
+function cleanUserSays(phrase: string, actionId: string): string {
+  let clean = phrase.split('/')[0].trim();
+  
+  const lowerClean = clean.toLowerCase();
+  const lowerAction = actionId.toLowerCase();
+  
+  if (lowerAction.includes('booking') && (lowerClean === 'book' || lowerClean === 'reserve')) {
+    return 'book a table';
+  }
+  if (lowerAction.includes('reschedule') && lowerClean === 'reschedule') {
+    return 'reschedule booking';
+  }
+  if (lowerAction.includes('create') && lowerClean === 'add') {
+    return 'add product';
+  }
+  if (lowerClean.endsWith('for')) {
+    return clean + ' 4 people';
+  }
+  if (lowerClean.endsWith('at')) {
+    return clean + ' 150';
+  }
+  
+  return clean;
+}
+
+function parseModuleMarkdown(filename: string, content: string) {
+  // Find title and clean it up (e.g. "Inventory module" -> "Inventory Skill")
+  let categoryName = filename.charAt(0).toUpperCase() + filename.slice(1) + ' Skill';
+  const h1Match = content.match(/^#\s*(.+)$/m);
+  if (h1Match) {
+    categoryName = h1Match[1].trim();
+  }
+  categoryName = categoryName.replace(/module/i, 'Skill');
+
+  const lines = content.split('\n');
+  const actionMap: Record<string, { name: string; desc: string; example: string }> = {};
+  const intents: Record<string, string> = {};
+
+  // First pass: scan for table rows to find actions and intents
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('|')) continue;
+    
+    const cols = trimmed.split('|').map(c => c.trim()).filter(c => c.length > 0);
+    // Ignore markdown dividers like |---|---|
+    if (cols.some(c => c.startsWith('---') || c.startsWith('- -'))) continue;
+    
+    let actionId = '';
+    let otherText = '';
+    let isIntentRow = false;
+
+    // Check if this row is from an Intent matching table or action definition
+    for (let i = 0; i < cols.length; i++) {
+      const col = cols[i];
+      const cleanCol = col.replace(/[`"']/g, '').trim();
+      if (cleanCol.startsWith('action_')) {
+        actionId = cleanCol;
+        otherText = cols[i === 0 ? 1 : 0] || '';
+        break;
+      }
+    }
+
+    if (actionId) {
+      const cleanOther = otherText.replace(/[`"']/g, '').trim();
+      
+      // Determine if this is an intent row (contains queries or is in intent section)
+      if (content.toLowerCase().indexOf('intent') !== -1 && 
+          content.toLowerCase().indexOf(otherText.toLowerCase()) > content.toLowerCase().indexOf('intent')) {
+        isIntentRow = true;
+      } else if (cleanOther.includes('sold') || cleanOther.includes('value') || cleanOther.includes('worth') || cleanOther.includes('sales') || cleanOther.includes('low') || cleanOther.includes('expiring')) {
+        isIntentRow = true;
+      }
+
+      if (isIntentRow) {
+        intents[actionId] = cleanUserSays(otherText, actionId);
+      } else {
+        // Table-based action definition (like in inventory or orders)
+        const displayName = actionId
+          .replace('action_report_', '')
+          .replace('action_', '')
+          .split('_')
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ');
+        
+        actionMap[actionId] = {
+          name: displayName,
+          desc: cleanOther,
+          example: intents[actionId] || ''
+        };
+      }
+    }
+  }
+
+  // Second pass: scan for Header-based actions (like ### action_...)
+  const actionBlocks = content.split(/###\s+/);
+  for (let i = 1; i < actionBlocks.length; i++) {
+    const block = actionBlocks[i];
+    const blockLines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (blockLines.length === 0) continue;
+    
+    const actionId = blockLines[0].replace(/[`"']/g, '').trim();
+    if (!actionId.startsWith('action_')) continue;
+    
+    const desc = blockLines[1] || 'Execute ' + actionId;
+    const displayName = actionId
+      .replace('action_report_', '')
+      .replace('action_', '')
+      .split('_')
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+
+    actionMap[actionId] = {
+      name: displayName,
+      desc,
+      example: intents[actionId] || ''
+    };
+  }
+
+  // Third pass: if we have intents (like reports) but no action definitions yet, create them dynamically
+  Object.entries(intents).forEach(([actionId, example]) => {
+    if (!actionMap[actionId]) {
+      const displayName = actionId
+        .replace('action_report_', '')
+        .replace('action_', '')
+        .split('_')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+        
+      actionMap[actionId] = {
+        name: displayName,
+        desc: `Run the ${displayName.toLowerCase()} report query.`,
+        example: example
+      };
+    }
+  });
+
+  // Consolidate list of actions
+  const items = Object.entries(actionMap).map(([actionId, act]) => {
+    let example = act.example || intents[actionId];
+    if (!example) {
+      const base = actionId.replace('action_report_', '').replace('action_', '').replace(/_/g, ' ');
+      example = base;
+    }
+    return {
+      name: act.name,
+      desc: act.desc,
+      example: example
+    };
+  });
+
+  // Fallback if no actions found
+  if (items.length === 0) {
+    items.push({
+      name: `View ${categoryName}`,
+      desc: `Displays active records for ${categoryName.toLowerCase()}.`,
+      example: `show ${filename}`
+    });
+  }
+
+  return {
+    category: categoryName,
+    items
+  };
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  pickerHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
-  pickerTitle: { fontSize: 20, fontWeight: '700' },
-  pickerSub: { fontSize: 12, marginTop: 1 },
-  tabs: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 14, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabText: { fontSize: 14 },
-  productsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
-  sectionTitle: { fontSize: 16, fontWeight: '600' },
-  addBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 },
-  addBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  form: { marginHorizontal: 16, marginBottom: 16, padding: 16, borderRadius: 12, borderWidth: 1, gap: 10 },
-  formRow: { flexDirection: 'row', gap: 10 },
-  input: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, fontSize: 14 },
-  saveBtn: { paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-  saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  error: { color: '#f44336', fontSize: 12 },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 8 },
-  emptyText: { fontSize: 14 },
-  productCard: { flexDirection: 'row', marginBottom: 8, padding: 14, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
-  pName: { fontSize: 15, fontWeight: '500' },
-  pPrice: { fontSize: 16, fontWeight: '700' },
-  infoCard: { padding: 16, borderRadius: 12, borderWidth: 1 },
-  infoLabel: { fontSize: 12, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 12 },
-  infoVal: { fontSize: 14, fontWeight: '500', marginTop: 4 },
-  divider: { height: 1, marginTop: 12 },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 40, maxHeight: '70%' },
-  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 16, opacity: 0.3 },
-  sheetTitle: { fontSize: 18, fontWeight: '700', paddingHorizontal: 20, marginBottom: 12 },
-  sheetItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10 },
-  // AI Tasks styles
-  searchBar: {
+  container: {
+    flex: 1,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    margin: 16,
-    marginBottom: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  switcherButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  switcherText: {
+    fontSize: 18,
+    fontWeight: '700',
+    maxWidth: 220,
+  },
+  infoBtn: {
+    padding: 8,
+  },
+  resultsArea: {
+    flex: 1,
+  },
+  loadingBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'transparent',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 8,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    padding: 0,
+  inputContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  chipsWrapper: {
+  hintsContainer: {
+    flexDirection: 'row',
     marginBottom: 8,
   },
-  chipsContainer: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 14,
+  hintChip: {
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  chipText: {
+  hintText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  textInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 24,
+    paddingLeft: 16,
+    paddingRight: 8,
+    paddingVertical: 6,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 14,
+    maxHeight: 120,
+    paddingVertical: 4,
+  },
+  sendButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  dropdownContent: {
+    width: '90%',
+    maxWidth: 380,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  dropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
+  },
+  dropdownTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  dropdownAddBtn: {
+    padding: 4,
+  },
+  workspaceOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  workspaceOptionName: {
+    fontSize: 15,
+  },
+  workspaceOptionSubdomain: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  modalContent: {
+    width: '90%',
+    maxWidth: 400,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  infoLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  infoValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'right',
+  },
+  modalCloseButton: {
+    marginTop: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalCloseText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  emptyButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  toolsCategory: {
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  toolsCategoryTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  toolCard: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  toolName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  toolDesc: {
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  toolExampleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 8,
+    borderRadius: 6,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  toolExampleText: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    fontSize: 11,
+    flex: 1,
+    marginRight: 8,
+  },
+  toolTryBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+  },
+  toolTryBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  feedbackContainer: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  feedbackTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  feedbackText: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4,
   },
 });

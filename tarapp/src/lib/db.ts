@@ -65,14 +65,19 @@ function createLocalDbConnection(key: string, dbName: string): Database {
 }
 
 function createSyncDbConnection(key: string, dbName: string, url: string, authToken: string): Database {
-  if (dbConnections[key]) delete dbConnections[key];
+  if (dbConnections[key]) {
+    if (dbConnections[key].isSync) {
+      return dbConnections[key];
+    }
+    // Close existing local-only connection to allow sync connection to bind to the same database file
+    try {
+      dbConnections[key].close();
+    } catch (_) {}
+  }
   const db = new Database({
     path: getDbPath(dbName),
     url,
     authToken,
-    partialSyncExperimental: {
-      bootstrapStrategy: { kind: 'query', query: PARTIAL_SYNC_QUERY },
-    },
   });
   dbConnections[key] = db;
   notifyDbChange(db);
@@ -289,11 +294,17 @@ export async function switchUser(userId: string): Promise<Database> {
 }
 
 export function getWorkspaceSyncDb(subdomain: string, url: string, authToken: string): Database {
-  return createSyncDbConnection(`workspace_${subdomain}`, `ws_${subdomain}.db`, url, authToken);
+  return createSyncDbConnection(`workspace_${subdomain}`, `workspace_${subdomain}.db`, url, authToken);
 }
 
 export async function initWorkspaceSync(subdomain: string): Promise<void> {
   const t0 = Date.now();
+  const syncKey = `workspace_${subdomain}`;
+  if (dbConnections[syncKey] && dbConnections[syncKey].isSync) {
+    console.log(`[DB] initWorkspaceSync: connection already exists and is sync-enabled for ${subdomain}, reuse it`);
+    syncReadyResolve?.();
+    return;
+  }
   console.log(`[DB] initWorkspaceSync START for subdomain = ${subdomain}`);
 
   try {

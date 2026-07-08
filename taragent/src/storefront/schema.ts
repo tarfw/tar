@@ -21,10 +21,17 @@ export interface Section {
   config: Record<string, any>;
 }
 
+export interface WidgetConfig {
+  type: 'cart' | 'booking' | 'contact' | 'tracking' | 'quote' | 'chat';
+  config: Record<string, any>;
+}
+
 export interface StorefrontLayout {
+  vertical?: string;
   template: TemplateName;
   theme: Theme;
   sections: Section[];
+  widgets?: WidgetConfig[];
 }
 
 export interface StorefrontProduct {

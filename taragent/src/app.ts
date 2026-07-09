@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
-import { renderStorefront } from './storefront/renderer';
-import { editorShell } from './storefront/editor';
+import { handleSiteRequest } from './site-renderer';
 import { initClient } from './lib/db';
 import { findActionMemories, incrementMemoryUsage } from './lib/memory';
 import { getUserTimeline } from './lib/inbox';
@@ -9,15 +8,13 @@ import { handleChannelMessage, sendChannelMessage, getChannelConfig } from './ch
 import { listTemplates, getTemplate, installTemplate, searchTemplates } from './marketplace/templates';
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
 import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspaceFromVertical, uploadVerticalFile, readVerticalFile, listWorkspaceModules, listVerticalModules, readWithFallback, classifyVertical } from './lib/okf';
-import { handleWebSocketUpgrade, pushMotionEvent } from './lib/websocket';
+
 import { getOrCreateWorkspaceDb } from './lib/workspace-db';
 import { dbContext } from './lib/db';
 import { parseSkillMarkdown, generateCompactActionIndex } from './lib/skill-parser';
 import { executeAITask } from './lib/action-executor';
 
-function getDO(env: any, slug: string) {
-  return env.EDITOR.get(env.EDITOR.idFromName(slug));
-}
+
 
 function storePendingPage(slug: string): string {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${slug}</title><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-gray-50 flex items-center justify-center min-h-screen"><div class="text-center"><h1 class="text-4xl font-bold text-gray-900 mb-4">${slug}</h1><p class="text-gray-500 mb-4">This workspace is being set up.</p></div></body></html>`;
@@ -76,7 +73,7 @@ app.post('/dev/seed-templates', async (c) => {
 app.post('/workspaces/create', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
   const body = await c.req.json();
-  const { name, template, subdomain, vertical, description } = body || {};
+  const { name, template, subdomain, vertical, description, modules } = body || {};
 
   if (!name || !template || !subdomain) {
     return c.json({ error: 'Missing name, template, or subdomain' }, 400);
@@ -133,7 +130,7 @@ app.post('/workspaces/create', async (c) => {
     // 4. Copy vertical SKILL.md files to workspace S3 (with personalization)
     let okfResult = 'skipped';
     try {
-      await initWorkspaceFromVertical(c.env, scope, name, vert, undefined, description);
+      await initWorkspaceFromVertical(c.env, scope, name, vert, modules, description);
       okfResult = 'done';
     } catch (okfErr: any) {
       okfResult = `error: ${okfErr.message}`;
@@ -320,7 +317,7 @@ app.get('/ai-tasks', async (c) => {
     for (const mod of modules) {
       const content = isVerticalFallback
         ? await readVerticalFile(c.env, vertical, `${mod}.md`)
-        : await readWorkspaceFile(c.env, scope, `${mod}.md`);
+        : await readWorkspaceFile(c.env, scope, `skills/${mod}.md`);
 
       if (content) {
         const parsed = parseSkillMarkdown(content);
@@ -402,7 +399,7 @@ app.get('/workspace/:scope/skills', async (c) => {
   for (const mod of modules) {
     const content = isVerticalFallback
       ? await readVerticalFile(c.env, vertical, `${mod}.md`)
-      : await readWorkspaceFile(c.env, scope, `${mod}.md`);
+      : await readWorkspaceFile(c.env, scope, `skills/${mod}.md`);
 
     if (content) {
       const parsed = parseSkillMarkdown(content);
@@ -445,7 +442,7 @@ app.post('/workspace/:scope/customize', async (c) => {
     }
   }
 
-  const filename = `${moduleName}.md`;
+  const filename = `skills/${moduleName}.md`;
   const content = await readWithFallback(c.env, scope, filename, vertical);
 
   if (!content) {
@@ -939,18 +936,6 @@ app.post('/channels/discord/webhook', async (c) => {
   return c.json({ ok: true });
 });
 
-// ============================================================
-// WebSocket Route (real-time updates)
-// ============================================================
-
-app.get('/ws', (c) => {
-  const userId = c.req.query('userId') || c.req.header('X-User-Id') || 'guest';
-  if (c.req.header('Upgrade') !== 'websocket') {
-    return c.text('Expected WebSocket', 426);
-  }
-  return handleWebSocketUpgrade(c.req.raw, userId);
-});
-
 // Workspace site routes (only for *.tarai.space)
 app.notFound(async (c) => {
   const url = new URL(c.req.url);
@@ -958,149 +943,138 @@ app.notFound(async (c) => {
   const workspaceMatch = host.match(/^([a-z0-9-]+)\.tarai\.space$/);
   if (!workspaceMatch) return c.text('Not found', 404);
   const workspaceSlug = workspaceMatch[1];
+  const scope = `w:${workspaceSlug}`;
 
-  // Look up workspace from KV cache or D1
-  let scope = await c.env.STOREFRONT_CACHE.get(`scope:${workspaceSlug}`);
-  if (!scope && c.env.DB) {
-    const row = await c.env.DB.prepare(
-      "SELECT scope FROM workspaces WHERE subdomain = ?"
-    ).bind(workspaceSlug).first();
-    scope = row?.scope;
-    if (scope) {
-      await c.env.STOREFRONT_CACHE.put(`scope:${workspaceSlug}`, scope, { expirationTtl: 300 });
-    }
-  }
+  const method = c.req.method;
+  const pathname = url.pathname;
 
-  if (!scope) return c.html(storePendingPage(workspaceSlug));
+  // Handle Form Submissions from Edge Site Engine
+  if (method === 'POST') {
+    let dbUrl = '';
+    let dbToken = '';
 
-  // GET routes
-  if (c.req.method === 'GET') {
-    if (url.pathname === '/edit/ws') {
-      if (c.req.header('Upgrade') !== 'websocket') return c.text('Expected WebSocket', 426);
-      return getDO(c.env, workspaceSlug).fetch('https://do/ws', c.req.raw);
-    }
-    if (url.pathname === '/edit') return c.html(editorShell(workspaceSlug));
-    if (url.pathname === '/sitemap.xml') {
-      return c.text(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://${workspaceSlug}.tarai.space/</loc></url></urlset>`, 200, { 'Content-Type': 'application/xml' });
-    }
+    if (c.env.DB) {
+      const ws = await c.env.DB.prepare(
+        'SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
+      ).bind(workspaceSlug).first();
 
-    const cached = await c.env.STOREFRONT_CACHE.get(`html:${workspaceSlug}`);
-    if (cached) return c.html(cached);
-
-    const layoutJson = await c.env.STOREFRONT_CACHE.get(`layout:${workspaceSlug}`, 'json');
-    if (!layoutJson) return c.html(storePendingPage(workspaceSlug));
-
-    const html = await renderStorefront(layoutJson, workspaceSlug);
-    if (c.env.STOREFRONT_CACHE) {
-      c.env.STOREFRONT_CACHE.put(`html:${workspaceSlug}`, html, { expirationTtl: 300 });
-    }
-    return c.html(html);
-  }
-
-  // POST routes
-  if (c.req.method === 'POST') {
-    if (url.pathname === '/draft') {
-      const body = await c.req.json();
-      if (!body?.subdomain || !body?.layout) return c.text('Missing subdomain or layout', 400);
-      const html = await renderStorefront(body.layout, body.subdomain);
-      await getDO(c.env, body.subdomain).fetch('https://do/push', { method: 'POST', body: html });
-      return c.json({ ok: true });
-    }
-    if (url.pathname === '/publish') {
-      const body = await c.req.json();
-      if (!body?.subdomain || !body?.layout) return c.text('Missing subdomain or layout', 400);
-      await c.env.STOREFRONT_CACHE.put(`layout:${body.subdomain}`, JSON.stringify(body.layout));
-      await c.env.STOREFRONT_CACHE.delete(`html:${body.subdomain}`);
-      return c.json({ ok: true });
-    }
-    if (url.pathname === '/api/checkout') {
-      const body = await c.req.json();
-      if (!body?.items) return c.text('Missing items', 400);
-
-      const subdomain = workspaceSlug;
-      const scope = `w:${subdomain}`;
-      let dbUrl = '';
-      let dbToken = '';
-
-      if (c.env.DB) {
-        const ws = await c.env.DB.prepare(
-          'SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
-        ).bind(subdomain).first();
-
-        if (ws?.turso_url && ws?.turso_auth_token) {
-          dbUrl = ws.turso_url;
-          dbToken = ws.turso_auth_token;
-        } else if (c.env.TURSO_PLATFORM_TOKEN) {
-          const credentials = await getOrCreateWorkspaceDb(c.env.DB, subdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
-          dbUrl = credentials.url;
-          dbToken = credentials.authToken;
-        }
+      if (ws?.turso_url && ws?.turso_auth_token) {
+        dbUrl = ws.turso_url;
+        dbToken = ws.turso_auth_token;
+      } else if (c.env.TURSO_PLATFORM_TOKEN) {
+        const credentials = await getOrCreateWorkspaceDb(c.env.DB, workspaceSlug, scope, c.env.TURSO_PLATFORM_TOKEN);
+        dbUrl = credentials.url;
+        dbToken = credentials.authToken;
       }
+    }
 
+    const runQuery = async (fn: () => Promise<any>) => {
+      if (dbUrl) {
+        return dbContext.run({ url: dbUrl, token: dbToken }, fn);
+      }
+      return fn();
+    };
+
+    if (pathname === '/api/order') {
+      const body = await c.req.json();
       const orderId = `ord_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
-      if (dbUrl) {
-        await dbContext.run({ url: dbUrl, token: dbToken }, async () => {
-          // 1. Create order row in matter table
-          await executeCreate({
-            table: 'matter',
-            id: orderId,
-            type: 'order',
-            scope,
-            title: `Order for ${body.email || 'customer'}`,
-            data: {
-              items: body.items,
-              email: body.email || '',
-              status: 'pending',
-              createdAt: new Date().toISOString()
-            }
-          });
-
-          // 2. Append creation event to motion table
-          await executeCreate({
-            table: 'motion',
-            stream: orderId,
-            action: 10001, // order_created
-            data: {
-              orderId,
-              subdomain,
-              items: body.items,
-              status: 'pending'
-            }
-          });
+      await runQuery(async () => {
+        await executeCreate({
+          table: 'matter',
+          id: orderId,
+          type: 'order',
+          scope,
+          title: `Order for ${body.email || 'customer'}`,
+          data: {
+            items: body.items,
+            email: body.email || '',
+            name: body.name || '',
+            address: body.address || '',
+            status: 'pending',
+            createdAt: new Date().toISOString()
+          }
         });
 
-        // 3. Trigger realtime WebSocket push via Editor DO if connected
-        try {
-          const editorDO = getDO(c.env, subdomain);
-          await editorDO.fetch('https://do/push', {
-            method: 'POST',
-            body: JSON.stringify({
-              type: 'ORDER_CREATED',
-              orderId,
-              subdomain,
-              items: body.items,
-              status: 'pending'
-            })
-          });
-        } catch {}
-      }
+        await executeCreate({
+          table: 'motion',
+          stream: orderId,
+          action: 10001, // order_created
+          data: {
+            orderId,
+            items: body.items,
+            status: 'pending'
+          }
+        });
+      });
 
       return c.json({ ok: true, orderId });
     }
-    if (url.pathname === '/api/chat') {
+
+    if (pathname === '/api/booking') {
       const body = await c.req.json();
-      if (!body?.message) return c.text('Missing message', 400);
-      const query = body.message.trim().toLowerCase();
-      const l1Dict: Record<string, string> = { 'hi': 'Hello!', 'hello': 'Hi there!', 'hours': 'Open 24/7!' };
-      if (l1Dict[query]) return c.json({ reply: l1Dict[query], layer: 'L1' });
-      const cachedAnswer = await c.env.STOREFRONT_CACHE.get(`sem_cache:${query}`);
-      if (cachedAnswer) return c.json({ reply: cachedAnswer, layer: 'L2' });
-      return c.json({ reply: `Hello! How can I help you at ${workspaceSlug}?`, layer: 'L3' });
+      const bookingId = `bk_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+      await runQuery(async () => {
+        await executeCreate({
+          table: 'matter',
+          id: bookingId,
+          type: 'booking',
+          scope,
+          title: `Booking for ${body.name || 'customer'}`,
+          data: {
+            service: body.service,
+            date: body.date,
+            slot: body.slot,
+            name: body.name,
+            status: 'confirmed',
+            createdAt: new Date().toISOString()
+          }
+        });
+
+        await executeCreate({
+          table: 'motion',
+          stream: bookingId,
+          action: 10002, // booking_created
+          data: {
+            bookingId,
+            service: body.service,
+            date: body.date,
+            slot: body.slot,
+            status: 'confirmed'
+          }
+        });
+      });
+
+      return c.json({ ok: true, bookingId });
+    }
+
+    if (pathname === '/api/contact') {
+      const body = await c.req.json();
+      const contactId = `ct_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+      await runQuery(async () => {
+        await executeCreate({
+          table: 'matter',
+          id: contactId,
+          type: 'customer',
+          scope,
+          title: `Contact from ${body.name || 'customer'}`,
+          data: {
+            name: body.name,
+            info: body.info,
+            message: body.message,
+            createdAt: new Date().toISOString()
+          }
+        });
+      });
+
+      return c.json({ ok: true, contactId });
     }
   }
 
-  return c.text('Not found', 404);
+  // Delegate standard pages to handleSiteRequest
+  return handleSiteRequest(c.env, workspaceSlug, pathname, method, c.req.raw);
 });
 
 export default app;

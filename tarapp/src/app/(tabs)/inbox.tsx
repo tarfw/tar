@@ -57,7 +57,17 @@ export default function InboxScreen() {
       if (redirect === 'true') {
         await SecureStore.deleteItemAsync('redirect_to_workspaces').catch(() => null);
         console.log('[Inbox] Redirecting to /workspaces as requested by onboarding');
-        router.replace('/workspaces');
+        try {
+          router.replace('/(tabs)/workspaces');
+        } catch (e1) {
+          console.warn('[Inbox] Redirect to /(tabs)/workspaces failed, trying /workspaces:', e1);
+          try {
+            router.replace('/workspaces');
+          } catch (e2) {
+            console.warn('[Inbox] Redirect to /workspaces failed, falling back to /:', e2);
+            router.replace('/');
+          }
+        }
       }
     })();
   }, [router]);

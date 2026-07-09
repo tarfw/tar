@@ -376,7 +376,7 @@ export async function executeAITask(
   for (const mod of modules) {
     const content = isVerticalFallback
       ? await readVerticalFile(env, vertical, `${mod}.md`)
-      : await readWorkspaceFile(env, scope, `${mod}.md`);
+      : await readWorkspaceFile(env, scope, `skills/${mod}.md`);
 
     if (content) {
       const parsed = parseSkillMarkdown(content);

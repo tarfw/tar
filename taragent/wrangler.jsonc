@@ -17,11 +17,7 @@
       "id": "9fcfbb6bc68542e7a6a3762dd61c6c10"
     }
   ],
-  "durable_objects": {
-    "bindings": [
-      { "name": "EDITOR", "class_name": "Editor" }
-    ]
-  },
+
   "migrations": [
     {
       "tag": "v1",
@@ -30,6 +26,10 @@
     {
       "tag": "v2",
       "deleted_classes": ["Workspace", "Order"]
+    },
+    {
+      "tag": "v3",
+      "deleted_classes": ["Editor"]
     }
   ]
 }

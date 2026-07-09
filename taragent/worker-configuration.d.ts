@@ -12,12 +12,10 @@ interface __BaseEnv_Env {
 	RAILWAY_S3_BUCKET: string;
 	RAILWAY_S3_ACCESS_KEY: string;
 	RAILWAY_S3_SECRET_KEY: string;
-	EDITOR: DurableObjectNamespace<import("./src/index").Editor>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/index");
-		durableNamespaces: "Editor";
 	}
 	interface Env extends __BaseEnv_Env {}
 }

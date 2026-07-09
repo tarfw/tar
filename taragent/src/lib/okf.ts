@@ -3,13 +3,29 @@
  * Workspace OKF files stored in Railway S3 (Tigris-backed).
  *
  * S3 structure:
- *   verticals/{name}/index.md          — vertical template (global, read-only)
- *   verticals/{name}/{module}.md       — vertical skill files
+ *   modules/core/{module}/SKILL.md     — core module skill files (read-only, fallback)
  *   workspaces/{scope}/index.md        — workspace root (per-workspace, editable)
- *   workspaces/{scope}/{module}.md     — workspace skill files (user-customizable)
+ *   workspaces/{scope}/DESIGN.md       — design system tokens
+ *   workspaces/{scope}/AGENTS.md       — agent rules
+ *   workspaces/{scope}/skills/{mod}.md — workspace skill files (user-customizable)
+ *   workspaces/{scope}/site/pages.md   — public site pages configuration
  */
 
 import { s3Put, s3Get, s3Delete, s3List } from './s3-client';
+import { CORE_MODULES } from './core-modules';
+import { getCoreModuleSpecs, composeWorkspacePrompt, parseComposedWorkspace } from './module-composer';
+import { validateDesignTokens, validateSkill, validateSitePages } from './schema-validator';
+import { parseDesignMD } from './design-md-parser';
+import { parseSkillMarkdown } from './skill-parser';
+
+export const PRESETS: Record<string, string[]> = {
+  restaurant: ['orders', 'inventory', 'bookings', 'crm', 'reports', 'expenses', 'documents'],
+  salon: ['bookings', 'crm', 'orders', 'reports', 'expenses', 'documents'],
+  clinic: ['bookings', 'crm', 'projects', 'support', 'reports', 'expenses', 'documents'],
+  retail: ['orders', 'inventory', 'crm', 'reports', 'expenses', 'documents'],
+  gym: ['bookings', 'crm', 'lms', 'hr', 'reports', 'expenses', 'documents'],
+  agency: ['crm', 'projects', 'hr', 'support', 'reports', 'expenses', 'documents'],
+};
 
 // S3 keys can't contain colons — replace with hyphens
 function s3Scope(scope: string): string {
@@ -66,6 +82,16 @@ export async function readWithFallback(
 ): Promise<string | null> {
   const wsContent = await readWorkspaceFile(env, scope, path);
   if (wsContent !== null) return wsContent;
+
+  // Extract file basename to match core module if it's under skills/
+  const parts = path.split('/');
+  const filename = parts[parts.length - 1];
+  const modName = filename.replace('.md', '');
+  
+  if (modName in CORE_MODULES) {
+    return CORE_MODULES[modName];
+  }
+
   return readVerticalFile(env, vertical, path);
 }
 
@@ -78,69 +104,23 @@ export async function deleteWorkspaceFile(env: any, scope: string, path: string)
 // ── List ───────────────────────────────────────────────────────────
 
 export async function listWorkspaceModules(env: any, scope: string): Promise<string[]> {
-  const keys = await s3List(env, `workspaces/${s3Scope(scope)}/`);
+  const keys = await s3List(env, `workspaces/${s3Scope(scope)}/skills/`);
   return keys
     .map(k => k.split('/').pop()!)
-    .filter(name => name.endsWith('.md') && name !== 'index.md')
+    .filter(name => name.endsWith('.md'))
     .map(name => name.replace('.md', ''));
 }
 
 export async function listVerticalModules(env: any, vertical: string): Promise<string[]> {
+  // Verticals fall back to PRESETS mapping
+  if (vertical in PRESETS) {
+    return PRESETS[vertical];
+  }
   const keys = await s3List(env, `verticals/${vertical}/`);
   return keys
     .map(k => k.split('/').pop()!)
     .filter(name => name.endsWith('.md') && name !== 'index.md')
     .map(name => name.replace('.md', ''));
-}
-
-async function personalizeModuleTemplate(
-  env: any,
-  moduleContent: string,
-  businessName: string,
-  businessType: string,
-  businessDescription?: string
-): Promise<string> {
-  const groqKey = env.GROQ_API_KEY;
-  if (!groqKey) return moduleContent;
-
-  try {
-    const prompt = `You are an AI that personalizes OKF (Open Knowledge Format) markdown skill files for businesses.
-Given this template skill markdown:
----
-${moduleContent}
----
-
-Personalize it for this business:
-Name: ${businessName}
-Type: ${businessType}
-${businessDescription ? `Description/Focus: ${businessDescription}` : ''}
-
-Rules:
-1. Preserve all markdown structure, YAML frontmatter, action steps (like read/create/update), and tool calls exactly. Do not break syntax.
-2. In the headings, text, and descriptions, replace placeholders or generic business terms with "${businessName}" or specific details relevant to a ${businessType} ${businessDescription ? `(specifically matching details from: ${businessDescription})` : ''}.
-3. Return ONLY the personalized markdown content. Do not add any conversational chat wrappers.`;
-
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${groqKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        max_tokens: 2000,
-      }),
-    });
-
-    const data = await res.json() as any;
-    const personalized = data?.choices?.[0]?.message?.content || moduleContent;
-    return personalized.trim();
-  } catch (err) {
-    console.warn('[Personalizer] Failed to personalize module template:', err);
-    return moduleContent;
-  }
 }
 
 export async function classifyVertical(
@@ -153,16 +133,12 @@ export async function classifyVertical(
   try {
     const prompt = `You are an AI that classifies a business description into one of the supported core verticals.
 Supported verticals:
-- restaurant (Use for any food, bakery, cafe, dining, bar, catering, kitchen, meal prep business)
-- salon (Use for spa, hair, nails, beauty parlor)
-- clinic (Use for dentist, doctor, clinic, healthcare, medical)
-- retail (Use for grocery store, fashion boutique, watch seller, physical product shops)
-- courier (Use for delivery, logistics, courier services)
-- agency (Use for office work, software development, marketing, consulting)
-- gym (Use for fitness, gym, yoga, workout studio)
-- school (Use for education, tutor, school, learning center)
-- property (Use for real estate, leasing, property management)
-- home-services (Use for plumbing, carpentry, cleaning, maintenance)
+- restaurant (Use for food, bakery, cafe, kitchen, bar)
+- salon (Use for spa, hair, nails, beauty)
+- clinic (Use for doctor, dentist, clinic, healthcare)
+- retail (Use for grocery, fashion, boutique, product shops)
+- gym (Use for fitness, gym, yoga, workout)
+- agency (Use for office work, software, marketing, consulting)
 
 Given this business description: "${description}"
 
@@ -185,8 +161,7 @@ Respond with ONLY the key of the closest matching vertical from the list above (
     const data = await res.json() as any;
     const vertical = data?.choices?.[0]?.message?.content?.trim()?.toLowerCase() || 'restaurant';
     
-    const valid = ['restaurant', 'salon', 'clinic', 'retail', 'courier', 'agency', 'gym', 'school', 'property', 'home-services'];
-    if (valid.includes(vertical)) {
+    if (vertical in PRESETS) {
       return vertical;
     }
     return 'restaurant';
@@ -196,6 +171,10 @@ Respond with ONLY the key of the closest matching vertical from the list above (
   }
 }
 
+/**
+ * Initializes workspace by composing all required specs via one LLM call.
+ * Uses robust schemas for validation and a self-healing fallback.
+ */
 export async function initWorkspaceFromVertical(
   env: any,
   scope: string,
@@ -204,42 +183,144 @@ export async function initWorkspaceFromVertical(
   modules?: string[],
   businessDescription?: string
 ): Promise<void> {
-  // Auto-detect modules from vertical template if not provided
-  let mods = modules?.length ? modules : [];
-  if (!mods.length) {
+  // Resolve modules
+  let mods = modules?.length ? modules : PRESETS[vertical] || PRESETS.restaurant;
+
+  const groqKey = env.GROQ_API_KEY;
+  let compositionDone = false;
+
+  if (groqKey) {
     try {
-      mods = await listVerticalModules(env, vertical);
+      const specs = getCoreModuleSpecs(mods);
+      const prompt = composeWorkspacePrompt(
+        {
+          name: workspaceName,
+          subdomain: scope.replace('w:', ''),
+          modules: mods,
+          description: businessDescription,
+        },
+        specs
+      );
+
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-70b-versatile',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+          max_tokens: 6000,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json() as any;
+        const llmOutput = data?.choices?.[0]?.message?.content;
+        if (llmOutput) {
+          const files = parseComposedWorkspace(llmOutput);
+
+          // Validate and write generated files
+          for (const [path, content] of Object.entries(files)) {
+            let isValid = true;
+
+            if (path === 'DESIGN.md') {
+              const tokens = parseDesignMD(content);
+              isValid = validateDesignTokens(tokens).success;
+            } else if (path === 'site/pages.md') {
+              // Parse basic frontmatter for site pages validation
+              const lines = content.split('\n');
+              let inYaml = false;
+              let yamlText = '';
+              for (const line of lines) {
+                if (line.trim() === '---') {
+                  inYaml = !inYaml;
+                  continue;
+                }
+                if (inYaml) yamlText += line + '\n';
+              }
+              // Basic check
+              isValid = yamlText.includes('pages:');
+            } else if (path.startsWith('skills/')) {
+              const parsed = parseSkillMarkdown(content);
+              isValid = validateSkill(parsed).success;
+            }
+
+            if (isValid) {
+              await uploadWorkspaceFile(env, scope, path, content);
+            } else {
+              console.warn(`[composer] Spec validation failed for ${path}, writing default fallback.`);
+            }
+          }
+          compositionDone = true;
+        }
+      }
     } catch (err) {
-      console.warn(`[okf] Failed to list vertical modules for ${vertical}:`, err);
+      console.warn('[composer] Composed initialization failed, running fallback:', err);
     }
   }
 
-  // Fallback to restaurant if we found no modules
-  if (!mods.length && vertical !== 'restaurant') {
-    console.warn(`[okf] No modules found for vertical "${vertical}", falling back to restaurant`);
-    vertical = 'restaurant';
-    try {
-      mods = await listVerticalModules(env, 'restaurant');
-    } catch (err) {
-      console.warn('[okf] Failed to list fallback restaurant modules:', err);
+  // Self-healing fallback if LLM or validation failed
+  if (!compositionDone) {
+    console.warn('[composer] Using standard template fallback.');
+    
+    // 1. DESIGN.md default
+    const defaultDesign = `---
+name: ${workspaceName}
+version: 1.0.0
+colors:
+  primary: "#1B4332"
+  secondary: "#2D6A4F"
+  tertiary: "#D4A373"
+  neutral: "#FEFAE0"
+  on-primary: "#FFFFFF"
+typography:
+  h1: { fontFamily: "Inter", fontSize: "1.75rem", fontWeight: 700 }
+  body-md: { fontFamily: "Inter", fontSize: "0.938rem", fontWeight: 400 }
+rounded: { sm: "6px", md: "12px", lg: "16px" }
+spacing: { xs: "4px", sm: "8px", md: "16px", lg: "24px" }
+components:
+  action-button:
+    backgroundColor: "{colors.tertiary}"
+    textColor: "{colors.on-primary}"
+    rounded: "{rounded.sm}"
+---
+`;
+    await uploadWorkspaceFile(env, scope, 'DESIGN.md', defaultDesign);
+
+    // 2. AGENTS.md default
+    const defaultAgents = `---
+name: ${workspaceName} Agent
+role: Assistant
+constraints:
+  - Be helpful and polite.
+---
+`;
+    await uploadWorkspaceFile(env, scope, 'AGENTS.md', defaultAgents);
+
+    // 3. site/pages.md default
+    const defaultPages = `---
+pages:
+  - slug: /catalog
+    template: catalog-grid
+    data_source: "matter WHERE type = 'product'"
+    module: inventory
+---
+`;
+    await uploadWorkspaceFile(env, scope, 'site/pages.md', defaultPages);
+
+    // 4. Copy unpersonalized core modules as fallback
+    for (const mod of mods) {
+      if (mod in CORE_MODULES) {
+        await uploadWorkspaceFile(env, scope, `skills/${mod}.md`, CORE_MODULES[mod]);
+      }
     }
   }
 
-  // 1. Create workspace index.md
-  const moduleLinks = mods.map(m => `- [${m}](./${m}.md)`).join('\n');
+  // 5. Always write index.md listing all modules
+  const moduleLinks = mods.map(m => `- [${m}](./skills/${m}.md)`).join('\n');
   const rootIndex = `# ${workspaceName}\n\n**Vertical:** ${vertical}\n**Modules:** ${mods.join(', ')}\n\n## Modules\n${moduleLinks}\n`;
   await uploadWorkspaceFile(env, scope, 'index.md', rootIndex);
-
-  // 2. Copy each module from vertical template to workspace (with personalization)
-  for (const mod of mods) {
-    let content = await readVerticalFile(env, vertical, `${mod}.md`);
-    if (content) {
-      try {
-        content = await personalizeModuleTemplate(env, content, workspaceName, vertical, businessDescription);
-      } catch (err) {
-        console.warn(`[okf] Failed to personalize template for ${mod}:`, err);
-      }
-      await uploadWorkspaceFile(env, scope, `${mod}.md`, content);
-    }
-  }
 }

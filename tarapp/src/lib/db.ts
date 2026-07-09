@@ -2,7 +2,7 @@ import { Database, getDbPath } from "@tursodatabase/sync-react-native";
 import { SCHEMA_STATEMENTS } from "./schema";
 import { getCurrentUser } from "./auth";
 
-const TARFLUE_URL = process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://tarflue.tar-54d.workers.dev';
+const TARFLUE_URL = process.env.EXPO_PUBLIC_TARFLUE_URL || 'https://taragent.tar-54d.workers.dev';
 
 const dbConnections: Record<string, Database> = {};
 export let cachedSelfId: string | null = null;

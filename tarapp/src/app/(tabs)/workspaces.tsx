@@ -18,6 +18,9 @@ import {
   StatsCard,
   SiteCard,
 } from '@/components/cards/ResultCards';
+import { parseDesignTokens } from '@/lib/design-tokens';
+import { buildModuleLayout, parseYamlFrontmatter } from '@/lib/layout-engine';
+import WorkspaceCanvas from '@/components/WorkspaceCanvas';
 
 interface Workspace {
   scope: string;
@@ -95,6 +98,10 @@ export default function WorkspacesScreen() {
   const [detectedVertical, setDetectedVertical] = useState('general');
   const [parsedToolsList, setParsedToolsList] = useState<any[]>([]);
   const [editableQueries, setEditableQueries] = useState<Record<string, string>>({});
+  
+  const [designTokens, setDesignTokens] = useState<any>(null);
+  const [canvasLayouts, setCanvasLayouts] = useState<any[]>([]);
+  const [loadingCanvas, setLoadingCanvas] = useState(false);
   
   const scrollViewRef = useRef<ScrollView>(null);
   const workspaceToolsCache = useRef<Record<string, { detectedVertical: string; activeModules: string[]; parsedToolsList: any[] }>>({});
@@ -284,6 +291,52 @@ export default function WorkspacesScreen() {
     }
   }, [currentWorkspace]);
 
+  // Load DESIGN.md + modules SKILL.md specs from S3 whenever workspace changes
+  useEffect(() => {
+    if (currentWorkspace?.scope) {
+      const scope = currentWorkspace.scope;
+      setLoadingCanvas(true);
+      
+      Promise.all([
+        tar.okf.read(scope, 'DESIGN.md').catch(() => null),
+        tar.okf.readIndex(scope).catch(() => null)
+      ]).then(async ([designRes, indexRes]) => {
+        let tokens = null;
+        if (designRes && designRes.content) {
+          try {
+            const { frontmatter } = parseYamlFrontmatter(designRes.content);
+            tokens = parseDesignTokens(frontmatter);
+            setDesignTokens(tokens);
+          } catch (err) {
+            console.warn('[Canvas] Failed to parse DESIGN.md:', err);
+          }
+        }
+        
+        if (indexRes && indexRes.content) {
+          const { modules } = parseIndexMarkdown(indexRes.content);
+          const fetchedLayouts = await Promise.all(
+            modules.map(async (mod) => {
+              try {
+                const fileRes = await tar.okf.read(scope, `skills/${mod}.md`);
+                if (fileRes && fileRes.content) {
+                  return buildModuleLayout(mod, fileRes.content);
+                }
+              } catch (e) {
+                console.warn(`[Canvas] Failed to fetch skill ${mod}.md:`, e);
+              }
+              return null;
+            })
+          );
+          setCanvasLayouts(fetchedLayouts.filter(Boolean) as any[]);
+        }
+      }).catch(err => {
+        console.warn('[Canvas] Failed to load workspace specs:', err);
+      }).finally(() => {
+        setLoadingCanvas(false);
+      });
+    }
+  }, [currentWorkspace?.scope]);
+
   const handleSelectWorkspace = async (item: Workspace) => {
     setShowDropdown(false);
     if (item.subdomain === currentWorkspace?.subdomain) return;
@@ -471,13 +524,48 @@ export default function WorkspacesScreen() {
 
         <View style={{ height: 12 }} />
 
-        {/* 2. Inventory Section */}
-        <ProductListCard products={products} />
+        {loadingCanvas ? (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="small" color={theme.primary} />
+            <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>
+              Generating custom branded canvas...
+            </Text>
+          </View>
+        ) : designTokens && canvasLayouts.length > 0 ? (
+          <WorkspaceCanvas
+            designTokens={designTokens}
+            layouts={canvasLayouts}
+            onExecuteAction={async (actionName, params) => {
+              if (currentWorkspace?.scope) {
+                const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
+                // Refresh records after action is performed
+                await refreshProducts(currentWorkspace.scope);
+                await refreshOrders(currentWorkspace.scope);
+                return res;
+              }
+              throw new Error('No active workspace scope');
+            }}
+            metricsData={{
+              'orders': orders.length,
+              'inventory': products.length,
+              'bookings': orders.filter(o => o.type === 'booking').length
+            }}
+            tableData={{
+              'orders': orders,
+              'inventory': products
+            }}
+          />
+        ) : (
+          <>
+            {/* 2. Inventory Section */}
+            <ProductListCard products={products} />
 
-        <View style={{ height: 12 }} />
+            <View style={{ height: 12 }} />
 
-        {/* 3. Recent Orders Section */}
-        <OrderListCard orders={orders} />
+            {/* 3. Recent Orders Section */}
+            <OrderListCard orders={orders} />
+          </>
+        )}
       </ScrollView>
 
       {/* Input Section */}

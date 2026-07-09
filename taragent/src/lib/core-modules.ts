@@ -9,7 +9,7 @@ actions:
     icon: receipt
   - name: action_void_order
     params: [order_id, reason]
-    icon: x-circle
+    icon: close-circle
 ui_hints:
   primary_action: action_record_sale
   layout: dashboard
@@ -57,7 +57,7 @@ actions:
     icon: list
   - name: action_add_stock
     params: [product_id, qty]
-    icon: plus-circle
+    icon: add-circle
 ui_hints:
   primary_action: action_check_stock
   layout: dashboard
@@ -98,7 +98,7 @@ actions:
     icon: calendar
   - name: action_cancel_booking
     params: [booking_id]
-    icon: calendar-x
+    icon: calendar-outline
 ui_hints:
   primary_action: action_book_slot
   layout: dashboard

@@ -29,47 +29,43 @@ export function parseDesignMD(markdown: string): DesignTokens {
     }
   }
 
-  // Basic YAML Parser for Design Tokens
+  // Basic YAML Parser for Design Tokens (Indentation & Nesting aware)
   const raw: Record<string, any> = {};
-  let currentKey = '';
-  let currentObj: Record<string, any> | null = null;
+  const path: { key: string; indent: number }[] = [];
 
   for (const line of yamlLines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
 
-    // Detect indentation
     const indent = line.length - line.trimStart().length;
 
-    if (indent === 0) {
-      const colonIdx = trimmed.indexOf(':');
-      if (colonIdx === -1) continue;
-      const key = trimmed.slice(0, colonIdx).trim();
-      const val = trimmed.slice(colonIdx + 1).trim();
+    const colonIdx = trimmed.indexOf(':');
+    if (colonIdx === -1) continue;
+    const key = trimmed.slice(0, colonIdx).trim();
+    const val = trimmed.slice(colonIdx + 1).trim();
 
-      if (val === '') {
-        currentKey = key;
-        currentObj = {};
-        raw[currentKey] = currentObj;
-      } else {
-        currentKey = key;
-        currentObj = null;
-        if (val.startsWith('{') && val.endsWith('}')) {
-          raw[currentKey] = parseBraceObject(val);
-        } else {
-          raw[currentKey] = stripQuotes(val);
-        }
+    // Pop path elements until we find the parent (which has less indentation)
+    while (path.length > 0 && path[path.length - 1].indent >= indent) {
+      path.pop();
+    }
+
+    // Resolve where to insert the value
+    let parent = raw;
+    for (const p of path) {
+      if (!parent[p.key]) {
+        parent[p.key] = {};
       }
-    } else if (indent > 0 && currentObj) {
-      const colonIdx = trimmed.indexOf(':');
-      if (colonIdx === -1) continue;
-      const key = trimmed.slice(0, colonIdx).trim();
-      const val = trimmed.slice(colonIdx + 1).trim();
-      
+      parent = parent[p.key];
+    }
+
+    if (val === '') {
+      parent[key] = {};
+      path.push({ key, indent });
+    } else {
       if (val.startsWith('{') && val.endsWith('}')) {
-        currentObj[key] = parseBraceObject(val);
+        parent[key] = parseBraceObject(val);
       } else {
-        currentObj[key] = stripQuotes(val);
+        parent[key] = stripQuotes(val);
       }
     }
   }

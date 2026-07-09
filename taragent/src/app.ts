@@ -558,6 +558,19 @@ app.get('/documents/list', async (c) => {
   return c.json({ documents: docs });
 });
 
+// GET /files/* — serve R2 files directly
+app.get('/files/*', async (c) => {
+  const key = c.req.path.replace(/^\/files\//, '');
+  if (!c.env.BUCKET) {
+    return c.text('R2 bucket not configured', 500);
+  }
+  const obj = await c.env.BUCKET.get(key);
+  if (!obj) return c.text('File not found', 404);
+  c.header('Content-Type', obj.httpMetadata?.contentType || 'application/octet-stream');
+  return c.body(obj.body);
+});
+
+
 // DELETE /documents/:id — soft-delete document
 app.delete('/documents/:id', async (c) => {
   await deleteDocument(c.req.param('id'));
@@ -940,9 +953,34 @@ app.post('/channels/discord/webhook', async (c) => {
 app.notFound(async (c) => {
   const url = new URL(c.req.url);
   const host = url.hostname;
+  
+  let workspaceSlug = '';
   const workspaceMatch = host.match(/^([a-z0-9-]+)\.tarai\.space$/);
-  if (!workspaceMatch) return c.text('Not found', 404);
-  const workspaceSlug = workspaceMatch[1];
+  if (workspaceMatch) {
+    workspaceSlug = workspaceMatch[1];
+    const reserved = ['api', 'admin', 'dashboard', 'assets', 'www', 'taragent'];
+    if (reserved.includes(workspaceSlug)) {
+      return c.text('API Endpoint', 404);
+    }
+  }
+
+  let ws: any = null;
+  if (c.env.DB) {
+    if (workspaceSlug) {
+      ws = await c.env.DB.prepare(
+        'SELECT subdomain, turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
+      ).bind(workspaceSlug).first();
+    } else {
+      ws = await c.env.DB.prepare(
+        'SELECT subdomain, turso_url, turso_auth_token FROM workspaces WHERE custom_domain = ?'
+      ).bind(host).first();
+      if (ws) {
+        workspaceSlug = ws.subdomain;
+      }
+    }
+  }
+
+  if (!workspaceSlug) return c.text('Not found', 404);
   const scope = `w:${workspaceSlug}`;
 
   const method = c.req.method;
@@ -954,10 +992,6 @@ app.notFound(async (c) => {
     let dbToken = '';
 
     if (c.env.DB) {
-      const ws = await c.env.DB.prepare(
-        'SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
-      ).bind(workspaceSlug).first();
-
       if (ws?.turso_url && ws?.turso_auth_token) {
         dbUrl = ws.turso_url;
         dbToken = ws.turso_auth_token;

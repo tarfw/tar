@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-06-28",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
   "d1_databases": [
     {
       "binding": "DB",
@@ -15,6 +16,12 @@
     {
       "binding": "STOREFRONT_CACHE",
       "id": "9fcfbb6bc68542e7a6a3762dd61c6c10"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "tar-storage"
     }
   ],
 

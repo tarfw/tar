@@ -441,12 +441,48 @@ export default function WorkspacesScreen() {
     }
   };
 
-  const hints = [
-    { label: 'Menu', text: 'show products' },
-    { label: 'Show Site', text: 'show site' },
-    { label: 'Publish Site', text: 'publish site' },
-    { label: 'Orders', text: 'show orders' },
-  ];
+  const getHints = () => {
+    const list: { label: string; text: string }[] = [];
+    
+    const vert = detectedVertical || currentWorkspace?.vertical || 'general';
+    const hasModule = (modName: string) => {
+      if (activeModules.length > 0) {
+        return activeModules.includes(modName);
+      }
+      if (vert === 'restaurant' || vert === 'bakery' || vert === 'retail') {
+        return modName === 'inventory' || modName === 'orders';
+      }
+      if (vert === 'services' || vert === 'salon' || vert === 'clinic' || vert === 'gym') {
+        return modName === 'bookings' || modName === 'crm';
+      }
+      return modName === 'inventory' || modName === 'documents';
+    };
+
+    const hasStorefront = hasModule('inventory') || hasModule('orders') || hasModule('bookings');
+
+    if (hasStorefront) {
+      list.push({ label: 'Show Site', text: 'show site' });
+      list.push({ label: 'Publish Site', text: 'publish site' });
+    }
+
+    if (hasModule('inventory')) {
+      list.push({ label: 'Menu', text: 'show products' });
+    }
+    if (hasModule('orders')) {
+      list.push({ label: 'Orders', text: 'show orders' });
+    }
+    if (hasModule('bookings')) {
+      list.push({ label: 'Bookings', text: 'show bookings' });
+    }
+    if (hasModule('crm')) {
+      list.push({ label: 'Leads', text: 'show crm leads' });
+    }
+    if (hasModule('expenses')) {
+      list.push({ label: 'Expenses', text: 'show expenses' });
+    }
+    
+    return list;
+  };
 
   if (loadingWorkspaces) {
     return (
@@ -467,7 +503,7 @@ export default function WorkspacesScreen() {
           </Text>
           <TouchableOpacity
             activeOpacity={0.7}
-            onPress={() => router.push('/onboarding')}
+            onPress={() => router.push('/add-workspace')}
             style={[styles.emptyButton, { backgroundColor: theme.primary }]}
           >
             <Ionicons name="add" size={20} color="#ffffff" style={{ marginRight: 4 }} />
@@ -610,7 +646,7 @@ export default function WorkspacesScreen() {
 
         {/* Autocomplete chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hintsContainer}>
-          {hints.map((hint, idx) => (
+          {getHints().map((hint, idx) => (
             <Pressable
               key={idx}
               onPress={() => handleSend(hint.text)}
@@ -664,7 +700,7 @@ export default function WorkspacesScreen() {
             <View style={[styles.drawerHandle, { backgroundColor: theme.textMuted + '40' }]} />
             <View style={styles.dropdownHeader}>
               <Text style={[styles.dropdownTitle, { color: theme.text }]}>Switch Workspace</Text>
-              <Pressable onPress={() => { setShowDropdown(false); router.push('/onboarding'); }} style={styles.dropdownAddBtn}>
+              <Pressable onPress={() => { setShowDropdown(false); router.push('/add-workspace'); }} style={styles.dropdownAddBtn}>
                 <Ionicons name="add" size={20} color={theme.primary} />
               </Pressable>
             </View>

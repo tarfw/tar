@@ -214,7 +214,7 @@ export default function SettingsScreen() {
         <TouchableOpacity
           style={styles.row}
           activeOpacity={0.7}
-          onPress={() => router.push('/onboarding')}>
+          onPress={() => router.push('/add-workspace')}>
           <View style={styles.rowLeftWithIcon}>
             <Ionicons name="add-circle-outline" size={20} color={theme.primary} style={styles.rowIcon} />
             <Text style={[styles.rowTitle, { color: theme.text }]}>Create Workspace</Text>

@@ -135,6 +135,51 @@ export function parseYamlFrontmatter(mdContent: string): { frontmatter: any; mar
     if (!obj.ui_hints) obj.ui_hints = {};
     obj.ui_hints.sections = parsedSections;
   }
+
+  // Custom manual parser for actions block in YAML
+  const parsedActions: any[] = [];
+  let currentAction: any = null;
+  let inActions = false;
+  let actionLines = yamlText.split('\n');
+
+  for (let line of actionLines) {
+    const indent = line.search(/\S/);
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith('actions:')) {
+      inActions = true;
+      continue;
+    }
+
+    if (inActions) {
+      if (indent === 0 && trimmed !== '') {
+        inActions = false;
+        continue;
+      }
+
+      if (trimmed.startsWith('- name:')) {
+        if (currentAction) parsedActions.push(currentAction);
+        const name = trimmed.replace('- name:', '').trim().replace(/^['"]|['"]$/g, '');
+        currentAction = { name, params: [] };
+      } else if (trimmed.startsWith('icon:') && currentAction) {
+        currentAction.icon = trimmed.replace('icon:', '').trim().replace(/^['"]|['"]$/g, '');
+      } else if (trimmed.startsWith('params:') && currentAction) {
+        const paramsMatch = trimmed.match(/params\s*:\s*\[(.*)\]/);
+        if (paramsMatch) {
+          currentAction.params = paramsMatch[1]
+            .split(',')
+            .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
+            .filter(Boolean)
+            .map(pName => ({ name: pName, type: 'text', required: true }));
+        }
+      }
+    }
+  }
+  if (currentAction) parsedActions.push(currentAction);
+
+  if (parsedActions.length > 0) {
+    obj.actions = parsedActions;
+  }
   
   return { frontmatter: obj, markdownBody };
 }

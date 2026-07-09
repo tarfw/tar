@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { DesignTokens, resolveTokenValue } from '../lib/design-tokens';
 import { WorkspaceModuleLayout, UISection, WorkspaceAction } from '../lib/layout-engine';
+import { useTheme } from '@/hooks/use-theme';
 
 interface WorkspaceCanvasProps {
   designTokens: DesignTokens;
@@ -12,6 +13,14 @@ interface WorkspaceCanvasProps {
   tableData?: Record<string, any[]>;
 }
 
+const mapIconName = (name: string): any => {
+  const clean = name.toLowerCase().trim();
+  if (clean === 'x-circle') return 'close-circle';
+  if (clean === 'plus-circle') return 'add-circle';
+  if (clean === 'calendar-x') return 'calendar-outline';
+  return clean;
+};
+
 export default function WorkspaceCanvas({
   designTokens,
   layouts,
@@ -19,6 +28,7 @@ export default function WorkspaceCanvas({
   metricsData = {},
   tableData = {},
 }: WorkspaceCanvasProps) {
+  const theme = useTheme();
   const [selectedAction, setSelectedAction] = useState<WorkspaceAction | null>(null);
   const [formParams, setFormParams] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -115,7 +125,7 @@ export default function WorkspaceCanvas({
                   ]}
                   onPress={() => handleActionPress(act)}
                 >
-                  <Ionicons name={(act.icon || 'flash-outline') as any} size={24} color={onPrimaryColor} />
+                  <Ionicons name={mapIconName(act.icon || 'flash-outline')} size={24} color={onPrimaryColor} />
                   <Text style={[styles.actionBtnLabel, { color: onPrimaryColor, marginTop: 4, fontWeight: '600' }]}>
                     {act.name.replace(/_/g, ' ')}
                   </Text>
@@ -135,8 +145,8 @@ export default function WorkspaceCanvas({
           style={[
             styles.metricCard,
             {
-              backgroundColor: '#ffffff',
-              borderColor: colors.border || '#e5e7eb',
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
               borderRadius: roundedMd,
               padding: spacingMd,
               marginBottom: spacingMd,
@@ -144,12 +154,12 @@ export default function WorkspaceCanvas({
           ]}
         >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ color: colors.textSecondary || '#4b5563', fontSize: 13, fontWeight: '500' }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '500' }}>
               {section.title || 'Metrics'}
             </Text>
             <Ionicons name="trending-up-outline" size={16} color={secondaryColor} />
           </View>
-          <Text style={{ fontSize: 24, fontWeight: '800', color: primaryColor, marginTop: 4 }}>
+          <Text style={{ fontSize: 24, fontWeight: '800', color: theme.text, marginTop: 4 }}>
             {metricValue}
           </Text>
         </View>
@@ -167,15 +177,15 @@ export default function WorkspaceCanvas({
             style={[
               styles.tableContainer,
               {
-                backgroundColor: '#ffffff',
-                borderColor: '#e5e7eb',
+                backgroundColor: theme.backgroundElement,
+                borderColor: theme.border,
                 borderRadius: roundedMd,
                 padding: spacingSm,
               },
             ]}
           >
             {rows.length === 0 ? (
-              <Text style={{ color: '#9ca3af', fontSize: 13, padding: 12, textAlign: 'center' }}>
+              <Text style={{ color: theme.textMuted, fontSize: 13, padding: 12, textAlign: 'center' }}>
                 No active records
               </Text>
             ) : (
@@ -186,16 +196,16 @@ export default function WorkspaceCanvas({
                     styles.tableRow,
                     {
                       borderBottomWidth: idx < rows.length - 1 ? StyleSheet.hairlineWidth : 0,
-                      borderBottomColor: '#f3f4f6',
+                      borderBottomColor: theme.border,
                       paddingVertical: spacingSm,
                       paddingHorizontal: spacingSm,
                     },
                   ]}
                 >
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: primaryColor }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }}>
                     {row.title || row.id}
                   </Text>
-                  <Text style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>
+                  <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2 }}>
                     {row.value ? `$${row.value}` : row.type || ''}
                   </Text>
                 </View>
@@ -226,27 +236,28 @@ export default function WorkspaceCanvas({
       {/* Action Input Parameters Modal Form */}
       <Modal visible={selectedAction !== null} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { borderRadius: roundedMd }]}>
-            <View style={styles.modalHeader}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: '#111827' }}>
+          <View style={[styles.modalContent, { backgroundColor: theme.backgroundElement, borderColor: theme.border, borderWidth: 1, borderRadius: roundedMd }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>
                 {selectedAction?.name.replace(/_/g, ' ')}
               </Text>
               <TouchableOpacity onPress={() => setSelectedAction(null)} disabled={submitting}>
-                <Ionicons name="close" size={24} color="#6b7280" />
+                <Ionicons name="close" size={24} color={theme.textSecondary} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={{ maxHeight: 300, marginVertical: 12 }}>
               {selectedAction?.params.map(p => (
                 <View key={p.name} style={{ marginBottom: 12 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 4 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 4 }}>
                     {p.name.replace(/_/g, ' ')} {p.required ? '*' : ''}
                   </Text>
                   <TextInput
-                    style={styles.formInput}
+                    style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
                     value={formParams[p.name]}
                     onChangeText={text => setFormParams(prev => ({ ...prev, [p.name]: text }))}
                     placeholder={`Enter ${p.name.replace(/_/g, ' ')}`}
+                    placeholderTextColor={theme.textMuted}
                     keyboardType={p.type === 'number' ? 'numeric' : 'default'}
                     editable={!submitting}
                   />
@@ -291,22 +302,14 @@ const styles = StyleSheet.create({
     aspectRatio: 1.5,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 3,
   },
   actionBtnLabel: { fontSize: 13, textAlign: 'center' },
   metricCard: {
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  tableContainer: { borderWidth: 1 },
+  tableContainer: {
+    borderWidth: 1,
+  },
   tableRow: {},
   modalOverlay: {
     flex: 1,
@@ -316,15 +319,9 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   modalContent: {
-    backgroundColor: '#ffffff',
     width: '100%',
     maxWidth: 400,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 10,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -332,11 +329,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
   },
   formInput: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,

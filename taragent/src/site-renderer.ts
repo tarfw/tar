@@ -59,7 +59,7 @@ export async function handleSiteRequest(
     }
     
     // Parse simple yaml list of page maps
-    const pageBlocks = yamlText.split('- slug:');
+    const pageBlocks = yamlText.split('- slug:').slice(1);
     for (const block of pageBlocks) {
       if (!block.trim()) continue;
       const slugLine = block.split('\n')[0].trim();

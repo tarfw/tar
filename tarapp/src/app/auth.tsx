@@ -45,7 +45,7 @@ export default function AuthScreen() {
             const data = await res.json();
             const hasWorkspaces = (data.workspaces || []).length > 0;
             console.log(`[AUTH] ${ms()} — has workspaces: ${hasWorkspaces}`);
-            router.replace(hasWorkspaces ? '/inbox' : '/onboarding');
+            router.replace(hasWorkspaces ? '/inbox' : '/add-workspace');
           } catch {
             router.replace('/inbox');
           }
@@ -65,7 +65,7 @@ export default function AuthScreen() {
             });
             const data = await res.json();
             const hasWorkspaces = (data.workspaces || []).length > 0;
-            router.replace(hasWorkspaces ? '/inbox' : '/onboarding');
+            router.replace(hasWorkspaces ? '/inbox' : '/add-workspace');
           } catch {
             router.replace('/inbox');
           }
@@ -92,7 +92,7 @@ export default function AuthScreen() {
         });
         const data = await res.json();
         const hasWorkspaces = (data.workspaces || []).length > 0;
-        router.replace(hasWorkspaces ? '/inbox' : '/onboarding');
+        router.replace(hasWorkspaces ? '/inbox' : '/add-workspace');
       } catch {
         router.replace('/inbox');
       }

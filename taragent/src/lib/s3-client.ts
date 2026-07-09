@@ -106,6 +106,12 @@ async function signRequest(
 // ── Public API ─────────────────────────────────────────────────────
 
 export async function s3Put(env: any, key: string, body: string | ArrayBuffer | Uint8Array, ct = 'text/markdown'): Promise<void> {
+  if (env.BUCKET) {
+    await env.BUCKET.put(key, body, {
+      httpMetadata: { contentType: ct }
+    });
+    return;
+  }
   const c = getS3Config(env);
   const { url, headers } = await signRequest(c, 'PUT', key, body, ct);
   const res = await fetch(url, { method: 'PUT', headers, body: body as any, redirect: 'follow' });
@@ -113,6 +119,11 @@ export async function s3Put(env: any, key: string, body: string | ArrayBuffer | 
 }
 
 export async function s3Get(env: any, key: string): Promise<string | null> {
+  if (env.BUCKET) {
+    const obj = await env.BUCKET.get(key);
+    if (!obj) return null;
+    return obj.text();
+  }
   const c = getS3Config(env);
   const { url, headers } = await signRequest(c, 'GET', key, '', 'application/octet-stream');
   const res = await fetch(url, { method: 'GET', headers, redirect: 'follow' });
@@ -122,6 +133,10 @@ export async function s3Get(env: any, key: string): Promise<string | null> {
 }
 
 export async function s3Delete(env: any, key: string): Promise<boolean> {
+  if (env.BUCKET) {
+    await env.BUCKET.delete(key);
+    return true;
+  }
   const c = getS3Config(env);
   const { url, headers } = await signRequest(c, 'DELETE', key, '', 'application/octet-stream');
   const res = await fetch(url, { method: 'DELETE', headers, redirect: 'follow' });
@@ -129,6 +144,10 @@ export async function s3Delete(env: any, key: string): Promise<boolean> {
 }
 
 export async function s3List(env: any, prefix: string): Promise<string[]> {
+  if (env.BUCKET) {
+    const list = await env.BUCKET.list({ prefix });
+    return list.objects.map(obj => obj.key);
+  }
   const c = getS3Config(env);
   const query = `list-type=2&prefix=${encodeURIComponent(prefix)}`;
   const { url, headers } = await signRequest(c, 'GET', '', '', 'application/octet-stream', query);
@@ -146,6 +165,10 @@ export async function s3List(env: any, prefix: string): Promise<string[]> {
  * Generate an AWS Signature V4 presigned URL for downloading objects.
  */
 export async function s3Presign(env: any, key: string, expiresIn = 3600): Promise<string> {
+  if (env.BUCKET) {
+    const baseUrl = env.EXPO_PUBLIC_TARFLUE_URL || 'https://taragent.tar-54d.workers.dev';
+    return `${baseUrl}/files/${key}`;
+  }
   const config = getS3Config(env);
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');

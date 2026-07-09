@@ -1,7 +1,7 @@
 import { StyleSheet, View, Text, TouchableOpacity, TextInput, ActivityIndicator, ScrollView, Dimensions, Alert, Keyboard, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -58,7 +58,7 @@ const ALL_MODULES = [
   'team-chat',
 ];
 
-export default function OnboardingScreen() {
+export default function AddWorkspaceScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
@@ -71,6 +71,17 @@ export default function OnboardingScreen() {
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<{ scope: string; subdomain: string } | null>(null);
   const [error, setError] = useState('');
+  const [hasExisting, setHasExisting] = useState(false);
+
+  useEffect(() => {
+    tar.listWorkspaces()
+      .then((data) => {
+        if (data?.workspaces && data.workspaces.length > 0) {
+          setHasExisting(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSelectPreset = (key: string) => {
     setSelectedPreset(key);
@@ -103,7 +114,6 @@ export default function OnboardingScreen() {
         template: selectedPreset,
         subdomain,
         description: businessFocus.trim(),
-        // Send the personalized list of modules to backend composer
         modules: Array.from(selectedModules),
       } as any);
 
@@ -123,6 +133,16 @@ export default function OnboardingScreen() {
       setError(e.message || 'Failed to create workspace');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleBack = () => {
+    if (hasExisting) {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)/workspaces');
+      }
     }
   };
 
@@ -150,19 +170,19 @@ export default function OnboardingScreen() {
               try {
                 router.replace('/(tabs)/workspaces');
               } catch (e1) {
-                console.warn('[Onboarding] Redirect to /(tabs)/workspaces failed, trying /workspaces:', e1);
+                console.warn('[AddWorkspace] Redirect to /(tabs)/workspaces failed, trying /workspaces:', e1);
                 try {
                   router.replace('/workspaces');
                 } catch (e2) {
-                  console.warn('[Onboarding] Redirect to /workspaces failed, trying /(tabs)/inbox:', e2);
+                  console.warn('[AddWorkspace] Redirect to /workspaces failed, trying /(tabs)/inbox:', e2);
                   try {
                     router.replace('/(tabs)/inbox');
                   } catch (e3) {
-                    console.warn('[Onboarding] Redirect to /(tabs)/inbox failed, trying /inbox:', e3);
+                    console.warn('[AddWorkspace] Redirect to /(tabs)/inbox failed, trying /inbox:', e3);
                     try {
                       router.replace('/inbox');
                     } catch (e4) {
-                      console.warn('[Onboarding] Redirect to /inbox failed, falling back to /:', e4);
+                      console.warn('[AddWorkspace] Redirect to /inbox failed, falling back to /:', e4);
                       router.replace('/');
                     }
                   }
@@ -176,17 +196,31 @@ export default function OnboardingScreen() {
     );
   }
 
-  // Screen 1 — Notion-style setup
   const canCreate = businessName.trim() && businessFocus.trim() && selectedModules.size > 0 && !creating;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}>
-        <View style={[styles.content, { paddingTop: insets.top + 60 }]}>
-          <Text style={[styles.title, { color: theme.primary }]}>tar.</Text>
-          <Text style={{ color: theme.textMuted, fontSize: 16, marginTop: 4 }}>Create your customized agent workspace</Text>
+        <View style={[styles.content, { paddingTop: insets.top + 24 }]}>
+          
+          {/* Header Row with optional Back Arrow */}
+          <View style={styles.headerRow}>
+            {hasExisting ? (
+              <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+                <Ionicons name="arrow-back" size={24} color={theme.text} />
+              </TouchableOpacity>
+            ) : (
+              <View style={{ width: 24 }} />
+            )}
+            <Text style={[styles.headerTitle, { color: theme.text }]}>Add Workspace</Text>
+            <View style={{ width: 24 }} />
+          </View>
 
-          <View style={{ marginTop: 24, gap: 16 }}>
+          <Text style={{ color: theme.textMuted, fontSize: 14, textAlign: 'center', marginTop: 4, marginBottom: 24 }}>
+            Create a new customized AI agent workspace
+          </Text>
+
+          <View style={{ gap: 16 }}>
             <TextInput
               style={[styles.titleInput, { color: theme.text, borderBottomColor: theme.border, borderBottomWidth: 1 }]}
               value={businessName}
@@ -319,26 +353,39 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { flex: 1, paddingHorizontal: 24 },
-  title: { fontSize: 44, fontWeight: '800', letterSpacing: -1 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  backButton: {
+    padding: 4,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
   titleSuccess: { fontSize: 28, fontWeight: '700', textAlign: 'center' },
   urlText: { fontSize: 16, textAlign: 'center' },
   titleInput: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     paddingVertical: 12,
     paddingHorizontal: 4,
     borderWidth: 0,
   },
   bodyInput: {
-    fontSize: 16,
+    fontSize: 15,
     paddingVertical: 12,
     paddingHorizontal: 4,
     borderWidth: 0,
-    lineHeight: 24,
+    lineHeight: 22,
     textAlignVertical: 'top',
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     marginBottom: 12,
   },
@@ -356,7 +403,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   presetLabel: {
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
   },
   chipsContainer: {
@@ -373,7 +420,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   chipText: {
-    fontSize: 13,
+    fontSize: 12,
   },
   bottom: { paddingHorizontal: 24 },
   floatingBottom: {

@@ -42,6 +42,35 @@ interface CardItem {
   isDirty?: boolean;
 }
 
+const WorkspaceThumbnail = ({ name, size = 36, theme }: { name: string; size?: number; theme: any }) => {
+  const firstLetter = name ? name.charAt(0).toUpperCase() : 'W';
+  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const color = colors[Math.abs(hash) % colors.length];
+
+  return (
+    <View style={{
+      width: size,
+      height: size,
+      borderRadius: Math.round(size * 0.22),
+      backgroundColor: color,
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      <Text style={{
+        color: '#ffffff',
+        fontSize: size * 0.45,
+        fontWeight: '700',
+      }}>
+        {firstLetter}
+      </Text>
+    </View>
+  );
+};
+
 export default function WorkspacesScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -403,17 +432,23 @@ export default function WorkspacesScreen() {
     >
       {/* Header with Switcher */}
       <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: theme.border }]}>
-        <Pressable onPress={() => setShowDropdown(true)} style={styles.switcherButton}>
+        <Pressable 
+          onPress={() => setShowDropdown(true)} 
+          style={[
+            styles.switcherChip,
+            { backgroundColor: theme.background, borderColor: theme.border + '80' }
+          ]}
+        >
+          <WorkspaceThumbnail name={currentWorkspace?.name || currentWorkspace?.subdomain || ''} size={24} theme={theme} />
           <Text style={[styles.switcherText, { color: theme.text }]} numberOfLines={1}>
             {currentWorkspace?.name || currentWorkspace?.subdomain}
           </Text>
-          <Ionicons name="chevron-down" size={16} color={theme.textMuted} style={{ marginLeft: 4 }} />
         </Pressable>
 
         <View style={{ flex: 1 }} />
 
-        <Pressable onPress={() => setShowInfo(true)} style={styles.infoBtn}>
-          <Ionicons name="information-circle-outline" size={24} color={theme.text} />
+        <Pressable onPress={() => setShowInfo(true)} style={styles.headerTextButton}>
+          <Text style={[styles.headerTextButtonLabel, { color: theme.primary }]}>Skills</Text>
         </Pressable>
       </View>
 
@@ -523,11 +558,22 @@ export default function WorkspacesScreen() {
       <Modal
         visible={showDropdown}
         transparent={true}
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setShowDropdown(false)}
       >
         <Pressable style={styles.modalBackdrop} onPress={() => setShowDropdown(false)}>
-          <View style={[styles.dropdownContent, { backgroundColor: theme.background, borderColor: theme.border }]}>
+          <Pressable
+            style={[
+              styles.dropdownContent,
+              {
+                backgroundColor: theme.background,
+                borderColor: theme.border,
+                paddingBottom: Math.max(insets.bottom, 24)
+              }
+            ]}
+            onPress={() => {}}
+          >
+            <View style={[styles.drawerHandle, { backgroundColor: theme.textMuted + '40' }]} />
             <View style={styles.dropdownHeader}>
               <Text style={[styles.dropdownTitle, { color: theme.text }]}>Switch Workspace</Text>
               <Pressable onPress={() => { setShowDropdown(false); router.push('/onboarding'); }} style={styles.dropdownAddBtn}>
@@ -538,6 +584,7 @@ export default function WorkspacesScreen() {
             <ScrollView style={{ maxHeight: 300 }}>
               {workspaces.map((w) => {
                 const isActive = w.subdomain === currentWorkspace?.subdomain;
+                const name = w.name || w.subdomain;
                 return (
                   <Pressable
                     key={w.scope}
@@ -550,9 +597,10 @@ export default function WorkspacesScreen() {
                       }
                     ]}
                   >
-                    <View style={{ flex: 1 }}>
+                    <WorkspaceThumbnail name={name} size={36} theme={theme} />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={[styles.workspaceOptionName, { color: theme.text, fontWeight: isActive ? '700' : '500' }]}>
-                        {w.name || w.subdomain}
+                        {name}
                       </Text>
                       <Text style={[styles.workspaceOptionSubdomain, { color: theme.textMuted }]}>
                         {w.subdomain}.tarai.space
@@ -565,7 +613,7 @@ export default function WorkspacesScreen() {
                 );
               })}
             </ScrollView>
-          </View>
+          </Pressable>
         </Pressable>
       </Modal>
       {/* Workspace Details Info & AI Tools Full-Screen Modal */}
@@ -1015,20 +1063,30 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  switcherButton: {
+  switcherChip: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   switcherText: {
-    fontSize: 18,
-    fontWeight: '700',
-    maxWidth: 220,
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+    maxWidth: 160,
   },
-  infoBtn: {
-    padding: 8,
+  headerTextButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTextButtonLabel: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   resultsArea: {
     flex: 1,
@@ -1089,21 +1147,29 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
+    justifyContent: 'flex-end',
   },
   dropdownContent: {
-    width: '90%',
-    maxWidth: 380,
-    borderRadius: 16,
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 500 : '100%',
+    alignSelf: 'center',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
-    padding: 16,
+    borderBottomWidth: 0,
+    padding: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 20,
+  },
+  drawerHandle: {
+    width: 38,
+    height: 5,
+    borderRadius: 2.5,
+    alignSelf: 'center',
+    marginBottom: 16,
   },
   dropdownHeader: {
     flexDirection: 'row',

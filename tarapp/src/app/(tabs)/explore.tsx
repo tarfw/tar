@@ -291,7 +291,7 @@ export default function ExploreScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
       <View style={[styles.headerWrap, { paddingTop: insets.top + 12 }]}>
-        <Text style={[styles.header, { color: theme.text }]}>Explore Marketplace</Text>
+        <Text style={[styles.header, { color: theme.text }]}>Space</Text>
         <Text style={[styles.subtitle, { color: theme.textMuted }]}>
           Order, book, and request services from public workspaces
         </Text>

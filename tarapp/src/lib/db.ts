@@ -293,6 +293,21 @@ export async function switchUser(userId: string): Promise<Database> {
   return db;
 }
 
+export async function closeConnection(key: string): Promise<void> {
+  if (dbConnections[key]) {
+    try {
+      console.log(`[DB] closing connection for key: ${key}`);
+      dbConnections[key].close();
+      delete dbConnections[key];
+      // Wait 150ms for SQLite native layer to fully release the file lock
+      await new Promise(resolve => setTimeout(resolve, 150));
+      console.log(`[DB] connection closed and released for key: ${key}`);
+    } catch (e) {
+      console.warn(`[DB] failed to close connection for key: ${key}`, e);
+    }
+  }
+}
+
 export function getWorkspaceSyncDb(subdomain: string, url: string, authToken: string): Database {
   return createSyncDbConnection(`workspace_${subdomain}`, `workspace_${subdomain}.db`, url, authToken);
 }
@@ -322,6 +337,9 @@ export async function initWorkspaceSync(subdomain: string): Promise<void> {
       console.warn(`[DB] initWorkspaceSync: no Turso creds returned`, data);
       return;
     }
+
+    console.log(`[DB] initWorkspaceSync: closing old connection if exists...`);
+    await closeConnection(syncKey);
 
     console.log(`[DB] initWorkspaceSync: creating sync DB connection...`);
     const db = getWorkspaceSyncDb(subdomain, url, authToken);

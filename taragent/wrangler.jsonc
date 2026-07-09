@@ -31,11 +31,5 @@
       "tag": "v2",
       "deleted_classes": ["Workspace", "Order"]
     }
-  ],
-  "triggers": {
-    "crons": [
-      "*/15 * * * *",
-      "0 3 * * *"
-    ]
-  }
+  ]
 }

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TextInput, FlatList, Pressable, ActivityIndicator, Modal, ScrollView, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Modal, ScrollView, Alert, Animated, Easing } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { useState, useEffect, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +21,24 @@ const VERTICAL_COLORS: Record<string, { bg: string; text: string; icon: string }
   retail: { bg: '#ecfdf5', text: '#059669', icon: 'shirt-outline' },
   restaurant: { bg: '#fef3c7', text: '#d97706', icon: 'restaurant-outline' },
 };
+
+function getTimeOfDay(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'morning';
+  if (hour < 17) return 'afternoon';
+  return 'evening';
+}
+
+function getVerticalEmoji(vertical: string): string {
+  const map: Record<string, string> = {
+    bakery: '🍪',
+    taxi: '🚕',
+    beauty: '💇',
+    retail: '🛍️',
+    restaurant: '🍽️',
+  };
+  return map[vertical] || '✨';
+}
 
 const MOCK_PUBLIC_WORKSPACES: WorkspaceItem[] = [
   {
@@ -66,12 +84,90 @@ const MOCK_PUBLIC_WORKSPACES: WorkspaceItem[] = [
   }
 ];
 
+interface PromoAd {
+  title: string;
+  subtitle: string;
+  vertical: string;
+  cta: string;
+  accent: string;
+}
+
+const PROMO_ADS: PromoAd[] = [
+  {
+    title: 'Fresh Almond Croissants',
+    subtitle: 'Baked this morning at Croissant & Cafe — free delivery over ₹500',
+    vertical: 'bakery',
+    cta: 'Order Now',
+    accent: '#e11d48',
+  },
+  {
+    title: 'Ride anywhere in Mumbai',
+    subtitle: 'Mumbai Taxis — airport transfers from ₹380. Tap to book instantly.',
+    vertical: 'taxi',
+    cta: 'Book Cab',
+    accent: '#2563eb',
+  },
+  {
+    title: 'Spa Day Escape',
+    subtitle: 'Grand Salon & Spa — 20% off Facials this week. Pamper yourself.',
+    vertical: 'beauty',
+    cta: 'Book Slot',
+    accent: '#9333ea',
+  },
+  {
+    title: 'Drop the new fit',
+    subtitle: 'Streetwear Co. — limited oversized hoodies back in stock. Shop now.',
+    vertical: 'retail',
+    cta: 'Shop',
+    accent: '#059669',
+  },
+  {
+    title: 'AI-curated for you',
+    subtitle: 'Discover services personalized to your taste across the marketplace.',
+    vertical: 'restaurant',
+    cta: 'Explore',
+    accent: '#d97706',
+  },
+];
+
 export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const [query, setQuery] = useState('');
+
   const [workspacesList, setWorkspacesList] = useState<WorkspaceItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // AI-powered rotating promo ad bar
+  const [adIndex, setAdIndex] = useState(0);
+  const adOpacity = useState(() => new Animated.Value(1))[0];
+  const adIntervalRef = useState<ReturnType<typeof setInterval> | null>(null)[0];
+
+  useEffect(() => {
+    const rotate = () => {
+      Animated.timing(adOpacity, {
+        toValue: 0,
+        duration: 800,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start(() => {
+        setAdIndex((prev) => (prev + 1) % PROMO_ADS.length);
+        Animated.timing(adOpacity, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true,
+        }).start();
+      });
+    };
+    const id = setInterval(rotate, 8000);
+    return () => clearInterval(id);
+  }, [adOpacity]);
+
+  const handleAdPress = () => {
+    const ad = PROMO_ADS[adIndex];
+    const match = MOCK_PUBLIC_WORKSPACES.find((w) => w.vertical === ad.vertical);
+    if (match) handleOpenStorefront(match);
+  };
 
   // Modal storefront interaction states
   const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceItem | null>(null);
@@ -278,99 +374,90 @@ export default function ExploreScreen() {
     }
   };
 
-  const filteredWorkspaces = workspacesList.filter((w) => {
-    const q = query.toLowerCase();
-    return (
-      w.name.toLowerCase().includes(q) ||
-      w.description.toLowerCase().includes(q) ||
-      w.vertical.toLowerCase().includes(q)
-    );
-  });
+
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.headerWrap, { paddingTop: insets.top + 12 }]}>
-        <Text style={[styles.header, { color: theme.text }]}>Space</Text>
-        <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-          Order, book, and request services from public workspaces
-        </Text>
+
+
+      {/* AI-powered rotating promo ad bar */}
+      <View style={[styles.adBarWrap, { marginTop: 4, paddingTop: insets.top }]}>
+        <Animated.View style={[styles.adBar, { opacity: adOpacity }]}>
+          <View
+            style={[styles.adBarInner, { backgroundColor: PROMO_ADS[adIndex].accent + '12' }]}
+          >
+            <View style={[styles.adSpark, { backgroundColor: PROMO_ADS[adIndex].accent }]}>
+              <Ionicons name="sparkles" size={14} color="#ffffff" />
+            </View>
+            <View style={styles.adTextWrap}>
+              <Text style={[styles.adTitle, { color: theme.text }]}>{PROMO_ADS[adIndex].title}</Text>
+              <Text style={[styles.adSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
+                {PROMO_ADS[adIndex].subtitle}
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.adCta, { backgroundColor: PROMO_ADS[adIndex].accent }]}
+              onPress={handleAdPress}
+            >
+              <Text style={styles.adCtaText}>{PROMO_ADS[adIndex].cta}</Text>
+            </Pressable>
+          </View>
+        </Animated.View>
       </View>
 
-      {/* Search Wrap */}
-      <View style={[styles.searchWrap, { backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border }]}>
-        <Ionicons name="search" size={18} color={theme.textMuted} />
-        <TextInput
-          style={[styles.searchInput, { color: theme.text }]}
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search bakeries, cabs, salons, apparel..."
-          placeholderTextColor={theme.textMuted}
-          autoCorrect={false}
-        />
-        {query.length > 0 && (
-          <Ionicons
-            name="close-circle"
-            size={18}
-            color={theme.textMuted}
-            onPress={() => setQuery('')}
-          />
-        )}
-      </View>
 
-      {/* Main List */}
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="small" color={theme.primary} />
-        </View>
-      ) : (
-        <FlatList
-          data={filteredWorkspaces}
-          keyExtractor={(item) => item.subdomain}
-          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 20 }}
-          renderItem={({ item }) => {
-            const colors = VERTICAL_COLORS[item.vertical] || { bg: '#f4f4f5', text: '#71717a', icon: 'business-outline' };
-            return (
-              <Pressable
-                onPress={() => handleOpenStorefront(item)}
-                style={({ pressed }) => [
-                  styles.workspaceCard,
-                  {
-                    backgroundColor: theme.background,
-                    borderColor: theme.border,
-                    opacity: pressed ? 0.9 : 1,
-                  },
-                ]}
-              >
-                <View style={styles.cardHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.cardTitle, { color: theme.text }]}>{item.name}</Text>
-                    <Text style={[styles.cardSubdomain, { color: theme.primary }]}>
-                      {item.subdomain}.tarai.space
-                    </Text>
-                  </View>
-                  <View style={[styles.verticalBadge, { backgroundColor: colors.bg }]}>
-                    <Ionicons name={colors.icon as any} size={12} color={colors.text} style={{ marginRight: 4 }} />
-                    <Text style={[styles.verticalBadgeText, { color: colors.text }]}>
-                      {item.vertical.toUpperCase()}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={[styles.cardDesc, { color: theme.textMuted }]} numberOfLines={2}>
-                  {item.description}
-                </Text>
-              </Pressable>
-            );
-          }}
-          ListEmptyComponent={
+
+      {/* Suggestion Chip Grid */}
+      {!loading ? (
+        <View style={{ flex: 1, paddingHorizontal: 16, justifyContent: 'center', paddingTop: 12 }}>
+          {/* Greeting + Title */}
+          <View style={{ marginBottom: 24 }}>
+            <Text style={[styles.greetingText, { color: theme.textMuted }]}>Good {getTimeOfDay()}.</Text>
+            <Text style={[styles.heroTitle, { color: theme.text }]}>How can I help you?</Text>
+            <Text style={[styles.subtitle, { color: theme.textMuted, marginTop: 6 }]}>
+              Order, book, and request services from public workspaces
+            </Text>
+          </View>
+
+          {/* 2-column pill grid */}
+          <View style={styles.chipGrid}>
+            {workspacesList.map((item) => {
+              const colors = VERTICAL_COLORS[item.vertical] || { bg: '#f4f4f5', text: '#71717a', icon: 'business-outline' };
+              return (
+                <Pressable
+                  key={item.subdomain}
+                  onPress={() => handleOpenStorefront(item)}
+                  style={({ pressed }) => [
+                    styles.chipCard,
+                    {
+                      backgroundColor: theme.backgroundElement,
+                      borderColor: theme.border,
+                      opacity: pressed ? 0.8 : 1,
+                    },
+                  ]}
+                >
+                  <Text style={styles.chipEmoji}>{getVerticalEmoji(item.vertical)}</Text>
+                  <Text style={[styles.chipLabel, { color: theme.text }]} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {workspacesList.length === 0 && (
             <View style={styles.centered}>
               <Ionicons name="compass-outline" size={40} color={theme.textMuted} />
               <Text style={[styles.emptyText, { color: theme.textMuted, marginTop: 8 }]}>
-                No workspaces matching query
+                No workspaces found
               </Text>
             </View>
-          }
-        />
+          )}
+        </View>
+      ) : (
+        <View style={styles.centered}>
+          <ActivityIndicator size="small" color={theme.primary} />
+        </View>
       )}
 
       {/* Interactive Service Drawer / Modal */}
@@ -626,21 +713,79 @@ export default function ExploreScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerWrap: { paddingHorizontal: 20, paddingBottom: 12 },
-  header: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
   subtitle: { fontSize: 13, marginTop: 2, lineHeight: 18 },
-  searchWrap: {
+  adBarWrap: {
+    paddingHorizontal: 16,
+    marginBottom: 4,
+  },
+  adBar: {
+    width: '100%',
+  },
+  adBarInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
     borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+    overflow: 'hidden',
+  },
+  adSpark: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  adTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 1,
+  },
+  adSubtitle: {
+    fontSize: 11.5,
+    lineHeight: 15,
+  },
+  adCta: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  adCtaText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  greetingText: { fontSize: 14, marginBottom: 4, fontWeight: '500' },
+  heroTitle: { fontSize: 28, fontWeight: '900', letterSpacing: -0.7, lineHeight: 34 },
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
-  searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  chipCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    width: '47.5%',
+    gap: 8,
+  },
+  chipEmoji: {
+    fontSize: 18,
+  },
+  chipLabel: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    flex: 1,
+  },
   emptyText: { fontSize: 13 },
   workspaceCard: {
     padding: 16,

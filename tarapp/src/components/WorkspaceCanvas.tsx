@@ -1,5 +1,4 @@
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, ScrollView, Modal, ActivityIndicator } from 'react-native';
-import { useState } from 'react';
+import { StyleSheet, View, Text, ScrollView } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { DesignTokens, resolveTokenValue } from '../lib/design-tokens';
 import { WorkspaceModuleLayout, UISection, WorkspaceAction } from '../lib/layout-engine';
@@ -29,10 +28,6 @@ export default function WorkspaceCanvas({
   tableData = {},
 }: WorkspaceCanvasProps) {
   const theme = useTheme();
-  const [selectedAction, setSelectedAction] = useState<WorkspaceAction | null>(null);
-  const [formParams, setFormParams] = useState<Record<string, string>>({});
-  const [submitting, setSubmitting] = useState(false);
-  const [resultMessage, setResultMessage] = useState<string | null>(null);
 
   const colors = designTokens.colors || {};
   const primaryColor = colors.primary || '#1B4332';
@@ -47,131 +42,24 @@ export default function WorkspaceCanvas({
   const spacingMd = designTokens.spacing.md ?? 16;
   const spacingLg = designTokens.spacing.lg ?? 24;
 
-  const handleActionPress = (action: WorkspaceAction) => {
-    if (action.params && action.params.length > 0) {
-      const initialParams: Record<string, string> = {};
-      action.params.forEach(p => {
-        initialParams[p.name] = '';
-      });
-      setFormParams(initialParams);
-      setSelectedAction(action);
-      setResultMessage(null);
-    } else {
-      // Trigger execution directly if no params needed
-      setSubmitting(true);
-      onExecuteAction(action.name, {})
-        .then((res) => {
-          alert(`Successfully executed ${action.name.replace(/_/g, ' ')}`);
-        })
-        .catch((err) => {
-          alert(`Error: ${err.message}`);
-        })
-        .finally(() => setSubmitting(false));
-    }
-  };
-
-  const handleFormSubmit = async () => {
-    if (!selectedAction) return;
-    setSubmitting(true);
-    setResultMessage(null);
-    try {
-      const cleanParams: Record<string, any> = {};
-      selectedAction.params.forEach(p => {
-        const val = formParams[p.name] || '';
-        if (p.type === 'number') {
-          cleanParams[p.name] = parseFloat(val) || 0;
-        } else {
-          cleanParams[p.name] = val;
-        }
-      });
-
-      const res = await onExecuteAction(selectedAction.name, cleanParams);
-      setResultMessage(res?.message || `Successfully executed ${selectedAction.name.replace(/_/g, ' ')}`);
-      setTimeout(() => {
-        setSelectedAction(null);
-        setFormParams({});
-        setResultMessage(null);
-      }, 1500);
-    } catch (err: any) {
-      setResultMessage(`Error: ${err.message || 'Execution failed'}`);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const renderSection = (section: UISection, layout: WorkspaceModuleLayout, index: number) => {
     const sectionKey = `sec_${layout.moduleName}_${section.type}_${index}`;
 
-    if (section.type === 'quick-actions' && section.actions) {
-      return (
-        <View key={sectionKey} style={[styles.sectionContainer, { marginBottom: spacingLg }]}>
-          <Text style={[styles.sectionTitle, { color: primaryColor, ...designTokens.typography.h2 }]}>
-            {section.title || 'Quick Actions'}
-          </Text>
-          <View style={styles.actionsGrid}>
-            {section.actions.map(actName => {
-              const act = layout.actions[actName];
-              if (!act) return null;
-              return (
-                <TouchableOpacity
-                  key={actName}
-                  style={[
-                    styles.actionBtn,
-                    {
-                      backgroundColor: tertiaryColor,
-                      borderRadius: roundedMd,
-                      padding: spacingMd,
-                    },
-                  ]}
-                  onPress={() => handleActionPress(act)}
-                >
-                  <Ionicons name={mapIconName(act.icon || 'flash-outline')} size={24} color={onPrimaryColor} />
-                  <Text style={[styles.actionBtnLabel, { color: onPrimaryColor, marginTop: 4, fontWeight: '600' }]}>
-                    {act.name.replace(/_/g, ' ')}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      );
+    if (section.type === 'quick-actions') {
+      return null;
     }
 
     if (section.type === 'metric-card') {
-      const metricValue = metricsData[section.title || ''] || metricsData[layout.moduleName] || '0';
-      return (
-        <View
-          key={sectionKey}
-          style={[
-            styles.metricCard,
-            {
-              backgroundColor: theme.backgroundElement,
-              borderColor: theme.border,
-              borderRadius: roundedMd,
-              padding: spacingMd,
-              marginBottom: spacingMd,
-            },
-          ]}
-        >
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '500' }}>
-              {section.title || 'Metrics'}
-            </Text>
-            <Ionicons name="trending-up-outline" size={16} color={secondaryColor} />
-          </View>
-          <Text style={{ fontSize: 24, fontWeight: '800', color: theme.text, marginTop: 4 }}>
-            {metricValue}
-          </Text>
-        </View>
-      );
+      // Metrics are now grouped and rendered at the top level of the module block
+      return null;
     }
 
-    if (section.type === 'data-table') {
+    if (section.type === 'data-table' || section.type === 'timeline-feed' || section.type === 'booking-grid' || section.type === 'catalog-grid') {
       const rows = tableData[layout.moduleName] || [];
       return (
         <View key={sectionKey} style={[styles.sectionContainer, { marginBottom: spacingLg }]}>
-          <Text style={[styles.sectionTitle, { color: primaryColor, ...designTokens.typography.h2 }]}>
-            {section.title || 'Details'}
+          <Text style={[styles.sectionTitle, { color: theme.text, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }]}>
+            {section.title || 'Records'}
           </Text>
           <View
             style={[
@@ -197,16 +85,23 @@ export default function WorkspaceCanvas({
                     {
                       borderBottomWidth: idx < rows.length - 1 ? StyleSheet.hairlineWidth : 0,
                       borderBottomColor: theme.border,
-                      paddingVertical: spacingSm,
-                      paddingHorizontal: spacingSm,
+                      paddingVertical: 10,
+                      paddingHorizontal: 8,
                     },
                   ]}
                 >
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }}>
-                    {row.title || row.id}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2 }}>
-                    {row.value ? `$${row.value}` : row.type || ''}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }}>
+                      {row.title || row.id}
+                    </Text>
+                    {row.value !== undefined && (
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: theme.text }}>
+                        ${row.value}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                    {row.subtitle || row.description || row.type || ''}
                   </Text>
                 </View>
               ))
@@ -221,71 +116,58 @@ export default function WorkspaceCanvas({
 
   return (
     <View style={styles.container}>
-      {layouts.map(layout => (
-        <View key={layout.moduleName} style={styles.moduleBlock}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacingSm }}>
-            <Ionicons name="cube-outline" size={18} color={secondaryColor} style={{ marginRight: 6 }} />
-            <Text style={[styles.moduleTitle, { color: primaryColor, fontWeight: '700' }]}>
-              {layout.moduleName.toUpperCase()}
-            </Text>
-          </View>
-          {layout.sections.map((section, idx) => renderSection(section, layout, idx))}
-        </View>
-      ))}
+      {layouts.map(layout => {
+        const metrics = layout.sections.filter(s => s.type === 'metric-card');
+        const others = layout.sections.filter(s => s.type !== 'metric-card');
 
-      {/* Action Input Parameters Modal Form */}
-      <Modal visible={selectedAction !== null} transparent={true} animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.backgroundElement, borderColor: theme.border, borderWidth: 1, borderRadius: roundedMd }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>
-                {selectedAction?.name.replace(/_/g, ' ')}
+        return (
+          <View key={layout.moduleName} style={styles.moduleBlock}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacingSm + 4 }}>
+              <Ionicons name="cube-outline" size={16} color={theme.textSecondary} style={{ marginRight: 6 }} />
+              <Text style={[styles.moduleTitle, { color: theme.text, fontWeight: '700', fontSize: 13, letterSpacing: 1.2, textTransform: 'uppercase' }]}>
+                {layout.moduleName}
               </Text>
-              <TouchableOpacity onPress={() => setSelectedAction(null)} disabled={submitting}>
-                <Ionicons name="close" size={24} color={theme.textSecondary} />
-              </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 300, marginVertical: 12 }}>
-              {selectedAction?.params.map(p => (
-                <View key={p.name} style={{ marginBottom: 12 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 4 }}>
-                    {p.name.replace(/_/g, ' ')} {p.required ? '*' : ''}
-                  </Text>
-                  <TextInput
-                    style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
-                    value={formParams[p.name]}
-                    onChangeText={text => setFormParams(prev => ({ ...prev, [p.name]: text }))}
-                    placeholder={`Enter ${p.name.replace(/_/g, ' ')}`}
-                    placeholderTextColor={theme.textMuted}
-                    keyboardType={p.type === 'number' ? 'numeric' : 'default'}
-                    editable={!submitting}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-
-            {resultMessage && (
-              <Text style={{ fontSize: 14, color: primaryColor, textAlign: 'center', marginBottom: 12 }}>
-                {resultMessage}
-              </Text>
+            {/* Render metrics side by side in a row */}
+            {metrics.length > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: spacingMd }}>
+                {metrics.map((section, idx) => {
+                  const metricValue = metricsData[section.title || ''] || metricsData[layout.moduleName] || '0';
+                  return (
+                    <View
+                      key={`metric_${idx}`}
+                      style={[
+                        styles.metricCard,
+                        {
+                          flex: 1,
+                          minWidth: '45%',
+                          backgroundColor: theme.backgroundElement,
+                          borderColor: theme.border,
+                          borderRadius: roundedMd,
+                          padding: spacingMd,
+                        },
+                      ]}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '500' }}>
+                          {section.title || 'Metrics'}
+                        </Text>
+                        <Ionicons name="trending-up-outline" size={14} color={theme.textMuted} />
+                      </View>
+                      <Text style={{ fontSize: 24, fontWeight: '800', color: theme.text, marginTop: 6 }}>
+                        {metricValue}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
             )}
 
-            <TouchableOpacity
-              activeOpacity={0.7}
-              style={[styles.submitBtn, { backgroundColor: primaryColor, borderRadius: roundedSm }]}
-              onPress={handleFormSubmit}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Submit Action</Text>
-              )}
-            </TouchableOpacity>
+            {others.map((section, idx) => renderSection(section, layout, idx))}
           </View>
-        </View>
-      </Modal>
+        );
+      })}
     </View>
   );
 }

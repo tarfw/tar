@@ -140,7 +140,6 @@ export default function ExploreScreen() {
   // AI-powered rotating promo ad bar
   const [adIndex, setAdIndex] = useState(0);
   const adOpacity = useState(() => new Animated.Value(1))[0];
-  const adIntervalRef = useState<ReturnType<typeof setInterval> | null>(null)[0];
 
   useEffect(() => {
     const rotate = () => {
@@ -787,42 +786,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   emptyText: { fontSize: 13 },
-  workspaceCard: {
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 6,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  cardSubdomain: {
-    fontSize: 12,
-    marginTop: 2,
-    fontWeight: '600',
-  },
-  cardDesc: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  verticalBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  verticalBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
   modalContainer: {
     flex: 1,
     justifyContent: 'flex-end',

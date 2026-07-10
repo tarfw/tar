@@ -97,14 +97,27 @@ export default function WorkspacesScreen() {
   const [activeModules, setActiveModules] = useState<string[]>([]);
   const [detectedVertical, setDetectedVertical] = useState('general');
   const [parsedToolsList, setParsedToolsList] = useState<any[]>([]);
-  const [editableQueries, setEditableQueries] = useState<Record<string, string>>({});
+  const [workspaceName, setWorkspaceName] = useState('');
   
   const [designTokens, setDesignTokens] = useState<any>(null);
   const [canvasLayouts, setCanvasLayouts] = useState<any[]>([]);
   const [loadingCanvas, setLoadingCanvas] = useState(false);
+
+  const [selectedAction, setSelectedAction] = useState<any | null>(null);
+  const [formParams, setFormParams] = useState<Record<string, string>>({});
+  const [submittingAction, setSubmittingAction] = useState(false);
+  const [actionResultMessage, setActionResultMessage] = useState<string | null>(null);
   
   const scrollViewRef = useRef<ScrollView>(null);
-  const workspaceToolsCache = useRef<Record<string, { detectedVertical: string; activeModules: string[]; parsedToolsList: any[] }>>({});
+  const workspaceToolsCache = useRef<Record<string, { workspaceName: string; detectedVertical: string; activeModules: string[]; parsedToolsList: any[] }>>({});
+
+  useEffect(() => {
+    if (currentWorkspace) {
+      setWorkspaceName(currentWorkspace.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : '');
+    } else {
+      setWorkspaceName('');
+    }
+  }, [currentWorkspace]);
   
   // Custom scope resolution to feed into useSite
   const activeScope = currentWorkspace?.scope ?? undefined;
@@ -121,6 +134,9 @@ export default function WorkspacesScreen() {
         setDetectedVertical(cached.detectedVertical);
         setActiveModules(cached.activeModules);
         setParsedToolsList(cached.parsedToolsList);
+        if (cached.workspaceName) {
+          setWorkspaceName(cached.workspaceName);
+        }
         setLoadingIndex(false);
       } else {
         // First-time loading indicator
@@ -130,19 +146,19 @@ export default function WorkspacesScreen() {
       tar.okf.readIndex(scope)
         .then(async (res: any) => {
           if (res && res.content) {
-            const { vertical, modules } = parseIndexMarkdown(res.content);
+            const { name, vertical, modules } = parseIndexMarkdown(res.content);
 
             // Fetch each module's markdown content in parallel
             try {
               const fetchedTools = await Promise.all(
                 modules.map(async (mod) => {
                   try {
-                    const fileRes = await tar.okf.read(scope, `${mod}.md`);
+                    const fileRes = await tar.okf.read(scope, `skills/${mod}.md`);
                     if (fileRes && fileRes.content) {
                       return parseModuleMarkdown(mod, fileRes.content);
                     }
                   } catch (e) {
-                    console.warn(`[OKF] Failed to fetch module ${mod}.md:`, e);
+                    console.warn(`[OKF] Failed to fetch module skills/${mod}.md:`, e);
                   }
                   return null;
                 })
@@ -152,6 +168,7 @@ export default function WorkspacesScreen() {
 
               // Update cache
               workspaceToolsCache.current[scope] = {
+                workspaceName: name || '',
                 detectedVertical: vertical,
                 activeModules: modules,
                 parsedToolsList: validTools
@@ -161,6 +178,9 @@ export default function WorkspacesScreen() {
               setDetectedVertical(vertical);
               setActiveModules(modules);
               setParsedToolsList(validTools);
+              if (name) {
+                setWorkspaceName(name);
+              }
             } catch (err) {
               console.warn('[OKF] Failed to load module details:', err);
             }
@@ -179,37 +199,6 @@ export default function WorkspacesScreen() {
         });
     }
   }, [showInfo, currentWorkspace?.scope]);
-
-  const getDynamicToolsList = () => {
-    const list: any[] = [];
-    
-    // Always include storefront website tools
-    list.push(WEBSITE_TOOLS);
-
-    // If we have successfully parsed dynamic tools from S3 md files
-    if (parsedToolsList.length > 0) {
-      list.push(...parsedToolsList);
-    } else {
-      // Fallback based on vertical (if offline or files not fetched yet)
-      const vert = detectedVertical || currentWorkspace?.vertical || 'general';
-      let fallbacks: string[] = [];
-      if (vert === 'restaurant' || vert === 'bakery' || vert === 'retail') {
-        fallbacks = ['inventory', 'orders'];
-      } else if (vert === 'services') {
-        fallbacks = ['bookings', 'crm'];
-      } else {
-        fallbacks = ['inventory', 'documents'];
-      }
-      fallbacks.forEach(mod => {
-        const tool = MODULE_TOOLS_MAP[mod];
-        if (tool) {
-          list.push(tool);
-        }
-      });
-    }
-
-    return list;
-  };
 
   // Fetch workspaces list on mount
   const fetchWorkspacesList = useCallback(async () => {
@@ -313,7 +302,10 @@ export default function WorkspacesScreen() {
         }
         
         if (indexRes && indexRes.content) {
-          const { modules } = parseIndexMarkdown(indexRes.content);
+          const { name, modules } = parseIndexMarkdown(indexRes.content);
+          if (name) {
+            setWorkspaceName(name);
+          }
           const fetchedLayouts = await Promise.all(
             modules.map(async (mod) => {
               try {
@@ -441,47 +433,106 @@ export default function WorkspacesScreen() {
     }
   };
 
-  const getHints = () => {
-    const list: { label: string; text: string }[] = [];
+  const handleTriggerAction = (action: any) => {
+    if (action.params && action.params.length > 0) {
+      const initialParams: Record<string, string> = {};
+      action.params.forEach((p: any) => {
+        const paramName = typeof p === 'string' ? p : p.name;
+        initialParams[paramName] = '';
+      });
+      setFormParams(initialParams);
+      setSelectedAction(action);
+      setActionResultMessage(null);
+    } else {
+      // Execute directly
+      setExecuting(true);
+      const actionName = action.name || action.actionId;
+      tar.executeAITask(actionName, {}, currentWorkspace?.scope!)
+        .then(async (res) => {
+          alert(`Successfully executed ${actionName.replace(/_/g, ' ')}`);
+          // Refresh records
+          if (currentWorkspace?.scope) {
+            await refreshProducts(currentWorkspace.scope);
+            await refreshOrders(currentWorkspace.scope);
+          }
+        })
+        .catch((err) => {
+          alert(`Error: ${err.message}`);
+        })
+        .finally(() => setExecuting(false));
+    }
+  };
+
+  const handleActionFormSubmit = async () => {
+    if (!selectedAction || !currentWorkspace) return;
+    setSubmittingAction(true);
+    setActionResultMessage(null);
+    try {
+      const cleanParams: Record<string, any> = {};
+      selectedAction.params.forEach((p: any) => {
+        const paramName = typeof p === 'string' ? p : p.name;
+        const paramType = typeof p === 'string' ? 'text' : p.type;
+        const val = formParams[paramName] || '';
+        if (paramType === 'number') {
+          cleanParams[paramName] = parseFloat(val) || 0;
+        } else {
+          cleanParams[paramName] = val;
+        }
+      });
+
+      const res = await tar.executeAITask(selectedAction.name, cleanParams, currentWorkspace.scope);
+      setActionResultMessage(res?.message || `Successfully executed ${selectedAction.name.replace(/_/g, ' ')}`);
+      
+      // Refresh records after action is performed
+      await refreshProducts(currentWorkspace.scope);
+      await refreshOrders(currentWorkspace.scope);
+
+      setTimeout(() => {
+        setSelectedAction(null);
+        setFormParams({});
+        setActionResultMessage(null);
+      }, 1500);
+    } catch (err: any) {
+      setActionResultMessage(`Error: ${err.message || 'Execution failed'}`);
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  const getFilteredActions = () => {
+    const resultList: any[] = [];
     
-    const vert = detectedVertical || currentWorkspace?.vertical || 'general';
-    const hasModule = (modName: string) => {
-      if (activeModules.length > 0) {
-        return activeModules.includes(modName);
+    // Dynamic actions from layouts
+    canvasLayouts.forEach(layout => {
+      if (layout && layout.actions) {
+        Object.values(layout.actions).forEach((action: any) => {
+          if (!action || !action.name) return;
+          // Label is clean name: e.g. "Record Sale"
+          const cleanName = action.name
+            .replace('action_report_', '')
+            .replace('action_', '')
+            .split('_')
+            .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ');
+          
+          if (!resultList.some(r => r.label === cleanName)) {
+            resultList.push({
+              label: cleanName,
+              action: action
+            });
+          }
+        });
       }
-      if (vert === 'restaurant' || vert === 'bakery' || vert === 'retail') {
-        return modName === 'inventory' || modName === 'orders';
-      }
-      if (vert === 'services' || vert === 'salon' || vert === 'clinic' || vert === 'gym') {
-        return modName === 'bookings' || modName === 'crm';
-      }
-      return modName === 'inventory' || modName === 'documents';
-    };
-
-    const hasStorefront = hasModule('inventory') || hasModule('orders') || hasModule('bookings');
-
-    if (hasStorefront) {
-      list.push({ label: 'Show Site', text: 'show site' });
-      list.push({ label: 'Publish Site', text: 'publish site' });
-    }
-
-    if (hasModule('inventory')) {
-      list.push({ label: 'Menu', text: 'show products' });
-    }
-    if (hasModule('orders')) {
-      list.push({ label: 'Orders', text: 'show orders' });
-    }
-    if (hasModule('bookings')) {
-      list.push({ label: 'Bookings', text: 'show bookings' });
-    }
-    if (hasModule('crm')) {
-      list.push({ label: 'Leads', text: 'show crm leads' });
-    }
-    if (hasModule('expenses')) {
-      list.push({ label: 'Expenses', text: 'show expenses' });
-    }
+    });
     
-    return list;
+    if (!input.trim()) return resultList;
+    
+    const query = input.toLowerCase();
+    return resultList.filter(h => 
+      h.label.toLowerCase().includes(query) ||
+      (h.text && h.text.toLowerCase().includes(query)) ||
+      (h.action && h.action.name.toLowerCase().includes(query))
+    );
   };
 
   if (loadingWorkspaces) {
@@ -528,9 +579,9 @@ export default function WorkspacesScreen() {
             { backgroundColor: theme.background, borderColor: theme.border + '80' }
           ]}
         >
-          <WorkspaceThumbnail name={currentWorkspace?.name || currentWorkspace?.subdomain || ''} size={24} theme={theme} />
+          <WorkspaceThumbnail name={workspaceName || currentWorkspace?.subdomain || ''} size={24} theme={theme} />
           <Text style={[styles.switcherText, { color: theme.text }]} numberOfLines={1}>
-            {currentWorkspace?.name || currentWorkspace?.subdomain}
+            {workspaceName || (currentWorkspace?.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : '')}
           </Text>
         </Pressable>
 
@@ -644,18 +695,73 @@ export default function WorkspacesScreen() {
           </View>
         )}
 
-        {/* Autocomplete chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hintsContainer}>
-          {getHints().map((hint, idx) => (
-            <Pressable
-              key={idx}
-              onPress={() => handleSend(hint.text)}
-              style={[styles.hintChip, { borderColor: theme.border, backgroundColor: theme.background, borderWidth: 1 }]}
-            >
-              <Text style={[styles.hintText, { color: theme.textSecondary }]}>{hint.label}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+        {/* Autocomplete chips when input is empty */}
+        {!input.trim() ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hintsContainer}>
+            {getFilteredActions().map((hint, idx) => (
+              <Pressable
+                key={idx}
+                onPress={() => {
+                  if (hint.action) {
+                    handleTriggerAction(hint.action);
+                  } else if (hint.text) {
+                    handleSend(hint.text);
+                  }
+                }}
+                style={[styles.hintChip, { borderColor: theme.border, backgroundColor: theme.backgroundElement, borderWidth: 1 }]}
+              >
+                <Text style={[styles.hintText, { color: theme.textSecondary }]}>{hint.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : getFilteredActions().length > 0 ? (
+          <View style={{
+            backgroundColor: theme.backgroundElement,
+            borderColor: theme.border,
+            borderWidth: 1,
+            borderRadius: 12,
+            marginBottom: 10,
+            padding: 4,
+          }}>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: theme.textMuted, paddingHorizontal: 12, paddingVertical: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Suggested Actions
+            </Text>
+            {getFilteredActions().slice(0, 3).map((hint, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  borderBottomWidth: idx < getFilteredActions().slice(0, 3).length - 1 ? StyleSheet.hairlineWidth : 0,
+                  borderBottomColor: theme.border,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+                onPress={() => {
+                  setInput('');
+                  if (hint.action) {
+                    handleTriggerAction(hint.action);
+                  } else if (hint.text) {
+                    handleSend(hint.text);
+                  }
+                }}
+              >
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={{ fontSize: 13, color: theme.text, fontWeight: '600' }} numberOfLines={1}>
+                    {hint.label}
+                  </Text>
+                  {hint.action && (
+                    <Text style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }} numberOfLines={1}>
+                      {hint.action.purpose || `Execute ${hint.action.name}`}
+                    </Text>
+                  )}
+                </View>
+                <Ionicons name="arrow-forward-outline" size={14} color={theme.textMuted} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
 
         {/* Text Input Bar */}
         <View style={[styles.textInputWrapper, { borderColor: theme.border, backgroundColor: theme.background, borderWidth: 1 }]}>
@@ -749,246 +855,186 @@ export default function WorkspacesScreen() {
       >
         <View style={{ flex: 1, backgroundColor: theme.background, paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 16 }}>
           {/* Full Screen Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
-            <Pressable onPress={() => setShowInfo(false)} style={{ padding: 4 }}>
-              <Ionicons name="close" size={26} color={theme.text} />
-            </Pressable>
-            <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>Workspace & AI Tools</Text>
-            <View style={{ width: 26 }} />
+          {/* Full Screen Header */}
+          <View style={{ 
+            flexDirection: 'row', 
+            alignItems: 'flex-start', 
+            justifyContent: 'space-between',
+            paddingVertical: 16, 
+            borderBottomWidth: StyleSheet.hairlineWidth, 
+            borderBottomColor: theme.border 
+          }}>
+            <View style={{ flex: 1, marginRight: 16 }}>
+              <Text numberOfLines={1} style={{ fontSize: 26, fontWeight: '900', color: theme.text, letterSpacing: -0.5 }}>
+                {workspaceName || (currentWorkspace?.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : '')}
+              </Text>
+              <Text numberOfLines={1} style={{ fontSize: 11, color: theme.textMuted, marginTop: 4, textTransform: 'uppercase', fontWeight: '600' }}>
+                {currentWorkspace?.vertical} • {currentWorkspace?.scope}
+              </Text>
+            </View>
+            
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+              <Ionicons name="globe-outline" size={15} color={theme.primary} style={{ marginRight: 5 }} />
+              <Text selectable style={{ fontSize: 13, color: theme.primary, fontWeight: '600' }}>
+                {currentWorkspace?.subdomain}.tarai.space
+              </Text>
+            </View>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1, marginTop: 16 }}>
-            {/* Info Section - Flat Design */}
-            <View style={{ marginBottom: 24 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: theme.primary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-                Workspace Information
-              </Text>
-              
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
-                <Text style={{ fontSize: 14, color: theme.textSecondary }}>Scope ID</Text>
-                <Text selectable style={{ fontSize: 14, color: theme.text, fontWeight: '500' }}>{currentWorkspace?.scope}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
-                <Text style={{ fontSize: 14, color: theme.textSecondary }}>Vertical</Text>
-                <Text style={{ fontSize: 14, color: theme.text, fontWeight: '500', textTransform: 'capitalize' }}>{currentWorkspace?.vertical}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
-                <Text style={{ fontSize: 14, color: theme.textSecondary }}>Live Domain</Text>
-                <Text selectable style={{ fontSize: 14, color: theme.primary, fontWeight: '500' }}>https://{currentWorkspace?.subdomain}.tarai.space</Text>
-              </View>
-            </View>
-
-            {/* Tools Section Title */}
-            <Text style={{ fontSize: 13, fontWeight: '700', color: theme.text, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4, marginTop: 12 }}>
-              AI Agent Tools
-            </Text>
-            <Text style={{ color: theme.textMuted, fontSize: 13, marginBottom: 12 }}>
-              Edit and run queries in real time to interact with your AI agent.
+            {/* Skills Section */}
+            <Text style={{ fontSize: 13, fontWeight: '700', color: theme.primary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+              Workspace Skills
             </Text>
 
             {loadingIndex ? (
               <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                 <ActivityIndicator size="small" color={theme.primary} />
-                <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>Reading S3 workspace blueprints...</Text>
+                <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>Loading workspace skills...</Text>
+              </View>
+            ) : parsedToolsList.length === 0 ? (
+              <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                <Text style={{ color: theme.textMuted, fontSize: 14 }}>No skills installed in this workspace.</Text>
               </View>
             ) : (
-              getDynamicToolsList().map((cat: any, catIdx: number) => (
-                <View key={catIdx} style={{ marginBottom: 24 }}>
-                  {/* Flat category header */}
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: theme.primary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, marginTop: 12 }}>
-                    {cat.category}
-                  </Text>
-                  
-                  {cat.items.map((item: any, itemIdx: number) => {
-                    const uniqueKey = `${cat.category}_${item.name}`;
-                    const currentValue = editableQueries[uniqueKey] !== undefined ? editableQueries[uniqueKey] : item.example;
-
-                    return (
-                      <View 
-                        key={itemIdx} 
-                        style={{ 
-                          paddingVertical: 14, 
-                          borderBottomWidth: StyleSheet.hairlineWidth, 
-                          borderBottomColor: theme.border 
-                        }}
-                      >
-                        {/* Title & Description */}
-                        <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>
-                          {item.name}
-                        </Text>
-                        {item.desc ? (
-                          <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2, marginBottom: 8 }}>
-                            {item.desc}
+              parsedToolsList.map((skill: any, idx: number) => {
+                const title = skill.category.replace(/\s+Skill$/i, '').replace(/\s+Module$/i, '');
+                return (
+                  <View 
+                    key={idx} 
+                    style={{ 
+                      marginBottom: 16,
+                      padding: 16,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      backgroundColor: theme.backgroundElement
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                      <Ionicons 
+                        name={
+                          title.toLowerCase().includes('crm') ? 'person-outline' :
+                          title.toLowerCase().includes('logistics') ? 'car-outline' :
+                          title.toLowerCase().includes('booking') ? 'calendar-outline' :
+                          title.toLowerCase().includes('inventory') ? 'cube-outline' :
+                          title.toLowerCase().includes('order') ? 'receipt-outline' :
+                          title.toLowerCase().includes('report') ? 'bar-chart-outline' :
+                          title.toLowerCase().includes('document') ? 'document-text-outline' :
+                          title.toLowerCase().includes('expense') ? 'wallet-outline' :
+                          'extension-puzzle-outline'
+                        } 
+                        size={20} 
+                        color={theme.primary} 
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>
+                        {title}
+                      </Text>
+                    </View>
+                    
+                    {skill.items && skill.items.length > 0 ? (
+                      skill.items.map((action: any, actionIdx: number) => (
+                        <View 
+                          key={actionIdx} 
+                          style={{ 
+                            paddingVertical: 8, 
+                            borderTopWidth: actionIdx > 0 ? StyleSheet.hairlineWidth : 0, 
+                            borderTopColor: theme.border 
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textSecondary }}>
+                            {action.name}
                           </Text>
-                        ) : null}
-                        
-                        {/* Dynamic editable input row */}
-                        <View style={{ 
-                          flexDirection: 'row', 
-                          alignItems: 'center', 
-                          backgroundColor: theme.backgroundElement, 
-                          borderColor: theme.border, 
-                          borderWidth: 1, 
-                          borderRadius: 8, 
-                          paddingHorizontal: 8,
-                          height: 38
-                        }}>
-                          <TextInput
-                            style={{ 
-                              flex: 1, 
-                              fontSize: 13, 
-                              color: theme.text, 
-                              paddingVertical: 0,
-                              height: '100%'
-                            }}
-                            value={currentValue}
-                            onChangeText={(text) => {
-                              setEditableQueries(prev => ({
-                                ...prev,
-                                [uniqueKey]: text
-                              }));
-                            }}
-                            placeholder="Enter command..."
-                            placeholderTextColor={theme.textMuted}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                          />
-                          <TouchableOpacity
-                            activeOpacity={0.7}
-                            onPress={() => {
-                              setShowInfo(false);
-                              handleSend(currentValue);
-                            }}
-                            style={{ 
-                              backgroundColor: theme.primary, 
-                              paddingHorizontal: 12, 
-                              paddingVertical: 4, 
-                              borderRadius: 6,
-                              justifyContent: 'center',
-                              alignItems: 'center'
-                            }}
-                          >
-                            <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>Try</Text>
-                          </TouchableOpacity>
+                          <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                            {action.desc}
+                          </Text>
                         </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              ))
+                      ))
+                    ) : (
+                      <Text style={{ fontSize: 12, color: theme.textMuted }}>No actions defined.</Text>
+                    )}
+                  </View>
+                );
+              })
             )}
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Dynamic Action Input Parameters Modal Form */}
+      <Modal visible={selectedAction !== null} transparent={true} animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.backgroundElement, borderColor: theme.border, borderWidth: 1, borderRadius: designTokens?.rounded?.md ?? 12 }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>
+                {selectedAction?.name?.replace(/_/g, ' ') || 'Action'}
+              </Text>
+              <TouchableOpacity onPress={() => setSelectedAction(null)} disabled={submittingAction}>
+                <Ionicons name="close" size={24} color={theme.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 300, marginVertical: 12 }}>
+              {selectedAction?.params?.map((p: any) => {
+                const paramName = typeof p === 'string' ? p : p.name;
+                const isRequired = typeof p === 'string' ? true : !!p.required;
+                const paramType = typeof p === 'string' ? 'text' : p.type;
+                
+                return (
+                  <View key={paramName} style={{ marginBottom: 12 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 4 }}>
+                      {paramName.replace(/_/g, ' ')} {isRequired ? '*' : ''}
+                    </Text>
+                    <TextInput
+                      style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
+                      value={formParams[paramName]}
+                      onChangeText={text => setFormParams(prev => ({ ...prev, [paramName]: text }))}
+                      placeholder={`Enter ${paramName.replace(/_/g, ' ')}`}
+                      placeholderTextColor={theme.textMuted}
+                      keyboardType={paramType === 'number' ? 'numeric' : 'default'}
+                      editable={!submittingAction}
+                    />
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            {actionResultMessage && (
+              <Text style={{ fontSize: 14, color: theme.text, textAlign: 'center', marginBottom: 12 }}>
+                {actionResultMessage}
+              </Text>
+            )}
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.submitBtn, { backgroundColor: theme.primary, borderRadius: designTokens?.rounded?.sm ?? 6 }]}
+              onPress={handleActionFormSubmit}
+              disabled={submittingAction}
+            >
+              {submittingAction ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Submit Action</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </KeyboardAvoidingView>
   );
 }
 
-const WEBSITE_TOOLS = {
-  category: 'Storefront Website',
-  items: [
-    {
-      name: 'Generate Site',
-      desc: 'Modifies the design layout or color scheme based on instructions.',
-      example: 'make the website look like a luxury storefront',
-    },
-    {
-      name: 'Preview Storefront',
-      desc: 'Brings up the live storefront preview status card.',
-      example: 'show site',
-    },
-    {
-      name: 'Publish Website',
-      desc: 'Deploys all local changes to the live web domain.',
-      example: 'publish site',
-    },
-  ]
-};
-
-const MODULE_TOOLS_MAP: Record<string, {
-  category: string;
-  items: { name: string; desc: string; example: string }[];
-}> = {
-  inventory: {
-    category: 'Inventory & Products',
-    items: [
-      {
-        name: 'Add Product',
-        desc: 'Creates a new product with custom price in the store database.',
-        example: 'add chocolate muffin at 180',
-      },
-      {
-        name: 'Show Inventory',
-        desc: 'Fetches and displays the complete list of active products.',
-        example: 'show products',
-      },
-    ]
-  },
-  orders: {
-    category: 'Orders & Sales',
-    items: [
-      {
-        name: 'Show Orders',
-        desc: 'Fetches client orders list from the database.',
-        example: 'show orders',
-      },
-    ]
-  },
-  bookings: {
-    category: 'Bookings & Schedules',
-    items: [
-      {
-        name: 'Show Bookings',
-        desc: 'Lists scheduled customer appointments and bookings.',
-        example: 'show bookings',
-      },
-    ]
-  },
-  crm: {
-    category: 'Customer & Leads',
-    items: [
-      {
-        name: 'View CRM Leads',
-        desc: 'Displays active sales leads and customer contacts.',
-        example: 'show crm leads',
-      },
-    ]
-  },
-  expenses: {
-    category: 'Expenses & Finance',
-    items: [
-      {
-        name: 'Track Expenses',
-        desc: 'Lists tracked business expenses and financial records.',
-        example: 'show expenses',
-      },
-    ]
-  },
-  reports: {
-    category: 'Reports & Analytics',
-    items: [
-      {
-        name: 'View Reports',
-        desc: 'Summarizes sales performance and analytics reports.',
-        example: 'show reports',
-      },
-    ]
-  },
-  documents: {
-    category: 'Knowledge Base Documents',
-    items: [
-      {
-        name: 'Semantic Query',
-        desc: 'Performs natural language vector search on your workspace documents.',
-        example: 'search sourdough',
-      },
-    ]
-  }
-};
 
 function parseIndexMarkdown(md: string) {
+  let name = '';
   let vertical = 'general';
   let modules: string[] = [];
+
+  const nameMatch = md.match(/^#\s*(.+)$/m);
+  if (nameMatch) {
+    name = nameMatch[1].trim();
+  }
 
   const verticalMatch = md.match(/\*\*Vertical:\*\*\s*(.+)/i);
   if (verticalMatch) {
@@ -1003,7 +1049,7 @@ function parseIndexMarkdown(md: string) {
       .filter(m => m.length > 0);
   }
 
-  return { vertical, modules };
+  return { name, vertical, modules };
 }
 
 function cleanUserSays(phrase: string, actionId: string): string {
@@ -1459,5 +1505,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginTop: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+  },
+  submitBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
   },
 });

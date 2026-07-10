@@ -131,18 +131,35 @@ type: skill
 name: crm
 version: 1.0.0
 actions:
-  - name: action_add_customer
-    params: [name, phone, email]
+  - name: action_add_contact
+    params: [name, phone, email, company_id, role, source]
     icon: person-add
-  - name: action_get_customer
-    params: [customer_id]
+  - name: action_get_contact
+    params: [contact_id]
     icon: person
+  - name: action_add_company
+    params: [name, industry, size, website, address]
+    icon: business
+  - name: action_get_company
+    params: [company_id]
+    icon: business-outline
+  - name: action_add_deal
+    params: [name, value, stage, expected_close_date, contact_id, company_id]
+    icon: cash
+  - name: action_update_deal_stage
+    params: [deal_id, stage, win_loss_reason]
+    icon: trending-up
+  - name: action_log_activity
+    params: [type, description, contact_id, deal_id]
+    icon: time
 ui_hints:
-  primary_action: action_add_customer
+  primary_action: action_add_deal
   layout: dashboard
   sections:
+    - type: entity-navigator
+      entities: [pipeline, contacts, companies, deals, activities]
     - type: quick-actions
-      actions: [action_add_customer, action_get_customer]
+      actions: [action_add_contact, action_add_deal, action_log_activity]
 site_pages:
   - slug: /contact
     template: contact
@@ -151,17 +168,44 @@ site_pages:
 
 # CRM Module
 
-Manages customer records and relations.
+Manages customer records, companies, deals, pipelines, and activities.
 
-### action_add_customer
-Add new customer details.
+### action_add_contact
+Add a new contact and link them to a company.
 steps:
-1. create(table='matter', type='customer', title={name}, data={name: {name}, phone: {phone}, email: {email}})
+1. create(table='matter', type='customer', title={name}, data={name: {name}, phone: {phone}, email: {email}, company_id: {company_id}, role: {role}, source: {source}})
 
-### action_get_customer
-Retrieve customer profile.
+### action_get_contact
+Retrieve a contact profile.
 steps:
-1. read(table='matter', type='customer', id={customer_id})
+1. read(table='matter', type='customer', id={contact_id})
+
+### action_add_company
+Add a new company profile.
+steps:
+1. create(table='matter', type='company', title={name}, data={name: {name}, industry: {industry}, size: {size}, website: {website}, address: {address}})
+
+### action_get_company
+Retrieve company details.
+steps:
+1. read(table='matter', type='company', id={company_id})
+
+### action_add_deal
+Add a new deal associated with a contact and company.
+steps:
+1. create(table='matter', type='deal', title={name}, value={value}, data={name: {name}, stage: {stage}, expected_close_date: {expected_close_date}, contact_id: {contact_id}, company_id: {company_id}})
+2. create(table='motion', type='deal', data={deal_id: {id}, stage: {stage}, value: {value}})
+
+### action_update_deal_stage
+Update a deal's pipeline stage.
+steps:
+1. update(table='matter', id={deal_id}, type='deal', data={stage: {stage}, win_loss_reason: {win_loss_reason}})
+2. create(table='motion', type='deal_stage_change', data={deal_id: {deal_id}, stage: {stage}})
+
+### action_log_activity
+Log a communication activity (Call, Email, Meeting, Note, Task).
+steps:
+1. create(table='motion', type='activity', data={activity_type: {type}, description: {description}, contact_id: {contact_id}, deal_id: {deal_id}})
 `,
 
   logistics: `---

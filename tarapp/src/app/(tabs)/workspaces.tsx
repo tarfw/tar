@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Modal, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Modal, Platform, TouchableOpacity } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -107,8 +108,15 @@ export default function WorkspacesScreen() {
   const [formParams, setFormParams] = useState<Record<string, string>>({});
   const [submittingAction, setSubmittingAction] = useState(false);
   const [actionResultMessage, setActionResultMessage] = useState<string | null>(null);
-  
-  const scrollViewRef = useRef<ScrollView>(null);
+  const [activeChipField, setActiveChipField] = useState<string | null>(null);
+  const chipInputRef = useRef<TextInput>(null);
+
+  const hasAnyValue = selectedAction?.params?.some((p: any) => {
+    const paramName = typeof p === 'string' ? p : p.name;
+    return formParams[paramName]?.trim();
+  }) ?? false;
+
+  const scrollViewRef = useRef<any>(null);
   const workspaceToolsCache = useRef<Record<string, { workspaceName: string; detectedVertical: string; activeModules: string[]; parsedToolsList: any[] }>>({});
 
   useEffect(() => {
@@ -566,14 +574,11 @@ export default function WorkspacesScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={[styles.container, { backgroundColor: theme.background }]}
-    >
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header with Switcher */}
       <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: theme.border }]}>
-        <Pressable 
-          onPress={() => setShowDropdown(true)} 
+        <Pressable
+          onPress={() => setShowDropdown(true)}
           style={[
             styles.switcherChip,
             { backgroundColor: theme.background, borderColor: theme.border + '80' }
@@ -592,11 +597,14 @@ export default function WorkspacesScreen() {
         </Pressable>
       </View>
 
-      {/* Results Scroll Area */}
-      <ScrollView
+      {/* Main Content — scrollable with keyboard */}
+      <KeyboardAwareScrollView
         ref={scrollViewRef}
-        style={styles.resultsArea}
-        contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        bottomOffset={80}
       >
         {/* 1. Live Site Status Widget */}
         {draft && (
@@ -653,10 +661,9 @@ export default function WorkspacesScreen() {
             <OrderListCard orders={orders} />
           </>
         )}
-      </ScrollView>
 
-      {/* Input Section */}
-      <View style={[styles.inputContainer, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: Platform.OS === 'ios' ? 12 : 24 }]}>
+        {/* Input Section — inside scroll view for keyboard avoidance */}
+        <View style={[styles.inputContainer, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: 4 }]}>
         {/* Agent Response Feedback Alert */}
         {agentFeedback && (
           <View style={[styles.feedbackContainer, { backgroundColor: theme.background, borderColor: theme.border, marginBottom: 12 }]}>
@@ -720,7 +727,8 @@ export default function WorkspacesScreen() {
             borderColor: theme.border,
             borderWidth: 1,
             borderRadius: 12,
-            marginBottom: 10,
+            marginBottom: 8,
+            marginHorizontal: 12,
             padding: 4,
           }}>
             <Text style={{ fontSize: 10, fontWeight: '700', color: theme.textMuted, paddingHorizontal: 12, paddingVertical: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -768,7 +776,7 @@ export default function WorkspacesScreen() {
           <TextInput
             value={input}
             onChangeText={setInput}
-            placeholder="Ask agent to add products, show orders, or build site..."
+            placeholder="Ask anything..."
             placeholderTextColor={theme.textMuted}
             style={[styles.textInput, { color: theme.text }]}
             multiline={true}
@@ -783,6 +791,7 @@ export default function WorkspacesScreen() {
           </Pressable>
         </View>
       </View>
+      </KeyboardAwareScrollView>
 
       {/* Workspace Switcher Dropdown Modal */}
       <Modal
@@ -962,66 +971,61 @@ export default function WorkspacesScreen() {
         </View>
       </Modal>
 
-      {/* Dynamic Action Input Parameters Modal Form */}
-      <Modal visible={selectedAction !== null} transparent={true} animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.backgroundElement, borderColor: theme.border, borderWidth: 1, borderRadius: designTokens?.rounded?.md ?? 12 }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>
+      {/* Dynamic Action Modal — GitHub notification style */}
+      <Modal visible={selectedAction !== null} transparent={true} animationType="slide">
+        <View style={styles.githubModalOverlay}>
+          <View style={[styles.githubModalContainer, { backgroundColor: theme.background }]}>
+            {/* Handle bar */}
+            <View style={styles.githubHandleBarContainer}>
+              <View style={styles.githubHandleBar} />
+            </View>
+
+            {/* Header */}
+            <View style={styles.githubModalHeader}>
+              <TouchableOpacity onPress={() => setSelectedAction(null)} disabled={submittingAction} hitSlop={12}>
+                <Ionicons name="chevron-down" size={24} color={theme.textMuted} />
+              </TouchableOpacity>
+              <Text style={[styles.githubModalTitle, { color: theme.text }]}>
                 {selectedAction?.name?.replace(/_/g, ' ') || 'Action'}
               </Text>
-              <TouchableOpacity onPress={() => setSelectedAction(null)} disabled={submittingAction}>
-                <Ionicons name="close" size={24} color={theme.textSecondary} />
+              <View style={{ width: 24 }} />
+            </View>
+
+            {/* Sentence with inline chips */}
+            <View style={styles.githubModalBody}>
+              {buildGitHubSentence(selectedAction, formParams, theme, activeChipField, (field, val) => {
+                setFormParams(prev => ({ ...prev, [field]: val }));
+              }, setActiveChipField, chipInputRef)}
+            </View>
+
+            {/* Submit — text button */}
+            <View style={[styles.githubSubmitRow, { borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 24) + 8 }]}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleActionFormSubmit}
+                disabled={submittingAction || !hasAnyValue}
+              >
+                {submittingAction ? (
+                  <ActivityIndicator color={theme.primary} size="small" />
+                ) : (
+                  <Text style={[styles.githubSubmitText, { color: hasAnyValue ? theme.primary : theme.border }]}>
+                    submit
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 300, marginVertical: 12 }}>
-              {selectedAction?.params?.map((p: any) => {
-                const paramName = typeof p === 'string' ? p : p.name;
-                const isRequired = typeof p === 'string' ? true : !!p.required;
-                const paramType = typeof p === 'string' ? 'text' : p.type;
-                
-                return (
-                  <View key={paramName} style={{ marginBottom: 12 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 4 }}>
-                      {paramName.replace(/_/g, ' ')} {isRequired ? '*' : ''}
-                    </Text>
-                    <TextInput
-                      style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.background }]}
-                      value={formParams[paramName]}
-                      onChangeText={text => setFormParams(prev => ({ ...prev, [paramName]: text }))}
-                      placeholder={`Enter ${paramName.replace(/_/g, ' ')}`}
-                      placeholderTextColor={theme.textMuted}
-                      keyboardType={paramType === 'number' ? 'numeric' : 'default'}
-                      editable={!submittingAction}
-                    />
-                  </View>
-                );
-              })}
-            </ScrollView>
-
             {actionResultMessage && (
-              <Text style={{ fontSize: 14, color: theme.text, textAlign: 'center', marginBottom: 12 }}>
-                {actionResultMessage}
-              </Text>
+              <View style={[styles.githubResultBanner, { backgroundColor: actionResultMessage.includes('Error') ? '#fef2f2' : '#f0fdf4', marginBottom: insets.bottom }]}>
+                <Text style={{ fontSize: 13, color: actionResultMessage.includes('Error') ? '#dc2626' : '#16a34a', textAlign: 'center' }}>
+                  {actionResultMessage}
+                </Text>
+              </View>
             )}
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              style={[styles.submitBtn, { backgroundColor: theme.primary, borderRadius: designTokens?.rounded?.sm ?? 6 }]}
-              onPress={handleActionFormSubmit}
-              disabled={submittingAction}
-            >
-              {submittingAction ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Submit Action</Text>
-              )}
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -1050,6 +1054,90 @@ function parseIndexMarkdown(md: string) {
   }
 
   return { name, vertical, modules };
+}
+
+function buildGitHubSentence(
+  action: any,
+  formParams: Record<string, string>,
+  theme: any,
+  activeChipField: string | null,
+  onChange: (field: string, val: string) => void,
+  setActive: (field: string | null) => void,
+  inputRef: React.RefObject<TextInput>
+): React.ReactNode {
+  if (!action?.params || action.params.length === 0) {
+    return <Text style={{ color: theme.text, fontSize: 16 }}>{action?.name?.replace(/_/g, ' ') || 'action'}</Text>;
+  }
+
+  const parts: React.ReactNode[] = [];
+  const actionName = action.name?.replace(/_/g, ' ') || 'action';
+
+  parts.push(<Text key="action" style={{ color: theme.text, fontSize: 16 }}>{actionName}</Text>);
+
+  const connectors = [' with ', ' for ', ' using ', ' to '];
+
+  action.params.forEach((p: any, idx: number) => {
+    const paramName = typeof p === 'string' ? p : p.name;
+    const hasValue = formParams[paramName]?.trim();
+    const displayName = paramName.replace(/_/g, ' ');
+    const isActive = activeChipField === paramName;
+    const connector = connectors[idx % connectors.length];
+
+    parts.push(<Text key={`conn-${idx}`} style={{ color: theme.text, fontSize: 16 }}>{connector}</Text>);
+
+    if (isActive) {
+      parts.push(
+        <TextInput
+          key={`chip-${paramName}`}
+          ref={inputRef}
+          style={{
+            color: theme.text,
+            backgroundColor: theme.primary + '20',
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 8,
+            fontSize: 16,
+            fontWeight: '600',
+            minWidth: 60,
+            borderBottomWidth: 2,
+            borderBottomColor: theme.primary,
+          }}
+          value={formParams[paramName]}
+          onChangeText={val => onChange(paramName, val)}
+          placeholder={displayName}
+          placeholderTextColor={theme.textMuted + '80'}
+          autoFocus
+          onBlur={() => setActive(null)}
+          returnKeyType="next"
+        />
+      );
+    } else {
+      parts.push(
+        <Text
+          key={`chip-${paramName}`}
+          onPress={() => {
+            setActive(paramName);
+          }}
+          style={{
+            color: hasValue ? '#fff' : theme.textMuted,
+            backgroundColor: hasValue ? theme.primary : theme.backgroundElement,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 8,
+            fontSize: 16,
+            fontWeight: '600',
+            overflow: 'hidden',
+          }}
+        >
+          {hasValue ? formParams[paramName] : displayName}
+        </Text>
+      );
+    }
+  });
+
+  parts.push(<Text key="end" style={{ color: theme.text, fontSize: 16 }}>.</Text>);
+
+  return parts;
 }
 
 function cleanUserSays(phrase: string, actionId: string): string {
@@ -1270,13 +1358,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   inputContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
+    paddingHorizontal: 0,
+    paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   hintsContainer: {
     flexDirection: 'row',
     marginBottom: 8,
+    paddingHorizontal: 12,
   },
   hintChip: {
     paddingHorizontal: 12,
@@ -1298,18 +1387,19 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     paddingLeft: 16,
     paddingRight: 8,
-    paddingVertical: 6,
+    paddingVertical: 14,
+    marginHorizontal: 12,
   },
   textInput: {
     flex: 1,
-    fontSize: 14,
-    maxHeight: 120,
-    paddingVertical: 4,
+    fontSize: 15,
+    maxHeight: 140,
+    paddingVertical: 8,
   },
   sendButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
@@ -1532,5 +1622,69 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+  },
+  // ── Action Modal — GitHub notification style ────────────────────
+  githubModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  githubModalContainer: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '60%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 20,
+  },
+  githubHandleBarContainer: {
+    alignItems: 'center',
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  githubHandleBar: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+  },
+  githubModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
+  },
+  githubModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+    letterSpacing: -0.3,
+  },
+  githubModalBody: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  githubSubmitRow: {
+    alignItems: 'flex-end',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  githubSubmitText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  githubResultBanner: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    marginHorizontal: 24,
+    borderRadius: 10,
   },
 });

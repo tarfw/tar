@@ -13,6 +13,7 @@ import { getOrCreateWorkspaceDb } from './lib/workspace-db';
 import { dbContext } from './lib/db';
 import { parseSkillMarkdown, generateCompactActionIndex } from './lib/skill-parser';
 import { executeAITask } from './lib/action-executor';
+import genUiRoutes from './gen-ui/api';
 
 
 
@@ -29,7 +30,8 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-
+// ── Gen UI routes ───────────────────────────────────────────────────
+app.route('/gen-ui', genUiRoutes);
 
 // ============================================================
 // API Routes

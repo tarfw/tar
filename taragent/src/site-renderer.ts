@@ -3,6 +3,9 @@ import { parseDesignMD } from './lib/design-md-parser';
 import { dbContext } from './lib/db';
 import { getOrCreateWorkspaceDb } from './lib/workspace-db';
 import { executeRead } from './lib/helpers';
+import { getActiveRevision } from './gen-ui/validator';
+import { renderSiteToHtml } from './gen-site/SiteRenderer';
+import './gen-site/registry/builtins'; // Register web components
 
 export async function handleSiteRequest(
   env: any,
@@ -12,6 +15,39 @@ export async function handleSiteRequest(
   request: Request
 ): Promise<Response> {
   const scope = `w:${workspaceSlug}`;
+
+  // 0. Try UIPlan-based rendering first (new system)
+  try {
+    const plan = await getActiveRevision(workspaceSlug, 'web', env);
+    if (plan) {
+      // Load design tokens
+      const designText = await readWorkspaceFile(env, scope, 'DESIGN.md');
+      let designTokens = { colors: {}, rounded: {}, spacing: {}, typography: {} };
+      if (designText) {
+        designTokens = parseDesignMD(designText);
+      }
+
+      // Load data from resources
+      const data: Record<string, any[]> = {};
+      // Resource resolution happens client-side via bindings
+
+      const html = renderSiteToHtml({
+        plan,
+        designTokens: {
+          colors: designTokens.colors || {},
+          rounded: designTokens.rounded || {},
+          spacing: designTokens.spacing || {},
+          typography: designTokens.typography || {},
+        },
+        data,
+        workspaceName: workspaceSlug,
+      });
+
+      return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+  } catch (err) {
+    console.warn('[site-renderer] UIPlan render failed, falling back to template:', err);
+  }
 
   // 1. Check KV cache for DESIGN.md + site/pages.md config
   const cacheKey = `site_config:${workspaceSlug}`;

@@ -1,18 +1,18 @@
 /**
- * UI Planner — generates UIPlan from OKF context via LLM.
+ * UI Planner — generates SiteLayout from OKF context via LLM.
  * AI outputs structured JSON only; no executable code.
  */
 
 import { getCatalogTypes } from './catalog';
 import { getResourceIds } from './resources';
 import { getActionIds } from './actions';
-import { validateUIPlan, flattenNodes, type UIPlan, type PlannerContext } from './types';
+import { validateSiteLayout, flattenNodes, type SiteLayout, type PlannerContext } from './types';
 
 // ── System prompt ───────────────────────────────────────────────────
 
 const PLANNER_SYSTEM_PROMPT = `You are a UI layout planner for the TAR platform.
 
-Return exactly one JSON object matching the UIPlan schema below.
+Return exactly one JSON object matching the SiteLayout schema below.
 No markdown. No explanation. No code fences. No executable content.
 
 SCHEMA:
@@ -55,7 +55,7 @@ BEFORE RETURNING, verify:
 - all node IDs are unique
 - no executable content present
 
-Return only the UIPlan JSON.`;
+Return only the SiteLayout JSON.`;
 
 // ── Build user prompt from context ──────────────────────────────────
 
@@ -64,8 +64,7 @@ function buildUserPrompt(ctx: PlannerContext): string {
   const resourceIds = getResourceIds().join(', ');
   const actionIds = getActionIds().join(', ');
 
-  let prompt = `Business vertical: "${ctx.vertical}"
-Target: "${ctx.target}"
+  let prompt = `Target: "${ctx.target}"
 Available modules: ${ctx.availableModules.join(', ')}
 
 COMPONENT CATALOG (types allowed):
@@ -105,7 +104,7 @@ INSTRUCTION: "${ctx.instruction}"
   }
 
   prompt += `
-Return the UIPlan JSON with workspaceId="${ctx.workspaceId}" and target="${ctx.target}".`;
+Return the SiteLayout JSON with workspaceId="${ctx.workspaceId}" and target="${ctx.target}".`;
 
   return prompt;
 }
@@ -170,13 +169,13 @@ function parseLLMOutput(raw: string): unknown {
 export async function generatePlan(
   ctx: PlannerContext,
   env: any
-): Promise<{ plan: UIPlan | null; error?: string }> {
+): Promise<{ plan: SiteLayout | null; error?: string }> {
   try {
     const userPrompt = buildUserPrompt(ctx);
     const raw = await callLLM(PLANNER_SYSTEM_PROMPT, userPrompt, env);
     const parsed = parseLLMOutput(raw);
 
-    const plan = validateUIPlan(parsed);
+    const plan = validateSiteLayout(parsed);
     if (!plan) {
       return { plan: null, error: 'Invalid plan schema' };
     }

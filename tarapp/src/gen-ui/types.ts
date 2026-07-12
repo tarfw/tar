@@ -1,8 +1,7 @@
 /**
- * Gen UI module for tarapp — exports all public APIs.
+ * Gen UI types — shared with taragent.
  */
 
-// Types (shared with taragent)
 export interface UINode {
   id: string;
   type: string;
@@ -25,20 +24,3 @@ export interface SiteLayout {
   revision: string;
   routes: UIRoute[];
 }
-
-// Registry
-export {
-  registerComponent,
-  getComponent,
-  getAllComponents,
-  getComponentTypes,
-  hasComponent,
-  type ComponentEntry,
-  type SectionProps,
-} from './registry/ComponentRegistry';
-
-// Import builtins to auto-register
-import './registry/builtins';
-
-// Renderer
-export { default as NativeRenderer } from './registry/NativeRenderer';

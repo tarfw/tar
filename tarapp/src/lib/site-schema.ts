@@ -27,7 +27,6 @@ export interface WidgetConfig {
 }
 
 export interface SiteLayout {
-  vertical: string;
   template: TemplateName;
   theme: Theme;
   sections: Section[];
@@ -43,7 +42,6 @@ export const DEFAULT_THEME: Theme = {
 };
 
 export const DEFAULT_LAYOUT: SiteLayout = {
-  vertical: 'restaurant',
   template: 'streetwear-dark',
   theme: { ...DEFAULT_THEME, primary: '#5E6AD2', background: '#111111', text: '#ffffff' },
   sections: [

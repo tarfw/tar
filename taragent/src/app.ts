@@ -5,9 +5,9 @@ import { findActionMemories, incrementMemoryUsage } from './lib/memory';
 import { getUserTimeline } from './lib/inbox';
 import { executeRead, executeCreate, executeUpdate, executeDelete } from './lib/helpers';
 import { handleChannelMessage, sendChannelMessage, getChannelConfig } from './channels';
-import { listTemplates, getTemplate, installTemplate, searchTemplates } from './marketplace/templates';
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
-import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspaceFromVertical, uploadVerticalFile, readVerticalFile, listWorkspaceModules, listVerticalModules, readWithFallback, classifyVertical } from './lib/okf';
+import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspace, listWorkspaceModules, readWithFallback } from './lib/okf';
+import { CORE_MODULES } from './lib/core-modules';
 
 import { getOrCreateWorkspaceDb } from './lib/workspace-db';
 import { dbContext } from './lib/db';
@@ -41,57 +41,45 @@ app.route('/gen-ui', genUiRoutes);
 app.get('/workspaces', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
   const result = await c.env.DB.prepare(
-    'SELECT subdomain, scope, user_id, vertical FROM workspaces WHERE user_id = ?'
+    'SELECT subdomain, scope, user_id, type FROM workspaces WHERE user_id = ?'
   ).bind(userId).all();
   const workspaces = (result.results || []).map((r: any) => ({
     scope: r.scope,
     subdomain: r.subdomain,
-    vertical: r.vertical || 'restaurant',
+    type: r.type || 'business',
     role: r.user_id === userId ? 'owner' : 'member',
   }));
   return c.json({ workspaces });
-});
-
-// POST /dev/seed-templates — bootstrap S3 with golden vertical templates
-app.post('/dev/seed-templates', async (c) => {
-  const env = c.env;
-  try {
-    const { OKF_TEMPLATES } = await import('./lib/okf-templates');
-    let totalFiles = 0;
-    for (const [vertical, modules] of Object.entries(OKF_TEMPLATES)) {
-      for (const [moduleName, content] of Object.entries(modules)) {
-        await uploadVerticalFile(env, vertical, `${moduleName}.md`, content);
-        totalFiles++;
-      }
-    }
-    return c.json({ success: true, seeded: totalFiles });
-  } catch (err: any) {
-    console.error('[dev] Seeding templates failed:', err);
-    return c.json({ success: false, error: err.message }, 500);
-  }
 });
 
 // POST /workspaces/create — create a new workspace
 app.post('/workspaces/create', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
   const body = await c.req.json();
-  const { name, template, subdomain, vertical, description, modules } = body || {};
+  const { name, subdomain, description, modules } = body || {};
 
-  if (!name || !template || !subdomain) {
-    return c.json({ error: 'Missing name, template, or subdomain' }, 400);
+  if (!name || !subdomain) {
+    return c.json({ error: 'Missing name or subdomain' }, 400);
   }
 
   const scope = `w:${subdomain}`;
-  let vert = vertical || template; // template = vertical type for now
-  if (vert === 'auto' || !vert) {
-    vert = await classifyVertical(c.env, description || name || '');
-  }
+
+  // AI generates workspace type from description (display-only)
+  const workspaceType = description?.toLowerCase().includes('restaurant') ? 'restaurant'
+    : description?.toLowerCase().includes('salon') || description?.toLowerCase().includes('beauty') ? 'salon'
+    : description?.toLowerCase().includes('clinic') || description?.toLowerCase().includes('doctor') ? 'clinic'
+    : description?.toLowerCase().includes('gym') || description?.toLowerCase().includes('fitness') ? 'gym'
+    : description?.toLowerCase().includes('retail') || description?.toLowerCase().includes('store') ? 'retail'
+    : 'business';
+
+  // AI picks modules based on description if not provided
+  const mods = modules || ['orders', 'inventory', 'crm', 'reports'];
 
   try {
-    // 1. Insert workspace into D1 with vertical type
+    // 1. Insert workspace into D1 with type
     await c.env.DB.prepare(
-      'INSERT OR IGNORE INTO workspaces (subdomain, scope, user_id, vertical) VALUES (?, ?, ?, ?)'
-    ).bind(subdomain, scope, userId, vert).run();
+      'INSERT OR IGNORE INTO workspaces (subdomain, scope, user_id, type) VALUES (?, ?, ?, ?)'
+    ).bind(subdomain, scope, userId, workspaceType).run();
 
     // 2. Initialize Turso DB for workspace
     let dbResult = 'skipped';
@@ -129,17 +117,17 @@ app.post('/workspaces/create', async (c) => {
       console.warn('[workspaces] Graph link skipped:', graphErr);
     }
 
-    // 4. Copy vertical SKILL.md files to workspace S3 (with personalization)
+    // 4. Generate SKILL.md files via AI
     let okfResult = 'skipped';
     try {
-      await initWorkspaceFromVertical(c.env, scope, name, vert, modules, description);
+      await initWorkspace(c.env, scope, name, mods, description);
       okfResult = 'done';
     } catch (okfErr: any) {
       okfResult = `error: ${okfErr.message}`;
       console.warn('[workspaces] OKF init error:', okfErr);
     }
 
-    return c.json({ scope, subdomain, name, vertical: vert, okf: okfResult, db: dbResult });
+    return c.json({ scope, subdomain, name, okf: okfResult, db: dbResult });
   } catch (e: any) {
     console.error('[workspaces] Create failed:', e.message);
     return c.json({ error: e.message }, 500);
@@ -172,35 +160,6 @@ app.get('/workspace-db', async (c) => {
 
 // ============================================================
 // Marketplace Routes
-// ============================================================
-
-// GET /marketplace/templates — list all templates
-app.get('/marketplace/templates', async (c) => {
-  const q = c.req.query('q');
-  const templates = q ? searchTemplates(q) : listTemplates();
-  return c.json({ templates });
-});
-
-// GET /marketplace/templates/:id — get template details
-app.get('/marketplace/templates/:id', async (c) => {
-  const template = getTemplate(c.req.param('id'));
-  if (!template) return c.json({ error: 'Template not found' }, 404);
-  return c.json({ template });
-});
-
-// POST /marketplace/install — install template into workspace
-app.post('/marketplace/install', async (c) => {
-  const userId = c.req.header('X-User-Id') || 'guest';
-  const body = await c.req.json();
-  if (!body?.templateId || !body?.scope) return c.json({ error: 'Missing templateId or scope' }, 400);
-  try {
-    const result = await installTemplate(body.templateId, body.scope, userId);
-    return c.json(result);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 400);
-  }
-});
-
 // ============================================================
 // Tool Routes (6 generic tools)
 // ============================================================
@@ -295,31 +254,15 @@ app.get('/ai-tasks', async (c) => {
 
   try {
     let modules = await listWorkspaceModules(c.env, scope);
-    let isVerticalFallback = false;
-    let vertical = 'restaurant';
 
+    // If no modules in workspace, use core modules as fallback
     if (modules.length === 0) {
-      if (c.env.DB) {
-        const ws = await c.env.DB.prepare(
-          'SELECT vertical FROM workspaces WHERE scope = ?'
-        ).bind(scope).first();
-        if (ws?.vertical) {
-          vertical = ws.vertical;
-        }
-      }
-      try {
-        modules = await listVerticalModules(c.env, vertical);
-        isVerticalFallback = true;
-      } catch (err) {
-        console.warn('[ai-tasks] Failed to list vertical modules:', err);
-      }
+      modules = Object.keys(CORE_MODULES);
     }
 
     const actions: any[] = [];
     for (const mod of modules) {
-      const content = isVerticalFallback
-        ? await readVerticalFile(c.env, vertical, `${mod}.md`)
-        : await readWorkspaceFile(c.env, scope, `skills/${mod}.md`);
+      const content = await readWithFallback(c.env, scope, `skills/${mod}.md`);
 
       if (content) {
         const parsed = parseSkillMarkdown(content);
@@ -377,31 +320,15 @@ app.post('/ai-tasks/execute', async (c) => {
 app.get('/workspace/:scope/skills', async (c) => {
   const scope = c.req.param('scope');
   let modules = await listWorkspaceModules(c.env, scope);
-  let isVerticalFallback = false;
-  let vertical = 'restaurant';
 
+  // If no modules in workspace, use core modules as fallback
   if (modules.length === 0) {
-    if (c.env.DB) {
-      const ws = await c.env.DB.prepare(
-        'SELECT vertical FROM workspaces WHERE scope = ?'
-      ).bind(scope).first();
-      if (ws?.vertical) {
-        vertical = ws.vertical;
-      }
-    }
-    try {
-      modules = await listVerticalModules(c.env, vertical);
-      isVerticalFallback = true;
-    } catch (err) {
-      console.warn('[skills] Failed to list vertical modules:', err);
-    }
+    modules = Object.keys(CORE_MODULES);
   }
 
   const actions: any[] = [];
   for (const mod of modules) {
-    const content = isVerticalFallback
-      ? await readVerticalFile(c.env, vertical, `${mod}.md`)
-      : await readWorkspaceFile(c.env, scope, `skills/${mod}.md`);
+    const content = await readWithFallback(c.env, scope, `skills/${mod}.md`);
 
     if (content) {
       const parsed = parseSkillMarkdown(content);
@@ -434,18 +361,8 @@ app.post('/workspace/:scope/customize', async (c) => {
     return c.json({ error: 'Missing moduleName or prompt' }, 400);
   }
 
-  let vertical = 'restaurant';
-  if (c.env.DB) {
-    const ws = await c.env.DB.prepare(
-      'SELECT vertical FROM workspaces WHERE scope = ?'
-    ).bind(scope).first();
-    if (ws?.vertical) {
-      vertical = ws.vertical;
-    }
-  }
-
   const filename = `skills/${moduleName}.md`;
-  const content = await readWithFallback(c.env, scope, filename, vertical);
+  const content = await readWithFallback(c.env, scope, filename);
 
   if (!content) {
     return c.json({ error: `Module ${moduleName} not found` }, 404);
@@ -640,27 +557,8 @@ app.delete('/okf/file', async (c) => {
 });
 
 // ============================================================
-// Verticals Routes (global templates on S3)
+// Memory Routes
 // ============================================================
-
-// POST /verticals/upload — upload vertical template file
-app.post('/verticals/upload', async (c) => {
-  const body = await c.req.json();
-  const { vertical, path, content } = body || {};
-  if (!vertical || !path || !content) return c.json({ error: 'Missing vertical, path, or content' }, 400);
-  const result = await uploadVerticalFile(c.env, vertical, path, content);
-  return c.json({ ok: true, ...result });
-});
-
-// GET /verticals/read — read vertical template file
-app.get('/verticals/read', async (c) => {
-  const vertical = c.req.query('vertical');
-  const path = c.req.query('path');
-  if (!vertical || !path) return c.json({ error: 'Missing vertical or path' }, 400);
-  const content = await readVerticalFile(c.env, vertical, path);
-  if (content === null) return c.json({ error: 'File not found' }, 404);
-  return c.json({ content });
-});
 
 // GET /memory/autocomplete — find matching action memories
 app.get('/memory/autocomplete', async (c) => {
@@ -717,21 +615,14 @@ app.post('/agents/master/:sessionId', async (c) => {
     return c.json({ reply: 'Please send a message.' });
   }
 
-  // Look up workspace to get vertical and scope
-  let vertical = 'restaurant';
+  // Look up workspace scope
   let workspaceScope = scope;
-  if (workspaceScope) {
+  if (!workspaceScope) {
     const ws = await c.env.DB.prepare(
-      'SELECT scope, vertical FROM workspaces WHERE scope = ?'
-    ).bind(workspaceScope).first();
-    if (ws) vertical = ws.vertical || 'restaurant';
-  } else {
-    const ws = await c.env.DB.prepare(
-      'SELECT scope, vertical FROM workspaces WHERE user_id = ? LIMIT 1'
+      'SELECT scope FROM workspaces WHERE user_id = ? LIMIT 1'
     ).bind(userId).first();
     if (ws) {
       workspaceScope = ws.scope;
-      vertical = ws.vertical || 'restaurant';
     }
   }
 
@@ -741,7 +632,7 @@ app.post('/agents/master/:sessionId', async (c) => {
     try {
       const modules = await listWorkspaceModules(c.env, workspaceScope);
       for (const mod of modules) {
-        const content = await readWorkspaceFile(c.env, workspaceScope, `${mod}.md`);
+        const content = await readWorkspaceFile(c.env, workspaceScope, `skills/${mod}.md`);
         if (content) {
           parsedSkills.push(parseSkillMarkdown(content));
         }
@@ -751,18 +642,10 @@ app.post('/agents/master/:sessionId', async (c) => {
     }
   }
 
-  // Fallback to vertical templates if no workspace skills loaded
+  // Fallback to core modules if no workspace skills loaded
   if (parsedSkills.length === 0) {
-    try {
-      const verticalModules = await listVerticalModules(c.env, vertical);
-      for (const mod of verticalModules) {
-        const content = await readVerticalFile(c.env, vertical, `${mod}.md`);
-        if (content) {
-          parsedSkills.push(parseSkillMarkdown(content));
-        }
-      }
-    } catch (err) {
-      console.warn('[Agent] Failed to load vertical modules:', err);
+    for (const [modName, modContent] of Object.entries(CORE_MODULES)) {
+      parsedSkills.push(parseSkillMarkdown(modContent));
     }
   }
 

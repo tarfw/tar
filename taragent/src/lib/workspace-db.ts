@@ -15,7 +15,6 @@ const ORG_SLUG = 'tarapp';
 interface WorkspaceDbRecord {
   subdomain: string;
   scope: string;
-  vertical: string;
   turso_url?: string;
   turso_auth_token?: string;
 }

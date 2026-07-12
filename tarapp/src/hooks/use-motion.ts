@@ -15,7 +15,7 @@ export interface ActionItem {
   id: string;
   title: string;
   subtitle?: string;
-  vertical: string;
+  category: string;
   urgency: 'Now' | 'Next' | 'Later' | 'Done';
   time: string;
   status: 'todo' | 'in_progress' | 'done';
@@ -177,7 +177,7 @@ export function useMotion(urgency?: string) {
             id: `${stream}_${motion.seq}`,
             title: form.title,
             subtitle: `${doneCount}/${taskState.subtasks.length} subtasks`,
-            vertical: 'task',
+            category: 'task',
             urgency: allDone ? 'Done' : urgencyVal,
             time: motion.time,
             status: allDone ? 'done' : taskState.status === 'done' ? 'done' : 'todo',
@@ -189,7 +189,7 @@ export function useMotion(urgency?: string) {
               id: `${stream}_sub_${sub.id}`,
               title: sub.title,
               subtitle: undefined,
-              vertical: 'subtask',
+              category: 'subtask',
               urgency: sub.done ? 'Done' : urgencyVal,
               time: motion.time,
               status: sub.done ? 'done' : 'todo',
@@ -202,7 +202,7 @@ export function useMotion(urgency?: string) {
             id: `${stream}_${motion.seq}`,
             title: form.title,
             subtitle: label,
-            vertical: 'task',
+            category: 'task',
             urgency: urgencyVal,
             time: motion.time,
             status: taskState?.status === 'done' ? 'done' : status,
@@ -215,7 +215,7 @@ export function useMotion(urgency?: string) {
           id: `${stream}_${motion.seq}`,
           title: label,
           subtitle: data.text || data.subject || formType === 'ticket' ? form.title : undefined,
-          vertical: formType,
+          category: formType,
           urgency: urgencyVal,
           time: motion.time,
           status,

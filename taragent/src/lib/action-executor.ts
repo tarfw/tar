@@ -1,8 +1,9 @@
 import { executeCreate, executeRead, executeUpdate, executeDelete } from './helpers';
-import { listWorkspaceModules, readWorkspaceFile, listVerticalModules, readVerticalFile, readWithFallback } from './okf';
+import { listWorkspaceModules, readWorkspaceFile, readWithFallback } from './okf';
 import { parseSkillMarkdown, ParsedAction, ActionStep } from './skill-parser';
 import { dbContext } from './db';
 import { getOrCreateWorkspaceDb } from './workspace-db';
+import { CORE_MODULES } from './core-modules';
 
 export interface AITaskResult {
   success: boolean;
@@ -350,33 +351,17 @@ export async function executeAITask(
   params: Record<string, any>,
   scope: string
 ): Promise<AITaskResult> {
-  // 1. Find the action definition from S3 or fallback vertical
+  // 1. Find the action definition from workspace or core modules
   let modules = await listWorkspaceModules(env, scope);
-  let isVerticalFallback = false;
-  let vertical = 'restaurant';
 
+  // If no modules in workspace, use core modules as fallback
   if (modules.length === 0) {
-    if (env.DB) {
-      const ws = await env.DB.prepare(
-        'SELECT vertical FROM workspaces WHERE scope = ?'
-      ).bind(scope).first();
-      if (ws?.vertical) {
-        vertical = ws.vertical;
-      }
-    }
-    try {
-      modules = await listVerticalModules(env, vertical);
-      isVerticalFallback = true;
-    } catch (err) {
-      console.warn('[executor] Failed to list vertical modules:', err);
-    }
+    modules = Object.keys(CORE_MODULES);
   }
 
   let action: ParsedAction | null = null;
   for (const mod of modules) {
-    const content = isVerticalFallback
-      ? await readVerticalFile(env, vertical, `${mod}.md`)
-      : await readWorkspaceFile(env, scope, `skills/${mod}.md`);
+    const content = await readWithFallback(env, scope, `skills/${mod}.md`);
 
     if (content) {
       const parsed = parseSkillMarkdown(content);

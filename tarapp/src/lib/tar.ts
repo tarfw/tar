@@ -81,7 +81,7 @@ export const tar = {
     post(`/workflows/${name}`, input),
 
   /**
-   * Vector search across marketplace (templates, actions, skills).
+   * Vector search across marketplace (actions, skills).
    * GET /search?q=...
    */
   search: (query: string) =>
@@ -95,24 +95,10 @@ export const tar = {
     get('/teams'),
 
   /**
-   * Install a marketplace template into a workspace scope.
-   * POST /marketplace/install
-   */
-  installTemplate: (templateId: string, scope: string) =>
-    post('/marketplace/install', { templateId, scope }),
-
-  /**
-   * Browse marketplace templates.
-   * GET /marketplace/templates?q=...
-   */
-  templates: (query?: string) =>
-    get('/marketplace/templates', query ? { q: query } : undefined),
-
-  /**
    * Create a new workspace.
    * POST /workspaces/create
    */
-  createWorkspace: (data: { name: string; template: string; subdomain: string; description?: string }) =>
+  createWorkspace: (data: { name: string; subdomain: string; description?: string }) =>
     post('/workspaces/create', data),
 
   /**

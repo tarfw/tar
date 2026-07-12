@@ -28,7 +28,7 @@ interface Workspace {
   subdomain: string;
   role: string;
   name?: string;
-  vertical?: string;
+  type?: string;
 }
 
 interface CardItem {
@@ -154,7 +154,7 @@ export default function WorkspacesScreen() {
       tar.okf.readIndex(scope)
         .then(async (res: any) => {
           if (res && res.content) {
-            const { name, vertical, modules } = parseIndexMarkdown(res.content);
+            const { name, type, modules } = parseIndexMarkdown(res.content);
 
             // Fetch each module's markdown content in parallel
             try {
@@ -171,19 +171,19 @@ export default function WorkspacesScreen() {
                   return null;
                 })
               );
-              
+
               const validTools = fetchedTools.filter(t => t !== null) as any[];
 
               // Update cache
               workspaceToolsCache.current[scope] = {
                 workspaceName: name || '',
-                detectedVertical: vertical,
+                detectedVertical: type,
                 activeModules: modules,
                 parsedToolsList: validTools
               };
 
               // Update states
-              setDetectedVertical(vertical);
+              setDetectedVertical(type);
               setActiveModules(modules);
               setParsedToolsList(validTools);
               if (name) {
@@ -197,7 +197,7 @@ export default function WorkspacesScreen() {
         .catch((err: any) => {
           console.warn('[OKF] Failed to fetch workspace index.md:', err);
           if (!cached) {
-            setDetectedVertical(currentWorkspace.vertical || 'general');
+            setDetectedVertical(currentWorkspace.type || 'business');
             setActiveModules([]);
             setParsedToolsList([]);
           }
@@ -360,7 +360,7 @@ export default function WorkspacesScreen() {
       const scope = currentWorkspace.scope;
       const name = currentWorkspace.name || currentWorkspace.subdomain;
       const subdomain = currentWorkspace.subdomain;
-      const vertical = currentWorkspace.vertical || 'restaurant';
+      const workspaceType = currentWorkspace.type || 'business';
 
       if (/^(show|list|get|view)\s+(products|menu|services|inventory)/i.test(cleanText)) {
         await refreshProducts(scope);
@@ -383,7 +383,7 @@ export default function WorkspacesScreen() {
         const instruction = match ? match[3] : textToSend;
 
         const currentProducts = await tar.tool('read', { table: 'matter', type: 'product', active: 1, scope }).then(r => r.rows || []).catch(() => []);
-        const newLayout = await generateSiteLayout(name, vertical, currentProducts, instruction, draft);
+        const newLayout = await generateSiteLayout(name, currentProducts, instruction, draft);
         await saveDraft(newLayout);
         await refreshSite();
 
@@ -878,7 +878,7 @@ export default function WorkspacesScreen() {
                 {workspaceName || (currentWorkspace?.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : '')}
               </Text>
               <Text numberOfLines={1} style={{ fontSize: 11, color: theme.textMuted, marginTop: 4, textTransform: 'uppercase', fontWeight: '600' }}>
-                {currentWorkspace?.vertical} • {currentWorkspace?.scope}
+                {currentWorkspace?.type} • {currentWorkspace?.scope}
               </Text>
             </View>
             
@@ -1032,7 +1032,7 @@ export default function WorkspacesScreen() {
 
 function parseIndexMarkdown(md: string) {
   let name = '';
-  let vertical = 'general';
+  let type = 'business';
   let modules: string[] = [];
 
   const nameMatch = md.match(/^#\s*(.+)$/m);
@@ -1040,9 +1040,9 @@ function parseIndexMarkdown(md: string) {
     name = nameMatch[1].trim();
   }
 
-  const verticalMatch = md.match(/\*\*Vertical:\*\*\s*(.+)/i);
-  if (verticalMatch) {
-    vertical = verticalMatch[1].trim().toLowerCase();
+  const typeMatch = md.match(/\*\*Type:\*\*\s*(.+)/i);
+  if (typeMatch) {
+    type = typeMatch[1].trim().toLowerCase();
   }
 
   const modulesMatch = md.match(/\*\*Modules:\*\*\s*(.+)/i);
@@ -1053,7 +1053,7 @@ function parseIndexMarkdown(md: string) {
       .filter(m => m.length > 0);
   }
 
-  return { name, vertical, modules };
+  return { name, type, modules };
 }
 
 function buildGitHubSentence(
@@ -1063,7 +1063,7 @@ function buildGitHubSentence(
   activeChipField: string | null,
   onChange: (field: string, val: string) => void,
   setActive: (field: string | null) => void,
-  inputRef: React.RefObject<TextInput>
+  inputRef: React.RefObject<TextInput | null>
 ): React.ReactNode {
   if (!action?.params || action.params.length === 0) {
     return <Text style={{ color: theme.text, fontSize: 16 }}>{action?.name?.replace(/_/g, ' ') || 'action'}</Text>;

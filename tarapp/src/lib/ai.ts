@@ -23,7 +23,6 @@ export interface ActionDef {
   type: string;
   name: string;
   description: string;
-  vertical: string;
   icon: string;
   keywords: string[];
   fields: Array<{
@@ -238,7 +237,6 @@ Respond with ONLY a JSON object (no markdown, no prose) of this exact shape:
 {
   "name": string,
   "description": string,
-  "vertical": string,
   "icon": string,           // a valid Ionicons outline icon name, e.g. "document-text-outline"
   "keywords": string[],     // 2-5 natural-language search phrases
   "fields": [               // 1-6 fields the user must fill
@@ -307,7 +305,6 @@ export async function generateActionDefinition(userInput: string): Promise<Actio
     type: 'tool',
     name: String(parsed.name || 'Custom Action'),
     description: String(parsed.description || ''),
-    vertical: String(parsed.vertical || 'general'),
     icon: String(parsed.icon || 'document-text-outline'),
     keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(String).slice(0, 5) : [],
     fields,
@@ -328,7 +325,6 @@ Respond with ONLY a JSON object (no markdown, no prose) of this exact shape:
 {
   "name": string,
   "description": string,
-  "vertical": string,
   "icon": string,
   "keywords": string[],
   "fields": [
@@ -369,7 +365,6 @@ export async function editActionDefinition(
   const currentJson = JSON.stringify({
     name: currentAction.name,
     description: currentAction.description,
-    vertical: currentAction.vertical,
     icon: currentAction.icon,
     keywords: currentAction.keywords,
     fields: currentAction.fields,
@@ -403,7 +398,6 @@ export async function editActionDefinition(
     ...currentAction,
     name: String(parsed.name || currentAction.name),
     description: String(parsed.description || currentAction.description),
-    vertical: String(parsed.vertical || currentAction.vertical),
     icon: String(parsed.icon || currentAction.icon),
     keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(String).slice(0, 5) : currentAction.keywords,
     fields,

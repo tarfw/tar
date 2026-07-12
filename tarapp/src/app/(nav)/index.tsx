@@ -24,8 +24,8 @@ function GroupSection({ group, theme, onPressGroup, onPressAction }: {
   onPressGroup: () => void;
   onPressAction: (action: ActionItem) => void;
 }) {
-  const tasks = group.actions.filter(a => a.vertical === 'task');
-  const others = group.actions.filter(a => a.vertical !== 'task');
+  const tasks = group.actions.filter(a => a.category === 'task');
+  const others = group.actions.filter(a => a.category !== 'task');
   const isTask = group.type === 'task';
 
   return (
@@ -44,7 +44,7 @@ function GroupSection({ group, theme, onPressGroup, onPressAction }: {
 
       {isTask ? (
         tasks.map((action) => {
-          const subs = group.actions.filter(a => a.vertical === 'subtask' && a.routeParams.id === action.routeParams.id);
+          const subs = group.actions.filter(a => a.category === 'subtask' && a.routeParams.id === action.routeParams.id);
           return (
             <View key={action.id}>
               <Pressable style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.6 }]} onPress={() => onPressAction(action)}>

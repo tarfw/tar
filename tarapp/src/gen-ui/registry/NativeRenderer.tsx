@@ -7,10 +7,10 @@ import React from 'react';
 import { View, ActivityIndicator, Text } from 'react-native';
 import { getComponent, hasComponent, type SectionProps } from './ComponentRegistry';
 import './builtins'; // Register all built-ins
-import type { UINode, UIPlan } from '../types';
+import type { UINode, SiteLayout } from '../types';
 
 interface NativeRendererProps {
-  plan: UIPlan;
+  plan: SiteLayout;
   designTokens: SectionProps['designTokens'];
   data?: Record<string, any[]>;
   onExecuteAction?: (actionName: string, params: Record<string, any>) => Promise<any>;

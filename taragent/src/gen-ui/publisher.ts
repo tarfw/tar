@@ -3,7 +3,7 @@
  * Structural site changes require owner approval before going live.
  */
 
-import type { UIPlan, UIRevision } from './types';
+import type { SiteLayout, UIRevision } from './types';
 import { validatePlan } from './validator';
 
 // ── Preview ─────────────────────────────────────────────────────────
@@ -18,7 +18,7 @@ export interface PreviewResult {
  * Does NOT make the plan live.
  */
 export async function createPreview(
-  plan: UIPlan,
+  plan: SiteLayout,
   env: any
 ): Promise<PreviewResult> {
   const validation = validatePlan(plan);

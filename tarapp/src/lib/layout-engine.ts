@@ -89,7 +89,7 @@ export function parseYamlFrontmatter(mdContent: string): { frontmatter: any; mar
     }
   }
 
-  // Fallbacks for nested objects like ui_hints.sections
+  // Fallbacks for nested objects like app_layout.sections
   const parsedSections: UISection[] = [];
   let currentSection: any = null;
   
@@ -132,8 +132,8 @@ export function parseYamlFrontmatter(mdContent: string): { frontmatter: any; mar
   if (currentSection) parsedSections.push(currentSection);
   
   if (parsedSections.length > 0) {
-    if (!obj.ui_hints) obj.ui_hints = {};
-    obj.ui_hints.sections = parsedSections;
+    if (!obj.app_layout) obj.app_layout = {};
+    obj.app_layout.sections = parsedSections;
   }
 
   // Custom manual parser for actions block in YAML
@@ -187,10 +187,10 @@ export function parseYamlFrontmatter(mdContent: string): { frontmatter: any; mar
 export function buildModuleLayout(moduleName: string, mdContent: string): WorkspaceModuleLayout {
   const { frontmatter } = parseYamlFrontmatter(mdContent);
   
-  const ui_hints = frontmatter.ui_hints || {};
-  const sections: UISection[] = ui_hints.sections || [];
-  const primaryAction = ui_hints.primary_action || '';
-  const layout = ui_hints.layout || 'dashboard';
+  const app_layout = frontmatter.app_layout || {};
+  const sections: UISection[] = app_layout.sections || [];
+  const primaryAction = app_layout.primary_action || '';
+  const layout = app_layout.layout || 'dashboard';
 
   const actions: Record<string, WorkspaceAction> = {};
   if (frontmatter.actions && Array.isArray(frontmatter.actions)) {

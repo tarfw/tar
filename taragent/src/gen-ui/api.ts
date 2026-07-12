@@ -10,7 +10,7 @@ import { getMemory, updateMemory, buildPlannerContext } from './memory';
 import { getCatalogTypes } from './catalog';
 import { getResourceIds } from './resources';
 import { getActionIds } from './actions';
-import { validateUIPlan, type UIPlan, type PlannerContext } from './types';
+import { validateSiteLayout, type SiteLayout, type PlannerContext } from './types';
 
 const genUi = new Hono();
 
@@ -28,7 +28,7 @@ genUi.get('/catalog', (c) => {
 
 genUi.post('/validate', async (c) => {
   const body = await c.req.json();
-  const plan = validateUIPlan(body);
+  const plan = validateSiteLayout(body);
   if (!plan) {
     return c.json({ valid: false, errors: ['Invalid plan schema'] }, 400);
   }
@@ -42,35 +42,27 @@ genUi.post('/validate', async (c) => {
 
 genUi.post('/planner', async (c) => {
   const body = await c.req.json();
-  const { workspaceId, target, vertical, instruction, userId } = body;
+  const { workspaceId, target, instruction, userId } = body;
 
-  if (!workspaceId || !target || !vertical) {
-    return c.json({ error: 'Missing workspaceId, target, or vertical' }, 400);
+  if (!workspaceId || !target) {
+    return c.json({ error: 'Missing workspaceId or target' }, 400);
   }
 
   // Get workspace context
   let designTokens = {};
-  let currentPlan: UIPlan | undefined;
+  let currentPlan: SiteLayout | undefined;
   let availableModules: string[] = [];
 
   try {
-    const ws = await c.env.DB.prepare(
-      'SELECT vertical FROM workspaces WHERE scope = ?'
-    )
-      .bind(`w:${workspaceId}`)
-      .first();
-
-    if (ws?.vertical) {
-      // Load design tokens from R2
-      const { readWorkspaceFile, listWorkspaceModules } = await import('./lib/okf');
-      const designContent = await readWorkspaceFile(c.env, `w:${workspaceId}`, 'DESIGN.md');
-      if (designContent) {
-        const { parseDesignMD } = await import('./lib/design-md-parser');
-        designTokens = parseDesignMD(designContent);
-      }
-
-      availableModules = await listWorkspaceModules(c.env, `w:${workspaceId}`);
+    // Load design tokens from S3
+    const { readWorkspaceFile, listWorkspaceModules } = await import('../lib/okf');
+    const designContent = await readWorkspaceFile(c.env, `w:${workspaceId}`, 'DESIGN.md');
+    if (designContent) {
+      const { parseDesignMD } = await import('../lib/design-md-parser');
+      designTokens = parseDesignMD(designContent);
     }
+
+    availableModules = await listWorkspaceModules(c.env, `w:${workspaceId}`);
   } catch (err) {
     console.warn('[gen-ui] Failed to load workspace context:', err);
   }
@@ -79,7 +71,6 @@ genUi.post('/planner', async (c) => {
   const ctx: Omit<PlannerContext, 'memory'> = {
     workspaceId,
     target,
-    vertical,
     designTokens,
     availableModules,
     currentPlan,
@@ -105,7 +96,7 @@ genUi.post('/planner', async (c) => {
 genUi.post('/store', async (c) => {
   try {
     const body = await c.req.json();
-    const plan = validateUIPlan(body);
+    const plan = validateSiteLayout(body);
     if (!plan) {
       return c.json({ error: 'Invalid plan schema' }, 400);
     }
@@ -136,7 +127,7 @@ genUi.get('/active/:workspaceId', async (c) => {
 
 genUi.post('/preview', async (c) => {
   const body = await c.req.json();
-  const plan = validateUIPlan(body);
+  const plan = validateSiteLayout(body);
   if (!plan) {
     return c.json({ error: 'Invalid plan schema' }, 400);
   }

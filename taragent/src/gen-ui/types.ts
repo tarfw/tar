@@ -1,5 +1,5 @@
 /**
- * UIPlan types and Zod schemas.
+ * SiteLayout types and Zod schemas.
  * Shared between tarapp (native) and taragent (web).
  *
  * THE ONE PIPELINE:
@@ -10,26 +10,22 @@ import { z } from 'zod';
 
 // ── UINode (recursive) ──────────────────────────────────────────────
 
+const BindingSchema = z.object({
+  resource: z.string().min(1),
+});
+
+const ActionRefSchema = z.object({
+  action: z.string().min(1),
+});
+
 export const UINodeSchema: z.ZodType<UINode> = z.lazy(() =>
   z.object({
     id: z.string().min(1),
     type: z.string().min(1),
     variant: z.string().optional(),
-    props: z.record(z.any()).default({}),
-    bindings: z
-      .record(
-        z.object({
-          resource: z.string().min(1),
-        })
-      )
-      .optional(),
-    actions: z
-      .record(
-        z.object({
-          action: z.string().min(1),
-        })
-      )
-      .optional(),
+    props: z.record(z.string(), z.any()).default({}),
+    bindings: z.record(z.string(), BindingSchema).optional(),
+    actions: z.record(z.string(), ActionRefSchema).optional(),
     children: z.array(UINodeSchema).optional(),
   })
 );
@@ -58,16 +54,16 @@ export type UIRoute = {
   nodes: UINode[];
 };
 
-// ── UIPlan (top-level) ─────────────────────────────────────────────
+// ── SiteLayout (top-level) ─────────────────────────────────────────────
 
-export const UIPlanSchema = z.object({
+export const SiteLayoutSchema = z.object({
   workspaceId: z.string().min(1),
   target: z.enum(['native', 'web']),
   revision: z.string().min(1),
   routes: z.array(UIRouteSchema),
 });
 
-export type UIPlan = {
+export type SiteLayout = {
   workspaceId: string;
   target: 'native' | 'web';
   revision: string;
@@ -76,12 +72,12 @@ export type UIPlan = {
 
 // ── Validation helpers ──────────────────────────────────────────────
 
-export function validateUIPlan(data: unknown): UIPlan | null {
-  const result = UIPlanSchema.safeParse(data);
+export function validateSiteLayout(data: unknown): SiteLayout | null {
+  const result = SiteLayoutSchema.safeParse(data);
   return result.success ? result.data : null;
 }
 
-export function flattenNodes(plan: UIPlan): UINode[] {
+export function flattenNodes(plan: SiteLayout): UINode[] {
   const out: UINode[] = [];
   for (const route of plan.routes) {
     const walk = (nodes: UINode[]) => {
@@ -159,11 +155,10 @@ export const UIMemorySchema = z.object({
 export interface PlannerContext {
   workspaceId: string;
   target: 'native' | 'web';
-  vertical: string;
   designTokens: Record<string, any>;
   availableModules: string[];
   memory?: UIMemory;
-  currentPlan?: UIPlan;
+  currentPlan?: SiteLayout;
   instruction?: string;
 }
 
@@ -173,7 +168,7 @@ export interface UIRevision {
   id: string;
   workspaceId: string;
   target: 'native' | 'web';
-  plan: UIPlan;
+  plan: SiteLayout;
   createdAt: string;
   status: 'draft' | 'approved' | 'active' | 'archived';
 }

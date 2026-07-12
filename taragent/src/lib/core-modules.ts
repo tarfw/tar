@@ -10,7 +10,7 @@ actions:
   - name: action_void_order
     params: [order_id, reason]
     icon: close-circle
-ui_hints:
+app_layout:
   primary_action: action_record_sale
   layout: dashboard
   sections:
@@ -58,7 +58,7 @@ actions:
   - name: action_add_stock
     params: [product_id, qty]
     icon: add-circle
-ui_hints:
+app_layout:
   primary_action: action_check_stock
   layout: dashboard
   sections:
@@ -99,7 +99,7 @@ actions:
   - name: action_cancel_booking
     params: [booking_id]
     icon: calendar-outline
-ui_hints:
+app_layout:
   primary_action: action_book_slot
   layout: dashboard
   sections:
@@ -152,7 +152,7 @@ actions:
   - name: action_log_activity
     params: [type, description, contact_id, deal_id]
     icon: time
-ui_hints:
+app_layout:
   primary_action: action_add_deal
   layout: dashboard
   sections:
@@ -219,7 +219,7 @@ actions:
   - name: action_update_tracking
     params: [shipment_id, status]
     icon: location
-ui_hints:
+app_layout:
   primary_action: action_create_shipment
   layout: dashboard
   sections:
@@ -253,7 +253,7 @@ actions:
   - name: action_update_task_status
     params: [task_id, status]
     icon: checkmark-circle
-ui_hints:
+app_layout:
   primary_action: action_create_task
   layout: dashboard
   sections:
@@ -284,7 +284,7 @@ actions:
   - name: action_add_employee
     params: [name, role, salary]
     icon: people
-ui_hints:
+app_layout:
   primary_action: action_add_employee
   layout: dashboard
   sections:
@@ -310,7 +310,7 @@ actions:
   - name: action_create_course
     params: [title, instructor]
     icon: book
-ui_hints:
+app_layout:
   primary_action: action_create_course
   layout: dashboard
   sections:
@@ -336,7 +336,7 @@ actions:
   - name: action_add_listing
     params: [title, price, description]
     icon: pricetag
-ui_hints:
+app_layout:
   primary_action: action_add_listing
   layout: dashboard
   sections:
@@ -366,7 +366,7 @@ actions:
   - name: action_create_ticket
     params: [customer_id, subject]
     icon: help-circle
-ui_hints:
+app_layout:
   primary_action: action_create_ticket
   layout: dashboard
   sections:
@@ -399,7 +399,7 @@ actions:
   - name: action_report_low_stock
     params: []
     icon: warning
-ui_hints:
+app_layout:
   primary_action: action_report_daily_sales
   layout: dashboard
   sections:
@@ -430,7 +430,7 @@ actions:
   - name: action_record_expense
     params: [category, amount, date]
     icon: cash
-ui_hints:
+app_layout:
   primary_action: action_record_expense
   layout: dashboard
   sections:
@@ -456,7 +456,7 @@ actions:
   - name: action_upload_doc
     params: [name, url]
     icon: document
-ui_hints:
+app_layout:
   primary_action: action_upload_doc
   layout: dashboard
   sections:
@@ -482,7 +482,7 @@ actions:
   - name: action_send_message
     params: [channel, text]
     icon: chatbubbles
-ui_hints:
+app_layout:
   primary_action: action_send_message
   layout: dashboard
   sections:

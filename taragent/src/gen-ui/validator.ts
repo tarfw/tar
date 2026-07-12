@@ -6,7 +6,7 @@
 import { isValidType, getCatalogEntry } from './catalog';
 import { isValidResource } from './resources';
 import { isValidAction } from './actions';
-import { flattenNodes, type UIPlan, type UIRevision } from './types';
+import { flattenNodes, type SiteLayout, type UIRevision } from './types';
 
 // ── Validation ──────────────────────────────────────────────────────
 
@@ -15,7 +15,7 @@ export interface ValidationResult {
   errors: string[];
 }
 
-export function validatePlan(plan: UIPlan): ValidationResult {
+export function validatePlan(plan: SiteLayout): ValidationResult {
   const errors: string[] = [];
   const nodeIds = new Set<string>();
 
@@ -77,7 +77,7 @@ export interface StorageResult {
  * If plan is invalid, discards and keeps previous revision.
  */
 export async function storeRevision(
-  plan: UIPlan,
+  plan: SiteLayout,
   env: any
 ): Promise<StorageResult> {
   // Validate first
@@ -137,7 +137,7 @@ export async function getActiveRevision(
   workspaceId: string,
   target: 'native' | 'web',
   env: any
-): Promise<UIPlan | null> {
+): Promise<SiteLayout | null> {
   try {
     const row = await env.DB.prepare(
       `SELECT r2_key FROM ui_revisions 
@@ -153,7 +153,7 @@ export async function getActiveRevision(
     if (!obj) return null;
 
     const text = await obj.text();
-    return JSON.parse(text) as UIPlan;
+    return JSON.parse(text) as SiteLayout;
   } catch {
     return null;
   }

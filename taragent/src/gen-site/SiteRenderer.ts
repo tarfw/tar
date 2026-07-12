@@ -5,10 +5,10 @@
 
 import { getSiteComponent, hasSiteComponent } from './registry/SiteRegistry';
 import './registry/builtins'; // Register all built-ins
-import type { UINode, UIPlan } from '../gen-ui/types';
+import type { UINode, SiteLayout } from '../gen-ui/types';
 
 interface RenderOptions {
-  plan: UIPlan;
+  plan: SiteLayout;
   designTokens: {
     colors: Record<string, string>;
     rounded: Record<string, string>;

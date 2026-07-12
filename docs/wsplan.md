@@ -29,23 +29,26 @@
 
 Orders · Inventory · Bookings · CRM · Logistics · Projects · HR · LMS · Listings · Support · Reports · Expenses · Documents · Team Chat
 
-### 6 Verticals (module combos)
+### How AI Picks Modules
 
-| Vertical | Modules |
-|---|---|
-| Restaurant | Orders, Inventory, Bookings, CRM, Reports, Expenses, Documents |
-| Salon | Bookings, CRM, Orders, Reports, Expenses, Documents |
-| Clinic | Bookings, CRM, Projects, Support, Reports, Expenses, Documents |
-| Retail | Orders, Inventory, CRM, Reports, Expenses, Documents |
-| Gym | Bookings, CRM, LMS, HR, Reports, Expenses, Documents |
-| Agency | CRM, Projects, HR, Support, Reports, Expenses, Documents |
+AI reads user message → picks relevant modules. No presets needed.
+
+```
+User: "I have a restaurant with delivery"
+    → AI picks: orders, inventory, bookings, crm, logistics, reports
+
+User: "Pet grooming salon with online booking"
+    → AI picks: bookings, crm, orders, reports
+
+User: "Freelance designer"
+    → AI picks: crm, projects, expenses, documents
+```
 
 ### File locations
 
 | Path in S3 | What | When written |
 |---|---|---|
-| `verticals/{type}/modules/*/SKILL.md` | Golden templates (generic) | Authored once by us, updated as platform evolves |
-| `workspaces/{scope}/skills/*.md` | AI-personalized skills for this business | Written at workspace creation |
+| `workspaces/{scope}/skills/*.md` | AI-generated skill files for this business | Written at workspace creation |
 
 ---
 
@@ -120,8 +123,8 @@ AI: Done! Your site is live at ravanan.tarai.space
 | 2 | AI extracts structured data from message |
 | 3 | Create Turso DB `ws-{subdomain}`, run schema DDL |
 | 4 | Save extracted data to Turso DB |
-| 5 | Read golden templates from `verticals/{type}/` in S3 |
-| 6 | AI personalizes templates (inject name, location, menu) |
+| 5 | AI picks modules based on user message |
+| 6 | AI generates SKILL.md files with action steps |
 | 7 | Write personalized `.md` files to `workspaces/{scope}/` in S3 |
 | 8 | Auto-generate OKF bundle from extracted data |
 | 9 | Auto-generate brand.md (colors, fonts) |
@@ -297,7 +300,7 @@ Turso DB (products, policies, FAQs)
         ↓
     AI Planner (Z.AI GLM-4.7-Flash)
         ↓
-    UIPlan JSON (list of sections)
+    SiteLayout JSON (list of sections)
         ↓
     Rule-Critic (anti-slop check)
         ↓
@@ -527,7 +530,7 @@ Steps:
 2. `create(table='motion', type='sale', data:{orderId:{id}, amount:{total}})`
 ```
 
-> Skills are AI-personalized versions of golden templates. Injected: business name, tax rate, categories, policies.
+> Skills are AI-generated SKILL.md files. AI reads core-modules.ts for action definitions, generates steps tailored to this business.
 
 **site/layouts/home.json:**
 ```json
@@ -575,12 +578,12 @@ Soft-aesthetic issues only exist post-render. For v1, accept this limitation. Fu
 - **Output**: List of section types from SECTIONS.json
 
 ```
-Universal Rules + Workspace Data + Turso DB → AI → UIPlan JSON → HTML/CSS
+Universal Rules + Workspace Data + Turso DB → AI → SiteLayout JSON → HTML/CSS
 ```
 
 ### Renderer
 
-- Input: UIPlan JSON (list of sections)
+- Input: SiteLayout JSON (list of sections)
 - Maps sections → HTML templates
 - Applies CSS variables from design.md (full token set)
 - Output: Vanilla HTML/CSS (no React for sites)
@@ -625,9 +628,7 @@ User Sends Message → AI Extracts Data → Turso DB → OKF Bundle → Site + C
 
 ### Delete
 
-- [ ] `src/skills/` (14 SKILL.md folders) — replaced by `verticals/` in S3
-- [ ] `src/modules/seed.ts` — replaced by 5-line vertical→module map
-- [ ] `src/marketplace/seed.ts` — marketplace = browsing `verticals/` in S3
+- [ ] `src/skills/` (14 SKILL.md folders) — AI generates SKILL.md at workspace creation
 
 ### Backend (`taragent`)
 
@@ -637,7 +638,7 @@ User Sends Message → AI Extracts Data → Turso DB → OKF Bundle → Site + C
   - `POST /workspaces/create` — Turso DB + AI personalize templates + S3 write + S2 streams + D1 register
   - `GET /workspace/{scope}/skills` — Return parsed action index for app cache
   - `POST /workspace/{scope}/customize` — AI read + edit skill `.md` in S3
-- [ ] `src/lib/okf.ts` — Add `readWithFallback(scope, path, vertical)`: try workspace, fall back to vertical
+- [ ] `src/lib/okf.ts` — Add `readWorkspaceFile(scope, path)`: read from workspace S3
 - [ ] `src/lib/action-executor.ts` — Remove DO routing. Route all through Turso
 - [ ] `src/lib/workspace-db.ts` — Turso DB provisioning, group management, scoped tokens
 - [ ] `wrangler.jsonc` — Remove `WORKSPACE` + `ORDER` DO bindings. Keep `EDITOR`. Add `TURSO_GROUP_TOKEN`
@@ -655,4 +656,4 @@ User Sends Message → AI Extracts Data → Turso DB → OKF Bundle → Site + C
 
 ### S3 Content (Railway)
 
-- [ ] Author golden templates for all 6 verticals: `verticals/{type}/*.md`
+- [ ] None — AI generates all SKILL.md files at workspace creation

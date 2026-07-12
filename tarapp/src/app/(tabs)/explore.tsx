@@ -8,7 +8,7 @@ import { tar } from '@/lib/tar';
 interface WorkspaceItem {
   subdomain: string;
   scope: string;
-  vertical: string;
+  type: string;
   name: string;
   description: string;
   mockProducts?: Array<{ id: string; title: string; price: number }>;
@@ -29,7 +29,7 @@ function getTimeOfDay(): string {
   return 'evening';
 }
 
-function getVerticalEmoji(vertical: string): string {
+function getVerticalEmoji(type: string): string {
   const map: Record<string, string> = {
     bakery: '🍪',
     taxi: '🚕',
@@ -37,14 +37,14 @@ function getVerticalEmoji(vertical: string): string {
     retail: '🛍️',
     restaurant: '🍽️',
   };
-  return map[vertical] || '✨';
+  return map[type] || '✨';
 }
 
 const MOCK_PUBLIC_WORKSPACES: WorkspaceItem[] = [
   {
     subdomain: 'croissant-bakery',
     scope: 's:croissant-bakery',
-    vertical: 'bakery',
+    type: 'bakery',
     name: 'Croissant & Cafe',
     description: 'Artisanal French pastries, fresh sourdough bread, and premium coffee.',
     mockProducts: [
@@ -57,7 +57,7 @@ const MOCK_PUBLIC_WORKSPACES: WorkspaceItem[] = [
   {
     subdomain: 'mumbai-cabs',
     scope: 's:mumbai-cabs',
-    vertical: 'taxi',
+    type: 'taxi',
     name: 'Mumbai Taxis',
     description: 'Reliable, instant taxi bookings and airport transfers across Mumbai.',
     mockProducts: []
@@ -65,7 +65,7 @@ const MOCK_PUBLIC_WORKSPACES: WorkspaceItem[] = [
   {
     subdomain: 'grand-salon',
     scope: 's:grand-salon',
-    vertical: 'beauty',
+    type: 'beauty',
     name: 'Grand Salon & Spa',
     description: 'Premium haircuts, therapeutic spa body treatments, and luxury wellness.',
     mockProducts: []
@@ -73,7 +73,7 @@ const MOCK_PUBLIC_WORKSPACES: WorkspaceItem[] = [
   {
     subdomain: 'streetwear-co',
     scope: 's:streetwear-co',
-    vertical: 'retail',
+    type: 'retail',
     name: 'Streetwear Co.',
     description: 'Limited edition oversized tees, hoodies, and accessories.',
     mockProducts: [
@@ -87,7 +87,7 @@ const MOCK_PUBLIC_WORKSPACES: WorkspaceItem[] = [
 interface PromoAd {
   title: string;
   subtitle: string;
-  vertical: string;
+  type: string;
   cta: string;
   accent: string;
 }
@@ -96,35 +96,35 @@ const PROMO_ADS: PromoAd[] = [
   {
     title: 'Fresh Almond Croissants',
     subtitle: 'Baked this morning at Croissant & Cafe — free delivery over ₹500',
-    vertical: 'bakery',
+    type: 'bakery',
     cta: 'Order Now',
     accent: '#e11d48',
   },
   {
     title: 'Ride anywhere in Mumbai',
     subtitle: 'Mumbai Taxis — airport transfers from ₹380. Tap to book instantly.',
-    vertical: 'taxi',
+    type: 'taxi',
     cta: 'Book Cab',
     accent: '#2563eb',
   },
   {
     title: 'Spa Day Escape',
     subtitle: 'Grand Salon & Spa — 20% off Facials this week. Pamper yourself.',
-    vertical: 'beauty',
+    type: 'beauty',
     cta: 'Book Slot',
     accent: '#9333ea',
   },
   {
     title: 'Drop the new fit',
     subtitle: 'Streetwear Co. — limited oversized hoodies back in stock. Shop now.',
-    vertical: 'retail',
+    type: 'retail',
     cta: 'Shop',
     accent: '#059669',
   },
   {
     title: 'AI-curated for you',
     subtitle: 'Discover services personalized to your taste across the marketplace.',
-    vertical: 'restaurant',
+    type: 'restaurant',
     cta: 'Explore',
     accent: '#d97706',
   },
@@ -164,7 +164,7 @@ export default function ExploreScreen() {
 
   const handleAdPress = () => {
     const ad = PROMO_ADS[adIndex];
-    const match = MOCK_PUBLIC_WORKSPACES.find((w) => w.vertical === ad.vertical);
+    const match = MOCK_PUBLIC_WORKSPACES.find((w) => w.type === ad.type);
     if (match) handleOpenStorefront(match);
   };
 
@@ -200,9 +200,9 @@ export default function ExploreScreen() {
         .map((w: any) => ({
           subdomain: w.subdomain,
           scope: w.scope,
-          vertical: w.vertical || 'restaurant',
+          type: w.type || 'business',
           name: w.name || w.subdomain,
-          description: `${w.vertical || 'Business'} services and storefront.`,
+          description: `${w.type || 'Business'} services and storefront.`,
         }));
 
       // Combine and filter duplicates
@@ -230,11 +230,11 @@ export default function ExploreScreen() {
     setSelectedWorkspace(item);
     setCart({});
     setActionSuccessMessage(null);
-    setBookingService(item.vertical === 'beauty' ? 'Hair Cut' : 'General Service');
+    setBookingService(item.type === 'beauty' ? 'Hair Cut' : 'General Service');
     setTaxiPickup('');
     setTaxiDropoff('');
 
-    if (item.vertical === 'bakery' || item.vertical === 'retail' || item.vertical === 'restaurant') {
+    if (item.type === 'bakery' || item.type === 'retail' || item.type === 'restaurant') {
       setLoadingProducts(true);
       try {
         const dbRes = await tar.tool('read', { table: 'matter', type: 'product', active: 1, scope: item.scope });
@@ -421,7 +421,7 @@ export default function ExploreScreen() {
           {/* 2-column pill grid */}
           <View style={styles.chipGrid}>
             {workspacesList.map((item) => {
-              const colors = VERTICAL_COLORS[item.vertical] || { bg: '#f4f4f5', text: '#71717a', icon: 'business-outline' };
+              const colors = VERTICAL_COLORS[item.type] || { bg: '#f4f4f5', text: '#71717a', icon: 'business-outline' };
               return (
                 <Pressable
                   key={item.subdomain}
@@ -435,7 +435,7 @@ export default function ExploreScreen() {
                     },
                   ]}
                 >
-                  <Text style={styles.chipEmoji}>{getVerticalEmoji(item.vertical)}</Text>
+                  <Text style={styles.chipEmoji}>{getVerticalEmoji(item.type)}</Text>
                   <Text style={[styles.chipLabel, { color: theme.text }]} numberOfLines={1}>
                     {item.name}
                   </Text>
@@ -503,9 +503,9 @@ export default function ExploreScreen() {
                   ) : (
                     <>
                       {/* 1. ORDERING / RETAIL FLOW */}
-                      {(selectedWorkspace.vertical === 'bakery' ||
-                        selectedWorkspace.vertical === 'retail' ||
-                        selectedWorkspace.vertical === 'restaurant') && (
+                      {(selectedWorkspace.type === 'bakery' ||
+                        selectedWorkspace.type === 'retail' ||
+                        selectedWorkspace.type === 'restaurant') && (
                         <View>
                           <Text style={[styles.sectionTitle, { color: theme.text }]}>Select Delicacies & Items</Text>
                           {loadingProducts ? (
@@ -564,7 +564,7 @@ export default function ExploreScreen() {
                       )}
 
                       {/* 2. BOOKING / BEAUTY FLOW */}
-                      {selectedWorkspace.vertical === 'beauty' && (
+                      {selectedWorkspace.type === 'beauty' && (
                         <View>
                           <Text style={[styles.sectionTitle, { color: theme.text }]}>Schedule Service Appointment</Text>
                           
@@ -632,7 +632,7 @@ export default function ExploreScreen() {
                       )}
 
                       {/* 3. TAXI FLOW */}
-                      {selectedWorkspace.vertical === 'taxi' && (
+                      {selectedWorkspace.type === 'taxi' && (
                         <View>
                           <Text style={[styles.sectionTitle, { color: theme.text }]}>Request Cab Pick-up</Text>
 

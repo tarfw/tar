@@ -16,7 +16,7 @@ export async function handleSiteRequest(
 ): Promise<Response> {
   const scope = `w:${workspaceSlug}`;
 
-  // 0. Try UIPlan-based rendering first (new system)
+  // 0. Try SiteLayout-based rendering first (new system)
   try {
     const plan = await getActiveRevision(workspaceSlug, 'web', env);
     if (plan) {
@@ -46,7 +46,7 @@ export async function handleSiteRequest(
       return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
   } catch (err) {
-    console.warn('[site-renderer] UIPlan render failed, falling back to template:', err);
+    console.warn('[site-renderer] SiteLayout render failed, falling back to template:', err);
   }
 
   // 1. Check KV cache for DESIGN.md + site/pages.md config

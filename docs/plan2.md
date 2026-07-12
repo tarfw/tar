@@ -8,12 +8,11 @@
 
 A workspace = a folder of `.md` files. Each file follows industry standards:
 
-| Standard      | Origin               | Role in TAR                                          |
-| ------------- | -------------------- | ---------------------------------------------------- |
-| **OKF**       | Google Cloud         | Domain knowledge — products, policies, reports       |
-| **DESIGN.md** | Google Labs / Stitch | Visual identity — colors, fonts, spacing, components |
-| **SKILL.md**  | TAR                  | Actions, workflows, tool-call steps                  |
-| **AGENTS.md** | GitHub / industry    | Agent behavior, routing, constraints                 |
+| Standard | Origin | Role in TAR |
+| --- | --- | --- |
+| **OKF** | Google Cloud | Domain knowledge — products, policies, reports |
+| **OVERRIDES.md** | TAR | Brand tokens — colors, typography |
+| **SKILL.md** | TAR | Actions, workflows, tool-call steps |
 
 **The `.md` file IS the product.** Code is just the runtime that reads it.
 
@@ -27,11 +26,11 @@ No code per module. The runtime reads any SKILL.md, parses actions, executes aga
 
 ### Three Tiers
 
-| Tier             | Source                              | Examples                                                                                                                   |
-| ---------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **Core** (14)    | TAR-maintained, tested              | Orders, Inventory, Bookings, CRM, Logistics, Projects, HR, LMS, Listings, Support, Reports, Expenses, Documents, Team Chat |
-| **AI-Generated** | User describes → AI writes SKILL.md | "I need a subscriptions module" → `subscriptions.md` created                                                               |
-| **Marketplace**  | Community-published                 | Restaurant A shares "loyalty rewards" module                                                                               |
+| Tier | Source | Examples |
+| --- | --- | --- |
+| **Core** (14) | TAR-maintained, tested | Orders, Inventory, Bookings, CRM, Logistics, Projects, HR, LMS, Listings, Support, Reports, Expenses, Documents, Team Chat |
+| **AI-Generated** | User describes → AI writes SKILL.md | "I need a subscriptions module" → `subscriptions.md` created |
+| **Marketplace** | Community-published | Restaurant A shares "loyalty rewards" module |
 
 ### Module File Structure
 
@@ -114,32 +113,27 @@ When a workspace is created, AI composes these files from selected modules:
 
 ```
 workspaces/{scope}/
-├── index.md              ← installed modules list, workspace identity
-├── DESIGN.md             ← colors, fonts, spacing, component tokens
-├── AGENTS.md             ← agent behavior, routing rules
 ├── business/
-│   ├── profile.md        ← name, hours, location, UPI, contacts
-│   ├── team.md           ← staff roles, permissions
-│   └── channels.md       ← Telegram/WhatsApp group mappings
-├── skills/
-│   ├── orders.md         ← personalized from modules/core/orders/SKILL.md
-│   ├── inventory.md      ← personalized from modules/core/inventory/SKILL.md
-│   ├── loyalty.md        ← AI-generated (custom module)
-│   └── ...               ← one per installed module
-├── site/
-│   └── pages.md          ← composed from each module's site_pages
-├── reports/
-│   └── daily-sales.md    ← SQL + output format
+│   └── profile.md          ← name, type, location, hours, description
+├── products/
+│   └── menu.md             ← menu items with prices
 ├── policies/
-│   ├── returns.md        ← refund decision matrix
-│   └── delivery.md       ← zones, fees, timing
-└── macros/
-    └── order-confirm.md  ← template messages
+│   ├── return.md           ← return policy
+│   └── delivery.md         ← delivery policy
+├── faqs/
+│   └── common.md           ← frequently asked questions
+├── site/
+│   └── OVERRIDES.md        ← brand tokens, typography
+└── skills/
+    ├── orders.md           ← personalized from modules/core/orders/SKILL.md
+    ├── inventory.md        ← personalized from modules/core/inventory/SKILL.md
+    ├── loyalty.md          ← AI-generated (custom module)
+    └── ...                 ← one per installed module
 ```
 
 ---
 
-## 4. The 4 Generation Layers
+## 4. Generation Layers
 
 ### Layer 1: Skills (Tools, Actions, Workflows)
 
@@ -156,374 +150,170 @@ POST /workspaces/create {
 
 → Read modules/core/{each}/SKILL.md
 → ONE LLM call: compose + personalize all (inject name, location, tax, categories)
-→ Write skills/*.md + DESIGN.md + AGENTS.md to S3
+→ Write skills/*.md to S3
 → Return action index to app → cached locally
 ```
 
-### Layer 2: Design System (DESIGN.md)
+### Layer 2: Brand Tokens (OVERRIDES.md)
 
 **When:** Workspace creation. Editable by user anytime.
-**How:** AI generates from business name + module set. Each module contributes component tokens.
+**How:** AI generates from business name + extracted data.
 
-```yaml
----
-name: Spice Garden
-version: alpha
-colors:
-  primary: "#1B4332"
-  secondary: "#2D6A4F"
-  tertiary: "#D4A373"
-  neutral: "#FEFAE0"
-  on-primary: "#FFFFFF"
-typography:
-  h1: { fontFamily: "Inter", fontSize: "1.75rem", fontWeight: 700 }
-  body-md: { fontFamily: "Inter", fontSize: "0.938rem", fontWeight: 400 }
-rounded: { sm: "6px", md: "12px", lg: "16px" }
-spacing: { xs: "4px", sm: "8px", md: "16px", lg: "24px" }
-components:
-  action-button:
-    backgroundColor: "{colors.tertiary}"
-    textColor: "{colors.on-primary}"
-    rounded: "{rounded.sm}"
----
+```markdown
+# Brand Overrides
+
+## Colors
+- primary: #E85D3B
+- secondary: #1B2A33
+
+## Typography
+- heading: Georgia, serif
+- body: Inter, sans-serif
 ```
 
-App reads YAML → applies as style tokens → all components themed instantly. Zero LLM at runtime.
+### Layer 3: Site Generation
 
-### Layer 3: Workspace Screen (Gen UI)
-
-**When:** User opens workspace.
-**How:** App reads cached action index + DESIGN.md → component registry renders UI.
-**Cost:** Zero. Pure local rendering.
+**When:** Workspace creation or on-demand.
+**How:** AI Planner (Z.AI GLM-4.7-Flash) generates UIPlan JSON from universal rules + workspace data → Renderer generates HTML/CSS.
+**Cost:** ~$0.001 per generation.
 
 ```
-Workspace opens
-  → Read skills/*.md YAML frontmatter (cached)
-  → Read DESIGN.md (cached)
-  → Component Registry maps actions to pre-built components
-  → Layout engine arranges by ui_hints
-  → Personalized, branded workspace — instant
+Universal Rules + Workspace Data + Turso DB → AI → UIPlan JSON → HTML/CSS
 ```
-
-**Component Registry** — pre-built, validated. AI never generates raw HTML:
-
-| Component       | Props                     | Used By            |
-| --------------- | ------------------------- | ------------------ |
-| `metric-card`   | title, value, trend, icon | All modules        |
-| `quick-actions` | actions[]                 | All modules        |
-| `action-button` | label, skillAction, icon  | All modules        |
-| `action-form`   | skillAction, params       | All modules        |
-| `data-table`    | columns, dataSource       | Reports, Inventory |
-| `timeline-feed` | events, filter            | Home, Orders       |
-| `pos-pad`       | categories, items         | Orders             |
-| `booking-grid`  | slots, date               | Bookings           |
-| `catalog-grid`  | items, layout             | Orders, Listings   |
-| `report-chart`  | reportId, type            | Reports            |
-| `status-board`  | columns, cards            | Projects, Support  |
-
-### Layer 4: Public Site (Edge Template Engine)
-
-**When:** Instant on request (On-Demand Server-Side Compilation). There is **no build step** at workspace creation or during updates. The site exists dynamically the moment the workspace folders are written to S3.
-**How:** One Cloudflare Worker intercepts requests for all tenant subdomains, parses `DESIGN.md` for styling tokens and `site/pages.md` for page structure (cached in KV for 5 minutes), reads inventory/catalog data live from the tenant's Turso DB, and merges them into shared high-performance HTML/CSS templates.
-**Cost:** $0 at small scale. ~$25/mo at 100K sites.
-
-**Why not Astro/Shopify-style SSG?** Generating static files at creation time requires rebuilding and redeploying whenever catalog items, prices, or bookings change. SSG breaks at scale with millions of workspaces. Edge SSR via a single worker provides dynamic, real-time inventory updates with sub-200ms latency.
-
-#### How DESIGN.md Achieves Shopify-Grade Aesthetic Quality:
-1. **Semantic HTML Shells:** The shared templates (e.g. `base.html`, `catalog-grid.html`) are designed with modern, clean markup utilizing CSS Grid/Flexbox layouts, layout boundaries, and responsive image sizes.
-2. **Deep Styling Token Mapping:** `DESIGN.md` defines granular tokens for modern visuals, including:
-   - Gradient presets (`--gradient-primary`)
-   - Shadow depth layers (`--shadow-sm`, `--shadow-md`) for card layering
-   - Glassmorphism values (`--backdrop-filter`, `--glass-bg`)
-   - Border radius classes (`--rounded-lg`) and animation transition easings
-3. **Dynamic CSS Variable Injection:** The edge Worker parses these tokens out of `DESIGN.md` and injects them as CSS custom properties into the template header. All template layouts adapt instantly to match the custom brand guidelines.
-4. **Performance is Quality:** Bypassing React hydration and heavy JS bundles yields a 100/100 Lighthouse performance rating, matching or beating Shopify's best storefront metrics on slow mobile networks.
-5. **Bespoke CSS & Custom Slots:** Allows injection of raw custom CSS overrides from `DESIGN.md` and renders custom HTML widget snippets directly into template layout slots for infinite visual flexibility.
-
-```
-spicegarden.tar.app/menu
-  → Worker catches *.tar.app (wildcard route)
-  → Extracts scope from subdomain
-  → Reads DESIGN.md from KV cache → CSS variables
-  → Reads site/pages.md from KV cache → which pages exist
-  → Reads product data from Turso (workspace DB)
-  → Renders HTML from shared template + data + CSS vars
-  → CDN caches response for 5 min
-  → ~200ms, zero JS framework, works on 2G
-```
-
-**Each module contributes site pages + JS widgets:**
-
-| Module   | Pages                         | Widget (vanilla JS)                       |
-| -------- | ----------------------------- | ----------------------------------------- |
-| Orders   | `/menu`, `/cart`, `/checkout` | `cart.js` (~60 lines) — localStorage cart |
-| Bookings | `/book`                       | `booking.js` (~50 lines) — slot picker    |
-| Listings | `/catalog`, `/item/:id`       | None — pure HTML                          |
-| CRM      | `/contact`                    | `contact.js` (~20 lines) — form submit    |
-| Support  | `/help`                       | `ticket.js` (~30 lines) — form submit     |
-
-**Total JS for full storefront + booking site: ~160 lines vanilla JS. No React. No framework.**
-
-**Shared HTML templates (in Worker code, NOT per workspace):**
-
-```
-site-templates/
-├── layouts/base.html           ← shell: head, nav, footer
-├── pages/
-│   ├── hero.html               ← landing with hero section
-│   ├── catalog-grid.html       ← product/service grid
-│   ├── item-detail.html        ← single product/service
-│   ├── cart.html               ← shopping cart
-│   ├── checkout.html           ← payment form
-│   ├── booking-widget.html     ← slot picker + form
-│   └── contact.html            ← contact form
-└── widgets/
-    ├── cart.js                 ← add/remove, localStorage
-    ├── booking.js              ← fetch slots, submit
-    └── checkout.js             ← payment redirect
-```
-
-**DESIGN.md → CSS (injected by Worker):**
-
-```html
-<style>
-  :root {
-    --color-primary: #1b4332; /* from DESIGN.md */
-    --color-tertiary: #d4a373;
-    --color-neutral: #fefae0;
-    --font-family: "Inter", sans-serif;
-    --rounded-md: 12px;
-  }
-</style>
-<!-- Same HTML templates, every site looks different via CSS vars -->
-```
-
-**Ordering flow (pure HTML forms):**
-
-```
-Customer visits /menu → product grid (HTML, no JS needed)
-  → Taps "Add to Cart" → cart.js saves to localStorage
-  → Taps cart → /cart page
-  → Taps "Checkout" → /checkout form
-  → Submits → POST /api/order → Worker creates order in Turso
-  → Redirect to UPI/payment gateway
-  → Callback → order status updated → confirmation page
-```
-
-**Site cost at scale:**
-
-| Scale                  | Requests/day | Cost               |
-| ---------------------- | ------------ | ------------------ |
-| 1K sites × 10 visits   | 10K          | **$0** (free tier) |
-| 100K sites × 50 visits | 5M           | **~$25/mo**        |
-| 1M sites × 100 visits  | 100M         | **~$500/mo**       |
 
 ---
 
-## 5. Creation Flow
+## 5. Site Generation System
+
+### Architecture
+
+```
+Universal Design Skills (3 files for ALL verticals)
+        +
+Workspace Data (from AI extraction — user message)
+        +
+Turso DB (products, policies, FAQs)
+        ↓
+    AI Planner (Z.AI GLM-4.7-Flash)
+        ↓
+    UIPlan JSON (list of sections)
+        ↓
+    Rule-Critic (anti-slop check)
+        ↓
+    Renderer → HTML/CSS
+```
+
+### Universal Design Skills (3 files)
+
+| File | What It Does | Stored |
+|------|--------------|--------|
+| `DESIGN-UNIVERSAL.md` | Base rules (typography, layout, colors) | S3 |
+| `ANTI-SLOP.json` | Anti-slop rules (two-tier: error/warning) | S3 |
+| `SECTIONS.json` | Available section types (the site's unit) | S3 |
+
+### AI Planner
+
+- **Model**: Z.AI GLM-4.7-Flash (free, thinking enabled)
+- **Temperature**: 0.2 (structured JSON output)
+- **Output**: List of section types from SECTIONS.json
+
+### Renderer
+
+- Input: UIPlan JSON (list of sections)
+- Maps sections → HTML templates
+- Applies CSS variables from OVERRIDES.md
+- Output: Vanilla HTML/CSS (no React for sites)
+
+---
+
+## 6. Creation Flow
 
 ### User Journey (~10 seconds)
 
-| Step | Screen              | Action                                                     |
-| ---- | ------------------- | ---------------------------------------------------------- |
-| 1    | Onboarding          | Tap preset ("Restaurant") OR "Custom" OR describe business |
-| 2    | Module picker       | Checklist of modules (pre-selected if preset, editable)    |
-| 3    | Name + location     | Business name (required), location (optional)              |
-| 4    | Animated transition | ~5s (covers backend work)                                  |
-| 5    | Workspace home      | Gen UI canvas, ready to use                                |
+User sends one message describing their business → AI extracts everything → Workspace created.
 
-### Backend (~5 seconds)
+### Example Conversation
 
 ```
-1. Create Turso DB `ws-{subdomain}`                          (~1s)
-2. Read modules/{each}/SKILL.md for selected modules         (~200ms)
-3. ONE LLM call — compose + personalize everything:          (~2s)
-   Input:  module SKILL.md files + { name, location, modules[] }
-   Output: skills/*.md + DESIGN.md + AGENTS.md + site/pages.md
-4. Write all .md files to S3 workspaces/{scope}/             (~300ms)
-5. Register in D1, issue tokens                              (~500ms)
-6. Return workspace config + action index to app             (~100ms)
+User: I have a restaurant called Ravanan's in Chennai. 
+      South Indian food. Open 10am-10pm. 
+      Menu: Pepsi ₹22, Biryani ₹180. 
+      No returns, free delivery 5km.
 
-App-side:
-7. Cache action index + DESIGN.md locally                    (~100ms)
-8. Create local SQLite replica                               (~200ms)
-9. Render workspace canvas from cached specs                 (~instant)
+AI: Got it! I've created your workspace:
+    ✓ Name: Ravanan's Restaurant
+    ✓ Type: Restaurant
+    ✓ Location: Chennai
+    ✓ Hours: 10am-10pm
+    ✓ Menu: 2 items
+    ✓ Policies: Return + Delivery
+    
+    I'll use terracotta (#E85D3B) as your brand color 
+    and Georgia for headings. Want to change these?
+
+User: looks good
+
+AI: Done! Your site is live at ravanan.tarai.space
 ```
 
-**Cost per workspace: ~$0.003**
-
-### Adding Modules Later
+### Backend Flow
 
 ```
-User: "Add a loyalty program"
-  → AI checks core modules — no match
-  → AI writes modules/custom/loyalty/SKILL.md (actions: earn_points, redeem, check_balance)
-  → Writes to workspaces/{scope}/skills/loyalty.md
-  → App refreshes action index → new actions appear in workspace
-  → Zero downtime, zero migration
+1. User sends message
+2. AI extracts structured data from message
+3. Create Turso DB `ws-{subdomain}`, run schema DDL
+4. Save extracted data to Turso DB
+5. Read golden templates from `verticals/{type}/` in S3
+6. AI personalizes templates (inject name, location, menu)
+7. Write personalized `.md` files to `workspaces/{scope}/` in S3
+8. Auto-generate OKF bundle from extracted data
+9. Auto-generate OVERRIDES.md (brand tokens, typography)
+10. Create S2 streams, issue tokens, register in D1
+11. Return workspace config to app
+12. App creates local SQLite replica, caches skill index
 ```
 
 ---
 
-## 6. Runtime — How Actions Execute
+## 7. Runtime — How Actions Execute
 
 Same executor for all paths. Module type doesn't matter.
 
-| Path                         | Flow                                                                                                                                                                              |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **App**                      | User taps action → app knows action + params from cached index → `POST /tools/execute` → Worker reads SKILL.md → parser extracts steps → executes against Turso → result returned |
-| **Channel** (Telegram/Slack) | User types message → Worker reads skills → LLM matches intent → same executor, same Turso → result to channel                                                                     |
-| **Voice** (future)           | Speech → intent → same action name + params → same executor                                                                                                                       |
+| Path | Flow |
+| --- | --- |
+| **App** | User taps action → app knows action + params from cached index → `POST /tools/execute` → Worker reads SKILL.md → parser extracts steps → executes against Turso → result returned |
+| **Channel** (Telegram/Slack) | User types message → Worker reads skills → LLM matches intent → same executor, same Turso → result to channel |
+| **Voice** (future) | Speech → intent → same action name + params → same executor |
 
 ---
 
-## 7. Tech Stack
+## 8. Tech Stack
 
-| Layer           | Tech                                        | Cost                |
-| --------------- | ------------------------------------------- | ------------------- |
-| Mutable state   | Turso `ws-{subdomain}` per workspace        | Free tier           |
-| Module specs    | S3 `modules/core/*.md` (read-only)          | $0 (Railway Tigris) |
-| Workspace specs | S3 `workspaces/{scope}/*.md`                | $0                  |
-| Registry        | D1 (workspace list, tokens, checkpoints)    | Included            |
-| Global          | Turso `g:global` (user profiles, catalog)   | Free tier           |
-| Events          | S2.dev streams (sales, GPS, kitchen)        | ~$2/mo              |
-| Archive         | S3 Parquet + DuckDB WASM on-device          | Postponed (Future)  |
-| Vectors         | S3 LanceDB indexes on-device                | Postponed (Future)  |
-| Site            | Edge Template Engine (1 Worker → all sites) | $0–$500/mo          |
+| Layer | Tech | Cost |
+| --- | --- | --- |
+| Mutable state | Turso `ws-{subdomain}` per workspace | Free tier |
+| Module specs | S3 `modules/core/*.md` (read-only) | $0 (Railway Tigris) |
+| Workspace specs | S3 `workspaces/{scope}/*.md` | $0 |
+| Registry | D1 (workspace list, tokens, checkpoints) | Included |
+| Global | Turso `g:global` (user profiles, catalog) | Free tier |
+| Events | S2.dev streams (sales, GPS, kitchen) | ~$2/mo |
+| Site | Edge Template Engine (1 Worker → all sites) | $0–$500/mo |
 
 ---
 
-## 8. What to Build
+## 9. Cost
 
-### New Files to Author
-
-| What                                                         | Count    | Priority |
-| ------------------------------------------------------------ | -------- | -------- |
-| Add `ui_hints` + `site_pages` YAML to 14 core SKILL.md files | 14 edits | P1       |
-| `config/presets.yaml` — 6 preset combos                      | 1 file   | P1       |
-
-### New Code
-
-| File                                        | ~Lines    | What                                                              |
-| ------------------------------------------- | --------- | ----------------------------------------------------------------- |
-| `taragent/src/lib/module-composer.ts`       | 100       | Read N module SKILL.md → compose prompt for LLM                   |
-| `taragent/src/lib/design-md-parser.ts`      | 80        | Parse + validate DESIGN.md YAML                                   |
-| `taragent/src/lib/schema-validator.ts`      | 60        | Zod validation for composed workspace specs (DESIGN.md, SKILL.md) |
-| `taragent/src/lib/auth-scopes.ts`           | 50        | Scope query execution and validate user role permissions           |
-| `taragent/src/site-renderer.ts`             | 150       | Edge template engine — render HTML from DESIGN.md + data          |
-| `tarapp/src/lib/design-tokens.ts`           | 60        | Apply DESIGN.md tokens as React Native styles                     |
-| `tarapp/src/lib/layout-engine.ts`           | 80        | Read ui_hints → arrange component tree                            |
-| `tarapp/src/components/WorkspaceCanvas.tsx` | 200       | Component registry + layout renderer                              |
-| `tarapp/src/components/registry/*.tsx`      | 300       | Pre-built components (11 types)                                   |
-| `taragent/src/site-templates/*.html`        | 200       | ~8 shared HTML templates + 3 vanilla JS widgets                   |
-| **Total**                                   | **~1280** |                                                                   |
-
-### Code to Modify
-
-| File                             | Change                                             |
-| -------------------------------- | -------------------------------------------------- |
-| `taragent/src/app.ts`            | Accept `modules[]`, compose from specs             |
-| `tarapp/src/app/workspace.tsx`   | Replace static layout with WorkspaceCanvas         |
-| `tarapp/src/lib/skills-cache.ts` | Parse ui_hints alongside actions                   |
-| `tarapp/src/app/onboarding/`     | Preset cards + module picker + "describe business" |
+| Scale | Per Workspace (one-time) | Per Workspace/month | Total/month |
+| --- | --- | --- | --- |
+| 1 | $0.003 | $0.016 | $0.016 |
+| 100 | $0.30 | $1.60 | $1.60 |
+| 1,000 | $3 | $16 | $16 |
+| 10,000 | $30 | $160 | $160 |
+| 100,000 | $300 | $1,600 | $1,600 |
 
 ---
 
-## 9. Phases
-
-### Phase 1: Module Specs (~2 hours)
-
-- [x] Add `ui_hints` + `site_pages` YAML to all 14 core SKILL.md files
-- [x] Create `config/presets.yaml`
-
-### Phase 2: Design Token Runtime (~1 day)
-
-- [x] `tarapp/src/lib/design-tokens.ts`
-- [x] `tarapp/src/hooks/useDesignTokens.ts`
-- [x] Wire into workspace provider
-
-### Phase 3: Gen UI Canvas (~2 days)
-
-- [x] `tarapp/src/components/registry/*.tsx` — 11 component types
-- [x] `tarapp/src/components/WorkspaceCanvas.tsx`
-- [x] `tarapp/src/lib/layout-engine.ts`
-
-### Phase 4: Backend Composer (~1.5 days)
-
-- [x] `taragent/src/lib/module-composer.ts`
-- [x] `taragent/src/lib/design-md-parser.ts`
-- [x] `taragent/src/lib/schema-validator.ts` (Zod schemas for specs validation)
-- [x] Update `POST /workspaces/create` (accept modules[], compose, generate, validate with Zod)
-- [x] Update `GET /workspace/{scope}/skills` (return DESIGN.md + ui_hints)
-
-### Phase 5: Edge Site Engine (~3 days)
-
-- [x] `taragent/src/site-renderer.ts` — wildcard route, DESIGN.md → CSS vars, data from Turso
-- [x] HTML templates: `hero`, `catalog-grid`, `item-detail`, `cart`, `checkout`, `booking-widget`, `contact`
-- [x] Vanilla JS widgets: `cart.js`, `booking.js`, `checkout.js` (~160 lines total)
-- [x] `POST /api/order` + `POST /api/booking` endpoints for form submissions
-- [x] KV cache for DESIGN.md + site/pages.md (5 min TTL)
-
-### Phase 6: Completion (~1 day)
-
-- [x] Complete remaining core module SKILL.md files
-- [x] Test all 6 presets + custom combos
-- [x] Test AI-generated custom module flow
-
-**Total: ~9 days**
-
----
-
-## 10. Cost
-
-| Scale   | Per Workspace (one-time) | Per Workspace/month | Total/month |
-| ------- | ------------------------ | ------------------- | ----------- |
-| 1       | $0.003                   | $0.016              | $0.016      |
-| 100     | $0.30                    | $1.60               | $1.60       |
-| 1,000   | $3                       | $16                 | $16         |
-| 10,000  | $30                      | $160                | $160        |
-| 100,000 | $300                     | $1,600              | $1,600      |
-
----
-
-## 11. Design Principles Check
-
-| Principle                | ✓ How                                                                |
-| ------------------------ | -------------------------------------------------------------------- |
-| Zero learning curve      | Tap preset → name → done                                             |
-| Direct & straightforward | 1 tap = 1 action, rendered from YAML                                 |
-| One-screen-one-task      | Canvas shows only installed module actions                           |
-| Minimal taps             | Quick-actions grid: 1 tap to primary action                          |
-| Frictionless onboarding  | 3 screens, ~10 seconds                                               |
-| Cost-efficient           | $0.003 creation, $0 runtime LLM                                      |
-| Data-efficient           | Action index + DESIGN.md cached locally                              |
-| Lightweight              | No DOs, no WebSockets, Turso-native client-side replication          |
-| Battery-friendly         | No background processes                                              |
-| AI-futuristic            | Every layer is .md — any future AI reads it natively                 |
-| Adaptive                 | New AI model = same specs, swap LLM endpoint                         |
-| Scalable                 | 1 workspace = 1 Turso DB + S3 files. Same at 10M.                    |
-| Modular & decoupled      | 1 module = 1 file. Add/remove = add/remove file.                     |
-| Plugin-based             | New module = new SKILL.md. No code changes.                          |
-| API-first                | Everything is an endpoint                                            |
-| Self-healing             | Missing skill? Fall back to core module. Corrupted? Regenerate.      |
-| Voice & gesture ready    | Actions have names + params in YAML. Voice → intent → same executor. |
-
----
-
-## 12. Future-Proofing
-
-| Future Shift             | Adaptation                                                 |
-| ------------------------ | ---------------------------------------------------------- |
-| Better LLM               | Same .md format, better content                            |
-| Local/on-device LLM      | Same parser, different endpoint                            |
-| Multimodal (voice/image) | Actions already YAML — voice maps to same intent           |
-| AI agents everywhere     | OKF + DESIGN.md = industry standards, any agent reads them |
-| AI-generated animations  | Extend DESIGN.md with `animations:` section                |
-| Marketplace              | SKILL.md files are portable — publish/install = copy file  |
-
----
-
-## Summary
+## 10. Summary
 
 ```
 Module  = a SKILL.md file (the atomic unit)
@@ -531,7 +321,6 @@ Core    = 14 maintained modules (standard library)
 Custom  = AI writes new SKILL.md from user description
 Preset  = UX shortcut ("Restaurant" = list of module names)
 AI      = the composer (reads modules → writes workspace)
-App     = the renderer (reads specs → Gen UI canvas)
 Site    = the public face (1 Worker renders all sites, pure HTML/CSS)
 ```
 
@@ -540,9 +329,9 @@ Site    = the public face (1 Worker renders all sites, pure HTML/CSS)
 1. **Open modules** — 14 core + infinite AI-generated + marketplace
 2. **Spec-first** — `.md` file IS the feature, not code
 3. **Generate once, render forever** — zero LLM at runtime
-4. **Industry standards** — OKF, DESIGN.md, SKILL.md
+4. **Industry standards** — OKF, SKILL.md
 5. **Zero DOs, zero WebSockets** — no compute bloat
-6. **Every workspace looks different** — DESIGN.md = unique branding
+6. **Every workspace looks different** — OVERRIDES.md = unique branding
 7. **Every workspace works the same** — component registry = consistency
 8. **Composable** — add module = add file, remove = delete file
 9. **Portable** — workspace = folder of files, movable anywhere

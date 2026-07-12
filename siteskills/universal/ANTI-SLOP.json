@@ -1,0 +1,66 @@
+{
+  "scope": "universal",
+  "note": "Two tiers. error = regenerate the plan. warning = keep, log only. Aesthetic choices are warnings, not bans — a branded gradient is not slop.",
+  "rules": [
+    {
+      "id": "no-emoji-headings",
+      "description": "No emoji in headings or UI elements",
+      "severity": "error",
+      "tier": "hard-slop"
+    },
+    {
+      "id": "max-2-cta",
+      "description": "Maximum 2 CTA buttons per section",
+      "severity": "error",
+      "tier": "hard-slop"
+    },
+    {
+      "id": "no-placeholder-text",
+      "description": "No lorem ipsum or generic filler; use real workspace content",
+      "severity": "error",
+      "tier": "hard-slop"
+    },
+    {
+      "id": "no-cliche-headlines",
+      "description": "No 'Transform Your Business', 'Unlock Your Potential', 'The Future of X'",
+      "severity": "error",
+      "tier": "hard-slop"
+    },
+    {
+      "id": "no-fake-testimonials",
+      "description": "No fabricated reviews or invented customer quotes",
+      "severity": "error",
+      "tier": "hard-slop"
+    },
+    {
+      "id": "gradient-heroes",
+      "description": "Prefer solid brand colors over gradient hero backgrounds",
+      "severity": "warning",
+      "tier": "soft-aesthetic"
+    },
+    {
+      "id": "border-radius",
+      "description": "Large radii (>16px) read as generic AI cards; use brand-appropriate values",
+      "severity": "warning",
+      "tier": "soft-aesthetic"
+    },
+    {
+      "id": "shadow-depth",
+      "description": "Heavy drop shadows read as slop; prefer subtle depth",
+      "severity": "warning",
+      "tier": "soft-aesthetic"
+    },
+    {
+      "id": "asymmetric-layouts",
+      "description": "Use asymmetric layouts with visual tension where appropriate",
+      "severity": "warning",
+      "tier": "soft-aesthetic"
+    },
+    {
+      "id": "min-line-height",
+      "description": "Body text line-height should be at least 1.6",
+      "severity": "warning",
+      "tier": "soft-aesthetic"
+    }
+  ]
+}

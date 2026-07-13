@@ -165,9 +165,8 @@ Output:
 
 | Item | Storage | Cost |
 |------|---------|------|
-| Turso DB (`ws-{subdomain}`) | Schema DDL + extracted data | $0 (free tier: 500 DBs) |
+| Turso DB (`ws-{subdomain}`) | State + events + inbox tables | $0 (free tier: 500 DBs) |
 | S3 writes (~20 files) | OKF bundle + site files | $0 (Railway free tier) |
-| S2 streams (2-3 streams) | Event streams | $0 (free tier) |
 | D1 row (1 row) | Workspace registry | $0 (free tier: 5GB) |
 | KV cache (site cache) | Layout JSON | $0 (free tier: 100K reads) |
 | **Total infra per workspace** | | **$0** |
@@ -178,7 +177,6 @@ Output:
 |---------|-----------|----------|
 | Turso | 500 databases, 9GB storage | 500 workspaces |
 | Railway S3 | 1GB storage, unlimited writes | ~50 workspaces (20 files × ~5KB each) |
-| S2.dev | 1M events/month | ~10K workspaces |
 | D1 | 5GB storage, 5M reads/day | 25M workspace rows |
 | KV | 100K reads/day, 1K writes/day | 100K site visits/day |
 | Cloudflare Worker | 100K requests/day | 100K site requests/day |
@@ -215,9 +213,8 @@ Output:
 
 | Service | Usage | Cost |
 |---------|-------|------|
-| Turso DB (workspace DB) | Reads + writes | $0 (free tier) |
+| Turso DB (workspace DB) | State + events + inbox reads/writes | $0 (free tier) |
 | S3 (skill files, site) | Reads | $0 (Railway free tier) |
-| S2 (event streams) | 1K events/day | $0 (free tier) |
 | D1 (registry) | ~100 reads/day | $0 (free tier) |
 | KV (site cache) | ~1K reads/day | $0 (free tier) |
 | Worker (site rendering) | ~100 requests/day | $0 (free tier) |
@@ -356,7 +353,7 @@ const okf = await llm(okfPrompt);                         // Step 3: OKF content
 | Z.AI GLM-4.7-Flash | Free tier available, $0.14/1M when paid |
 | No LLM for actions | Actions are JSON step sequences, executed deterministically |
 | No LLM for site visits | Static HTML/CSS from S3, cached in KV |
-| No LLM for event processing | S2 streams → S3 Parquet, no inference |
+| No LLM for event processing | SQL queries on events table, no inference |
 | Rule-based anti-slop | No LLM call, just regex + counting |
 | Draft pattern | Edits in local SQLite, sync to Turso on save |
 
@@ -368,7 +365,6 @@ const okf = await llm(okfPrompt);                         // Step 3: OKF content
 | LLM for every action execution | 10× monthly cost | Cache actions as JSON steps |
 | LLM for site rendering | 5× site cost | Static HTML from templates |
 | No KV caching for sites | 10× Worker cost | KV cache with 5min TTL |
-| No S2 for events | 2× Turso write cost | Bypass Turso for events |
 
 ---
 

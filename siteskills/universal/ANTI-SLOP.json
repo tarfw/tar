@@ -1,66 +1,43 @@
 {
   "scope": "universal",
-  "note": "Two tiers. error = regenerate the plan. warning = keep, log only. Aesthetic choices are warnings, not bans — a branded gradient is not slop.",
-  "rules": [
-    {
-      "id": "no-emoji-headings",
-      "description": "No emoji in headings or UI elements",
-      "severity": "error",
-      "tier": "hard-slop"
-    },
-    {
-      "id": "max-2-cta",
-      "description": "Maximum 2 CTA buttons per section",
-      "severity": "error",
-      "tier": "hard-slop"
-    },
-    {
-      "id": "no-placeholder-text",
-      "description": "No lorem ipsum or generic filler; use real workspace content",
-      "severity": "error",
-      "tier": "hard-slop"
-    },
-    {
-      "id": "no-cliche-headlines",
-      "description": "No 'Transform Your Business', 'Unlock Your Potential', 'The Future of X'",
-      "severity": "error",
-      "tier": "hard-slop"
-    },
-    {
-      "id": "no-fake-testimonials",
-      "description": "No fabricated reviews or invented customer quotes",
-      "severity": "error",
-      "tier": "hard-slop"
-    },
-    {
-      "id": "gradient-heroes",
-      "description": "Prefer solid brand colors over gradient hero backgrounds",
-      "severity": "warning",
-      "tier": "soft-aesthetic"
-    },
-    {
-      "id": "border-radius",
-      "description": "Large radii (>16px) read as generic AI cards; use brand-appropriate values",
-      "severity": "warning",
-      "tier": "soft-aesthetic"
-    },
-    {
-      "id": "shadow-depth",
-      "description": "Heavy drop shadows read as slop; prefer subtle depth",
-      "severity": "warning",
-      "tier": "soft-aesthetic"
-    },
-    {
-      "id": "asymmetric-layouts",
-      "description": "Use asymmetric layouts with visual tension where appropriate",
-      "severity": "warning",
-      "tier": "soft-aesthetic"
-    },
-    {
-      "id": "min-line-height",
-      "description": "Body text line-height should be at least 1.6",
-      "severity": "warning",
-      "tier": "soft-aesthetic"
-    }
-  ]
+  "note": "Two tiers. error = regenerate. warning = log only. Flat, clean, shadow-free, gradient-free design.",
+  "hard_slop": {
+    "severity": "error",
+    "rules": [
+      "no_emoji_in_headings",
+      "max_2_cta_per_section",
+      "no_placeholder_text",
+      "no_cliche_headlines",
+      "no_fake_testimonials",
+      "no_gradients",
+      "no_shadows",
+      "no_elevation",
+      "no_floating_pill_badges",
+      "no_floating_callout_boxes",
+      "no_icon_background_circles",
+      "no_floating_social_icons",
+      "no_floating_note_boxes",
+      "no_placeholder_images",
+      "no_emoji_as_images",
+      "no_solid_color_blocks_as_images",
+      "no_svg_data_uris",
+      "no_position_fixed",
+      "z_index_max_100",
+      "no_important",
+      "height_max_100vh",
+      "opacity_min_0_3",
+      "grid_columns_max_4",
+      "no_heavy_symmetry"
+    ],
+    "action": "regenerate"
+  },
+  "soft_slop": {
+    "severity": "warning",
+    "rules": [
+      "minor_spacing_variance",
+      "font_weight_range",
+      "color_palette_width"
+    ],
+    "action": "log_only"
+  }
 }

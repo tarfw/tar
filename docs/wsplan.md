@@ -1,6 +1,6 @@
 # TAR Workspace System — End-to-End Plan
 
-> Every workspace = Turso DB (mutable state) + `.md` skill files in S3 (the program) + S2 streams (immutable events) + S3 Parquet (archive). No DOs except a stateless Editor for WebSocket relay.
+> Every workspace = Turso DB (state + events + inbox) + `.md` skill files in S3 (the program). No DOs except a stateless Editor for WebSocket relay.
 
 ---
 
@@ -9,13 +9,13 @@
 | Layer | Tech | Holds |
 |---|---|---|
 | Mutable state | Turso `ws-{subdomain}` | Products, stock, active orders, settings |
+| Events | Turso `ws-{subdomain}` events table | Sales, tickets, attendance, stock changes |
+| Inbox | Turso `ws-{subdomain}` inbox table | Tasks assigned to users |
 | Skill files | S3 `workspaces/{scope}/*.md` | Action definitions the AI and app execute |
 | **Site design** | **S3 `siteskills/`** | **Universal design rules + workspace overrides** |
 | **Site content** | **S3 `workspaces/{scope}/site/`** | **brand.md, design.md, layouts/*.json** |
-| Event streams | S2.dev | Completed sales, GPS, kitchen tickets, motion |
-| Archive | S3 `{scope}/analytics/*.parquet` | Historical data queried on-device (DuckDB WASM) |
 | Vectors | S3 `{scope}/memory/` | LanceDB indexes queried on-device |
-| Registry | D1 | Workspace list, channels, tokens, cron checkpoints |
+| Registry | D1 | Workspace list, channels, tokens |
 | Global | Turso `g:global` | User profiles, catalog metadata |
 | Relay | Stateless Editor DO | WebSocket relay for live preview (no storage) |
 
@@ -128,7 +128,7 @@ AI: Done! Your site is live at ravanan.tarai.space
 | 7 | Write personalized `.md` files to `workspaces/{scope}/` in S3 |
 | 8 | Auto-generate OKF bundle from extracted data |
 | 9 | Auto-generate brand.md (colors, fonts) |
-| 10 | Create S2 streams, issue tokens, register in D1 |
+| 10 | Create events + inbox tables, register in D1 |
 | 11 | Return workspace config to app |
 | 12 | App creates local SQLite replica, caches skill index |
 
@@ -207,7 +207,7 @@ All customization = `.md` file edits in S3. No migrations. No redeployments.
 
 ## 5. Write Paths
 
-### Mutable → Turso
+### State → Turso (mutable)
 
 | Write | How |
 |---|---|
@@ -216,35 +216,42 @@ All customization = `.md` file edits in S3. No migrations. No redeployments.
 | Active order status change | Worker update → Turso |
 | Draft edits (typing, layout) | Local-only `p:` DB → Turso only on Save/Publish |
 
-### Immutable → S2.dev (device writes directly, Worker not involved)
+### Events → Turso (append-only)
 
-| Event | S2 Stream |
-|---|---|
-| Bill closed / payment | `ws/{id}/sales` |
-| Kitchen ticket fired | `ws/{id}/kitchen` |
-| Order status transition | `ws/{id}/motion` |
-| Driver GPS (every 5s) | `drivers/{driverId}` |
-| Staff clock-in/out | `ws/{id}/attendance` |
-| Stock adjustment delta | `ws/{id}/stock-log` |
-| Customer feedback | `ws/{id}/feedback` |
+| Event | Type Column | Data |
+|---|---|---|
+| Bill closed / payment | `sale` | orderId, total, items, payment_method |
+| Kitchen ticket fired | `kitchen_ticket` | orderId, items, status |
+| Order status change | `motion` | orderId, from_status, to_status |
+| Staff clock-in/out | `clock_in` / `clock_out` | staff_id, role, duration |
+| Stock adjustment | `stock_adjustment` | productId, qty, reason |
+| Customer feedback | `feedback` | rating, comment, orderId |
+| Booking confirmed | `booking` | serviceId, time, customerId |
+
+### Inbox → Turso (tasks)
+
+| Trigger | Task Created For | Title |
+|---|---|---|
+| `kitchen_ticket` (fired) | Kitchen staff | "Prepare order #{orderId}" |
+| `stock_adjustment` (low stock) | Manager | "Restock {product}" |
+| `booking` (confirmed) | Assigned staff | "Confirm {time} slot" |
+| `motion` (new order) | Waiter | "Serve order #{orderId}" |
+| `feedback` (low rating) | Owner | "Review complaint" |
 
 ---
 
-## 6. Archival — S2 → S3 Parquet
+## 6. Analytics — SQL Queries
 
-Daily cron at midnight: tail each S2 stream from last D1 checkpoint → batch → write Parquet to S3.
+All analytics via SQL on the events table. No Parquet, no DuckDB.
 
-| S2 Stream | S3 Path | DuckDB use case |
-|---|---|---|
-| `ws/{id}/sales` | `{id}/analytics/sales/YYYY-MM.parquet` | Revenue by day/item/staff |
-| `ws/{id}/kitchen` | `{id}/analytics/kitchen/YYYY-MM.parquet` | Avg ticket time, peak hours |
-| `ws/{id}/motion` | `{id}/analytics/orders/YYYY-MM.parquet` | Order lifecycle durations |
-| `ws/{id}/stock-log` | `{id}/analytics/stock/YYYY-MM.parquet` | Consumption trends |
-| `ws/{id}/attendance` | `{id}/analytics/staff/YYYY-MM.parquet` | Hours worked |
-| `drivers/{id}` | `{id}/analytics/delivery/YYYY-MM.parquet` | Route replay |
-
-- S2 retention: 7 days. Parquet in S3: permanent.
-- Client queries via DuckDB WASM + HTTP range requests. Zero server cost.
+| Query | SQL |
+|---|---|
+| Today's revenue | `SELECT SUM(json_extract(data, '$.total')) FROM events WHERE type='sale' AND created_at >= date('now')` |
+| Revenue by item | `SELECT json_extract(data, '$.item'), SUM(...) FROM events WHERE type='sale' GROUP BY item` |
+| Staff hours | `SELECT created_by, SUM(json_extract(data, '$.duration'))/60 FROM events WHERE type='clock_out' AND created_at >= date('now','-7 days') GROUP BY created_by` |
+| Stock consumption | `SELECT json_extract(data,'$.product'), SUM(ABS(json_extract(data,'$.qty'))) FROM events WHERE type='stock_adjustment' AND json_extract(data,'$.reason')='sale' GROUP BY product` |
+| Peak hours | `SELECT strftime('%H', created_at), COUNT(*) FROM events WHERE type='sale' GROUP BY 1 ORDER BY 2 DESC` |
+| Order avg time | `SELECT AVG(json_extract(data,'$.prep_time')) FROM events WHERE type='kitchen_ticket'` |
 
 ---
 
@@ -252,13 +259,12 @@ Daily cron at midnight: tail each S2 stream from last D1 checkpoint → batch �
 
 > Permissions are **role-based**, not vertical-specific. The workspace owner defines roles + what each role can access. System enforces via scoped Turso tokens.
 
-| Role Level | Turso | S2 | S3 |
-|---|---|---|---|
-| Worker | Full group token | Create streams, issue tokens | Read/write all |
-| Owner | Full scoped token | All workspace streams | Read analytics + memory |
-| Staff (configurable) | `data_read` + subset of `data_update`/`data_add` | Write: allowed streams only | — |
-| Viewer | `data_read` only | Read: allowed streams only | — |
-| External (customer) | None (public endpoint) | Read: delivery GPS only | — |
+| Role Level | Turso | S3 |
+|---|---|---|
+| Worker | Full group token | Read/write all |
+| Owner | Full scoped token | Read analytics + memory |
+| Staff (configurable) | `data_read` + subset of `data_update`/`data_add` | — |
+| Viewer | `data_read` only | — |
 
 ### How Staff Permissions Work
 
@@ -270,10 +276,9 @@ The owner assigns each team member a **permission set** in `team/members.md`:
 | Ravanan | owner | full | user_abc123 |
 | Priya | staff | data_read, matter:data_update, motion:data_add | user_def456 |
 | Kumar | manager | data_read, matter:data_update, matter:data_delete | user_ghi789 |
-| Driver 1 | driver | data_read (assigned order), s2:write (gps) | user_jkl012 |
 ```
 
-> `owner` always gets `full`. Other roles get explicit permission lists. System generates scoped Turso tokens + S2 stream permissions from this.
+> `owner` always gets `full`. Other roles get explicit permission lists. System generates scoped Turso tokens from this.
 
 ---
 
@@ -293,12 +298,11 @@ The owner assigns each team member a **permission set** in `team/members.md`:
 |---|---|---|
 | 1 | Draft pattern — edits in local `p:` DB until Save | Zero Turso writes during editing |
 | 2 | Debounce — 5s batch before sync push | Fewer write ops billed |
-| 3 | Events via S2 — sales/GPS/tickets bypass Turso | Turso write volume halved |
-| 4 | Analytics on-device — DuckDB WASM on S3 Parquet | Zero server reads for reports |
+| 3 | Events as append-only rows — no updates, no deletes | Simple, fast, auditable |
+| 4 | SQL analytics — no Parquet, no DuckDB | Zero extra infra |
 | 5 | Vectors on-device — LanceDB on S3 indexes | No Turso bloat for search |
-| 6 | GPS via S2 — device→S2 directly | ~$2.19/mo vs ~$72/mo with DO |
-| 7 | S3 free — Railway Tigris has no read/write cost | Skills, Parquet, vectors = $0 |
-| 8 | Skill caching — app caches parsed action index | S3 reads only on first sync |
+| 6 | S3 free — Railway Tigris has no read/write cost | Skills, vectors = $0 |
+| 7 | Skill caching — app caches parsed action index | S3 reads only on first sync |
 
 ---
 
@@ -1112,25 +1116,56 @@ User Sends Message → AI Extracts Data → Turso DB → OKF Bundle → Site + C
 - [ ] `src/cloudflare.ts` — Remove `WorkspaceDO`, `OrderDO`. Strip storage from `EditorDO`
 - [ ] `src/app.ts`
   - `POST /tools/execute` — Read `.md` from S3, parse, run steps against Turso
-  - `POST /workspaces/create` — Turso DB + AI personalize templates + S3 write + S2 streams + D1 register
+  - `POST /workspaces/create` — Turso DB (state + events + inbox tables) + AI personalize + S3 write + D1 register
   - `GET /workspace/{scope}/skills` — Return parsed action index for app cache
   - `POST /workspace/{scope}/customize` — AI read + edit skill `.md` in S3
+  - `POST /workspace/{scope}/events` — Write event to events table, trigger inbox rules
+  - `GET /workspace/{scope}/inbox` — Return pending tasks for user
+  - `PATCH /inbox/{taskId}` — Mark task done
 - [ ] `src/lib/okf.ts` — Add `readWorkspaceFile(scope, path)`: read from workspace S3
 - [ ] `src/lib/action-executor.ts` — Remove DO routing. Route all through Turso
-- [ ] `src/lib/workspace-db.ts` — Turso DB provisioning, group management, scoped tokens
+- [ ] `src/lib/workspace-db.ts` — Turso DB provisioning (state + events + inbox tables), scoped tokens
+- [ ] `src/lib/events.ts` — Event writer + inbox rule engine
 - [ ] `wrangler.jsonc` — Remove `WORKSPACE` + `ORDER` DO bindings. Keep `EDITOR`. Add `TURSO_GROUP_TOKEN`
-- [ ] `src/index.ts` — Cron: expired checkouts (every min), S2→Parquet archival (daily)
+- [ ] `src/index.ts` — Cron: expired checkouts (every min)
 
 ### Client (`tarapp`)
 
 - [ ] `src/lib/db.ts` — `getWorkspaceDb()` via `createSyncDbConnection` with scoped token
 - [ ] `src/lib/skills-cache.ts` (new) — Fetch + cache action index from Worker
-- [ ] `src/lib/s2-client.ts` (new) — Direct S2 stream writes (sales, kitchen, GPS)
+- [ ] `src/lib/inbox.ts` (new) — Fetch pending tasks, mark done
 - [ ] `src/lib/offline-queue.ts` — Point queued ops to `POST /tools/execute`
 - [ ] `src/app/onboarding/` (new) — 2-screen onboarding: pick type → name business → create
 - [ ] `src/app/(tabs)/home.tsx` — `GET /timeline` fetch
+- [ ] `src/app/(tabs)/inbox.tsx` (new) — User's task list across workspaces
 - [ ] `src/app/workspace.tsx` — Local replica reads + action buttons from cached skill index
 
 ### S3 Content (Railway)
 
 - [ ] None — AI generates all SKILL.md files at workspace creation
+
+---
+
+## 12. Future Roadmap
+
+### Phase 2 (Month 3-4): Delivery & GPS Tracking
+
+When delivery volume justifies the complexity:
+
+| Feature | What | When |
+|---------|------|------|
+| Driver GPS tracking | Real-time location sharing with customers | Month 3 |
+| Live order tracking | Customer sees driver on map | Month 3 |
+| Route optimization | Suggest fastest route | Month 4 |
+| Delivery analytics | Avg delivery time, driver performance | Month 4 |
+
+**Implementation:** Add S2.dev for GPS streams only (high-frequency writes). Turso continues for everything else.
+
+### Phase 3 (Month 5-6): Advanced Analytics
+
+| Feature | What | When |
+|---------|------|------|
+| Revenue forecasting | Predict next week's sales | Month 5 |
+| Stock optimization | Auto-reorder suggestions | Month 5 |
+| Customer segmentation | RFM analysis from events | Month 6 |
+| Staff scheduling | AI-powered shift planning | Month 6 |

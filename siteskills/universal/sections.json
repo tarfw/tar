@@ -1,0 +1,75 @@
+{
+  "sections": [
+    {
+      "type": "hero_banner",
+      "props": ["title", "subtitle", "image", "cta"],
+      "layouts": ["centered", "left-aligned", "split", "full-bleed"]
+    },
+    {
+      "type": "content_grid",
+      "props": ["items"],
+      "layouts": ["1-col", "2-col", "3-col", "4-col", "sidebar-left", "sidebar-right"],
+      "children": true
+    },
+    {
+      "type": "product_grid",
+      "props": ["items", "columns"],
+      "layouts": ["2-col", "3-col", "4-col", "carousel"]
+    },
+    {
+      "type": "service_list",
+      "props": ["items", "layout"],
+      "layouts": ["cards", "list", "compact", "featured"]
+    },
+    {
+      "type": "text_block",
+      "props": ["heading", "body", "image"],
+      "layouts": ["text-only", "text-left-image-right", "text-right-image-left", "image-top"]
+    },
+    {
+      "type": "testimonial",
+      "props": ["quotes", "style"],
+      "layouts": ["single", "carousel", "grid", "masonry"]
+    },
+    {
+      "type": "cta_button",
+      "props": ["label", "url", "style"],
+      "layouts": ["centered", "left", "right", "full-width"]
+    },
+    {
+      "type": "contact_form",
+      "props": ["fields", "submit_label"],
+      "layouts": ["centered", "split", "inline"]
+    },
+    {
+      "type": "map_embed",
+      "props": ["address", "zoom"],
+      "layouts": ["full-width", "split", "corner"]
+    },
+    {
+      "type": "faq_accordion",
+      "props": ["items"],
+      "layouts": ["single-column", "two-column", "grouped"]
+    },
+    {
+      "type": "gallery",
+      "props": ["images", "layout"],
+      "layouts": ["grid", "masonry", "carousel", "single-row"]
+    },
+    {
+      "type": "pricing_table",
+      "props": ["plans", "highlight"],
+      "layouts": ["2-col", "3-col", "comparison", "simple-list"]
+    },
+    {
+      "type": "team_grid",
+      "props": ["members"],
+      "layouts": ["grid", "list", "cards"]
+    },
+    {
+      "type": "footer",
+      "props": ["links", "social", "contact"],
+      "layouts": ["simple", "multi-column", "minimal"]
+    }
+  ]
+}

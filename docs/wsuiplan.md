@@ -74,6 +74,8 @@ Pre-built components (metric-card, pos-sale, etc.)
 
 ## 4. Role-Based Gen UI
 
+> Roles are **not hardcoded per vertical**. Each workspace defines its own roles in `team/members.md`. The system is universal — salon, gym, agency, clinic all work with the same logic.
+
 ### How It Works
 
 | Step | What |
@@ -87,6 +89,9 @@ Pre-built components (metric-card, pos-sale, etc.)
 ```yaml
 ---
 app_layout:
+  # Role keys are workspace-specific — whatever the owner defines
+  # Examples below, NOT presets:
+  
   owner:
     sections:
       - type: metric-card
@@ -96,36 +101,46 @@ app_layout:
       - type: quick-actions
         actions: [record_sale, void_order, view_reports]
   
-  waiter:
+  staff:
     sections:
       - type: pos-sale
         categories: ["Food", "Drinks"]
       - type: quick-actions
         actions: [record_sale, split_bill]
   
-  kitchen:
+  manager:
     sections:
       - type: timeline-feed
-        title: "Incoming Orders"
+        title: "Activity"
       - type: status-board
-        title: "Order Status"
+        title: "Status"
   
-  cashier:
+  # Default fallback (no role match)
+  default:
     sections:
-      - type: pos-sale
-      - type: data-table
-        title: "Payment History"
+      - type: quick-actions
+        actions: [view_profile]
 ---
 ```
 
-### Role → Screen Mapping
+### Role → Screen Mapping (Dynamic, Not Preset)
 
-| Role | Sections |
-|------|----------|
-| Owner | metric-card, data-table, quick-actions, reports |
-| Waiter | pos-sale, quick-actions |
-| Kitchen | timeline-feed, status-board |
-| Cashier | pos-sale, payment-history |
+| Role Key in SKILL.md | Sections Shown |
+|----------------------|----------------|
+| (matches user's role) | That role's sections |
+| `default` | Fallback if no match |
+| `owner` | Always sees everything |
+
+> **No hardcoded role names.** The owner defines roles when creating the workspace. System just reads `team/members.md` and filters sections by role key.
+
+### Fallback Behavior
+
+| Scenario | What Happens |
+|----------|-------------|
+| Role matches a section set | Show that role's sections |
+| Role not in SKILL.md | Show `default` sections |
+| No `default` either | Show all sections (flat) |
+| Owner always sees | Everything (owner key = full access) |
 
 ---
 
@@ -138,6 +153,7 @@ app_layout:
 | Edit SKILL.md directly | Change `app_layout.sections` array |
 | Ask AI | "Show me a POS screen" → AI edits `app_layout` |
 | Swap sections | Replace `data-table` with `pos-sale` |
+| Add new role | Add a new key under `app_layout:` with its sections |
 
 ### Example — Customizing Orders Module
 
@@ -150,15 +166,39 @@ app_layout:
     - type: quick-actions
       actions: [record_sale, void_order]
 
-# After (POS layout for waiter)
+# After (POS layout for staff)
 app_layout:
-  waiter:
+  staff:
     sections:
       - type: pos-sale
         categories: ["Food", "Drinks"]
       - type: quick-actions
         actions: [record_sale, split_bill]
 ```
+
+### Adding a New Role
+
+```yaml
+app_layout:
+  owner:
+    sections:
+      - type: metric-card
+      - type: data-table
+  
+  staff:
+    sections:
+      - type: pos-sale
+  
+  # New role: driver (for delivery business)
+  driver:
+    sections:
+      - type: timeline-feed
+        title: "My Deliveries"
+      - type: quick-actions
+        actions: [update_delivery_status]
+```
+
+> Any role name works. System just matches `team/members.md` role → `app_layout` key.
 
 ---
 

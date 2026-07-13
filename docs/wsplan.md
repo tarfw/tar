@@ -649,6 +649,34 @@ CSS overrides go through the same anti-slop check:
 | `height` max 100vh | Prevents invisible sections | Error → clamp |
 | `opacity` min 0.3 | Prevents unreadable text | Error → clamp |
 | Grid columns max 4 | Prevents unreadable layouts | Error → reduce |
+| **No `box-shadow`** | **Flat design — no elevation** | **Error → remove** |
+| **No `linear-gradient` / `radial-gradient`** | **Flat design — solid colors only** | **Error → replace with solid** |
+| **No `transform: translateY`** | **No fake lift on hover** | **Error → replace with border/color change** |
+| **No `text-shadow`** | **Readable text — no shadows** | **Error → remove** |
+| **No `filter: drop-shadow`** | **No shadow filters** | **Error → remove** |
+
+#### Anti-Slop on Floating Boxes
+
+| Rule | Check | Action |
+|------|-------|--------|
+| **No floating pill badges** | **`background` + `border-radius` + `padding` on small text elements (badges, labels, tags)** | **Error → text only, no container** |
+| **No floating callout boxes** | **`background` + `border-radius` + `border-left` on highlight/note elements** | **Error → text only, no container** |
+| **No icon background circles** | **`background` + `border-radius` on emoji/icon containers** | **Error → remove background, keep icon only** |
+| **No floating social icons** | **`background` + `border-radius` on social media links** | **Error → text links only** |
+| **No floating note boxes** | **`background` + `border-radius` + `border-left` on info/note elements** | **Error → border-top or text only** |
+
+> **Design rule: Content stands on its own.** No background boxes around small text elements. Use typography, spacing, and border (not background) for emphasis.
+
+#### Anti-Slop on Content & Images
+
+| Rule | Check | Action |
+|------|-------|--------|
+| **No placeholder images** | **No `data:image/svg+xml`, no SVG placeholders with emoji, no solid color blocks pretending to be images** | **Error → remove image or use real URL** |
+| **No emoji as images** | **Emoji inside `<div>` used as visual content (icons除外)** | **Error → remove or use real icon/image** |
+| **No solid color blocks as images** | **`<img>` with `background-color` but no real `src`** | **Error → remove image section entirely** |
+| **Image sections need real content** | **If section has `<img>`, the `src` must be a real URL (http/https), not data URI** | **Error → remove image or use real URL** |
+| **No SVG data URIs** | **`data:image/svg+xml` used as image content** | **Error → remove** |
+| **Text-only sections preferred** | **If no real image available, use text-only layout instead of placeholder** | **Recommended** |
 
 #### Renderer → HTML Mapping
 
@@ -982,16 +1010,35 @@ Steps:
 
 | Tier | Severity | Rules | Action |
 |------|----------|-------|--------|
-| **Hard slop** | `error` | emoji in headings, >2 CTA, placeholder text, cliché headlines, excessive gradients, deep shadows, heavy symmetry, generic border-radius | **Regenerate** |
+| **Hard slop** | `error` | emoji in headings, >2 CTA, placeholder text, cliché headlines, **any** gradients, **any** shadows, **any** elevation (transform/translate for visual lift), heavy symmetry, generic border-radius, **placeholder images** (data URIs, SVG placeholders, solid color blocks as images, emoji as images) | **Regenerate** |
 | **Soft/aesthetic** | `warning` | minor spacing, font weight variance, color palette width | **Log only** |
 
 > `error` → regenerate. `warning` → never blocks (log for future visual critic).
+> **Placeholder images are hard slop.** If no real image is available, use text-only layout.
+
+### Design Philosophy: Flat & Clean
+
+The site generation system produces **flat, clean, shadow-free, gradient-free** designs. No visual tricks — just typography, spacing, color, and layout.
+
+| Banned | Why |
+|--------|-----|
+| `box-shadow` | Elevation tricks. Content should stand on its own. |
+| `linear-gradient` / `radial-gradient` | Decorative noise. Use solid colors. |
+| `transform: translateY()` on hover | Fake lift. Use border or color change instead. |
+| `text-shadow` | Hard to read. Use color contrast. |
+| `filter: drop-shadow()` | Same as box-shadow. Banned. |
+
+| Allowed | Alternative |
+|---------|-------------|
+| Hover state | `background-color` change, `border-color` change, `opacity` change |
+| Visual emphasis | `border-left`, `border-bottom`, `background-color` solid |
+| Depth | White space, font weight, color contrast |
 
 ### Rule-Critic Limitation (v1)
 
 The rule-critic checks the **JSON output**, not the rendered HTML/CSS. This means:
 
-- **Hard slop rules** (emoji, CTA count, placeholder text, gradient count, shadow depth, symmetry) — caught from JSON ✓
+- **Hard slop rules** (emoji, CTA count, placeholder text, gradient count, shadow depth, symmetry, elevation) — caught from JSON ✓
 - **Soft-aesthetic rules** (minor spacing, font weight) — NOT caught from JSON ✗
 
 Soft-aesthetic issues only exist post-render. For v1, accept this limitation. Future: add a visual critic that screenshots the rendered site and checks for aesthetic issues.

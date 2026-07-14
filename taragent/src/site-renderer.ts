@@ -18,7 +18,37 @@ export async function handleSiteRequest(
 ): Promise<Response> {
   const scope = `w:${workspaceSlug}`;
 
-  // 0. Try section-based rendering first (new SECTIONS.json system)
+  // Resolve workspace name from D1
+  let wsName = workspaceSlug;
+  try {
+    const ws = await env.DB?.prepare('SELECT name FROM workspaces WHERE subdomain = ?')
+      .bind(workspaceSlug).first();
+    if (ws?.name) wsName = ws.name;
+  } catch {}
+
+  // 0. Try section-based rendering from S3 home.json (new system)
+  try {
+    const homeJsonRaw = await readWorkspaceFile(env, scope, 'site/layouts/home.json');
+    if (homeJsonRaw) {
+      const homeJson = JSON.parse(homeJsonRaw);
+      const design = await loadDesign(env, scope, workspaceSlug);
+      const html = renderSectionsToHtml({
+        plan: homeJson,
+        tokens: {
+          colors: design.tokens.colors,
+          typography: design.tokens.typography,
+          rounded: design.tokens.rounded,
+          spacing: design.tokens.spacing,
+        },
+        workspaceName: wsName,
+      });
+      return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+  } catch (err) {
+    console.warn('[site-renderer] S3 home.json render failed:', err);
+  }
+
+  // 1. Try registered SiteLayout revision
   try {
     const plan = await getActiveRevision(workspaceSlug, 'web', env);
     if (plan) {
@@ -36,36 +66,7 @@ export async function handleSiteRequest(
       return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
   } catch (err) {
-    console.warn('[site-renderer] Section render failed, trying SiteLayout:', err);
-  }
-
-  // 1. Try SiteLayout-based rendering (registry system)
-  try {
-    const plan = await getActiveRevision(workspaceSlug, 'web', env);
-    if (plan) {
-      const designText = await readWorkspaceFile(env, scope, 'DESIGN.md');
-      let designTokens = { colors: {}, rounded: {}, spacing: {}, typography: {} };
-      if (designText) {
-        designTokens = parseDesignMD(designText);
-      }
-
-      const data: Record<string, any[]> = {};
-      const html = renderSiteToHtml({
-        plan,
-        designTokens: {
-          colors: designTokens.colors || {},
-          rounded: designTokens.rounded || {},
-          spacing: designTokens.spacing || {},
-          typography: designTokens.typography || {},
-        },
-        data,
-        workspaceName: workspaceSlug,
-      });
-
-      return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
-    }
-  } catch (err) {
-    console.warn('[site-renderer] SiteLayout render failed, falling back to template:', err);
+    console.warn('[site-renderer] Registered revision render failed:', err);
   }
 
   // 1. Check KV cache for DESIGN.md + site/pages.md config

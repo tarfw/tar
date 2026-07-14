@@ -108,14 +108,14 @@ app.post('/workspaces/create', async (c) => {
 
   try {
     // 0. Ensure D1 workspaces table has required columns
-    for (const col of ['user_id', 'type', 'custom_domain']) {
+    for (const col of ['user_id', 'type', 'custom_domain', 'name']) {
       try { await c.env.DB.prepare(`ALTER TABLE workspaces ADD COLUMN ${col} TEXT`).run(); } catch {}
     }
 
     // 1. Insert workspace into D1 with type
     await c.env.DB.prepare(
-      'INSERT OR IGNORE INTO workspaces (subdomain, scope, user_id, type) VALUES (?, ?, ?, ?)'
-    ).bind(wsSubdomain, scope, userId, workspaceType).run();
+      'INSERT OR IGNORE INTO workspaces (subdomain, scope, user_id, type, name) VALUES (?, ?, ?, ?, ?)'
+    ).bind(wsSubdomain, scope, userId, workspaceType, wsName).run();
 
     // 2. Initialize Turso DB for workspace
     let dbResult = 'skipped';

@@ -4,7 +4,6 @@
 interface __BaseEnv_Env {
 	STOREFRONT_CACHE: KVNamespace;
 	DB: D1Database;
-	ANTHROPIC_API_KEY: string;
 	TURSO_DATABASE_URL: string;
 	TURSO_AUTH_TOKEN: string;
 	TURSO_PLATFORM_TOKEN: string;
@@ -24,7 +23,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "ANTHROPIC_API_KEY" | "TURSO_DATABASE_URL" | "TURSO_AUTH_TOKEN" | "TURSO_PLATFORM_TOKEN" | "RAILWAY_S3_ENDPOINT" | "RAILWAY_S3_BUCKET" | "RAILWAY_S3_ACCESS_KEY" | "RAILWAY_S3_SECRET_KEY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "TURSO_DATABASE_URL" | "TURSO_AUTH_TOKEN" | "TURSO_PLATFORM_TOKEN" | "RAILWAY_S3_ENDPOINT" | "RAILWAY_S3_BUCKET" | "RAILWAY_S3_ACCESS_KEY" | "RAILWAY_S3_SECRET_KEY">> {}
 }
 
 // Begin runtime types

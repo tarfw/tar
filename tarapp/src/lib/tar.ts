@@ -98,8 +98,46 @@ export const tar = {
    * Create a new workspace.
    * POST /workspaces/create
    */
-  createWorkspace: (data: { name: string; subdomain: string; description?: string }) =>
+  createWorkspace: (data: { name: string; subdomain: string; description?: string; message?: string; modules?: string[] }) =>
     post('/workspaces/create', data),
+
+  // ── Tools Execute ────────────────────────────────────────────
+
+  /**
+   * Execute an action via the tools/execute endpoint.
+   * POST /tools/execute
+   */
+  toolsExecute: (action: string, params: Record<string, any>, scope: string) =>
+    post('/tools/execute', { action, params, scope }),
+
+  // ── Workspace Events ─────────────────────────────────────────
+
+  /**
+   * Write an event to a workspace's motion table.
+   * POST /workspace/:scope/events
+   */
+  writeEvent: (scope: string, type: string, data: Record<string, any>) =>
+    post(`/workspace/${scope}/events`, { type, data }),
+
+  // ── Workspace Inbox ──────────────────────────────────────────
+
+  /**
+   * Get pending tasks for a workspace.
+   * GET /workspace/:scope/inbox
+   */
+  getInbox: (scope: string, userId?: string, limit?: number) => {
+    const params: Record<string, string> = {};
+    if (userId) params.userId = userId;
+    if (limit) params.limit = String(limit);
+    return get(`/workspace/${scope}/inbox`, Object.keys(params).length ? params : undefined);
+  },
+
+  /**
+   * Mark a task as done.
+   * PATCH /inbox/:taskId
+   */
+  markTaskDone: (taskId: string, scope: string) =>
+    post(`/inbox/${taskId}`, { scope }),
 
   /**
    * List user's workspaces.

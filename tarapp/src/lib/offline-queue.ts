@@ -123,7 +123,7 @@ export async function getEffectiveStock(productId: string, lastKnownQty: number)
 }
 
 /**
- * Reconnect handler — push pending sales to DO one by one
+ * Reconnect handler — push pending sales to server via POST /tools/execute
  */
 export async function syncPendingSales(
   sendToServer: (sale: OfflineSale) => Promise<{ accepted: boolean; error?: string }>
@@ -150,6 +150,38 @@ export async function syncPendingSales(
   }
 
   return { accepted, rejected };
+}
+
+/**
+ * Default sync function using POST /tools/execute
+ */
+export async function defaultSyncSale(
+  sale: OfflineSale,
+  scope: string,
+  baseUrl: string
+): Promise<{ accepted: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${baseUrl}/tools/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'action_record_sale',
+        params: {
+          items: sale.data.items,
+          total: sale.data.total,
+          payment_method: sale.data.paymentMethod,
+        },
+        scope,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      return { accepted: false, error: err };
+    }
+    return { accepted: true };
+  } catch (e: any) {
+    return { accepted: false, error: e.message };
+  }
 }
 
 /**

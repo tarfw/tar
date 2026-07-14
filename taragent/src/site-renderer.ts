@@ -5,6 +5,8 @@ import { getOrCreateWorkspaceDb } from './lib/workspace-db';
 import { executeRead } from './lib/helpers';
 import { getActiveRevision } from './gen-ui/validator';
 import { renderSiteToHtml } from './gen-site/SiteRenderer';
+import { loadDesign } from './gen-ui/design-loader';
+import { renderSectionsToHtml } from './gen-ui/renderer';
 import './gen-site/registry/builtins'; // Register web components
 
 export async function handleSiteRequest(
@@ -16,21 +18,38 @@ export async function handleSiteRequest(
 ): Promise<Response> {
   const scope = `w:${workspaceSlug}`;
 
-  // 0. Try SiteLayout-based rendering first (new system)
+  // 0. Try section-based rendering first (new SECTIONS.json system)
   try {
     const plan = await getActiveRevision(workspaceSlug, 'web', env);
     if (plan) {
-      // Load design tokens
+      const design = await loadDesign(env, scope, workspaceSlug);
+      const html = renderSectionsToHtml({
+        plan,
+        tokens: {
+          colors: design.tokens.colors,
+          typography: design.tokens.typography,
+          rounded: design.tokens.rounded,
+          spacing: design.tokens.spacing,
+        },
+        workspaceName: workspaceSlug,
+      });
+      return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+  } catch (err) {
+    console.warn('[site-renderer] Section render failed, trying SiteLayout:', err);
+  }
+
+  // 1. Try SiteLayout-based rendering (registry system)
+  try {
+    const plan = await getActiveRevision(workspaceSlug, 'web', env);
+    if (plan) {
       const designText = await readWorkspaceFile(env, scope, 'DESIGN.md');
       let designTokens = { colors: {}, rounded: {}, spacing: {}, typography: {} };
       if (designText) {
         designTokens = parseDesignMD(designText);
       }
 
-      // Load data from resources
       const data: Record<string, any[]> = {};
-      // Resource resolution happens client-side via bindings
-
       const html = renderSiteToHtml({
         plan,
         designTokens: {

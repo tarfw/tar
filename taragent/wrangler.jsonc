@@ -24,19 +24,7 @@
       "bucket_name": "tar-storage"
     }
   ],
-
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["Editor"]
-    },
-    {
-      "tag": "v2",
-      "deleted_classes": ["Workspace", "Order"]
-    },
-    {
-      "tag": "v3",
-      "deleted_classes": ["Editor"]
-    }
-  ]
+  "triggers": {
+    "crons": ["* * * * *"]
+  }
 }

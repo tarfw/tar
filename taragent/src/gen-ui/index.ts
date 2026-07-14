@@ -22,5 +22,10 @@ export { getMemory, saveMemory, updateMemory, buildPlannerContext, applyMemoryPr
 // Publishing
 export { createPreview, approveRevision, promoteRevision, rejectRevision } from './publisher';
 
+// Design system (new)
+export { loadDesign, fetchAntiSlop } from './design-loader';
+export { runRuleCritic } from './rule-critic';
+export { renderSectionsToHtml } from './renderer';
+
 // API routes
 export { default as genUiRoutes } from './api';

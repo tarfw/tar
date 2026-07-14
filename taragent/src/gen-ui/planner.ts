@@ -25,18 +25,53 @@ SCHEMA:
     "path": "string (e.g. /, /catalog, /bookings)",
     "nodes": [{
       "id": "string (stable UUID, never changes between edits)",
-      "type": "string (must be in ComponentCatalog)",
-      "variant": "string (optional)",
+      "type": "string (must be in SectionTypes)",
+      "layout": "string (layout variant for this section type)",
       "props": {},
-      "bindings": { "key": { "resource": "resource.id" } },
-      "actions": { "key": { "action": "action.id" } },
+      "css": { "CSS property": "value" },
+      "responsive": { "mobile": { "css": {} }, "tablet": { "css": {} } },
       "children": [nested nodes]
     }]
   }]
 }
 
+SECTION TYPES (use these for site target):
+- hero_banner (layouts: centered, left-aligned, split, full-bleed)
+- content_grid (layouts: 1-col, 2-col, 3-col, 4-col, sidebar-left, sidebar-right) — supports children
+- product_grid (layouts: 2-col, 3-col, 4-col, carousel)
+- service_list (layouts: cards, list, compact, featured)
+- text_block (layouts: text-only, text-left-image-right, text-right-image-left, image-top)
+- testimonial (layouts: single, carousel, grid, masonry)
+- cta_button (layouts: centered, left, right, full-width)
+- contact_form (layouts: centered, split, inline)
+- map_embed (layouts: full-width, split, corner)
+- faq_accordion (layouts: single-column, two-column, grouped)
+- gallery (layouts: grid, masonry, carousel, single-row)
+- pricing_table (layouts: 2-col, 3-col, comparison, simple-list)
+- team_grid (layouts: grid, list, cards)
+- footer (layouts: simple, multi-column, minimal)
+
+CSS OVERRIDES (flat design — no shadows, no gradients, no transforms):
+Every section accepts optional "css" object with CSS properties.
+Every section accepts optional "responsive" object with mobile (<768px) and tablet (769-1024px) overrides.
+
+DESIGN RULES (hard slop = error, must regenerate):
+- No box-shadow, linear-gradient, radial-gradient, text-shadow, filter:drop-shadow
+- No transform:translateY on hover (use border/color change)
+- No position:fixed (breaks mobile)
+- No emoji in headings
+- No placeholder images (data URIs, SVG placeholders, solid color blocks)
+- No placeholder text (lorem ipsum, click here, coming soon)
+- No cliché headlines (best in town, welcome to, number one)
+- Max 2 CTAs per section
+- Max 4 grid columns
+- Max 6 sections per page
+- zIndex max 100
+- height max 100vh
+- opacity min 0.3
+
 RULES:
-- Use only types present in the ComponentCatalog for this target.
+- Use only section types listed above.
 - Use only resources from the ResourceCatalog.
 - Use only actions from the ActionCatalog.
 - Never write JS, JSX, HTML, CSS, SQL, or functions.
@@ -45,15 +80,18 @@ RULES:
 - Accessibility requirements override all visual preferences.
 - If a requirement cannot be met with available components, omit it.
 - Make the smallest change that achieves the goal.
+- Content stands on its own — no floating boxes around small text elements.
 
 PERSONALIZATION (apply top-down):
   authorization → accessibility → workspace policy → user preference → default
 
 BEFORE RETURNING, verify:
-- every type exists in catalog
+- every type is a valid section type
 - every resource and action is approved
 - all node IDs are unique
 - no executable content present
+- no shadow/gradient/transform properties in css objects
+- no placeholder images or text
 
 Return only the SiteLayout JSON.`;
 
@@ -116,8 +154,44 @@ async function callLLM(
   userPrompt: string,
   env: any
 ): Promise<string> {
+  // Primary: Cloudflare Workers AI — Z.AI GLM-4.7-Flash (free)
+  const cfAccountId = env.CLOUDFLARE_ACCOUNT_ID;
+  const cfApiToken = env.CLOUDFLARE_API_TOKEN;
+
+  if (cfAccountId && cfApiToken) {
+    try {
+      const res = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/zai-org/glm-4.7-flash`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${cfApiToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.2,
+            max_tokens: 4000,
+          }),
+        }
+      );
+
+      if (res.ok) {
+        const data = await res.json() as any;
+        const content = data?.result?.response || data?.result?.choices?.[0]?.message?.content;
+        if (content) return content;
+      }
+    } catch (err) {
+      console.warn('[planner] Workers AI failed, falling back to Groq:', err);
+    }
+  }
+
+  // Fallback: Groq — LLaMA 3.3 70B
   const groqKey = env.GROQ_API_KEY;
-  if (!groqKey) throw new Error('GROQ_API_KEY not configured');
+  if (!groqKey) throw new Error('No LLM API configured (need CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN or GROQ_API_KEY)');
 
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',

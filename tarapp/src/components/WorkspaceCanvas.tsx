@@ -83,6 +83,7 @@ export default function WorkspaceCanvas({
                     actions: section.actions,
                     data: section.data,
                     dataSource: section.dataSource,
+                    entities: section.entities,
                   }}
                   designTokens={registryTokens}
                   data={sectionData}

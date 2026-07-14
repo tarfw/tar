@@ -23,7 +23,10 @@ export const UINodeSchema: z.ZodType<UINode> = z.lazy(() =>
     id: z.string().min(1),
     type: z.string().min(1),
     variant: z.string().optional(),
+    layout: z.string().optional(),
     props: z.record(z.string(), z.any()).default({}),
+    css: z.record(z.string(), z.any()).optional(),
+    responsive: z.record(z.string(), z.any()).optional(),
     bindings: z.record(z.string(), BindingSchema).optional(),
     actions: z.record(z.string(), ActionRefSchema).optional(),
     children: z.array(UINodeSchema).optional(),
@@ -34,7 +37,10 @@ export type UINode = {
   id: string;
   type: string;
   variant?: string;
+  layout?: string;
   props: Record<string, any>;
+  css?: Record<string, any>;
+  responsive?: Record<string, any>;
   bindings?: Record<string, { resource: string }>;
   actions?: Record<string, { action: string }>;
   children?: UINode[];

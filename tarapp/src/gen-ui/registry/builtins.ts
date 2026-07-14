@@ -11,6 +11,7 @@ import BookingGrid from './sections/BookingGrid';
 import TimelineFeed from './sections/TimelineFeed';
 import QuickActions from './sections/QuickActions';
 import ContentCard from './sections/ContentCard';
+import EntityNavigator from './sections/EntityNavigator';
 
 // Register all built-in native components
 registerComponent('metric-card', {
@@ -60,4 +61,11 @@ registerComponent('content-card', {
   label: 'Content Card',
   icon: 'document-text-outline',
   description: 'Text content card with optional image',
+});
+
+registerComponent('entity-navigator', {
+  component: EntityNavigator,
+  label: 'Entity Navigator',
+  icon: 'navigate-outline',
+  description: 'Grid of pressable entity navigation chips',
 });

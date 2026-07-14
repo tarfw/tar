@@ -1,61 +1,27 @@
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, ActivityIndicator, ScrollView, Dimensions, Alert, Keyboard, Pressable } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, ActivityIndicator, Keyboard, ScrollView } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { tar } from '@/lib/tar';
 
-const PRESETS: Record<string, { label: string; icon: string; modules: string[] }> = {
-  restaurant: {
-    label: 'Restaurant / Cafe',
-    icon: 'restaurant-outline',
-    modules: ['orders', 'inventory', 'bookings', 'crm', 'reports', 'expenses', 'documents'],
-  },
-  salon: {
-    label: 'Salon / Spa',
-    icon: 'cut-outline',
-    modules: ['bookings', 'crm', 'orders', 'reports', 'expenses', 'documents'],
-  },
-  clinic: {
-    label: 'Clinic / Medical',
-    icon: 'medical-outline',
-    modules: ['bookings', 'crm', 'projects', 'support', 'reports', 'expenses', 'documents'],
-  },
-  retail: {
-    label: 'Retail Shop',
-    icon: 'cart-outline',
-    modules: ['orders', 'inventory', 'crm', 'reports', 'expenses', 'documents'],
-  },
-  gym: {
-    label: 'Gym / Fitness',
-    icon: 'barbell-outline',
-    modules: ['bookings', 'crm', 'lms', 'hr', 'reports', 'expenses', 'documents'],
-  },
-  agency: {
-    label: 'Office / Agency',
-    icon: 'briefcase-outline',
-    modules: ['crm', 'projects', 'hr', 'support', 'reports', 'expenses', 'documents'],
-  },
-};
+interface CapabilityChip {
+  label: string;
+  text: string;
+  icon: string;
+}
 
-const ALL_MODULES = [
-  'orders',
-  'inventory',
-  'bookings',
-  'crm',
-  'logistics',
-  'projects',
-  'hr',
-  'lms',
-  'listings',
-  'support',
-  'reports',
-  'expenses',
-  'documents',
-  'team-chat',
+const UNIVERSAL_CAPABILITIES: CapabilityChip[] = [
+  { label: 'POS / Sales', text: 'POS / sales recording', icon: 'cash-outline' },
+  { label: 'Inventory', text: 'inventory tracking', icon: 'cube-outline' },
+  { label: 'CRM', text: 'customer relationship management', icon: 'people-outline' },
+  { label: 'Bookings', text: 'appointment booking slots', icon: 'calendar-outline' },
+  { label: 'Team Chat', text: 'team chat integration', icon: 'chatbubbles-outline' },
+  { label: 'Projects', text: 'project task tracking', icon: 'checkbox-outline' },
 ];
 
 export default function AddWorkspaceScreen() {
@@ -63,15 +29,13 @@ export default function AddWorkspaceScreen() {
   const theme = useTheme();
   const router = useRouter();
 
-  const [step, setStep] = useState(1); // 1 = setup, 2 = success
-  const [businessName, setBusinessName] = useState('');
-  const [businessFocus, setBusinessFocus] = useState('');
-  const [selectedPreset, setSelectedPreset] = useState<string>('restaurant');
-  const [selectedModules, setSelectedModules] = useState<Set<string>>(new Set(PRESETS.restaurant.modules));
+  const [businessMessage, setBusinessMessage] = useState('');
   const [creating, setCreating] = useState(false);
-  const [created, setCreated] = useState<{ scope: string; subdomain: string } | null>(null);
   const [error, setError] = useState('');
   const [hasExisting, setHasExisting] = useState(false);
+  const [dynamicSuggestions, setDynamicSuggestions] = useState<Array<{ label: string; text: string }>>([]);
+
+  const messageInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     tar.listWorkspaces()
@@ -83,41 +47,94 @@ export default function AddWorkspaceScreen() {
       .catch(() => {});
   }, []);
 
-  const handleSelectPreset = (key: string) => {
-    setSelectedPreset(key);
-    setSelectedModules(new Set(PRESETS[key].modules));
-  };
+  useEffect(() => {
+    const text = businessMessage.toLowerCase();
+    const suggestions: Array<{ label: string; text: string }> = [];
 
-  const handleToggleModule = (mod: string) => {
-    const next = new Set(selectedModules);
-    if (next.has(mod)) {
-      next.delete(mod);
-    } else {
-      next.add(mod);
+    if (text.length > 2) {
+      if (
+        (text.includes('cafe') || text.includes('restaurant') || text.includes('shop') || text.includes('store') || text.includes('bakery') || text.includes('boutique') || text.includes('pizza') || text.includes('food')) &&
+        !text.includes('inventory')
+      ) {
+        suggestions.push({ label: '📦 Add Stock/Inventory', text: 'inventory tracking' });
+      }
+      if (
+        (text.includes('cafe') || text.includes('restaurant') || text.includes('shop') || text.includes('store') || text.includes('sale') || text.includes('pizza') || text.includes('pos')) &&
+        !text.includes('sales') && !text.includes('pos')
+      ) {
+        suggestions.push({ label: '💰 Add POS / Sales', text: 'POS / sales recording' });
+      }
+      if (
+        (text.includes('salon') || text.includes('doctor') || text.includes('dentist') || text.includes('clinic') || text.includes('consult') || text.includes('class') || text.includes('book') || text.includes('tutor') || text.includes('appoint')) &&
+        !text.includes('booking')
+      ) {
+        suggestions.push({ label: '📅 Add Appointment Bookings', text: 'appointment booking slots' });
+      }
+      if (
+        (text.includes('client') || text.includes('customer') || text.includes('lead') || text.includes('contact') || text.includes('crm') || text.includes('pipeline')) &&
+        !text.includes('crm') && !text.includes('customer relationship')
+      ) {
+        suggestions.push({ label: '👤 Add CRM / Contacts', text: 'customer relationship management' });
+      }
+      if (
+        (text.includes('team') || text.includes('chat') || text.includes('slack') || text.includes('collab') || text.includes('group')) &&
+        !text.includes('chat')
+      ) {
+        suggestions.push({ label: '💬 Add Team Chat', text: 'team chat integration' });
+      }
+      if (
+        (text.includes('project') || text.includes('task') || text.includes('track') || text.includes('dev') || text.includes('agency')) &&
+        !text.includes('project') && !text.includes('task')
+      ) {
+        suggestions.push({ label: '📋 Add Project Tracking', text: 'project task tracking' });
+      }
     }
-    setSelectedModules(next);
+
+    setDynamicSuggestions(suggestions);
+  }, [businessMessage]);
+
+  const appendCapability = (textToAppend: string) => {
+    setBusinessMessage((prev) => {
+      const trimmed = prev.trim();
+      if (!trimmed) {
+        return `A business with ${textToAppend}`;
+      }
+      if (trimmed.toLowerCase().includes(textToAppend.toLowerCase())) {
+        return prev;
+      }
+      
+      const hasModifier = trimmed.toLowerCase().includes('with') || trimmed.toLowerCase().includes('managing') || trimmed.toLowerCase().includes('tracking');
+      if (hasModifier) {
+        return `${trimmed}, ${textToAppend}`;
+      } else {
+        return `${trimmed} with ${textToAppend}`;
+      }
+    });
   };
 
   const handleCreate = async () => {
-    if (!businessName.trim() || !businessFocus.trim() || selectedModules.size === 0) return;
+    if (!businessMessage.trim() || creating) return;
     Keyboard.dismiss();
     setCreating(true);
     setError('');
     try {
-      const subdomain = businessName
+      const subdomain = businessMessage
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
+        .replace(/^-|-$/g, '')
+        .slice(0, 30);
 
-      const result = await tar.createWorkspace({
-        name: businessName.trim(),
-        template: selectedPreset,
+      const workspaceName = subdomain
+        .split('-')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+
+      await tar.createWorkspace({
+        name: workspaceName,
         subdomain,
-        description: businessFocus.trim(),
-        modules: Array.from(selectedModules),
-      } as any);
+        message: businessMessage.trim(),
+      });
 
-      // Mark onboarding as done
       const userId = await SecureStore.getItemAsync('google_auth_user')
         .then((u) => (u ? JSON.parse(u).id : null))
         .catch(() => null);
@@ -125,13 +142,20 @@ export default function AddWorkspaceScreen() {
         await SecureStore.setItemAsync(`onb_${userId}`, 'true');
       }
       await SecureStore.setItemAsync('active_workspace_subdomain', subdomain);
-      await SecureStore.setItemAsync('redirect_to_workspaces', 'true');
 
-      setCreated({ scope: result.scope, subdomain });
-      setStep(2);
+      // Redirect immediately to the workspaces screen
+      try {
+        router.replace('/(tabs)/workspaces');
+      } catch (e1) {
+        console.warn('[AddWorkspace] Redirect to /(tabs)/workspaces failed, trying /workspaces:', e1);
+        try {
+          router.replace('/workspaces');
+        } catch (e2) {
+          router.replace('/');
+        }
+      }
     } catch (e: any) {
       setError(e.message || 'Failed to create workspace');
-    } finally {
       setCreating(false);
     }
   };
@@ -146,188 +170,89 @@ export default function AddWorkspaceScreen() {
     }
   };
 
-  if (step === 2 && created) {
+  if (creating) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.background, paddingBottom: insets.bottom + 24, paddingTop: insets.top + 80, paddingHorizontal: 24, justifyContent: 'space-between', alignItems: 'center' }]}>
-        <View style={{ justifyContent: 'center', alignItems: 'center', marginTop: 140 }}>
-          <Ionicons name="checkmark-circle" size={80} color={theme.primary} />
-          <Text style={[styles.titleSuccess, { color: theme.text, marginTop: 24 }]}>Workspace is live!</Text>
-          <Text style={[styles.urlText, { color: theme.textMuted, marginTop: 8 }]}>
-            {created.subdomain}.tarai.space
-          </Text>
-        </View>
-
-        <View style={{ width: '100%', paddingBottom: 16 }}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.button,
-              {
-                backgroundColor: theme.primary,
-                opacity: pressed ? 0.75 : 1,
-              }
-            ]}
-            onPress={() => {
-              try {
-                router.replace('/(tabs)/workspaces');
-              } catch (e1) {
-                console.warn('[AddWorkspace] Redirect to /(tabs)/workspaces failed, trying /workspaces:', e1);
-                try {
-                  router.replace('/workspaces');
-                } catch (e2) {
-                  console.warn('[AddWorkspace] Redirect to /workspaces failed, trying /(tabs)/inbox:', e2);
-                  try {
-                    router.replace('/(tabs)/inbox');
-                  } catch (e3) {
-                    console.warn('[AddWorkspace] Redirect to /(tabs)/inbox failed, trying /inbox:', e3);
-                    try {
-                      router.replace('/inbox');
-                    } catch (e4) {
-                      console.warn('[AddWorkspace] Redirect to /inbox failed, falling back to /:', e4);
-                      router.replace('/');
-                    }
-                  }
-                }
-              }
-            }}>
-            <Text style={[styles.buttonText, { color: '#fff' }]}>Open Workspace</Text>
-          </Pressable>
-        </View>
+      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={[styles.loadingTitle, { color: theme.text, marginTop: 24 }]}>Generating Workspace</Text>
+        <Text style={[styles.loadingSubtitle, { color: theme.textMuted, marginTop: 8 }]}>
+          Building modules and provisioning database...
+        </Text>
       </View>
     );
   }
 
-  const canCreate = businessName.trim() && businessFocus.trim() && selectedModules.size > 0 && !creating;
+  const canCreate = businessMessage.trim() && !creating;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}>
-        <View style={[styles.content, { paddingTop: insets.top + 24 }]}>
-          
-          {/* Header Row with optional Back Arrow */}
-          <View style={styles.headerRow}>
-            {hasExisting ? (
-              <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                <Ionicons name="arrow-back" size={24} color={theme.text} />
-              </TouchableOpacity>
-            ) : (
-              <View style={{ width: 24 }} />
-            )}
-            <Text style={[styles.headerTitle, { color: theme.text }]}>Add Workspace</Text>
-            <View style={{ width: 24 }} />
+      {hasExisting && (
+        <TouchableOpacity onPress={handleBack} style={[styles.backButton, { top: insets.top + 12 }]}>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
+        </TouchableOpacity>
+      )}
+
+      <KeyboardAwareScrollView 
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 140 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={[styles.content, { paddingTop: insets.top + 40 }]}>
+          <Text style={[styles.title, { color: theme.text }]}>Create a Workspace</Text>
+
+          {/* Prompt Canvas Input Box */}
+          <View style={[styles.inputCard, { backgroundColor: theme.backgroundElement || '#f8fafc', borderColor: theme.border || 'rgba(0,0,0,0.06)' }]}>
+            <TextInput
+              ref={messageInputRef}
+              style={[styles.textArea, { color: theme.text }]}
+              value={businessMessage}
+              onChangeText={setBusinessMessage}
+              placeholder="Describe your business, store, or project in your own words..."
+              placeholderTextColor={theme.textMuted}
+              multiline
+              autoFocus
+              editable={!creating}
+            />
           </View>
 
-          <Text style={{ color: theme.textMuted, fontSize: 14, textAlign: 'center', marginTop: 4, marginBottom: 24 }}>
-            Create a new customized AI agent workspace
-          </Text>
-
-          <View style={{ gap: 16 }}>
-            <TextInput
-              style={[styles.titleInput, { color: theme.text, borderBottomColor: theme.border, borderBottomWidth: 1 }]}
-              value={businessName}
-              onChangeText={setBusinessName}
-              placeholder="Business / Workspace Name"
-              placeholderTextColor={theme.textMuted}
-              editable={!creating}
-            />
-
-            <TextInput
-              style={[styles.bodyInput, { color: theme.text, borderBottomColor: theme.border, borderBottomWidth: 1 }]}
-              value={businessFocus}
-              onChangeText={setBusinessFocus}
-              placeholder="What does your business do? (e.g. sourdough bakery and cafe)"
-              placeholderTextColor={theme.textMuted}
-              editable={!creating}
-              multiline
-              numberOfLines={3}
-            />
-
-            {/* Business Presets */}
-            <View style={{ marginTop: 12 }}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Select Business Preset</Text>
-              <View style={styles.presetsGrid}>
-                {Object.entries(PRESETS).map(([key, info]) => {
-                  const isSelected = selectedPreset === key;
-                  return (
-                    <TouchableOpacity
-                      key={key}
-                      style={[
-                        styles.presetCard,
-                        {
-                          borderColor: isSelected ? theme.primary : theme.border,
-                          backgroundColor: isSelected ? `${theme.primary}10` : 'transparent',
-                        },
-                      ]}
-                      onPress={() => handleSelectPreset(key)}
-                      disabled={creating}
-                    >
-                      <Ionicons
-                        name={info.icon as any}
-                        size={24}
-                        color={isSelected ? theme.primary : theme.textMuted}
-                      />
-                      <Text
-                        style={[
-                          styles.presetLabel,
-                          {
-                            color: isSelected ? theme.primary : theme.text,
-                            fontWeight: isSelected ? '700' : '500',
-                          },
-                        ]}
-                      >
-                        {info.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+          {/* Dynamic AI Suggestion Chips (As-You-Type) */}
+          {dynamicSuggestions.length > 0 && (
+            <View style={styles.sectionContainer}>
+              <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>AI Recommendations</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
+                {dynamicSuggestions.map((item, idx) => (
+                  <TouchableOpacity
+                    key={`dyn_${idx}`}
+                    onPress={() => appendCapability(item.text)}
+                    style={[styles.chip, { backgroundColor: theme.primary + '15', borderColor: theme.primary + '30' }]}
+                  >
+                    <Text style={[styles.chipText, { color: theme.primary }]}>{item.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
+          )}
 
-            {/* Modules / Features Selection */}
-            <View style={{ marginTop: 12 }}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Configure Features</Text>
-              <Text style={{ color: theme.textMuted, fontSize: 12, marginBottom: 12 }}>
-                Select modules to generate. Recommended features are pre-selected.
-              </Text>
-              <View style={styles.chipsContainer}>
-                {ALL_MODULES.map((mod) => {
-                  const isSelected = selectedModules.has(mod);
-                  return (
-                    <TouchableOpacity
-                      key={mod}
-                      style={[
-                        styles.chip,
-                        {
-                          borderColor: isSelected ? theme.primary : theme.border,
-                          backgroundColor: isSelected ? theme.primary : 'transparent',
-                        },
-                      ]}
-                      onPress={() => handleToggleModule(mod)}
-                      disabled={creating}
-                    >
-                      {isSelected && (
-                        <Ionicons name="checkmark" size={14} color="#fff" style={{ marginRight: 4 }} />
-                      )}
-                      <Text
-                        style={[
-                          styles.chipText,
-                          {
-                            color: isSelected ? '#fff' : theme.text,
-                            fontWeight: isSelected ? '600' : '400',
-                          },
-                        ]}
-                      >
-                        {mod.replace('-', ' ')}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
+          {/* Universal Capability Modifiers */}
+          <View style={styles.sectionContainer}>
+            <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>Universal Capabilities</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
+              {UNIVERSAL_CAPABILITIES.map((item, idx) => (
+                <TouchableOpacity
+                  key={`uni_${idx}`}
+                  onPress={() => appendCapability(item.text)}
+                  style={[styles.chip, { backgroundColor: theme.backgroundElement || '#f8fafc', borderColor: theme.border || 'rgba(0,0,0,0.06)' }]}
+                >
+                  <Ionicons name={item.icon as any} size={14} color={theme.text} style={{ marginRight: 4 }} />
+                  <Text style={[styles.chipText, { color: theme.text }]}>+ {item.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Fixed Bottom Button bar */}
       <View style={[styles.floatingBottom, { paddingBottom: insets.bottom + 16, backgroundColor: theme.background }]}>
@@ -337,13 +262,9 @@ export default function AddWorkspaceScreen() {
           onPress={handleCreate}
           disabled={!canCreate}
         >
-          {creating ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={[styles.buttonText, { color: canCreate ? '#fff' : theme.textMuted }]}>
-              Generate Workspace
-            </Text>
-          )}
+          <Text style={[styles.buttonText, { color: canCreate ? '#fff' : theme.textMuted }]}>
+            Generate Workspace
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -352,77 +273,62 @@ export default function AddWorkspaceScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: 24 },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
+  content: { flex: 1, paddingHorizontal: 20 },
   backButton: {
-    padding: 4,
+    position: 'absolute',
+    left: 12,
+    zIndex: 10,
+    padding: 8,
   },
-  headerTitle: {
-    fontSize: 24,
+  title: {
+    fontSize: 26,
     fontWeight: '800',
+    letterSpacing: -0.5,
     textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 24,
   },
-  titleSuccess: { fontSize: 28, fontWeight: '700', textAlign: 'center' },
-  urlText: { fontSize: 16, textAlign: 'center' },
-  titleInput: {
-    fontSize: 20,
-    fontWeight: '700',
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderWidth: 0,
+  inputCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    minHeight: 130,
+    maxHeight: 180,
+    padding: 14,
+    marginBottom: 20,
   },
-  bodyInput: {
-    fontSize: 15,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderWidth: 0,
-    lineHeight: 22,
+  textArea: {
+    fontSize: 16,
+    lineHeight: 24,
+    height: '100%',
     textAlignVertical: 'top',
   },
+  sectionContainer: {
+    marginBottom: 16,
+  },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 12,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    paddingLeft: 4,
   },
-  presetsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  presetCard: {
-    width: (Dimensions.get('window').width - 64) / 2,
-    borderWidth: 1.5,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    gap: 8,
-  },
-  presetLabel: {
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  chipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  chipsScroll: {
+    paddingHorizontal: 4,
     gap: 8,
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderRadius: 20,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
   },
   chipText: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '500',
   },
-  bottom: { paddingHorizontal: 24 },
   floatingBottom: {
     position: 'absolute',
     bottom: 0,
@@ -436,4 +342,6 @@ const styles = StyleSheet.create({
   button: { paddingVertical: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   buttonText: { fontSize: 16, fontWeight: '600' },
   error: { fontSize: 14, color: '#f44336', marginTop: 12, textAlign: 'center' },
+  loadingTitle: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
+  loadingSubtitle: { fontSize: 14, textAlign: 'center', paddingHorizontal: 16 },
 });

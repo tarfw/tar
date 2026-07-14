@@ -6,8 +6,13 @@ import { getUserTimeline } from './lib/inbox';
 import { executeRead, executeCreate, executeUpdate, executeDelete } from './lib/helpers';
 import { handleChannelMessage, sendChannelMessage, getChannelConfig } from './channels';
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
-import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspace, listWorkspaceModules, readWithFallback } from './lib/okf';
+import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspace, listWorkspaceModules, readWithFallback, scaffoldOkfFolders, generateOkfContent } from './lib/okf';
 import { CORE_MODULES } from './lib/core-modules';
+import { extractBusinessInfo } from './lib/extract-business';
+import { writeEvent, getUserInbox, markTaskDone } from './lib/events';
+import { runRuleCritic } from './gen-ui/rule-critic';
+import { loadDesign } from './gen-ui/design-loader';
+import { renderSectionsToHtml } from './gen-ui/renderer';
 
 import { getOrCreateWorkspaceDb } from './lib/workspace-db';
 import { dbContext } from './lib/db';
@@ -40,6 +45,12 @@ app.route('/gen-ui', genUiRoutes);
 // GET /workspaces — list user's workspaces
 app.get('/workspaces', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
+
+  // Ensure columns exist
+  for (const col of ['user_id', 'type', 'custom_domain']) {
+    try { await c.env.DB.prepare(`ALTER TABLE workspaces ADD COLUMN ${col} TEXT`).run(); } catch {}
+  }
+
   const result = await c.env.DB.prepare(
     'SELECT subdomain, scope, user_id, type FROM workspaces WHERE user_id = ?'
   ).bind(userId).all();
@@ -56,36 +67,61 @@ app.get('/workspaces', async (c) => {
 app.post('/workspaces/create', async (c) => {
   const userId = c.req.header('X-User-Id') || 'guest';
   const body = await c.req.json();
-  const { name, subdomain, description, modules } = body || {};
+  const { name, subdomain, description, modules, message } = body || {};
 
-  if (!name || !subdomain) {
-    return c.json({ error: 'Missing name or subdomain' }, 400);
+  if (!message && (!name || !subdomain)) {
+    return c.json({ error: 'Missing name/subdomain or message' }, 400);
   }
 
-  const scope = `w:${subdomain}`;
+  // AI extracts business info from message if provided (one-message creation)
+  let businessData: any = null;
+  if (message) {
+    try {
+      businessData = await extractBusinessInfo(message, c.env);
+    } catch (err) {
+      console.warn('[workspaces] Business extraction failed:', err);
+    }
+  }
 
-  // AI generates workspace type from description (display-only)
-  const workspaceType = description?.toLowerCase().includes('restaurant') ? 'restaurant'
-    : description?.toLowerCase().includes('salon') || description?.toLowerCase().includes('beauty') ? 'salon'
-    : description?.toLowerCase().includes('clinic') || description?.toLowerCase().includes('doctor') ? 'clinic'
-    : description?.toLowerCase().includes('gym') || description?.toLowerCase().includes('fitness') ? 'gym'
-    : description?.toLowerCase().includes('retail') || description?.toLowerCase().includes('store') ? 'retail'
+  // Use extracted data or provided fields
+  const wsName = businessData?.name || name;
+  const wsDescription = businessData?.description || description || '';
+
+  // Generate subdomain from business name if message was provided
+  const wsSubdomain = message && businessData?.name
+    ? businessData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)
+    : subdomain;
+
+  const scope = `w:${wsSubdomain}`;
+
+  // AI generates workspace type from description
+  const workspaceType = businessData?.type
+    || wsDescription.toLowerCase().includes('restaurant') ? 'restaurant'
+    : wsDescription.toLowerCase().includes('salon') || wsDescription.toLowerCase().includes('beauty') ? 'salon'
+    : wsDescription.toLowerCase().includes('clinic') || wsDescription.toLowerCase().includes('doctor') ? 'clinic'
+    : wsDescription.toLowerCase().includes('gym') || wsDescription.toLowerCase().includes('fitness') ? 'gym'
+    : wsDescription.toLowerCase().includes('retail') || wsDescription.toLowerCase().includes('store') ? 'retail'
     : 'business';
 
   // AI picks modules based on description if not provided
   const mods = modules || ['orders', 'inventory', 'crm', 'reports'];
 
   try {
+    // 0. Ensure D1 workspaces table has required columns
+    for (const col of ['user_id', 'type', 'custom_domain']) {
+      try { await c.env.DB.prepare(`ALTER TABLE workspaces ADD COLUMN ${col} TEXT`).run(); } catch {}
+    }
+
     // 1. Insert workspace into D1 with type
     await c.env.DB.prepare(
       'INSERT OR IGNORE INTO workspaces (subdomain, scope, user_id, type) VALUES (?, ?, ?, ?)'
-    ).bind(subdomain, scope, userId, workspaceType).run();
+    ).bind(wsSubdomain, scope, userId, workspaceType).run();
 
     // 2. Initialize Turso DB for workspace
     let dbResult = 'skipped';
     if (c.env.TURSO_PLATFORM_TOKEN) {
       try {
-        const { url } = await getOrCreateWorkspaceDb(c.env.DB, subdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
+        const { url } = await getOrCreateWorkspaceDb(c.env.DB, wsSubdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
         dbResult = `created: ${url}`;
       } catch (dbErr: any) {
         dbResult = `error: ${dbErr.message}`;
@@ -93,10 +129,10 @@ app.post('/workspaces/create', async (c) => {
       }
     }
 
-    // 3. Link user as owner via graph (optional)
+    // 3. Link user as owner via graph
     try {
       if (c.env.TURSO_PLATFORM_TOKEN) {
-        const wsCreds = await getOrCreateWorkspaceDb(c.env.DB, subdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
+        const wsCreds = await getOrCreateWorkspaceDb(c.env.DB, wsSubdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
         await dbContext.run({ url: wsCreds.url, token: wsCreds.authToken }, async () => {
           await executeCreate({
             table: 'graph',
@@ -117,17 +153,30 @@ app.post('/workspaces/create', async (c) => {
       console.warn('[workspaces] Graph link skipped:', graphErr);
     }
 
-    // 4. Generate SKILL.md files via AI
+    // 4. Scaffold OKF folder structure + generate content
     let okfResult = 'skipped';
     try {
-      await initWorkspace(c.env, scope, name, mods, description);
+      await scaffoldOkfFolders(c.env, scope, wsName, mods);
+
+      if (businessData) {
+        await generateOkfContent(c.env, scope, businessData, mods, userId);
+      }
+
+      await initWorkspace(c.env, scope, wsName, mods, wsDescription);
       okfResult = 'done';
     } catch (okfErr: any) {
       okfResult = `error: ${okfErr.message}`;
       console.warn('[workspaces] OKF init error:', okfErr);
     }
 
-    return c.json({ scope, subdomain, name, okf: okfResult, db: dbResult });
+    return c.json({
+      scope,
+      subdomain: wsSubdomain,
+      name: wsName,
+      business: businessData,
+      okf: okfResult,
+      db: dbResult,
+    });
   } catch (e: any) {
     console.error('[workspaces] Create failed:', e.message);
     return c.json({ error: e.message }, 500);
@@ -172,6 +221,22 @@ const TOOL_MAP: Record<string, Function> = {
   link: executeCreate,
   search: executeRead,
 };
+
+// POST /tools/execute — read .md from S3, parse, run steps against Turso
+app.post('/tools/execute', async (c) => {
+  const body = await c.req.json();
+  const { action, params, scope } = body;
+  if (!action || !scope) {
+    return c.json({ error: 'Missing action or scope' }, 400);
+  }
+
+  try {
+    const result = await executeAITask(c.env, action, params || {}, scope);
+    return c.json(result);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
 
 // POST /tools/:name
 app.post('/tools/:name', async (c) => {
@@ -425,6 +490,147 @@ Please modify the markdown and output the complete updated markdown file.`;
   } catch (err: any) {
     console.error('[customize] Error:', err);
     return c.json({ error: err.message }, 500);
+  }
+});
+
+// ============================================================
+// Workspace Event + Inbox Routes
+// ============================================================
+
+// POST /workspace/:scope/events — write event to motion table, trigger inbox rules
+app.post('/workspace/:scope/events', async (c) => {
+  const scope = c.req.param('scope');
+  const body = await c.req.json();
+  const { type, data, created_by } = body || {};
+
+  if (!type) {
+    return c.json({ error: 'Missing event type' }, 400);
+  }
+
+  // Resolve workspace DB
+  const subdomain = scope.replace('w:', '');
+  let dbUrl = '';
+  let dbToken = '';
+
+  if (c.env.DB) {
+    try {
+      const ws = await c.env.DB.prepare(
+        'SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
+      ).bind(subdomain).first();
+
+      if (ws?.turso_url && ws?.turso_auth_token) {
+        dbUrl = ws.turso_url;
+        dbToken = ws.turso_auth_token;
+      } else if (c.env.TURSO_PLATFORM_TOKEN) {
+        const credentials = await getOrCreateWorkspaceDb(c.env.DB, subdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
+        dbUrl = credentials.url;
+        dbToken = credentials.authToken;
+      }
+    } catch (err) {
+      console.warn('[events] Failed to resolve workspace DB:', err);
+    }
+  }
+
+  if (!dbUrl) {
+    return c.json({ error: 'Workspace database not available' }, 500);
+  }
+
+  try {
+    const result = await writeEvent(dbUrl, dbToken, {
+      type,
+      data: data || {},
+      created_by: created_by || c.req.header('X-User-Id') || 'system',
+      scope,
+    });
+    return c.json({ ok: true, eventId: result.id });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// GET /workspace/:scope/inbox — return pending tasks for user
+app.get('/workspace/:scope/inbox', async (c) => {
+  const scope = c.req.param('scope');
+  const userId = c.req.query('userId') || c.req.header('X-User-Id') || 'guest';
+  const limit = parseInt(c.req.query('limit') || '50');
+
+  const subdomain = scope.replace('w:', '');
+  let dbUrl = '';
+  let dbToken = '';
+
+  if (c.env.DB) {
+    try {
+      const ws = await c.env.DB.prepare(
+        'SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
+      ).bind(subdomain).first();
+
+      if (ws?.turso_url && ws?.turso_auth_token) {
+        dbUrl = ws.turso_url;
+        dbToken = ws.turso_auth_token;
+      } else if (c.env.TURSO_PLATFORM_TOKEN) {
+        const credentials = await getOrCreateWorkspaceDb(c.env.DB, subdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
+        dbUrl = credentials.url;
+        dbToken = credentials.authToken;
+      }
+    } catch (err) {
+      console.warn('[inbox] Failed to resolve workspace DB:', err);
+    }
+  }
+
+  if (!dbUrl) {
+    return c.json({ tasks: [] });
+  }
+
+  try {
+    const tasks = await getUserInbox(dbUrl, dbToken, userId, limit);
+    return c.json({ tasks });
+  } catch (e: any) {
+    return c.json({ tasks: [], error: e.message });
+  }
+});
+
+// PATCH /inbox/:taskId — mark task done
+app.patch('/inbox/:taskId', async (c) => {
+  const taskId = c.req.param('taskId');
+  const body = await c.req.json().catch(() => ({}));
+  const scope = body.scope || '';
+
+  if (!scope) {
+    return c.json({ error: 'Missing scope' }, 400);
+  }
+
+  const subdomain = scope.replace('w:', '');
+  let dbUrl = '';
+  let dbToken = '';
+
+  if (c.env.DB) {
+    try {
+      const ws = await c.env.DB.prepare(
+        'SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
+      ).bind(subdomain).first();
+
+      if (ws?.turso_url && ws?.turso_auth_token) {
+        dbUrl = ws.turso_url;
+        dbToken = ws.turso_auth_token;
+      } else if (c.env.TURSO_PLATFORM_TOKEN) {
+        const credentials = await getOrCreateWorkspaceDb(c.env.DB, subdomain, scope, c.env.TURSO_PLATFORM_TOKEN);
+        dbUrl = credentials.url;
+        dbToken = credentials.authToken;
+      }
+    } catch (err) {
+      console.warn('[inbox] Failed to resolve workspace DB:', err);
+    }
+  }
+
+  if (!dbUrl) {
+    return c.json({ error: 'Workspace database not available' }, 500);
+  }
+
+  try {
+    await markTaskDone(dbUrl, dbToken, taskId);
+    return c.json({ ok: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
   }
 });
 

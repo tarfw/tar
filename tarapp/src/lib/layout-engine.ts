@@ -1,12 +1,13 @@
 import { parseDesignTokens, DesignTokens } from './design-tokens';
 
 export interface UISection {
-  type: 'quick-actions' | 'metric-card' | 'data-table' | 'timeline-feed' | 'booking-grid' | 'catalog-grid' | 'report-chart' | 'status-board';
+  type: 'quick-actions' | 'metric-card' | 'data-table' | 'timeline-feed' | 'booking-grid' | 'catalog-grid' | 'report-chart' | 'status-board' | 'entity-navigator';
   title?: string;
   actions?: string[];
   data?: string;
   dataSource?: string;
   columns?: string[];
+  entities?: string[];
 }
 
 export interface WorkspaceAction {
@@ -125,6 +126,12 @@ export function parseYamlFrontmatter(mdContent: string): { frontmatter: any; mar
         const actMatch = trimmed.match(/actions\s*:\s*\[(.*)\]/);
         if (actMatch) {
           currentSection.actions = actMatch[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+        }
+      } else if (trimmed.startsWith('entities:') && currentSection) {
+        // e.g. entities: [pipeline, contacts]
+        const entMatch = trimmed.match(/entities\s*:\s*\[(.*)\]/);
+        if (entMatch) {
+          currentSection.entities = entMatch[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
         }
       }
     }

@@ -350,6 +350,21 @@ export async function initWorkspaceSync(subdomain: string): Promise<void> {
     for (const sql of SCHEMA_STATEMENTS) {
       try { await db.exec(sql); } catch (_) {}
     }
+    const migrations = [
+      'ALTER TABLE form ADD COLUMN active INTEGER DEFAULT 1',
+      'ALTER TABLE form ADD COLUMN owner TEXT',
+      'ALTER TABLE form ADD COLUMN time TEXT',
+      'ALTER TABLE matter ADD COLUMN form TEXT',
+      'ALTER TABLE matter ADD COLUMN active INTEGER DEFAULT 1',
+      'ALTER TABLE matter ADD COLUMN owner TEXT',
+      'ALTER TABLE matter ADD COLUMN qty REAL DEFAULT 0',
+      'ALTER TABLE matter ADD COLUMN time TEXT',
+      'ALTER TABLE matter ADD COLUMN updated TEXT',
+      'ALTER TABLE motion ADD COLUMN scope TEXT DEFAULT \'global\'',
+    ];
+    for (const sql of migrations) {
+      try { await db.exec(sql); } catch (_) {}
+    }
     console.log(`[DB] initWorkspaceSync: DONE in ${Date.now() - t0}ms`);
     syncReadyResolve?.();
   } catch (e) {

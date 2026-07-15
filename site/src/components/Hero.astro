@@ -2,45 +2,25 @@
 ---
 
 <section class="hero">
-  <div class="hero__container">
-    <!-- Left column -->
-    <div class="hero__left">
-      <div class="hero__console">
-        <svg class="hero__console-icon" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <!-- Body -->
-          <rect x="2" y="2" width="76" height="76" rx="18" fill="#2563eb"/>
-          <!-- Screen - top aligned, max space -->
-          <rect x="10" y="10" width="56" height="56" rx="8" fill="#e2e8f0"/>
-          <!-- Camera -->
-          <circle cx="70" cy="14" r="2.5" fill="#93c5fd"/>
-          <!-- Scroll wheel -->
-          <rect x="72" y="30" width="4" height="20" rx="2" fill="#93c5fd"/>
-          <!-- Speaker -->
-          <circle cx="22" cy="72" r="1.5" fill="#93c5fd"/>
-          <circle cx="28" cy="72" r="1.5" fill="#93c5fd"/>
-          <circle cx="34" cy="72" r="1.5" fill="#93c5fd"/>
-        </svg>
+  <div class="hero__visual">
+    <img
+      src="https://cdn.prod.website-files.com/61477f2c24a826836f969afe/6a231084ed9c142b6d5c41c6_hero-still_v3.avif"
+      alt="Colorful playful contraption with tubes, balls, magnets, and funnel on green hills under blue sky."
+      class="hero__image"
+      width="2160"
+      height="1215"
+      loading="eager"
+      fetchpriority="high"
+    />
+    <div class="hero__overlay">
+      <h1 class="hero__title">Build systems that move the world</h1>
+      <p class="hero__subtitle">
+        Open commerce &amp; logistics infrastructure — run AI agents, own your data, and trade without rent.
+      </p>
+      <div class="hero__actions">
+        <a href="#" class="hero__btn hero__btn--primary">Start free</a>
+        <a href="/plan" class="hero__btn hero__btn--secondary">See the plan</a>
       </div>
-
-      <div class="hero__heading">
-        <h1 class="hero__title">
-          <span class="hero__tar">tar</span><span class="hero__dot">.</span>
-        </h1>
-        <h1 class="hero__title hero__title--solution">
-          <span class="hero__solution-text" id="solutionsText" aria-live="polite"></span>
-        </h1>
-      </div>
-
-      <p class="hero__subtitle">Everything app</p>
-
-      <a href="#" class="hero__btn hero__btn--download">Download</a>
-    </div>
-
-    <!-- Right column: Video -->
-    <div class="hero__right">
-      <video class="hero__video" autoplay muted loop playsinline>
-        <source src="/videos/hero-video.mp4" type="video/mp4" />
-      </video>
     </div>
   </div>
 </section>
@@ -48,165 +28,107 @@
 <style>
   .hero {
     background: #fff;
-    min-height: 100vh;
-    display: flex;
-    align-items: stretch;
   }
 
-  .hero__container {
-    display: flex;
+  .hero__visual {
+    position: relative;
     width: 100%;
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 0 60px;
+    overflow: hidden;
   }
 
-  /* Left column */
-  .hero__left {
-    flex: 0 0 42%;
+  .hero__image {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .hero__overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    padding: 80px 60px 60px 0;
-  }
-
-  .hero__console-icon {
-    width: 80px;
-    height: 100px;
-  }
-
-  .hero__heading {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 64px 24px 72px;
+    background: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.62) 0%,
+      rgba(0, 0, 0, 0.2) 40%,
+      transparent 68%
+    );
   }
 
   .hero__title {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-size: clamp(3rem, 5.5vw, 5rem);
-    font-weight: 800;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: clamp(2.25rem, 5vw, 3.75rem);
+    font-weight: 700;
     line-height: 1.05;
-    color: #000;
-    margin: 0;
     letter-spacing: -0.03em;
-  }
-
-  .hero__solution-text {
-    display: inline-block;
-    min-width: 2em;
-    white-space: nowrap;
-    font-size: clamp(2.8rem, 5vw, 4.5rem);
-    font-weight: 600;
+    color: #fff;
+    margin: 0;
+    text-align: center;
   }
 
   .hero__subtitle {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-size: 18px;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: clamp(1.05rem, 2vw, 1.3rem);
     font-weight: 400;
     line-height: 1.5;
-    color: #666;
-    margin: 0;
+    color: rgba(255, 255, 255, 0.92);
+    margin: 16px auto 0;
+    max-width: 52ch;
+    text-align: center;
+  }
+
+  .hero__actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 28px;
   }
 
   .hero__btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: fit-content;
-    padding: 14px 32px;
-    border-radius: 12px;
+    padding: 13px 24px;
+    border-radius: 10px;
     text-decoration: none;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-weight: 600;
     font-size: 16px;
-    transition: background 0.2s, transform 0.1s;
+    transition: background 0.2s ease, transform 0.1s ease;
   }
 
-  .hero__btn--download {
+  .hero__btn--primary {
     background: #2563eb;
     color: #fff;
   }
 
-  .hero__btn--download:hover {
+  .hero__btn--primary:hover {
     background: #1d4ed8;
     transform: translateY(-1px);
   }
 
-  /* Right column */
-  .hero__right {
-    flex: 0 0 58%;
-    display: flex;
-    align-items: stretch;
-    justify-content: flex-end;
-    padding: 60px 0 60px 60px;
+  .hero__btn--secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(4px);
   }
 
-  .hero__video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 12px;
-    background: #f5f5f5;
+  .hero__btn--secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
   }
 
-  @media (max-width: 900px) {
-    .hero__container {
-      padding: 0 24px;
-      flex-direction: column;
-      gap: 40px;
-    }
-
-    .hero__left,
-    .hero__right {
-      flex: 1 1 auto;
-      width: 100%;
-      padding: 60px 0;
-    }
-
-    .hero__right {
-      padding-left: 0;
+  @media (max-width: 640px) {
+    .hero__overlay {
+      padding: 32px 18px 48px;
     }
   }
 </style>
-
-<script is:inline>
-(function () {
-  const solutions = ["Food", "Taxi", "E-Commerce", "Payments", "Marketplace", "Logistics", "Services", "POS", "HR & Staff", "Marketing", "CRM", "Projects"];
-  let i = 0;
-  const el = document.getElementById("solutionsText");
-  if (!el) return;
-
-  function cycle() {
-    const t = solutions[i];
-    let j = 0;
-    el.textContent = "";
-
-    function type() {
-      if (j < t.length) {
-        el.textContent = t.slice(0, ++j);
-        setTimeout(type, 100);
-      } else {
-        setTimeout(clear, 2200);
-      }
-    }
-
-    function clear() {
-      let k = t.length;
-      function step() {
-        if (k >= 0) {
-          el.textContent = t.slice(0, k--);
-          setTimeout(step, 60);
-        } else {
-          i = (i + 1) % solutions.length;
-          setTimeout(cycle, 400);
-        }
-      }
-      step();
-    }
-
-    type();
-  }
-
-  cycle();
-})();
-</script>

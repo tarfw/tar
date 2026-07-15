@@ -1,0 +1,372 @@
+---
+const tiers = [
+  {
+    name: "Worker",
+    price: "₹0",
+    period: "forever",
+    tagline: "For every vendor, driver & gig worker",
+    highlight: false,
+    features: [
+      "1 workspace (your .md folder)",
+      "Free *.tar.app site",
+      "Telegram agent — 1,000 AI msgs/mo",
+      "5 core modules (orders, CRM, inventory…)",
+      "50 MB database, 30-day memory",
+      "Own your data, export anytime",
+    ],
+  },
+  {
+    name: "Cooperative",
+    price: "₹500",
+    period: "/ month",
+    tagline: "Worker-owner. Vote. Scale.",
+    highlight: true,
+    features: [
+      "Everything in Worker",
+      "10,000 AI msgs / month",
+      "Custom workspace name",
+      "Unlimited memory & history",
+      "Vote on the roadmap",
+      "Ownership stake in the network",
+    ],
+  },
+  {
+    name: "Enterprise",
+    price: "$2,000",
+    period: "/ month",
+    tagline: "For corps using the open network",
+    highlight: false,
+    features: [
+      "API access & SLA",
+      "White-label node",
+      "Unlimited workspaces",
+      "Priority support",
+    ],
+  },
+  {
+    name: "Public",
+    price: "Grant",
+    period: "funded",
+    tagline: "Govt & civic digital public infrastructure",
+    highlight: false,
+    features: [
+      "Civic deployment",
+      "Funded as public good",
+      "Open & forkable",
+      "Serves every citizen free",
+    ],
+  },
+];
+
+const feeClasses = [
+  { cls: "Worker", gmv: "< ₹5L / yr", fee: "0%", who: "None — it's free" },
+  { cls: "Micro", gmv: "₹5L – 25L", fee: "0.05%", who: "Buyer" },
+  { cls: "Small", gmv: "₹25L – 2Cr", fee: "0.1%", who: "Buyer" },
+  { cls: "Mid", gmv: "₹2Cr – 20Cr", fee: "0.3%", who: "Buyer" },
+  { cls: "Enterprise", gmv: "> ₹20Cr", fee: "0.5%", who: "Buyer" },
+];
+---
+
+<section id="plan" class="plan">
+  <div class="plan__inner">
+    <h2 class="plan__heading">A plan built for liberation</h2>
+    <p class="plan__sub">Workers pay nothing. Those with surplus fund the commons. The network sustains itself — forever.</p>
+
+    <div class="plan__grid">
+      {tiers.map((t) => (
+        <div class:list={["plan__card", { "plan__card--hl": t.highlight }]}>
+          {t.highlight && <span class="plan__badge">Own it</span>}
+          <h3 class="plan__name">{t.name}</h3>
+          <p class="plan__tagline">{t.tagline}</p>
+          <div class="plan__price">
+            <span class="plan__price-amount">{t.price}</span>
+            <span class="plan__price-period">{t.period}</span>
+          </div>
+          <a href="/plan" class:list={["plan__cta", t.highlight ? "plan__cta--blue" : "plan__cta--outline"]}>See details</a>
+          <ul class="plan__features">
+            {t.features.map((f) => (
+              <li>{f}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+
+    <div class="plan__bottom">
+      <div class="plan__fee">
+        <h3 class="plan__lower-title">Protocol fee — by class, buyer-side</h3>
+        <p class="plan__lower-desc">Charged on transactions, not on sellers. The more surplus you have, the more you give back to the commons.</p>
+        <table class="plan__table">
+          <thead>
+            <tr><th>Class</th><th>GMV / year</th><th>Fee</th><th>Paid by</th></tr>
+          </thead>
+          <tbody>
+            {feeClasses.map((r) => (
+              <tr>
+                <td>{r.cls}</td>
+                <td>{r.gmv}</td>
+                <td class:list={["plan__fee-val", { "plan__fee-val--green": r.fee === "0%" }]}>{r.fee}</td>
+                <td>{r.who}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="plan__addons">
+        <h3 class="plan__lower-title">Add-ons — pay only when you need more</h3>
+        <div class="plan__addons-list">
+          <div class="plan__addon">
+            <span class="plan__addon-name">Custom domain</span>
+            <span class="plan__addon-meta">₹199 · one-time · your own .com</span>
+          </div>
+          <div class="plan__addon">
+            <span class="plan__addon-name">Extra workspace</span>
+            <span class="plan__addon-meta">₹999 · one-time · another business</span>
+          </div>
+          <div class="plan__addon">
+            <span class="plan__addon-name">10K AI messages</span>
+            <span class="plan__addon-meta">₹49 · top-up · beyond plan limit</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="plan__foot">Public & civic deployments are grant-funded as digital public infrastructure. Every worker owns their workspace as portable <code>.md</code> files — no lock-in, ever.</p>
+  </div>
+</section>
+
+<style>
+  .plan {
+    padding: 80px 0;
+    background: #fff;
+  }
+
+  .plan__inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 40px;
+  }
+
+  .plan__heading {
+    text-align: center;
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: #0a0a0a;
+    margin: 0 0 12px;
+  }
+
+  .plan__sub {
+    text-align: center;
+    font-size: clamp(0.9rem, 1.5vw, 1.05rem);
+    color: #667085;
+    max-width: 52ch;
+    margin: 0 auto 56px;
+    line-height: 1.5;
+  }
+
+  .plan__grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin-bottom: 64px;
+  }
+
+  .plan__card {
+    display: flex;
+    flex-direction: column;
+    padding: 28px 24px;
+    border-right: 1px solid #eaecf0;
+  }
+  .plan__card:last-child { border-right: none; }
+
+  .plan__card--hl {
+    background: #f9fafb;
+    margin: -4px 0;
+    padding: 32px 24px;
+    border-radius: 10px;
+    border: 1px solid #eaecf0;
+  }
+
+  .plan__badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #2563eb;
+    letter-spacing: 0.02em;
+    margin-bottom: 12px;
+  }
+
+  .plan__name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #0a0a0a;
+    margin: 0 0 4px;
+  }
+
+  .plan__tagline {
+    font-size: 0.8125rem;
+    color: #667085;
+    margin: 0 0 20px;
+    line-height: 1.4;
+  }
+
+  .plan__price {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin-bottom: 20px;
+  }
+
+  .plan__price-amount {
+    font-size: 1.75rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: #0a0a0a;
+  }
+
+  .plan__price-period {
+    font-size: 0.8125rem;
+    color: #667085;
+  }
+
+  .plan__cta {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 8px 14px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.8125rem;
+    transition: opacity 0.15s;
+    margin-bottom: 24px;
+  }
+  .plan__cta:hover { opacity: 0.85; }
+
+  .plan__cta--blue { background: #2563eb; color: #fff; }
+  .plan__cta--outline { background: transparent; color: #0a0a0a; border: 1px solid #d0d5dd; }
+
+  .plan__features {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    flex: 1;
+  }
+
+  .plan__features li {
+    font-size: 0.8125rem;
+    color: #344054;
+    padding-left: 16px;
+    position: relative;
+    line-height: 1.35;
+  }
+
+  .plan__features li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: #12b76a;
+    font-weight: 600;
+    font-size: 0.75rem;
+  }
+
+  .plan__bottom {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 32px;
+    align-items: start;
+    margin-bottom: 40px;
+  }
+
+  .plan__lower-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #0a0a0a;
+    margin: 0 0 4px;
+  }
+
+  .plan__lower-desc {
+    font-size: 0.75rem;
+    color: #667085;
+    margin: 0 0 14px;
+    line-height: 1.4;
+  }
+
+  .plan__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+  }
+
+  .plan__table th,
+  .plan__table td {
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid #f2f4f7;
+  }
+
+  .plan__table th {
+    color: #667085;
+    font-weight: 500;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .plan__table td { color: #344054; }
+  .plan__fee-val { font-weight: 600; }
+  .plan__fee-val--green { color: #12b76a; }
+
+  .plan__addons-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: #f2f4f7;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .plan__addon {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 10px 14px;
+    background: #fff;
+  }
+
+  .plan__addon-name { font-size: 0.8125rem; font-weight: 500; color: #0a0a0a; }
+  .plan__addon-meta { font-size: 0.6875rem; color: #667085; }
+
+  .plan__foot {
+    font-size: 0.8125rem;
+    color: #667085;
+    text-align: center;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .plan__foot code {
+    font-family: inherit;
+    background: #f2f4f7;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  @media (max-width: 1024px) {
+    .plan__inner { padding: 0 24px; }
+    .plan__grid { grid-template-columns: repeat(2, 1fr); }
+    .plan__bottom { grid-template-columns: 1fr; gap: 32px; }
+  }
+
+  @media (max-width: 640px) {
+    .plan__inner { padding: 0 20px; }
+    .plan__grid { grid-template-columns: 1fr; }
+    .plan__card { border-right: none; border-bottom: 1px solid #eaecf0; padding: 24px 0; }
+    .plan__card:last-child { border-bottom: none; }
+    .plan__card--hl { margin: 0; padding: 24px 20px; border-radius: 10px; }
+  }
+</style>

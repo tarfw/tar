@@ -10,11 +10,10 @@ let syncReadyResolve: (() => void) | null = null;
 export const syncReady = new Promise<void>(r => { syncReadyResolve = r; });
 
 const PARTIAL_SYNC_QUERY = [
-  "SELECT id FROM form WHERE scope LIKE 'w:%'",
-  "SELECT id FROM matter WHERE scope LIKE 'w:%'",
-  "SELECT stream AS id FROM motion",
+  "SELECT id FROM matter WHERE type IN ('product', 'stock')",
+  "SELECT id FROM motion WHERE type IN ('sale', 'payment', 'adjust', 'restock')",
   "SELECT src AS id FROM graph",
-  "SELECT id FROM memory",
+  "SELECT id FROM inbox",
 ].join(" UNION ALL ");
 
 export async function getSelfId(): Promise<string> {
@@ -205,70 +204,10 @@ export async function withTransaction<T>(db: Database, fn: () => Promise<T>): Pr
  */
 async function migrateMemoryTable(db: Database, label: string) {
   try {
-    const cols = await db.all(`PRAGMA table_info(memory)`).catch(() => [] as any[]);
-    if (Array.isArray(cols) && cols.length > 0) {
-      const hasFormCol = cols.some((c: any) => c.name === 'form');
-      const hasMetaCol = cols.some((c: any) => c.name === 'meta');
-      if (hasFormCol || !hasMetaCol) {
-        console.log(`[DB] migrating memory table (${label}) → target schema`);
-        await db.exec(`DROP TABLE IF EXISTS memory`);
-        await db.exec(
-          `CREATE TABLE IF NOT EXISTS memory (id TEXT NOT NULL, chunk INTEGER NOT NULL DEFAULT 0, text TEXT, embedding BLOB, meta TEXT, PRIMARY KEY (id, chunk))`
-        );
-        console.log(`[DB] memory table migrated (${label})`);
-      }
-    }
-  } catch (e) {
-    console.warn(`[DB] memory migration failed (${label}):`, e);
-  }
-
-  try {
-    const cols = await db.all(`PRAGMA table_info(graph)`).catch(() => [] as any[]);
-    if (Array.isArray(cols) && cols.length > 0) {
-      const hasWeightCol = cols.some((c: any) => c.name === 'weight');
-      if (hasWeightCol) {
-        console.log(`[DB] migrating graph table (${label}) → removing weight column`);
-        await db.exec(`DROP TABLE IF EXISTS graph`);
-        await db.exec(
-          `CREATE TABLE IF NOT EXISTS graph (src TEXT NOT NULL, rel TEXT NOT NULL, tgt TEXT NOT NULL, active INTEGER DEFAULT 1, data TEXT, time TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (src, rel, tgt))`
-        );
-        console.log(`[DB] graph table migrated (${label})`);
-      }
-    }
-  } catch (e) {
-    console.warn(`[DB] graph migration failed (${label}):`, e);
-  }
-
-  try {
-    const cols = await db.all(`PRAGMA table_info(matter)`).catch(() => [] as any[]);
-    if (Array.isArray(cols) && cols.length > 0) {
-      const hasOwnerCol = cols.some((c: any) => c.name === 'owner');
-      if (!hasOwnerCol) {
-        console.log(`[DB] migrating matter table (${label}) → adding owner column`);
-        await db.exec(`ALTER TABLE matter ADD COLUMN owner TEXT`);
-        console.log(`[DB] matter table migrated (added owner column) (${label})`);
-      }
-    }
-  } catch (e) {
-    console.warn(`[DB] matter migration failed (${label}):`, e);
-  }
-
-  try {
-    const cols = await db.all(`PRAGMA table_info(form)`).catch(() => [] as any[]);
-    if (Array.isArray(cols) && cols.length > 0) {
-      const hasOwnerCol = cols.some((c: any) => c.name === 'owner');
-      if (!hasOwnerCol) {
-        console.log(`[DB] migrating form table (${label}) → adding owner column`);
-        await db.exec(`ALTER TABLE form ADD COLUMN owner TEXT`);
-        console.log(`[DB] form table migrated (added owner column) (${label})`);
-      }
-    }
-  } catch (e) {
-    console.warn(`[DB] form migration failed (${label}):`, e);
-  }
-
-  try {
-    await db.exec(`DROP TABLE IF EXISTS action`);
+    // Drop old tables to ensure a clean slate aligned with dbrules.md
+    await db.exec(`DROP TABLE IF EXISTS form`);
+    await db.exec(`DROP TABLE IF EXISTS tasks`);
+    await db.exec(`DROP TABLE IF EXISTS memory`);
   } catch (_) {}
 }
 

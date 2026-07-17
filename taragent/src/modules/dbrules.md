@@ -269,27 +269,27 @@ CREATE INDEX IF NOT EXISTS idx_graph_tgt            ON graph(tgt);
 
 `matter.data` holds **only essential operational fields** — the minimum needed for list views, cards, inbox, and quick operations. The full rich entity payload lives in S3.
 
-### matter.data — essentials only
-- Fields needed without opening the entity: price, sku, category, phone, etc.
-- Kept small and fast. Every list and card reads only this.
-- Rule: if a field is not needed to render a list row or take a quick action → it does not belong here.
+### Universal Semantic Split Heuristic (Applied to All Entity Types)
 
-### matter.file — full entity payload
-- Always written alongside the `matter` row for any entity with rich data.
-- S3 key format: `{scope}/{id}/full.json`
-- Contains: descriptions, images, line items, variants, notes, address, form answers, attachments — everything not in `matter.data`.
-- Fetched **only when the user opens the full detail page** — never for lists, inbox, or quick reads.
+To keep the system simple, consistent, and future-proof for custom modules, the S3 split is driven by a clean, universal key/structure-based rule:
 
-### What goes where (per entity)
+1. **SQLite (`matter.data`) — Flat Operational Fields**:
+   - Stores flat, primitive values (strings, numbers, booleans) used for quick reads and lists.
+   - Examples: `price`, `sku`, `phone`, `email`, `category`, `due_date`, `status`, `stage`, `slot`, `total`, `value`.
+2. **S3 (`matter.file` = `{scope}/{id}/full.json`) — Rich Payload**:
+   - Stores any **nested structures** (objects/arrays) or fields matching **rich content keys** (e.g., `description`, `images`, `variants`, `notes`, `address`, `form_answers`, `attachments`, `line_items`, `history`, `preferences`).
 
-| Entity | `matter.data` essentials | S3 full payload (`file`) |
+This mapping is consistent across standard and custom entities:
+
+| Entity / Type | SQLite `matter.data` (Primitives) | S3 `matter.file` (Nested & Rich Keys) |
 |--------|--------------------------|--------------------------|
 | product | price, category, sku | description, images, variants, tags, SEO |
-| order | customer id, item count, payment type | all line items, delivery address, notes |
+| order | customer_id, item_count, payment_type | all line items, delivery address, notes |
 | customer | phone, email | full address, preferences, history |
-| booking | slot, staff id, service | notes, intake form, attachments |
-| invoice | total, due date, customer id | all line items, terms, bank details |
-| deal | stage, value, customer id | activity notes, attachments, contacts |
+| booking | slot, staff_id, service | notes, intake form, attachments |
+| invoice | total, due_date, customer_id | all line items, terms, bank details |
+| deal | stage, value, customer_id | activity notes, attachments, contacts |
+| *custom / any* | flat primitive values | arrays, objects, rich keys |
 
 ### memory — S3 key-value namespace
 

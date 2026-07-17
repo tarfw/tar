@@ -40,6 +40,7 @@ Return JSON:
 }
 
 Rules:
+- For "name": Extract ONLY the clean, actual name of the business (e.g., "Cafe99", "Mario's Pizza"). Do NOT include instructional verbs (like "create", "register"), filler phrases (like "restaurant with name", "shop named"), or location suffixes (like "in India", "at Chennai").
 - Extract ONLY what's explicitly stated. Don't invent products/services.
 - If price is mentioned as "₹22", use 22. If no price, use 0.
 - If no brand color mentioned, use null.

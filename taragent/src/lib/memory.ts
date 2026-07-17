@@ -1,10 +1,10 @@
 /**
  * Action Memory System — cache agent decisions as reusable inline cards.
- * First time = LLM call. Every replay = zero LLM cost.
+ * Stores action memories inside the 'matter' table as type 'action_memory'.
  */
 
 import { executeCreate, executeRead } from './helpers';
-import { dbGet, dbAll, dbRun } from './db';
+import { dbGet, dbRun } from './db';
 
 export interface ActionMemory {
   id: string;
@@ -56,12 +56,13 @@ export async function extractActionMemory(
     lastUsed: new Date().toISOString(),
   };
 
-  // Store in memory table
+  // Store in matter table
   await executeCreate({
-    table: 'memory',
-    text: memory.text,
-    meta: {
-      type: 'action_memory',
+    table: 'matter',
+    id: memory.id,
+    type: 'action_memory',
+    title: memory.text,
+    data: {
       intent: memory.intent,
       workflow: memory.workflow,
       slots: memory.slots,
@@ -85,31 +86,26 @@ export async function findActionMemories(
   query: string,
   limit = 5
 ): Promise<ActionMemory[]> {
-  // Try text search first
   const result = await executeRead({
-    table: 'memory',
+    table: 'matter',
+    type: 'action_memory',
     scope: `u:${userId}`,
     limit,
   });
 
-  return result.rows
-    .filter((r: any) => {
-      const meta = typeof r.meta === 'string' ? JSON.parse(r.meta) : r.meta;
-      return meta?.type === 'action_memory';
-    })
-    .map((r: any) => {
-      const meta = typeof r.meta === 'string' ? JSON.parse(r.meta) : r.meta;
-      return {
-        id: r.id,
-        text: r.text || '',
-        intent: meta.intent,
-        workflow: meta.workflow,
-        slots: meta.slots || [],
-        toolSequence: meta.toolSequence || [],
-        usageCount: meta.usageCount || 0,
-        lastUsed: meta.lastUsed || '',
-      };
-    });
+  return result.rows.map((r: any) => {
+    const data = r.data || {};
+    return {
+      id: r.id,
+      text: r.title || '',
+      intent: data.intent || '',
+      workflow: data.workflow || '',
+      slots: data.slots || [],
+      toolSequence: data.toolSequence || [],
+      usageCount: data.usageCount || 0,
+      lastUsed: data.lastUsed || '',
+    };
+  });
 }
 
 /**
@@ -117,18 +113,18 @@ export async function findActionMemories(
  */
 export async function incrementMemoryUsage(memoryId: string): Promise<void> {
   const row = await dbGet(
-    "SELECT meta FROM memory WHERE id = ? AND chunk = 0",
+    "SELECT data FROM matter WHERE id = ?",
     [memoryId]
   );
   if (!row) return;
 
-  const meta = typeof row.meta === 'string' ? JSON.parse(row.meta) : row.meta;
-  meta.usageCount = (meta.usageCount || 0) + 1;
-  meta.lastUsed = new Date().toISOString();
+  const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data || {};
+  data.usageCount = (data.usageCount || 0) + 1;
+  data.lastUsed = new Date().toISOString();
 
   await dbRun(
-    "UPDATE memory SET meta = ? WHERE id = ? AND chunk = 0",
-    [JSON.stringify(meta), memoryId]
+    "UPDATE matter SET data = ?, updated = strftime('%s','now') WHERE id = ?",
+    [JSON.stringify(data), memoryId]
   );
 }
 

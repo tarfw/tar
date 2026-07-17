@@ -39,7 +39,7 @@ Handles POS orders and sales recording.
 Record a customer purchase.
 steps:
 1. create(table='matter', type='order', title='Sale', data={items: {items}, payment_method: {payment_method}})
-2. create(table='motion', type='sale', data={items: {items}, payment_method: {payment_method}})
+2. create(table='motion', type='sale', ref={id}, data={items: {items}, payment_method: {payment_method}})
 
 ### action_void_order
 Void a transaction.
@@ -66,7 +66,7 @@ app_layout:
       actions: [action_check_stock, action_add_stock]
     - type: metric-card
       title: "Low Stock Alert"
-      data: "SELECT COUNT(*) FROM matter WHERE type='product' AND qty <= 5"
+      data: "SELECT COUNT(*) FROM matter WHERE type='product' AND value <= 5"
 site_pages:
   - slug: /catalog
     template: catalog-grid
@@ -85,7 +85,7 @@ steps:
 ### action_add_stock
 Adjust stock quantity.
 steps:
-1. update(table='matter', id={product_id}, type='product', qty={qty})
+1. update(table='matter', id={product_id}, type='product', value={qty})
 `,
 
   bookings: `---
@@ -118,7 +118,7 @@ Manages appointments and schedules.
 ### action_book_slot
 Create an appointment slot.
 steps:
-1. create(table='matter', type='booking', title='Booking', data={service: {service}, date: {date}, slot: {slot}, status: 'confirmed'})
+1. create(table='matter', type='booking', title='Booking', data={service: {service}, date: {date}, slot: {slot}}, status='confirmed')
 
 ### action_cancel_booking
 Cancel an appointment.
@@ -173,7 +173,7 @@ Manages customer records, companies, deals, pipelines, and activities.
 ### action_add_contact
 Add a new contact and link them to a company.
 steps:
-1. create(table='matter', type='customer', title={name}, data={name: {name}, phone: {phone}, email: {email}, company_id: {company_id}, role: {role}, source: {source}})
+1. create(table='matter', type='customer', title={name}, data={name: {name}, phone: {phone}, email: {email}, company_id: {company_id}, role: {role}, source: {source}, is_company: false})
 
 ### action_get_contact
 Retrieve a contact profile.
@@ -183,29 +183,29 @@ steps:
 ### action_add_company
 Add a new company profile.
 steps:
-1. create(table='matter', type='company', title={name}, data={name: {name}, industry: {industry}, size: {size}, website: {website}, address: {address}})
+1. create(table='matter', type='customer', title={name}, data={name: {name}, industry: {industry}, size: {size}, website: {website}, address: {address}, is_company: true})
 
 ### action_get_company
 Retrieve company details.
 steps:
-1. read(table='matter', type='company', id={company_id})
+1. read(table='matter', type='customer', id={company_id})
 
 ### action_add_deal
 Add a new deal associated with a contact and company.
 steps:
 1. create(table='matter', type='deal', title={name}, value={value}, data={name: {name}, stage: {stage}, expected_close_date: {expected_close_date}, contact_id: {contact_id}, company_id: {company_id}})
-2. create(table='motion', type='deal', data={deal_id: {id}, stage: {stage}, value: {value}})
+2. create(table='motion', type='deal', ref={id}, data={deal_id: {id}, stage: {stage}, value: {value}})
 
 ### action_update_deal_stage
 Update a deal's pipeline stage.
 steps:
 1. update(table='matter', id={deal_id}, type='deal', data={stage: {stage}, win_loss_reason: {win_loss_reason}})
-2. create(table='motion', type='deal_stage_change', data={deal_id: {deal_id}, stage: {stage}})
+2. create(table='motion', type='deal_stage_change', ref={deal_id}, data={deal_id: {deal_id}, stage: {stage}})
 
 ### action_log_activity
 Log a communication activity (Call, Email, Meeting, Note, Task).
 steps:
-1. create(table='motion', type='activity', data={activity_type: {type}, description: {description}, contact_id: {contact_id}, deal_id: {deal_id}})
+1. create(table='motion', type='activity', ref={deal_id}, data={activity_type: {type}, description: {description}, contact_id: {contact_id}, deal_id: {deal_id}})
 `,
 
   logistics: `---
@@ -232,9 +232,9 @@ app_layout:
 Tracks deliveries and shipments.
 
 ### action_create_shipment
-Initiate shipment for order.
+Initiance shipment for order.
 steps:
-1. create(table='matter', type='shipment', title='Shipment', data={order_id: {order_id}, address: {address}, status: 'dispatched'})
+1. create(table='matter', type='shipment', title='Shipment', data={order_id: {order_id}, address: {address}}, status='dispatched')
 
 ### action_update_tracking
 Update delivery tracking status.
@@ -263,17 +263,17 @@ app_layout:
 
 # Projects Module
 
-Tracks milestones, tasks, and issues.
+Tracks milestones, tasks, and issues inside the inbox.
 
 ### action_create_task
 Create a project task.
 steps:
-1. create(table='matter', type='task', title={title}, data={title: {title}, description: {description}, status: 'pending'})
+1. create(table='inbox', type='project', title={title}, data={description: {description}}, status='open')
 
 ### action_update_task_status
 Mark task status.
 steps:
-1. update(table='matter', id={task_id}, type='task', status={status})
+1. update(table='inbox', id={task_id}, type='project', status={status})
 `,
 
   hr: `---
@@ -299,7 +299,7 @@ Manages staff profiles and payroll.
 ### action_add_employee
 Register a new staff member.
 steps:
-1. create(table='matter', type='employee', title={name}, data={name: {name}, role: {role}, salary: {salary}})
+1. create(table='matter', type='staff', title={name}, data={name: {name}, role: {role}, salary: {salary}})
 `,
 
   lms: `---
@@ -385,7 +385,7 @@ Customer support ticketing.
 ### action_create_ticket
 File a support ticket.
 steps:
-1. create(table='matter', type='ticket', title={subject}, data={customer_id: {customer_id}, subject: {subject}, status: 'open'})
+1. create(table='matter', type='ticket', title={subject}, data={customer_id: {customer_id}, subject: {subject}}, status='open')
 `,
 
   reports: `---

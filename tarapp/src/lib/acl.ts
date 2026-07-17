@@ -33,17 +33,16 @@ export async function getRole(
     return scope === `p:${personId}` ? 3 : -1;
   }
 
-  // Direct ownership of scope root record
+  // Direct ownership of scope root record from matter data JSON
   const owner = await db.get(
-    'SELECT owner FROM form WHERE id = ? UNION ALL SELECT owner FROM matter WHERE id = ? LIMIT 1',
-    [scope, scope]
+    "SELECT json_extract(data, '$.owner') AS owner FROM matter WHERE id = ? LIMIT 1",
+    [scope]
   ).catch(() => null);
   if (owner?.owner === personId) return 3;
 
   const edge = await db.get(
-    `SELECT active FROM graph
+    `SELECT time FROM graph
       WHERE src = ? AND tgt = ? AND rel IN ('member_of','works_for','customer_of','owns')
-      AND active = 1
       LIMIT 1`,
     [personId, scope]
   ).catch(() => null);

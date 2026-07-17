@@ -9,7 +9,7 @@
     {
       "binding": "DB",
       "database_name": "tard1",
-      "database_id": "c8bf4ab0-d6ce-4d55-9934-285b3a7a0dec"
+      "database_id": "78c14306-d78a-4152-8c3e-bbc87cb1ef5b"
     }
   ],
   "kv_namespaces": [
@@ -26,5 +26,16 @@
   ],
   "triggers": {
     "crons": ["* * * * *"]
+  },
+  "vars": {
+    "GROQ_API_KEY": "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",
+    "TURSO_DATABASE_URL": "libsql://global-tarapp.aws-eu-west-1.turso.io",
+    "TURSO_AUTH_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3ODMxNzc5NDEsImlkIjoiMDE5ZjJkYTAtNWUwMS03MzBiLTkwYzEtMzVjZjA0YzhkMzg0Iiwia2lkIjoiQlNlbTRFT3ZoYjI2UzE4VWo5a25VYmluWDlMN050LVNvQS02ZkhUZnNoNCIsInJpZCI6Ijk3OTg1ZjA0LWRkYmItNGZiMS05MTFhLTU1MjkwMzk1YmM5NyJ9.w_KB3Buw6gSX_LiY_PwGGwkqj-A8JArgXRe65HMGyViUC3nQCu04r2nyHz_HBkaYCsn-jteBCoWbJqjHpVZQDg",
+    "TURSO_PLATFORM_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzNjFEUklHbkVmR2k5S0xqOUZKRkVnIiwib3JnX2lkIjoxMDAwMDk3OTM0fQ.fCT0qwk0AZsPA2AdrzlDFABGWqPrEqfCvhqPBUDRvEx9djjBpKoxbhzJiRKeDRCXieNu0ZheKZjTlnHzxrYWBA",
+    "TURSO_GROUP_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJnaWQiOiI5YmY5YjQxNS01M2E5LTRjMzAtYTRhNy05YTI3OTgyMmQ3ODIiLCJpYXQiOjE3ODQyNzQ2NzAsImtpZCI6IkJTZW00RU92aGIyNlMxOFVqOWtuVWJpblg5TDdOdC1Tb0EtNmZIVGZzaDQiLCJyaWQiOiIyMzg5NDgzZC0xNTc5LTQ0ODItYmFjYy1iODdjMzgxYTZmMjkifQ.ccN6j2p__CtSHcEltX3JG842Kb8UW4xtU4tTY7SQiXmpyoII6XplitPsntG9CH3PF7F6LQfxDt6njLGEkDq7DA",
+    "RAILWAY_S3_ENDPOINT": "https://t3.storageapi.dev",
+    "RAILWAY_S3_BUCKET": "customizable-box-hw-fvnq8",
+    "RAILWAY_S3_ACCESS_KEY": "tid__IoyBvKOWaxjZgCqLQQOEgpYivkrpqjfJoPPzNZpKUQIlEuubw",
+    "RAILWAY_S3_SECRET_KEY": "tsec_dN4OKNvRnJ_GPA9dH9-93hYHJMsy4D-Ulf+cZIuVi641FXBPRPt7D3A8PzXQEr4C00-HOa"
   }
 }

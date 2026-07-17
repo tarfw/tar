@@ -1,99 +1,228 @@
 /**
- * Helper functions for the 6 generic tools.
- * Uses Turso HTTP API via db.ts — no React Native dependencies.
+ * Helper database operations for the agents and tools.
+ * Aligned with dbrules.md schema.
  */
 
-import { dbGet, dbAll, dbRun } from './db';
+import { dbGet, dbAll, dbRun, envContext } from './db';
+
+// ============================================================
+// ULID Generator (Crockford's Base32)
+// ============================================================
+const ENCODING = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const ENCODING_LEN = 32;
+
+function encodeTime(now: number, len: number): string {
+  let str = "";
+  for (let i = len - 1; i >= 0; i--) {
+    const mod = now % ENCODING_LEN;
+    str = ENCODING.charAt(mod) + str;
+    now = Math.floor(now / ENCODING_LEN);
+  }
+  return str;
+}
+
+function encodeRandom(len: number): string {
+  let str = "";
+  for (let i = 0; i < len; i++) {
+    const rand = Math.floor(Math.random() * ENCODING_LEN);
+    str += ENCODING.charAt(rand);
+  }
+  return str;
+}
+
+export function generateUlid(now: number = Date.now()): string {
+  return encodeTime(now, 10) + encodeRandom(16);
+}
+
+export function generateEntityId(type: string): string {
+  const prefixMap: Record<string, string> = {
+    product: 'prd', order: 'ord', booking: 'bkg', customer: 'cus',
+    staff: 'stf', invoice: 'inv', expense: 'exp', deal: 'dea',
+    contract: 'ctr', asset: 'ast', ticket: 'tkt', project: 'prj',
+    payslip: 'pay', purchase: 'pur', workorder: 'woe', shipment: 'shp',
+    listing: 'lst', setting: 'set', motion: 'mot', inbox: 'ibx'
+  };
+  const prefix = prefixMap[type] || type.slice(0, 3).toLowerCase();
+  return `${prefix}${generateUlid()}`;
+}
 
 function parseJson(v: any): any {
   if (!v) return {};
   try { return JSON.parse(String(v)); } catch { return {}; }
 }
 
+const RICH_FIELD_KEYS = new Set([
+  'description', 'images', 'variants', 'notes', 'address', 'form_answers',
+  'attachments', 'line_items', 'history', 'preferences', 'terms', 'bank_details',
+  'activity_notes', 'contacts', 'intake_form', 'tags', 'seo'
+]);
+
 // ============================================================
 // executeCreate — Insert into any table
 // ============================================================
 export async function executeCreate(input: {
-  table: string; scope?: string; type?: string; form?: string;
-  title?: string; value?: number; qty?: number; unit?: string;
-  data?: Record<string, any>; owner?: string;
-  src?: string; rel?: string; tgt?: string;
-  text?: string; embedding?: string; meta?: Record<string, any>;
-  stream?: string; action?: number; phase?: number; delta?: number;
+  table: string;
+  scope?: string;
+  type?: string;
+  title?: string;
+  value?: number;
+  status?: string;
+  data?: Record<string, any>;
+  file?: string;
+  ref?: string;
+  by?: string;
+  src?: string;
+  rel?: string;
+  tgt?: string;
+  due?: number;
+  at?: number;
   [key: string]: any;
 }) {
-  const now = new Date().toISOString();
-
-  if (input.table === 'form') {
-    const id = `form_${Date.now()}`;
-    await dbRun(
-      `INSERT INTO form (id, type, scope, title, data, time, active) VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [id, input.type || 'unknown', input.scope || '', input.title || null, JSON.stringify(input.data || {}), now]
-    );
-    return { id, time: now, status: 'created' };
-  }
+  const scope = input.scope || 'ws:global';
+  const nowUnix = Math.floor(Date.now() / 1000);
 
   if (input.table === 'matter') {
-    const id = `matter_${Date.now()}`;
+    const id = input.id || generateEntityId(input.type || 'product');
+    const type = input.type || 'product';
+    const status = input.status || 'active';
+    let finalData = input.data || {};
+    let finalFile = input.file || null;
+
+    if (input.data) {
+      const essentials: Record<string, any> = {};
+      const rich: Record<string, any> = {};
+      let hasRichData = false;
+
+      for (const [k, v] of Object.entries(input.data)) {
+        const isNested = typeof v === 'object' && v !== null;
+        const isRichKey = RICH_FIELD_KEYS.has(k.toLowerCase());
+
+        if (isNested || isRichKey) {
+          rich[k] = v;
+          hasRichData = true;
+        } else {
+          essentials[k] = v;
+        }
+      }
+
+      if (hasRichData) {
+        try {
+          const env = envContext.getStore();
+          if (env) {
+            const { s3Put } = await import('./s3-client');
+            const storageKey = `${scope}/${id}/full.json`;
+            await s3Put(env, storageKey, JSON.stringify(rich), 'application/json');
+            finalFile = storageKey;
+            finalData = essentials;
+          }
+        } catch (s3Err) {
+          console.warn('[helpers] S3 split upload failed during create:', s3Err);
+        }
+      }
+    }
+
     await dbRun(
-      `INSERT INTO matter (id, form, type, scope, title, value, qty, data, owner, time, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-      [id, input.form || '', input.type || 'unknown', input.scope || '', input.title || null, input.value ?? null, input.qty ?? null, JSON.stringify(input.data || {}), input.owner || null, now]
+      `INSERT INTO matter (id, type, title, value, status, data, file, scope, at, updated) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        type,
+        input.title || 'Untitled',
+        input.value ?? null,
+        status,
+        JSON.stringify(finalData),
+        finalFile,
+        scope,
+        input.at || nowUnix,
+        nowUnix
+      ]
     );
-    return { id, time: now, status: 'created' };
+    return { id, at: input.at || nowUnix, status: 'created', file: finalFile };
   }
 
   if (input.table === 'motion') {
-    const stream = input.stream || input.scope || 'default';
-    const nextSeqRes = await dbGet('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM motion WHERE stream = ?', [stream]);
-    const seq = Number(nextSeqRes?.next ?? 1);
+    const id = input.id || generateEntityId('motion');
     await dbRun(
-      `INSERT INTO motion (stream, seq, action, phase, delta, data, time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [stream, seq, input.action ?? 0, input.phase ?? null, input.delta ?? null, JSON.stringify(input.data || {}), now]
+      `INSERT INTO motion (id, type, ref, data, by, at, scope) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        input.type || 'activity',
+        input.ref || null,
+        JSON.stringify(input.data || {}),
+        input.by || 'system',
+        input.at || nowUnix,
+        scope
+      ]
     );
-    return { stream, seq, status: 'created' };
+    return { id, at: input.at || nowUnix, status: 'created' };
   }
 
   if (input.table === 'graph') {
-    if (!input.src || !input.rel || !input.tgt) return { error: 'src, rel, tgt required for graph' };
+    if (!input.src || !input.rel || !input.tgt) {
+      throw new Error('src, rel, tgt required for graph');
+    }
     await dbRun(
-      `INSERT OR REPLACE INTO graph (src, rel, tgt, active, time) VALUES (?, ?, ?, 1, ?)`,
-      [input.src, input.rel, input.tgt, now]
+      `INSERT OR REPLACE INTO graph (src, rel, tgt, scope, time) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [input.src, input.rel, input.tgt, scope, input.at || nowUnix]
     );
     return { src: input.src, rel: input.rel, tgt: input.tgt, status: 'linked' };
   }
 
-  if (input.table === 'memory') {
-    const id = input.text ? `mem_${Date.now()}` : `mem_${Date.now()}`;
+  if (input.table === 'inbox') {
+    const id = input.id || generateEntityId('inbox');
     await dbRun(
-      `INSERT OR REPLACE INTO memory (id, chunk, matter, text, embedding, meta) VALUES (?, 0, ?, ?, ?, ?)`,
-      [id, null, input.text || '', input.embedding || '', JSON.stringify(input.meta || {})]
+      `INSERT INTO inbox (id, scope, type, title, status, ref, data, due, at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        scope,
+        input.type || 'task',
+        input.title || 'Notification',
+        input.status || 'open',
+        input.ref || null,
+        JSON.stringify(input.data || {}),
+        input.due || null,
+        input.at || nowUnix
+      ]
     );
-    return { id, status: 'stored' };
+    return { id, status: 'created' };
   }
 
-  return { error: `Unknown table: ${input.table}` };
+  throw new Error(`Unknown or deprecated table for creation: ${input.table}`);
 }
 
 // ============================================================
 // executeRead — Select from any table
 // ============================================================
 export async function executeRead(input: {
-  table: string; id?: string; scope?: string; type?: string;
-  src?: string; rel?: string; tgt?: string;
-  stream?: string; active?: boolean;
-  limit?: number; offset?: number;
+  table: string;
+  id?: string;
+  scope?: string;
+  type?: string;
+  ref?: string;
+  src?: string;
+  rel?: string;
+  tgt?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
   filters?: Array<{ key: string; val: any }>;
   [key: string]: any;
 }) {
+  const limit = input.limit ?? 50;
+  const offset = input.offset ?? 0;
+
   if (input.table === 'graph') {
     let sql = 'SELECT * FROM graph WHERE 1=1';
     const args: any[] = [];
     if (input.src) { sql += ' AND src = ?'; args.push(input.src); }
     if (input.rel) { sql += ' AND rel = ?'; args.push(input.rel); }
     if (input.tgt) { sql += ' AND tgt = ?'; args.push(input.tgt); }
-    sql += ' AND active = 1';
-    sql += ' LIMIT ?';
-    args.push(input.limit ?? 50);
+    if (input.scope) { sql += ' AND scope = ?'; args.push(input.scope); }
+    sql += ' ORDER BY time DESC LIMIT ? OFFSET ?';
+    args.push(limit, offset);
     const rows = await dbAll(sql, args);
     return { rows, count: rows.length };
   }
@@ -101,33 +230,43 @@ export async function executeRead(input: {
   if (input.table === 'motion') {
     let sql = 'SELECT * FROM motion WHERE 1=1';
     const args: any[] = [];
-    if (input.stream) { sql += ' AND stream = ?'; args.push(input.stream); }
-    if (input.id) { sql += ' AND stream = ?'; args.push(input.id); }
-    sql += ' ORDER BY seq DESC LIMIT ?';
-    args.push(input.limit ?? 50);
+    if (input.id) { sql += ' AND id = ?'; args.push(input.id); }
+    if (input.type) { sql += ' AND type = ?'; args.push(input.type); }
+    if (input.ref) { sql += ' AND ref = ?'; args.push(input.ref); }
+    if (input.scope) { sql += ' AND scope = ?'; args.push(input.scope); }
+    sql += ' ORDER BY at DESC LIMIT ? OFFSET ?';
+    args.push(limit, offset);
     const rows = await dbAll(sql, args);
     return { rows: rows.map(r => ({ ...r, data: parseJson(r.data) })), count: rows.length };
   }
 
-  if (input.table === 'memory') {
-    let sql = 'SELECT * FROM memory WHERE 1=1';
+  if (input.table === 'inbox') {
+    let sql = 'SELECT * FROM inbox WHERE 1=1';
     const args: any[] = [];
     if (input.id) { sql += ' AND id = ?'; args.push(input.id); }
-    if (input.scope) { sql += " AND json_extract(meta, '$.scope') = ?"; args.push(input.scope); }
-    sql += ' LIMIT ?';
-    args.push(input.limit ?? 50);
+    if (input.type) { sql += ' AND type = ?'; args.push(input.type); }
+    if (input.ref) { sql += ' AND ref = ?'; args.push(input.ref); }
+    if (input.status) { sql += ' AND status = ?'; args.push(input.status); }
+    if (input.scope) { sql += ' AND scope = ?'; args.push(input.scope); }
+    sql += ' ORDER BY at DESC LIMIT ? OFFSET ?';
+    args.push(limit, offset);
     const rows = await dbAll(sql, args);
-    return { rows: rows.map(r => ({ ...r, meta: parseJson(r.meta) })), count: rows.length };
+    return { rows: rows.map(r => ({ ...r, data: parseJson(r.data) })), count: rows.length };
   }
 
-  // form or matter
-  let sql = `SELECT * FROM ${input.table} WHERE 1=1`;
+  // Fallback to matter (also mapping legacy 'form' reads to matter type='setting')
+  const actualTable = input.table === 'form' ? 'matter' : input.table;
+  let sql = `SELECT * FROM ${actualTable} WHERE 1=1`;
   const args: any[] = [];
+
+  if (input.table === 'form') {
+    sql += " AND type = 'setting'";
+  }
 
   if (input.id) { sql += ' AND id = ?'; args.push(input.id); }
   if (input.scope) { sql += ' AND scope = ?'; args.push(input.scope); }
-  if (input.type) { sql += ' AND type = ?'; args.push(input.type); }
-  if (input.active !== undefined) { sql += ' AND active = ?'; args.push(input.active ? 1 : 0); }
+  if (input.type && input.table !== 'form') { sql += ' AND type = ?'; args.push(input.type); }
+  if (input.status) { sql += ' AND status = ?'; args.push(input.status); }
 
   if (input.filters) {
     for (const f of input.filters) {
@@ -136,9 +275,8 @@ export async function executeRead(input: {
     }
   }
 
-  sql += ' ORDER BY time DESC';
-  sql += ' LIMIT ? OFFSET ?';
-  args.push(input.limit ?? 50, input.offset ?? 0);
+  sql += ' ORDER BY updated DESC LIMIT ? OFFSET ?';
+  args.push(limit, offset);
 
   const rows = await dbAll(sql, args);
   return { rows: rows.map(r => ({ ...r, data: parseJson(r.data) })), count: rows.length };
@@ -148,22 +286,96 @@ export async function executeRead(input: {
 // executeUpdate — Update any table
 // ============================================================
 export async function executeUpdate(input: {
-  table: string; id?: string; scope?: string; type?: string;
+  table: string;
+  id?: string;
+  scope?: string;
+  type?: string;
   patch: Record<string, any>;
   [key: string]: any;
 }) {
-  const now = new Date().toISOString();
-  const sets: string[] = ['updated = ?'];
-  const args: any[] = [now];
+  const nowUnix = Math.floor(Date.now() / 1000);
+  const actualTable = input.table === 'form' ? 'matter' : input.table;
+  const scope = input.scope || 'ws:global';
 
-  for (const [key, val] of Object.entries(input.patch)) {
+  let patch = { ...input.patch };
+  let finalFile: string | null = null;
+
+  if (actualTable === 'matter' && input.id) {
+    const existing = await dbGet(
+      `SELECT type, data, file FROM matter WHERE id = ?`,
+      [input.id]
+    ).catch(() => null);
+
+    if (existing) {
+      const existingData = parseJson(existing.data);
+      const existingFileKey = existing.file || `${scope}/${input.id}/full.json`;
+
+      let updatedData = { ...existingData };
+      let richPatch: Record<string, any> = {};
+      let hasRichPatch = false;
+
+      if (patch.data) {
+        for (const [k, v] of Object.entries(patch.data)) {
+          const isNested = typeof v === 'object' && v !== null;
+          const isRichKey = RICH_FIELD_KEYS.has(k.toLowerCase());
+
+          if (isNested || isRichKey) {
+            richPatch[k] = v;
+            hasRichPatch = true;
+          } else {
+            updatedData[k] = v;
+          }
+        }
+        delete patch.data;
+      }
+
+      for (const [k, v] of Object.entries(patch)) {
+        if (k !== 'id' && k !== 'scope' && k !== 'type' && k !== 'table' && k !== 'file' && k !== 'status' && k !== 'title' && k !== 'value') {
+          const isNested = typeof v === 'object' && v !== null;
+          const isRichKey = RICH_FIELD_KEYS.has(k.toLowerCase());
+
+          if (isNested || isRichKey) {
+            richPatch[k] = v;
+            hasRichPatch = true;
+          } else {
+            updatedData[k] = v;
+          }
+          delete patch[k];
+        }
+      }
+
+       if (hasRichPatch) {
+        try {
+          const env = envContext.getStore();
+          if (env) {
+            const { s3Get, s3Put } = await import('./s3-client');
+            const existingS3Text = await s3Get(env, existingFileKey).catch(() => null);
+            const existingRich = existingS3Text ? parseJson(existingS3Text) : {};
+
+            const mergedRich = { ...existingRich, ...richPatch };
+            await s3Put(env, existingFileKey, JSON.stringify(mergedRich), 'application/json');
+            finalFile = existingFileKey;
+          }
+        } catch (s3Err) {
+          console.warn('[helpers] S3 split update failed:', s3Err);
+        }
+      }
+
+      patch.data = updatedData;
+      if (finalFile) {
+        patch.file = finalFile;
+      }
+    }
+  }
+
+  const sets: string[] = ['updated = ?'];
+  const args: any[] = [nowUnix];
+
+  for (const [key, val] of Object.entries(patch)) {
     if (val !== undefined) {
       if (key === 'data') {
-        // Merge with existing data
-        const existing = input.id ? await dbGet(`SELECT data FROM ${input.table} WHERE id = ?`, [input.id]) : null;
-        const merged = { ...parseJson(existing?.data), ...val };
         sets.push('data = ?');
-        args.push(JSON.stringify(merged));
+        args.push(JSON.stringify(val));
       } else {
         sets.push(`${key} = ?`);
         args.push(val);
@@ -176,136 +388,133 @@ export async function executeUpdate(input: {
   if (input.scope) { whereClause += ' AND scope = ?'; args.push(input.scope); }
   if (input.type) { whereClause += ' AND type = ?'; args.push(input.type); }
 
-  await dbRun(`UPDATE ${input.table} SET ${sets.join(', ')} ${whereClause}`, args);
+  await dbRun(`UPDATE ${actualTable} SET ${sets.join(', ')} ${whereClause}`, args);
 
-  // Log update to motion for matter table
-  if (input.table === 'matter' && input.id) {
-    const seq = Date.now();
-    await dbRun(
-      `INSERT INTO motion (stream, seq, action, phase, data, time) VALUES (?, ?, 1001, ?, ?, ?)`,
-      [input.id, seq, null, JSON.stringify({ changed: Object.keys(input.patch) }), now]
-    );
+  // For matter updates, log a motion change event
+  if (actualTable === 'matter' && input.id) {
+    await executeCreate({
+      table: 'motion',
+      type: 'change',
+      ref: input.id,
+      scope,
+      data: { changed: Object.keys(input.patch) },
+      by: 'system'
+    });
   }
 
-  return { success: true, time: now };
+  return { success: true, updated: nowUnix };
 }
 
 // ============================================================
-// executeDelete — Soft delete (set active=0)
+// executeDelete — Physically delete or soft delete depending on table
 // ============================================================
 export async function executeDelete(input: {
-  table: string; id?: string; scope?: string;
-  src?: string; rel?: string; tgt?: string;
+  table: string;
+  id?: string;
+  scope?: string;
+  src?: string;
+  rel?: string;
+  tgt?: string;
   [key: string]: any;
 }) {
-  const now = new Date().toISOString();
+  const scope = input.scope || 'ws:global';
 
   if (input.table === 'graph') {
     if (input.src && input.rel && input.tgt) {
       await dbRun(
-        `UPDATE graph SET active = 0, time = ? WHERE src = ? AND rel = ? AND tgt = ?`,
-        [now, input.src, input.rel, input.tgt]
+        `DELETE FROM graph WHERE src = ? AND rel = ? AND tgt = ? AND scope = ?`,
+        [input.src, input.rel, input.tgt, scope]
       );
-      return { success: true, status: 'deactivated' };
+      return { success: true, status: 'deleted' };
     }
-    return { error: 'src, rel, tgt required for graph delete' };
+    throw new Error('src, rel, tgt required for graph delete');
   }
 
-  let whereClause = 'WHERE 1=1';
-  const args: any[] = [now];
-  if (input.id) { whereClause += ' AND id = ?'; args.push(input.id); }
-  if (input.scope) { whereClause += ' AND scope = ?'; args.push(input.scope); }
+  // Soft delete matter by setting status = 'archived'
+  if (input.table === 'matter' && input.id) {
+    await executeUpdate({
+      table: 'matter',
+      id: input.id,
+      scope,
+      patch: { status: 'archived' }
+    });
+    return { success: true, status: 'soft_deleted' };
+  }
 
-  await dbRun(`UPDATE ${input.table} SET active = 0, updated = ? ${whereClause}`, args);
-  return { success: true, status: 'soft_deleted' };
+  // Soft delete inbox by setting status = 'archived'
+  if (input.table === 'inbox' && input.id) {
+    await dbRun(
+      `UPDATE inbox SET status = 'archived' WHERE id = ? AND scope = ?`,
+      [input.id, scope]
+    );
+    return { success: true, status: 'soft_deleted' };
+  }
+
+  throw new Error(`Deletion not supported for table: ${input.table}`);
 }
 
 // ============================================================
-// executeLink — Create or toggle graph edge
+// executeLink — Toggle graph edge
 // ============================================================
 export async function executeLink(input: {
-  src: string; rel: string; tgt: string; active?: boolean;
+  src: string;
+  rel: string;
+  tgt: string;
+  scope?: string;
+  active?: boolean;
 }) {
-  const now = new Date().toISOString();
-  const active = input.active !== undefined ? (input.active ? 1 : 0) : 1;
+  const scope = input.scope || 'ws:global';
+  const active = input.active !== undefined ? input.active : true;
 
-  // Check if edge exists
-  const existing = await dbGet(
-    'SELECT active FROM graph WHERE src = ? AND rel = ? AND tgt = ?',
-    [input.src, input.rel, input.tgt]
-  );
-
-  if (existing) {
-    // Toggle or set
-    await dbRun(
-      'UPDATE graph SET active = ?, time = ? WHERE src = ? AND rel = ? AND tgt = ?',
-      [active, now, input.src, input.rel, input.tgt]
-    );
-    return { src: input.src, rel: input.rel, tgt: input.tgt, status: active ? 'activated' : 'deactivated' };
+  if (!active) {
+    return executeDelete({
+      table: 'graph',
+      src: input.src,
+      rel: input.rel,
+      tgt: input.tgt,
+      scope
+    });
   }
 
-  // Create new edge
-  await dbRun(
-    'INSERT INTO graph (src, rel, tgt, active, time) VALUES (?, ?, ?, ?, ?)',
-    [input.src, input.rel, input.tgt, active, now]
-  );
-  return { src: input.src, rel: input.rel, tgt: input.tgt, status: 'linked' };
+  return executeCreate({
+    table: 'graph',
+    src: input.src,
+    rel: input.rel,
+    tgt: input.tgt,
+    scope
+  });
 }
 
 // ============================================================
-// executeSearch — Text search on memory table
+// executeSearch — Query memory (Mocked/S3 listing now since memory table is removed)
 // ============================================================
 export async function executeSearch(input: {
-  query: string; scope?: string; type?: string; limit?: number;
+  query: string;
+  scope?: string;
+  limit?: number;
 }) {
-  const words = input.query.toLowerCase().split(/\s+/).filter(w => w.trim());
-  if (words.length === 0) return { rows: [], count: 0 };
-
-  let sql = 'SELECT m.id, m.text, m.meta FROM memory m';
-  const args: any[] = [];
-
-  const likeClauses = words.map(() => 'LOWER(m.text) LIKE ?');
-  sql += ` WHERE (${likeClauses.join(' AND ')})`;
-  words.forEach(w => args.push(`%${w}%`));
-
-  if (input.scope) {
-    sql += " AND json_extract(m.meta, '$.scope') = ?";
-    args.push(input.scope);
-  }
-
-  sql += ' LIMIT ?';
-  args.push(input.limit ?? 10);
-
-  const rows = await dbAll(sql, args);
-  return {
-    rows: rows.map(r => ({
-      id: r.id,
-      text: r.text || '',
-      meta: parseJson(r.meta),
-      similarity: 0.8,
-      source: 'fts',
-    })),
-    count: rows.length,
-  };
+  // SQLite-based search on memory table is deprecated as memory moves to S3.
+  // Return empty list to prevent runtime failure of legacy search wrappers.
+  return { rows: [], count: 0 };
 }
 
 // ============================================================
-// Legacy helpers (kept for backward compatibility with actions)
+// Legacy compatibility wrappers (kept for backward compatibility)
 // ============================================================
 export async function createMatter(input: any) {
-  return executeCreate({ ...input, table: input.table || 'matter' });
+  return executeCreate({ ...input, table: 'matter' });
 }
 
 export async function getMatter(input: any) {
-  return executeRead({ ...input, table: input.table || 'matter' });
+  return executeRead({ ...input, table: 'matter' });
 }
 
 export async function listMatters(input: any) {
-  return executeRead({ ...input, table: input.table || 'matter' });
+  return executeRead({ ...input, table: 'matter' });
 }
 
 export async function updateMatter(input: any) {
-  return executeUpdate({ ...input, table: input.table || 'matter', patch: input.patch || {} });
+  return executeUpdate({ ...input, table: 'matter', patch: input.patch || {} });
 }
 
 export async function appendMotion(input: any) {
@@ -325,11 +534,14 @@ export async function traverseGraph(input: any) {
 }
 
 export async function setAttr(input: any) {
-  // Redirect to matter.data JSON update
   const matter = await dbGet('SELECT data FROM matter WHERE id = ?', [input.matterId]);
   const data = parseJson(matter?.data);
   data[input.key] = input.val ?? input.num ?? null;
-  await dbRun('UPDATE matter SET data = ?, updated = ? WHERE id = ?', [JSON.stringify(data), new Date().toISOString(), input.matterId]);
+  await executeUpdate({
+    table: 'matter',
+    id: input.matterId,
+    patch: { data }
+  });
   return { matter: input.matterId, key: input.key, status: 'set' };
 }
 
@@ -342,5 +554,7 @@ export async function searchMemory(input: any) {
 }
 
 export async function storeMemory(input: any) {
-  return executeCreate({ ...input, table: 'memory' });
+  // S3 memory storage must be done via direct S3 API integration.
+  // This legacy SQLite-based memory function returns success mock.
+  return { id: `mem_${generateUlid()}`, status: 'skipped_sqlite' };
 }

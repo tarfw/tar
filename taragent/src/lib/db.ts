@@ -9,6 +9,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { SCHEMA_STATEMENTS } from './schema';
 
 export const dbContext = new AsyncLocalStorage<{ url: string; token: string }>();
+export const envContext = new AsyncLocalStorage<any>();
 
 const clientCache = new Map<string, ReturnType<typeof createClient>>();
 let storedUrl = '';
@@ -56,8 +57,9 @@ export async function dbAll(sql: string, args: any[] = []): Promise<any[]> {
   return toRows(await (await getClient()).execute({ sql, args }));
 }
 
-export async function dbRun(sql: string, args: any[] = []): Promise<void> {
-  await (await getClient()).execute({ sql, args });
+export async function dbRun(sql: string, args: any[] = []): Promise<{ rowsAffected: number }> {
+  const res = await (await getClient()).execute({ sql, args });
+  return { rowsAffected: res.rowsAffected };
 }
 
 export async function ensureSchema(): Promise<void> {

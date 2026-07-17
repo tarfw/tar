@@ -15,7 +15,7 @@ import { loadDesign } from './gen-ui/design-loader';
 import { renderSectionsToHtml } from './gen-ui/renderer';
 
 import { getOrCreateWorkspaceDb } from './lib/workspace-db';
-import { dbContext } from './lib/db';
+import { dbContext, envContext } from './lib/db';
 import { parseSkillMarkdown, generateCompactActionIndex } from './lib/skill-parser';
 import { executeAITask } from './lib/action-executor';
 import genUiRoutes from './gen-ui/api';
@@ -32,7 +32,7 @@ app.use('*', async (c, next) => {
   const url = c.env.TURSO_DATABASE_URL;
   const token = c.env.TURSO_AUTH_TOKEN;
   if (url) initClient(url, token);
-  await next();
+  return envContext.run(c.env, next);
 });
 
 // ── Gen UI routes ───────────────────────────────────────────────────
@@ -84,13 +84,17 @@ app.post('/workspaces/create', async (c) => {
   }
 
   // Use extracted data or provided fields
-  const wsName = businessData?.name || name;
+  const wsName = businessData?.name || name || 'My Workspace';
   const wsDescription = businessData?.description || description || '';
 
   // Generate subdomain from business name if message was provided
-  const wsSubdomain = message && businessData?.name
+  let wsSubdomain = message && businessData?.name
     ? businessData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)
     : subdomain;
+
+  if (!wsSubdomain) {
+    wsSubdomain = `ws-${Math.random().toString(36).substring(2, 8)}`;
+  }
 
   const scope = `w:${wsSubdomain}`;
 
@@ -683,16 +687,26 @@ app.get('/documents/list', async (c) => {
   return c.json({ documents: docs });
 });
 
-// GET /files/* — serve R2 files directly
+// GET /files/* — serve R2/S3 files directly
 app.get('/files/*', async (c) => {
   const key = c.req.path.replace(/^\/files\//, '');
-  if (!c.env.BUCKET) {
-    return c.text('R2 bucket not configured', 500);
+  if (c.env.BUCKET) {
+    const obj = await c.env.BUCKET.get(key);
+    if (!obj) return c.text('File not found', 404);
+    c.header('Content-Type', obj.httpMetadata?.contentType || 'application/octet-stream');
+    return c.body(obj.body);
   }
-  const obj = await c.env.BUCKET.get(key);
-  if (!obj) return c.text('File not found', 404);
-  c.header('Content-Type', obj.httpMetadata?.contentType || 'application/octet-stream');
-  return c.body(obj.body);
+
+  // Fallback to external S3
+  try {
+    const { s3Get } = await import('./lib/s3-client');
+    const text = await s3Get(c.env, key);
+    if (text === null) return c.text('File not found', 404);
+    c.header('Content-Type', 'application/json');
+    return c.text(text);
+  } catch (err: any) {
+    return c.text(`S3 GET failed: ${err.message}`, 500);
+  }
 });
 
 

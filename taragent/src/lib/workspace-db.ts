@@ -1,28 +1,23 @@
 /**
  * Manages per-workspace Turso databases.
  *
- * Each workspace gets its own Turso DB with 6 tables:
- *   form     — workspace-specific overrides (custom prices, settings)
- *   matter   — current state (stock, orders, staff, customers)
- *   motion   — event log (sales, clock-ins, status changes) — append-only
+ * Each workspace gets its own Turso DB with 4 tables:
+ *   matter   — current state (stock, orders, staff, customers, settings)
+ *   motion   — selective user-visible event log
  *   graph    — relationships (links between items)
- *   tasks    — user inbox (work assigned to people)
- *   memory   — AI memory (customer preferences, patterns)
- *
- * Global database (g:global) has 2 tables:
- *   catalog    — shared product/service/action templates
- *   embeddings — vector embeddings for similarity search
+ *   inbox    — actionable tasks/notifications requiring human attention
  *
  * Creation flow:
  *   1. Check D1 cache for existing DB
  *   2. Create Turso DB via Platform API
  *   3. Create auth token (365d expiry)
  *   4. Store URL + token in D1 workspaces table
- *   5. Apply 6-table schema via pipeline
+ *   5. Apply 4-table schema via pipeline
  *   6. Return { url, authToken } to caller
  */
 
 import { SCHEMA_STATEMENTS } from './schema';
+import { envContext } from './db';
 
 const TURSO_API = 'https://api.turso.tech/v1/organizations';
 const ORG_SLUG = 'tarapp';
@@ -101,31 +96,43 @@ export async function getOrCreateWorkspaceDb(
 
   console.log(`[workspace-db] Turso URL: ${tursoUrl}`);
 
-  // 4. Create auth token
-  const tokenRes = await fetch(`${TURSO_API}/${ORG_SLUG}/databases/${dbName}/auth/tokens`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${platformToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ expiration: '365d' }),
-  });
-
-  const tokenBody = await tokenRes.text();
-  console.log(`[workspace-db] Token response: ${tokenRes.status}`);
-
-  if (!tokenRes.ok) {
-    throw new Error(`Failed to create Turso token: ${tokenRes.status} ${tokenBody}`);
-  }
-
   let authToken = '';
   try {
-    const tokenData = JSON.parse(tokenBody);
-    authToken = tokenData?.jwt || tokenData?.token || '';
-  } catch {}
+    const env = envContext.getStore();
+    if (env?.TURSO_GROUP_TOKEN) {
+      console.log('[workspace-db] Reusing shared TURSO_GROUP_TOKEN');
+      authToken = env.TURSO_GROUP_TOKEN;
+    }
+  } catch (err) {
+    console.warn('[workspace-db] Failed to check env context for TURSO_GROUP_TOKEN:', err);
+  }
 
   if (!authToken) {
-    throw new Error('No token returned from Turso API');
+    // 4. Create auth token
+    const tokenRes = await fetch(`${TURSO_API}/${ORG_SLUG}/databases/${dbName}/auth/tokens`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${platformToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ expiration: '365d' }),
+    });
+
+    const tokenBody = await tokenRes.text();
+    console.log(`[workspace-db] Token response: ${tokenRes.status}`);
+
+    if (!tokenRes.ok) {
+      throw new Error(`Failed to create Turso token: ${tokenRes.status} ${tokenBody}`);
+    }
+
+    try {
+      const tokenData = JSON.parse(tokenBody);
+      authToken = tokenData?.jwt || tokenData?.token || '';
+    } catch {}
+
+    if (!authToken) {
+      throw new Error('No token returned from Turso API');
+    }
   }
 
   // 5. Update workspaces table in D1
@@ -163,34 +170,6 @@ export async function getOrCreateWorkspaceDb(
       console.warn(`[workspace-db] Schema attempt ${attempt} failed:`, schemaErr);
       if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
     }
-  }
-
-  // 7. Run migrations individually (ALTER TABLE fails if column exists, so ignore errors)
-  const MIGRATION_SQLS = [
-    'ALTER TABLE form ADD COLUMN active INTEGER DEFAULT 1',
-    'ALTER TABLE form ADD COLUMN owner TEXT',
-    'ALTER TABLE form ADD COLUMN time TEXT',
-    'ALTER TABLE matter ADD COLUMN form TEXT',
-    'ALTER TABLE matter ADD COLUMN active INTEGER DEFAULT 1',
-    'ALTER TABLE matter ADD COLUMN owner TEXT',
-    'ALTER TABLE matter ADD COLUMN qty REAL DEFAULT 0',
-    'ALTER TABLE matter ADD COLUMN time TEXT',
-    'ALTER TABLE matter ADD COLUMN updated TEXT',
-    'ALTER TABLE motion ADD COLUMN scope TEXT DEFAULT \'global\'',
-  ];
-  const cleanHostname2 = hostname.replace('libsql://', '').replace('.turso.io', '') + '.turso.io';
-  const pipelineUrl2 = `https://${cleanHostname2}/v2/pipeline`;
-  for (const sql of MIGRATION_SQLS) {
-    try {
-      await fetch(pipelineUrl2, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ requests: [{ type: 'execute', stmt: { sql } }] }),
-      });
-    } catch {}
   }
 
   return { url: tursoUrl, authToken };

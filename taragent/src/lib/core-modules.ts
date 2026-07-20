@@ -5,7 +5,7 @@ name: orders
 version: 1.0.0
 actions:
   - name: action_record_sale
-    params: [items, payment_method]
+    params: [items, payment_method, total, customer_id]
     icon: receipt
   - name: action_void_order
     params: [order_id, reason]
@@ -38,13 +38,16 @@ Handles POS orders and sales recording.
 ### action_record_sale
 Record a customer purchase.
 steps:
-1. create(table='matter', type='order', title='Sale', data={items: {items}, payment_method: {payment_method}})
-2. create(table='motion', type='sale', ref={id}, data={items: {items}, payment_method: {payment_method}})
+1. create(table='matter', type='order', title='Sale', value={total}, data={payment_method: {payment_method}, line_items: {items}}, status='active')
+2. create(table='motion', type='sale', ref={id}, data={total: {total}}, by='agent:taragent')
+3. link(src={id}, rel='customer', tgt={customer_id})
+4. create(table='inbox', type='order', title='New order', ref={id})
+5. for each item: read(table='matter', id={productId}, type='product') -> update(table='matter', id={productId}, type='product', value=currentValue-{qty})
 
 ### action_void_order
 Void a transaction.
 steps:
-1. update(table='matter', id={order_id}, type='order', status='voided')
+1. update(table='matter', id={order_id}, type='order', status='voided', data={reason: {reason}})
 `,
 
   inventory: `---
@@ -80,12 +83,14 @@ Tracks and adjusts stock levels.
 ### action_check_stock
 Check inventory levels.
 steps:
-1. read(table='matter', type='product')
+1. read(table='matter', type='product', status='active')
 
 ### action_add_stock
 Adjust stock quantity.
 steps:
-1. update(table='matter', id={product_id}, type='product', value={qty})
+1. read(table='matter', id={product_id}, type='product')
+2. update(table='matter', id={product_id}, type='product', value=currentValue+{qty})
+3. create(table='motion', type='adjust', ref={product_id}, data={adjust: {qty}}, by='agent:taragent')
 `,
 
   bookings: `---
@@ -94,7 +99,7 @@ name: bookings
 version: 1.0.0
 actions:
   - name: action_book_slot
-    params: [service, date, slot]
+    params: [service, date, slot, customer_id, due]
     icon: calendar
   - name: action_cancel_booking
     params: [booking_id]
@@ -116,9 +121,11 @@ site_pages:
 Manages appointments and schedules.
 
 ### action_book_slot
-Create an appointment slot.
+Create an appointment booking.
 steps:
-1. create(table='matter', type='booking', title='Booking', data={service: {service}, date: {date}, slot: {slot}}, status='confirmed')
+1. create(table='matter', type='booking', title='Booking', data={service: {service}, date: {date}, slot: {slot}, customer_id: {customer_id}}, status='active')
+2. create(table='motion', type='booking', ref={id}, data={service: {service}}, by='agent:taragent')
+3. create(table='inbox', type='booking', title='Booking', ref={id}, due={due})
 
 ### action_cancel_booking
 Cancel an appointment.
@@ -173,7 +180,8 @@ Manages customer records, companies, deals, pipelines, and activities.
 ### action_add_contact
 Add a new contact and link them to a company.
 steps:
-1. create(table='matter', type='customer', title={name}, data={name: {name}, phone: {phone}, email: {email}, company_id: {company_id}, role: {role}, source: {source}, is_company: false})
+1. create(table='matter', type='customer', title={name}, data={name: {name}, phone: {phone}, email: {email}, role: {role}, source: {source}}, status='active')
+2. link(src={id}, rel='works', tgt={company_id})
 
 ### action_get_contact
 Retrieve a contact profile.
@@ -183,7 +191,7 @@ steps:
 ### action_add_company
 Add a new company profile.
 steps:
-1. create(table='matter', type='customer', title={name}, data={name: {name}, industry: {industry}, size: {size}, website: {website}, address: {address}, is_company: true})
+1. create(table='matter', type='customer', title={name}, data={name: {name}, industry: {industry}, size: {size}, website: {website}, address: {address}}, status='active')
 
 ### action_get_company
 Retrieve company details.
@@ -193,19 +201,20 @@ steps:
 ### action_add_deal
 Add a new deal associated with a contact and company.
 steps:
-1. create(table='matter', type='deal', title={name}, value={value}, data={name: {name}, stage: {stage}, expected_close_date: {expected_close_date}, contact_id: {contact_id}, company_id: {company_id}})
-2. create(table='motion', type='deal', ref={id}, data={deal_id: {id}, stage: {stage}, value: {value}})
+1. create(table='matter', type='deal', title={name}, value={value}, data={name: {name}, stage: {stage}, expected_close_date: {expected_close_date}}, status='active')
+2. link(src={id}, rel='customer', tgt={contact_id})
+3. create(table='motion', type='stage', ref={id}, data={stage: {stage}, value: {value}}, by='agent:taragent')
 
 ### action_update_deal_stage
 Update a deal's pipeline stage.
 steps:
 1. update(table='matter', id={deal_id}, type='deal', data={stage: {stage}, win_loss_reason: {win_loss_reason}})
-2. create(table='motion', type='deal_stage_change', ref={deal_id}, data={deal_id: {deal_id}, stage: {stage}})
+2. create(table='motion', type='stage', ref={deal_id}, data={stage: {stage}, win_loss_reason: {win_loss_reason}}, by='agent:taragent')
 
 ### action_log_activity
-Log a communication activity (Call, Email, Meeting, Note, Task).
+Log a communication activity.
 steps:
-1. create(table='motion', type='activity', ref={deal_id}, data={activity_type: {type}, description: {description}, contact_id: {contact_id}, deal_id: {deal_id}})
+1. create(table='motion', type='activity', ref={deal_id}, data={activity_type: {type}, description: {description}, contact_id: {contact_id}}, by='agent:taragent')
 `,
 
   logistics: `---
@@ -232,14 +241,16 @@ app_layout:
 Tracks deliveries and shipments.
 
 ### action_create_shipment
-Initiance shipment for order.
+Initiate shipment for order.
 steps:
-1. create(table='matter', type='shipment', title='Shipment', data={order_id: {order_id}, address: {address}}, status='dispatched')
+1. create(table='matter', type='shipment', title='Shipment', data={order_id: {order_id}, address: {address}}, status='active')
+2. link(src={id}, rel='order', tgt={order_id})
 
 ### action_update_tracking
 Update delivery tracking status.
 steps:
 1. update(table='matter', id={shipment_id}, type='shipment', status={status})
+2. create(table='motion', type='change', ref={shipment_id}, data={status: {status}}, by='agent:taragent')
 `,
 
   projects: `---
@@ -268,12 +279,14 @@ Tracks milestones, tasks, and issues inside the inbox.
 ### action_create_task
 Create a project task.
 steps:
-1. create(table='inbox', type='project', title={title}, data={description: {description}}, status='open')
+1. create(table='matter', type='project', title={title}, data={description: {description}}, status='active')
+2. create(table='inbox', type='project', title={title}, ref={id})
 
 ### action_update_task_status
 Mark task status.
 steps:
-1. update(table='inbox', id={task_id}, type='project', status={status})
+1. update(table='matter', id={task_id}, type='project', status={status})
+2. create(table='motion', type='done', ref={task_id}, data={status: {status}}, by='agent:taragent')
 `,
 
   hr: `---
@@ -284,22 +297,38 @@ actions:
   - name: action_add_employee
     params: [name, role, salary]
     icon: people
+  - name: action_clock_in
+    params: [staff_id]
+    icon: log-in
+  - name: action_clock_out
+    params: [staff_id]
+    icon: log-out
 app_layout:
   primary_action: action_add_employee
   layout: dashboard
   sections:
     - type: quick-actions
-      actions: [action_add_employee]
+      actions: [action_add_employee, action_clock_in, action_clock_out]
 ---
 
 # HR Module
 
-Manages staff profiles and payroll.
+Manages staff profiles, attendance, and payroll.
 
 ### action_add_employee
 Register a new staff member.
 steps:
-1. create(table='matter', type='staff', title={name}, data={name: {name}, role: {role}, salary: {salary}})
+1. create(table='matter', type='staff', title={name}, data={name: {name}, role: {role}, salary: {salary}}, status='active')
+
+### action_clock_in
+Record employee clock-in.
+steps:
+1. create(table='motion', type='clockin', ref={staff_id}, by='agent:taragent')
+
+### action_clock_out
+Record employee clock-out.
+steps:
+1. create(table='motion', type='clockout', ref={staff_id}, by='agent:taragent')
 `,
 
   lms: `---
@@ -325,7 +354,7 @@ Manages classes and courses.
 ### action_create_course
 Publish a learning course.
 steps:
-1. create(table='matter', type='course', title={title}, data={title: {title}, instructor: {instructor}})
+1. create(table='matter', type='product', title={title}, data={instructor: {instructor}, category: 'course'}, status='active')
 `,
 
   listings: `---
@@ -355,7 +384,7 @@ Tracks real estate or catalog listings.
 ### action_add_listing
 Add a new listing.
 steps:
-1. create(table='matter', type='listing', title={title}, value={price}, data={title: {title}, description: {description}})
+1. create(table='matter', type='listing', title={title}, value={price}, data={description: {description}}, status='active')
 `,
 
   support: `---
@@ -385,7 +414,9 @@ Customer support ticketing.
 ### action_create_ticket
 File a support ticket.
 steps:
-1. create(table='matter', type='ticket', title={subject}, data={customer_id: {customer_id}, subject: {subject}}, status='open')
+1. create(table='matter', type='ticket', title={subject}, status='active')
+2. link(src={id}, rel='customer', tgt={customer_id})
+3. create(table='inbox', type='support', title={subject}, ref={id})
 `,
 
   reports: `---
@@ -414,12 +445,13 @@ Generates SQL report charts.
 ### action_report_daily_sales
 View daily sales.
 steps:
-1. read(table='matter', type='order')
+1. read(table='matter', type='order', status='active')
 
 ### action_report_low_stock
 View low stock items.
 steps:
 1. read(table='matter', type='product')
+2. filter: qty <= minStock
 `,
 
   expenses: `---
@@ -445,7 +477,7 @@ Records business expenditures.
 ### action_record_expense
 Log an expense.
 steps:
-1. create(table='matter', type='expense', title={category}, value={amount}, data={category: {category}, amount: {amount}, date: {date}})
+1. create(table='matter', type='expense', title={category}, value={amount}, data={date: {date}}, status='active')
 `,
 
   documents: `---
@@ -471,7 +503,7 @@ Stores links to business files.
 ### action_upload_doc
 Add a document link.
 steps:
-1. create(table='matter', type='document', title={name}, data={name: {name}, url: {url}})
+1. create(table='matter', type='asset', title={name}, data={url: {url}}, status='active')
 `,
 
   "team-chat": `---
@@ -497,6 +529,6 @@ Relays chat messages to Slack or Telegram.
 ### action_send_message
 Post a message to chat channel.
 steps:
-1. create(table='matter', type='chat_message', title={channel}, data={channel: {channel}, text: {text}})
+1. create(table='motion', type='activity', data={channel: {channel}, text: {text}}, by='agent:taragent')
 `
 };

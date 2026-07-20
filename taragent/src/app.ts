@@ -111,9 +111,13 @@ app.post('/workspaces/create', async (c) => {
   const mods = modules || ['orders', 'inventory', 'crm', 'reports'];
 
   try {
-    // 0. Ensure D1 workspaces table has required columns
-    for (const col of ['user_id', 'type', 'custom_domain', 'name']) {
-      try { await c.env.DB.prepare(`ALTER TABLE workspaces ADD COLUMN ${col} TEXT`).run(); } catch {}
+    // Check if subdomain is already taken
+    const existing = await c.env.DB.prepare(
+      'SELECT 1 FROM workspaces WHERE subdomain = ?'
+    ).bind(wsSubdomain).first();
+
+    if (existing) {
+      return c.json({ error: 'This subdomain URL is already taken. Please choose another name.' }, 400);
     }
 
     // 1. Insert workspace into D1 with type

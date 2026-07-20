@@ -39,14 +39,6 @@ export async function getOrCreateWorkspaceDb(
   scope: string,
   platformToken: string
 ): Promise<{ url: string; authToken: string }> {
-  // 0. Ensure schema columns exist in D1 workspaces table
-  try {
-    await db.prepare('ALTER TABLE workspaces ADD COLUMN turso_url TEXT').run();
-  } catch {}
-  try {
-    await db.prepare('ALTER TABLE workspaces ADD COLUMN turso_auth_token TEXT').run();
-  } catch {}
-
   // 1. Check D1 cache
   const existing = await db
     .prepare('SELECT subdomain, scope, turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?')

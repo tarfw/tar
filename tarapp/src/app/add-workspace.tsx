@@ -1,137 +1,47 @@
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, ActivityIndicator, Keyboard, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, ActivityIndicator, Keyboard } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/hooks/use-theme';
 import { tar } from '@/lib/tar';
 
-interface CapabilityChip {
-  label: string;
-  text: string;
-  icon: string;
-}
-
-const UNIVERSAL_CAPABILITIES: CapabilityChip[] = [
-  { label: 'POS / Sales', text: 'POS / sales recording', icon: 'cash-outline' },
-  { label: 'Inventory', text: 'inventory tracking', icon: 'cube-outline' },
-  { label: 'CRM', text: 'customer relationship management', icon: 'people-outline' },
-  { label: 'Bookings', text: 'appointment booking slots', icon: 'calendar-outline' },
-  { label: 'Team Chat', text: 'team chat integration', icon: 'chatbubbles-outline' },
-  { label: 'Projects', text: 'project task tracking', icon: 'checkbox-outline' },
-];
-
 export default function AddWorkspaceScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
 
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [subdomain, setSubdomain] = useState('');
   const [businessMessage, setBusinessMessage] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
-  const [hasExisting, setHasExisting] = useState(false);
-  const [dynamicSuggestions, setDynamicSuggestions] = useState<Array<{ label: string; text: string }>>([]);
 
   const messageInputRef = useRef<TextInput>(null);
 
-  useEffect(() => {
-    tar.listWorkspaces()
-      .then((data) => {
-        if (data?.workspaces && data.workspaces.length > 0) {
-          setHasExisting(true);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const text = businessMessage.toLowerCase();
-    const suggestions: Array<{ label: string; text: string }> = [];
-
-    if (text.length > 2) {
-      if (
-        (text.includes('cafe') || text.includes('restaurant') || text.includes('shop') || text.includes('store') || text.includes('bakery') || text.includes('boutique') || text.includes('pizza') || text.includes('food')) &&
-        !text.includes('inventory')
-      ) {
-        suggestions.push({ label: '📦 Add Stock/Inventory', text: 'inventory tracking' });
-      }
-      if (
-        (text.includes('cafe') || text.includes('restaurant') || text.includes('shop') || text.includes('store') || text.includes('sale') || text.includes('pizza') || text.includes('pos')) &&
-        !text.includes('sales') && !text.includes('pos')
-      ) {
-        suggestions.push({ label: '💰 Add POS / Sales', text: 'POS / sales recording' });
-      }
-      if (
-        (text.includes('salon') || text.includes('doctor') || text.includes('dentist') || text.includes('clinic') || text.includes('consult') || text.includes('class') || text.includes('book') || text.includes('tutor') || text.includes('appoint')) &&
-        !text.includes('booking')
-      ) {
-        suggestions.push({ label: '📅 Add Appointment Bookings', text: 'appointment booking slots' });
-      }
-      if (
-        (text.includes('client') || text.includes('customer') || text.includes('lead') || text.includes('contact') || text.includes('crm') || text.includes('pipeline')) &&
-        !text.includes('crm') && !text.includes('customer relationship')
-      ) {
-        suggestions.push({ label: '👤 Add CRM / Contacts', text: 'customer relationship management' });
-      }
-      if (
-        (text.includes('team') || text.includes('chat') || text.includes('slack') || text.includes('collab') || text.includes('group')) &&
-        !text.includes('chat')
-      ) {
-        suggestions.push({ label: '💬 Add Team Chat', text: 'team chat integration' });
-      }
-      if (
-        (text.includes('project') || text.includes('task') || text.includes('track') || text.includes('dev') || text.includes('agency')) &&
-        !text.includes('project') && !text.includes('task')
-      ) {
-        suggestions.push({ label: '📋 Add Project Tracking', text: 'project task tracking' });
-      }
-    }
-
-    setDynamicSuggestions(suggestions);
-  }, [businessMessage]);
-
-  const appendCapability = (textToAppend: string) => {
-    setBusinessMessage((prev) => {
-      const trimmed = prev.trim();
-      if (!trimmed) {
-        return `A business with ${textToAppend}`;
-      }
-      if (trimmed.toLowerCase().includes(textToAppend.toLowerCase())) {
-        return prev;
-      }
-      
-      const hasModifier = trimmed.toLowerCase().includes('with') || trimmed.toLowerCase().includes('managing') || trimmed.toLowerCase().includes('tracking');
-      if (hasModifier) {
-        return `${trimmed}, ${textToAppend}`;
-      } else {
-        return `${trimmed} with ${textToAppend}`;
-      }
-    });
+  const handleNameChange = (val: string) => {
+    setWorkspaceName(val);
+    const slug = val
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 30);
+    setSubdomain(slug);
   };
 
   const handleCreate = async () => {
-    if (!businessMessage.trim() || creating) return;
+    if (!workspaceName.trim() || !subdomain.trim() || creating) return;
     Keyboard.dismiss();
     setCreating(true);
     setError('');
     try {
-      const subdomain = businessMessage
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '')
-        .slice(0, 30);
-
-      const workspaceName = subdomain
-        .split('-')
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(' ');
-
+      const activeSubdomain = subdomain.trim();
       await tar.createWorkspace({
-        name: workspaceName,
-        subdomain,
+        name: workspaceName.trim(),
+        subdomain: activeSubdomain,
         message: businessMessage.trim(),
       });
 
@@ -141,7 +51,7 @@ export default function AddWorkspaceScreen() {
       if (userId) {
         await SecureStore.setItemAsync(`onb_${userId}`, 'true');
       }
-      await SecureStore.setItemAsync('active_workspace_subdomain', subdomain);
+      await SecureStore.setItemAsync('active_workspace_subdomain', activeSubdomain);
 
       // Redirect immediately to the workspaces screen
       try {
@@ -160,188 +70,203 @@ export default function AddWorkspaceScreen() {
     }
   };
 
-  const handleBack = () => {
-    if (hasExisting) {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/(tabs)/workspaces');
-      }
-    }
-  };
+  // Extract active modules dynamically based on user prompt in real-time
+  const text = businessMessage.toLowerCase().trim();
+  
+  const hasOrders = text.includes('order') || text.includes('sale') || text.includes('pos') || text.includes('restaurant') || text.includes('cafe') || text.includes('shop') || text.includes('store') || text.includes('retail');
+  const hasInventory = text.includes('inventory') || text.includes('stock') || text.includes('product') || text.includes('warehouse') || text.includes('restaurant') || text.includes('cafe') || text.includes('shop') || text.includes('store') || text.includes('retail');
+  const hasCRM = text.includes('crm') || text.includes('customer') || text.includes('client') || text.includes('lead') || text.includes('contact');
+  const hasBookings = text.includes('book') || text.includes('appoint') || text.includes('calendar') || text.includes('schedule') || text.includes('salon') || text.includes('clinic') || text.includes('doctor') || text.includes('dentist');
+  const hasLogistics = text.includes('logistics') || text.includes('ship') || text.includes('delivery') || text.includes('carrier') || text.includes('track');
+  const hasProjects = text.includes('project') || text.includes('task') || text.includes('todo') || text.includes('board') || text.includes('kanban');
+  const hasHR = text.includes('hr') || text.includes('employee') || text.includes('staff') || text.includes('payroll') || text.includes('hire');
+  const hasLMS = text.includes('lms') || text.includes('course') || text.includes('learn') || text.includes('teach') || text.includes('class') || text.includes('student');
+  const hasListings = text.includes('listing') || text.includes('property') || text.includes('real estate') || text.includes('house') || text.includes('apartment');
+  const hasSupport = text.includes('support') || text.includes('ticket') || text.includes('helpdesk') || text.includes('issue');
+  const hasReports = text.includes('report') || text.includes('chart') || text.includes('analytics') || text.includes('stat');
+  const hasExpenses = text.includes('expense') || text.includes('cost') || text.includes('spend') || text.includes('bill');
+  const hasDocuments = text.includes('doc') || text.includes('file') || text.includes('paper') || text.includes('drive');
+  const hasTeamChat = text.includes('chat') || text.includes('message') || text.includes('slack') || text.includes('team');
 
-  if (creating) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-        <Text style={[styles.loadingTitle, { color: theme.text, marginTop: 24 }]}>Generating Workspace</Text>
-        <Text style={[styles.loadingSubtitle, { color: theme.textMuted, marginTop: 8 }]}>
-          Building modules and provisioning database...
-        </Text>
-      </View>
-    );
+  const modules = [
+    { id: 'orders', icon: 'cart-outline' as const, label: 'Commerce & Sales', active: hasOrders },
+    { id: 'inventory', icon: 'cube-outline' as const, label: 'Inventory & Stock', active: hasInventory },
+    { id: 'crm', icon: 'people-outline' as const, label: 'CRM & Customers', active: hasCRM },
+    { id: 'bookings', icon: 'calendar-outline' as const, label: 'Appointments & Booking', active: hasBookings },
+    { id: 'logistics', icon: 'car-outline' as const, label: 'Logistics & Shipments', active: hasLogistics },
+    { id: 'projects', icon: 'checkbox-outline' as const, label: 'Projects & Tasks', active: hasProjects },
+    { id: 'hr', icon: 'people-outline' as const, label: 'HR & Employees', active: hasHR },
+    { id: 'lms', icon: 'book-outline' as const, label: 'LMS & Courses', active: hasLMS },
+    { id: 'listings', icon: 'pricetag-outline' as const, label: 'Listings & Catalog', active: hasListings },
+    { id: 'support', icon: 'help-circle-outline' as const, label: 'Support & Tickets', active: hasSupport },
+    { id: 'reports', icon: 'bar-chart-outline' as const, label: 'Analytics & Reports', active: hasReports },
+    { id: 'expenses', icon: 'cash-outline' as const, label: 'Expenses & Log', active: hasExpenses },
+    { id: 'documents', icon: 'document-text-outline' as const, label: 'Documents & Files', active: hasDocuments },
+    { id: 'team-chat', icon: 'chatbubbles-outline' as const, label: 'Team Chat & Relays', active: hasTeamChat },
+  ];
+
+  const matchedModules = modules.filter((m) => m.active);
+  const isCustomConfigured = matchedModules.length > 0;
+
+  // Use matched modules if present, else fallback to core defaults during creation
+  let activeModules = isCustomConfigured ? matchedModules : [];
+  if (creating && activeModules.length === 0) {
+    activeModules = [
+      { id: 'orders', icon: 'cart-outline' as const, label: 'Commerce & Sales', active: true },
+      { id: 'inventory', icon: 'cube-outline' as const, label: 'Inventory & Stock', active: true },
+      { id: 'crm', icon: 'people-outline' as const, label: 'CRM & Customers', active: true },
+      { id: 'reports', icon: 'bar-chart-outline' as const, label: 'Analytics & Reports', active: true },
+    ];
   }
 
-  const canCreate = businessMessage.trim() && !creating;
+  const canCreate = workspaceName.trim() && subdomain.trim() && !creating;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {hasExisting && (
-        <TouchableOpacity onPress={handleBack} style={[styles.backButton, { top: insets.top + 12 }]}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
-      )}
-
       <KeyboardAwareScrollView 
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 140 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={[styles.content, { paddingTop: insets.top + 40 }]}>
-          <Text style={[styles.title, { color: theme.text }]}>Create a Workspace</Text>
+        <View style={[styles.content, { paddingTop: insets.top + 60 }]}>
+          
+          {/* Notion-style Title Input */}
+          <TextInput
+            style={[styles.titleInput, { color: theme.text }]}
+            value={workspaceName}
+            onChangeText={handleNameChange}
+            placeholder="Untitled Workspace"
+            placeholderTextColor={theme.textMuted + '80'}
+            editable={!creating}
+            autoFocus
+          />
 
-          {/* Prompt Canvas Input Box */}
-          <View style={[styles.inputCard, { backgroundColor: theme.backgroundElement || '#f8fafc', borderColor: theme.border || 'rgba(0,0,0,0.06)' }]}>
+          {/* Subdomain URL Preview Label */}
+          {subdomain.length > 0 && (
+            <Text style={[styles.urlPreview, { color: theme.primary }]}>
+              {subdomain}.tarai.space
+            </Text>
+          )}
+
+          {/* Notion-style Description Area + Action Button */}
+          <View style={styles.descriptionContainer}>
             <TextInput
               ref={messageInputRef}
               style={[styles.textArea, { color: theme.text }]}
               value={businessMessage}
               onChangeText={setBusinessMessage}
-              placeholder="Describe your business, store, or project in your own words..."
-              placeholderTextColor={theme.textMuted}
+              placeholder="Type a description or tell the AI what you want to build..."
+              placeholderTextColor={theme.textMuted + '80'}
               multiline
-              autoFocus
               editable={!creating}
             />
+
+            <TouchableOpacity
+              activeOpacity={canCreate ? 0.7 : 1}
+              style={[
+                styles.sendButton, 
+                { backgroundColor: canCreate ? theme.primary : theme.border }
+              ]}
+              onPress={handleCreate}
+              disabled={!canCreate}
+            >
+              {creating ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="arrow-up" size={20} color={canCreate ? '#fff' : theme.textMuted} />
+              )}
+            </TouchableOpacity>
           </View>
 
-          {/* Dynamic AI Suggestion Chips (As-You-Type) */}
-          {dynamicSuggestions.length > 0 && (
-            <View style={styles.sectionContainer}>
-              <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>AI Recommendations</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-                {dynamicSuggestions.map((item, idx) => (
-                  <TouchableOpacity
-                    key={`dyn_${idx}`}
-                    onPress={() => appendCapability(item.text)}
-                    style={[styles.chip, { backgroundColor: theme.primary + '15', borderColor: theme.primary + '30' }]}
-                  >
-                    <Text style={[styles.chipText, { color: theme.primary }]}>{item.label}</Text>
-                  </TouchableOpacity>
+          {/* Real-time AI Composing Preview / Final Generating list */}
+          {(creating || isCustomConfigured) && (
+            <View style={styles.generatingBox}>
+              <View style={styles.generatingHeader}>
+                <Text style={[styles.generatingSubtitle, { color: theme.text }]}>
+                  {creating ? 'Generating workspace...' : 'AI Selected Modules'}
+                </Text>
+                {creating && <ActivityIndicator size="small" color={theme.primary} />}
+              </View>
+
+              <View style={styles.solutions}>
+                {activeModules.map((item) => (
+                  <View key={item.id} style={[styles.solutionRow, { opacity: creating ? 1 : 0.8 }]}>
+                    {creating ? (
+                      <ActivityIndicator size="small" color={theme.primary} style={{ marginRight: 6 }} />
+                    ) : (
+                      <Ionicons name={item.icon} size={22} color={theme.primary} style={{ marginRight: 6 }} />
+                    )}
+                    <Text style={[styles.solutionLabel, { color: theme.text }]}>{item.label}</Text>
+                  </View>
                 ))}
-              </ScrollView>
+              </View>
             </View>
           )}
-
-          {/* Universal Capability Modifiers */}
-          <View style={styles.sectionContainer}>
-            <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>Universal Capabilities</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-              {UNIVERSAL_CAPABILITIES.map((item, idx) => (
-                <TouchableOpacity
-                  key={`uni_${idx}`}
-                  onPress={() => appendCapability(item.text)}
-                  style={[styles.chip, { backgroundColor: theme.backgroundElement || '#f8fafc', borderColor: theme.border || 'rgba(0,0,0,0.06)' }]}
-                >
-                  <Ionicons name={item.icon as any} size={14} color={theme.text} style={{ marginRight: 4 }} />
-                  <Text style={[styles.chipText, { color: theme.text }]}>+ {item.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
       </KeyboardAwareScrollView>
-
-      {/* Fixed Bottom Button bar */}
-      <View style={[styles.floatingBottom, { paddingBottom: insets.bottom + 16, backgroundColor: theme.background }]}>
-        <TouchableOpacity
-          activeOpacity={canCreate ? 0.7 : 1}
-          style={[styles.button, { backgroundColor: canCreate ? theme.primary : theme.border }]}
-          onPress={handleCreate}
-          disabled={!canCreate}
-        >
-          <Text style={[styles.buttonText, { color: canCreate ? '#fff' : theme.textMuted }]}>
-            Generate Workspace
-          </Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: 20 },
-  backButton: {
-    position: 'absolute',
-    left: 12,
-    zIndex: 10,
-    padding: 8,
-  },
-  title: {
-    fontSize: 26,
+  content: { flex: 1, paddingHorizontal: 32 },
+  titleInput: {
+    fontSize: 32,
     fontWeight: '800',
     letterSpacing: -0.5,
-    textAlign: 'center',
-    marginTop: 20,
+    padding: 0,
+    marginBottom: 8,
+  },
+  urlPreview: {
+    fontSize: 14,
+    fontWeight: '600',
     marginBottom: 24,
   },
-  inputCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    minHeight: 130,
-    maxHeight: 180,
-    padding: 14,
-    marginBottom: 20,
+  descriptionContainer: {
+    minHeight: 120,
+    position: 'relative',
+    marginBottom: 24,
   },
   textArea: {
     fontSize: 16,
     lineHeight: 24,
-    height: '100%',
+    padding: 0,
     textAlignVertical: 'top',
+    minHeight: 120,
+    paddingRight: 48,
   },
-  sectionContainer: {
-    marginBottom: 16,
+  sendButton: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-    paddingLeft: 4,
+  generatingBox: {
+    marginTop: 10,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
   },
-  chipsScroll: {
-    paddingHorizontal: 4,
-    gap: 8,
-  },
-  chip: {
+  generatingHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '500',
+  generatingSubtitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
-  floatingBottom: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
-  },
-  button: { paddingVertical: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  buttonText: { fontSize: 16, fontWeight: '600' },
-  error: { fontSize: 14, color: '#f44336', marginTop: 12, textAlign: 'center' },
-  loadingTitle: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
-  loadingSubtitle: { fontSize: 14, textAlign: 'center', paddingHorizontal: 16 },
+  solutions: { gap: 14 },
+  solutionRow: { flexDirection: 'row', alignItems: 'center' },
+  solutionLabel: { fontSize: 16, fontWeight: '500' },
+  error: { fontSize: 14, color: '#f44336', marginTop: 16, textAlign: 'center' },
 });

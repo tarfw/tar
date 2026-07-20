@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Modal, Platform, TouchableOpacity } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as SecureStore from 'expo-secure-store';
 
@@ -79,6 +79,7 @@ export default function WorkspacesScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
+  const { subdomain: paramSubdomain } = useLocalSearchParams<{ subdomain?: string }>();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
@@ -103,6 +104,8 @@ export default function WorkspacesScreen() {
   const [designTokens, setDesignTokens] = useState<any>(null);
   const [canvasLayouts, setCanvasLayouts] = useState<any[]>([]);
   const [loadingCanvas, setLoadingCanvas] = useState(false);
+  const [activeWidget, setActiveWidget] = useState<{ moduleName: string } | null>(null);
+
 
   const [selectedAction, setSelectedAction] = useState<any | null>(null);
   const [formParams, setFormParams] = useState<Record<string, string>>({});
@@ -217,11 +220,14 @@ export default function WorkspacesScreen() {
       setWorkspaces(list);
 
       if (list.length > 0) {
-        // Read last active subdomain from SecureStore
-        const activeSub = await SecureStore.getItemAsync('active_workspace_subdomain').catch(() => null);
-        const found = list.find((w) => w.subdomain === activeSub);
+        // Prioritize route parameters (deep-linking), fallback to SecureStore
+        const targetSub = paramSubdomain || await SecureStore.getItemAsync('active_workspace_subdomain').catch(() => null);
+        const found = list.find((w) => w.subdomain === targetSub);
         if (found) {
           setCurrentWorkspace(found);
+          if (paramSubdomain) {
+            await SecureStore.setItemAsync('active_workspace_subdomain', paramSubdomain).catch(() => null);
+          }
         } else {
           // Default to first
           setCurrentWorkspace(list[0]);
@@ -233,11 +239,24 @@ export default function WorkspacesScreen() {
     } finally {
       setLoadingWorkspaces(false);
     }
-  }, []);
+  }, [paramSubdomain]);
 
   useEffect(() => {
     fetchWorkspacesList();
   }, [fetchWorkspacesList]);
+
+  // Update current workspace if the route parameter changes while screen is mounted
+  useEffect(() => {
+    if (paramSubdomain && workspaces.length > 0) {
+      const found = workspaces.find((w) => w.subdomain === paramSubdomain);
+      if (found && found.subdomain !== currentWorkspace?.subdomain) {
+        setCurrentWorkspace(found);
+        SecureStore.setItemAsync('active_workspace_subdomain', paramSubdomain).catch(() => null);
+        setActiveWidget(null);
+        setAgentFeedback(null);
+      }
+    }
+  }, [paramSubdomain, workspaces]);
 
   // Sync current workspace database when selected workspace changes
   useEffect(() => {
@@ -285,6 +304,7 @@ export default function WorkspacesScreen() {
       refreshProducts(scope);
       refreshOrders(scope);
       setAgentFeedback(null);
+      setActiveWidget(null);
     }
   }, [currentWorkspace]);
 
@@ -342,9 +362,11 @@ export default function WorkspacesScreen() {
     if (item.subdomain === currentWorkspace?.subdomain) return;
     
     setCurrentWorkspace(item);
+    setActiveWidget(null);
     await SecureStore.setItemAsync('active_workspace_subdomain', item.subdomain).catch(() => null);
     setAgentFeedback(null);
   };
+
 
   const handleSend = async (messageText?: string) => {
     const textToSend = messageText || input;
@@ -362,12 +384,21 @@ export default function WorkspacesScreen() {
       const subdomain = currentWorkspace.subdomain;
       const workspaceType = currentWorkspace.type || 'business';
 
+      if (/^(clear|reset|clean|home|canvas)\b/i.test(cleanText)) {
+        setActiveWidget(null);
+        setExecuting(false);
+        setAgentFeedback({ text: 'Cleared active canvas widgets.', type: 'success' });
+        return;
+      }
+
       if (/^(show|list|get|view)\s+(products|menu|services|inventory)/i.test(cleanText)) {
         await refreshProducts(scope);
+        setActiveWidget({ moduleName: 'inventory' });
         setAgentFeedback({ text: 'Loaded latest product inventory.', type: 'success' });
       }
       else if (/^(show|list|get|view)\s+(orders|sales)/i.test(cleanText)) {
         await refreshOrders(scope);
+        setActiveWidget({ moduleName: 'orders' });
         setAgentFeedback({ text: 'Loaded latest orders.', type: 'success' });
       }
       else if (/^(show|view|get)\s+(site|storefront|web|website)/i.test(cleanText)) {
@@ -406,10 +437,32 @@ export default function WorkspacesScreen() {
             data: { category: 'General' }
           });
           await refreshProducts(scope);
+          setActiveWidget({ moduleName: 'inventory' });
           setAgentFeedback({ text: `Successfully added "${title}" at ₹${val} to your inventory.`, type: 'success' });
         }
       }
       else {
+        // Automatically check if any active modules are called/referred in search text
+        const cleanLower = cleanText.toLowerCase();
+        const matchedModule = canvasLayouts.find(layout => {
+          const modName = layout.moduleName.toLowerCase();
+          return cleanLower.includes(modName) || 
+                 (modName === 'crm' && (cleanLower.includes('contact') || cleanLower.includes('company') || cleanLower.includes('deal') || cleanLower.includes('sales'))) ||
+                 (modName === 'bookings' && (cleanLower.includes('book') || cleanLower.includes('appoint') || cleanLower.includes('slot') || cleanLower.includes('schedule'))) ||
+                 (modName === 'support' && (cleanLower.includes('ticket') || cleanLower.includes('help'))) ||
+                 (modName === 'projects' && (cleanLower.includes('task') || cleanLower.includes('project'))) ||
+                 (modName === 'hr' && (cleanLower.includes('staff') || cleanLower.includes('employee') || cleanLower.includes('salary') || cleanLower.includes('clock'))) ||
+                 (modName === 'logistics' && (cleanLower.includes('shipment') || cleanLower.includes('track') || cleanLower.includes('deliver'))) ||
+                 (modName === 'lms' && (cleanLower.includes('course') || cleanLower.includes('class'))) ||
+                 (modName === 'listings' && (cleanLower.includes('listing') || cleanLower.includes('property'))) ||
+                 (modName === 'expenses' && (cleanLower.includes('expense') || cleanLower.includes('spend'))) ||
+                 (modName === 'documents' && (cleanLower.includes('doc') || cleanLower.includes('file') || cleanLower.includes('upload'))) ||
+                 (modName === 'team-chat' && (cleanLower.includes('chat') || cleanLower.includes('message') || cleanLower.includes('send')));
+        });
+        if (matchedModule) {
+          setActiveWidget({ moduleName: matchedModule.moduleName });
+        }
+
         const response = await tar.chat(sessionId, textToSend, scope);
         setAgentFeedback({ text: response.reply, type: 'info' });
         
@@ -442,6 +495,9 @@ export default function WorkspacesScreen() {
   };
 
   const handleTriggerAction = (action: any) => {
+    if (action.moduleName) {
+      setActiveWidget({ moduleName: action.moduleName });
+    }
     if (action.params && action.params.length > 0) {
       const initialParams: Record<string, string> = {};
       action.params.forEach((p: any) => {
@@ -526,7 +582,7 @@ export default function WorkspacesScreen() {
           if (!resultList.some(r => r.label === cleanName)) {
             resultList.push({
               label: cleanName,
-              action: action
+              action: { ...action, moduleName: layout.moduleName }
             });
           }
         });
@@ -601,7 +657,7 @@ export default function WorkspacesScreen() {
       <KeyboardAwareScrollView
         ref={scrollViewRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 12, paddingTop: 12, paddingBottom: 120 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         bottomOffset={80}
@@ -627,29 +683,30 @@ export default function WorkspacesScreen() {
             </Text>
           </View>
         ) : designTokens && canvasLayouts.length > 0 ? (
-          <WorkspaceCanvas
-            designTokens={designTokens}
-            layouts={canvasLayouts}
-            onExecuteAction={async (actionName, params) => {
-              if (currentWorkspace?.scope) {
-                const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
-                // Refresh records after action is performed
-                await refreshProducts(currentWorkspace.scope);
-                await refreshOrders(currentWorkspace.scope);
-                return res;
-              }
-              throw new Error('No active workspace scope');
-            }}
-            metricsData={{
-              'orders': orders.length,
-              'inventory': products.length,
-              'bookings': orders.filter(o => o.type === 'booking').length
-            }}
-            tableData={{
-              'orders': orders,
-              'inventory': products
-            }}
-          />
+          activeWidget ? (
+            <WorkspaceCanvas
+              designTokens={designTokens}
+              layouts={canvasLayouts.filter(l => l.moduleName === activeWidget.moduleName)}
+              onExecuteAction={async (actionName, params) => {
+                if (currentWorkspace?.scope) {
+                  const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
+                  await refreshProducts(currentWorkspace.scope);
+                  await refreshOrders(currentWorkspace.scope);
+                  return res;
+                }
+                throw new Error('No active workspace scope');
+              }}
+              metricsData={{
+                'orders': orders.length,
+                'inventory': products.length,
+                'bookings': orders.filter(o => o.type === 'booking').length
+              }}
+              tableData={{
+                'orders': orders,
+                'inventory': products
+              }}
+            />
+          ) : null
         ) : (
           <>
             {/* 2. Inventory Section */}
@@ -661,9 +718,10 @@ export default function WorkspacesScreen() {
             <OrderListCard orders={orders} />
           </>
         )}
+      </KeyboardAwareScrollView>
 
-        {/* Input Section — inside scroll view for keyboard avoidance */}
-        <View style={[styles.inputContainer, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: 4 }]}>
+      {/* Input Section — confined to bottom right */}
+      <View style={[styles.inputContainer, { borderTopColor: 'transparent', paddingBottom: 4 }]}>
         {/* Agent Response Feedback Alert */}
         {agentFeedback && (
           <View style={[styles.feedbackContainer, { backgroundColor: theme.background, borderColor: theme.border, marginBottom: 12 }]}>
@@ -791,7 +849,6 @@ export default function WorkspacesScreen() {
           </Pressable>
         </View>
       </View>
-      </KeyboardAwareScrollView>
 
       {/* Workspace Switcher Dropdown Modal */}
       <Modal
@@ -1358,9 +1415,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   inputContainer: {
+    position: 'absolute',
+    bottom: 24,
+    left: 0,
+    right: 0,
+    width: '100%',
+    zIndex: 99,
     paddingHorizontal: 0,
     paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
   hintsContainer: {
     flexDirection: 'row',
@@ -1387,14 +1449,14 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     paddingLeft: 16,
     paddingRight: 8,
-    paddingVertical: 14,
+    paddingVertical: 12,
     marginHorizontal: 12,
   },
   textInput: {
     flex: 1,
-    fontSize: 15,
-    maxHeight: 140,
-    paddingVertical: 8,
+    fontSize: 14,
+    maxHeight: 120,
+    paddingVertical: 4,
   },
   sendButton: {
     width: 34,
@@ -1687,4 +1749,30 @@ const styles = StyleSheet.create({
     marginHorizontal: 24,
     borderRadius: 10,
   },
+  // ── Welcome Placeholder Card ─────────────────────────────────────
+  welcomeCard: {
+    padding: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 180,
+  },
+  welcomeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  welcomeTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  welcomeSubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 16,
+  },
 });
+

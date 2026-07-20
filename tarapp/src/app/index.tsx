@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { getCurrentUser } from '@/lib/auth';
 import { tar } from '@/lib/tar';
 
 export default function Index() {
+  const router = useRouter();
   const [target, setTarget] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,7 +28,11 @@ export default function Index() {
     });
   }, []);
 
-  if (!target) return null;
+  useEffect(() => {
+    if (target) {
+      router.replace(target as any);
+    }
+  }, [target, router]);
 
-  return <Redirect href={target as any} />;
+  return null;
 }

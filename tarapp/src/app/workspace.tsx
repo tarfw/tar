@@ -1,5 +1,6 @@
-import { Redirect } from 'expo-router';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 
 export default function WorkspaceRedirect() {
-  return <Redirect href="/(tabs)/workspaces" />;
+  const params = useLocalSearchParams();
+  return <Redirect href={{ pathname: '/(tabs)/workspaces', params }} />;
 }

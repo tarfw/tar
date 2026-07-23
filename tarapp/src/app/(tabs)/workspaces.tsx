@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Modal, Platform, TouchableOpacity } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { KeyboardAwareScrollView, KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -20,7 +20,10 @@ import {
   SiteCard,
 } from '@/components/cards/ResultCards';
 import { parseDesignTokens } from '@/lib/design-tokens';
-import { buildModuleLayout, parseYamlFrontmatter } from '@/lib/layout-engine';
+import { buildModuleLayout, parseYamlFrontmatter, parseCanvasMarkdown } from '@/lib/layout-engine';
+import { resolveIntent } from '@/lib/intent-resolver';
+import { getCurrentUser } from '@/lib/auth';
+import { filterModulesByRole } from '@/lib/role-filter';
 import WorkspaceCanvas from '@/components/WorkspaceCanvas';
 
 interface Workspace {
@@ -79,7 +82,7 @@ export default function WorkspacesScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
-  const { subdomain: paramSubdomain } = useLocalSearchParams<{ subdomain?: string }>();
+  const { subdomain: paramSubdomain, code: paramCode, action: paramAction } = useLocalSearchParams<{ subdomain?: string; code?: string; action?: string }>();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
@@ -103,8 +106,12 @@ export default function WorkspacesScreen() {
   
   const [designTokens, setDesignTokens] = useState<any>(null);
   const [canvasLayouts, setCanvasLayouts] = useState<any[]>([]);
+  const [canvasBlocks, setCanvasBlocks] = useState<any[]>([]);
   const [loadingCanvas, setLoadingCanvas] = useState(false);
   const [activeWidget, setActiveWidget] = useState<{ moduleName: string } | null>(null);
+  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+  const [newWsName, setNewWsName] = useState('');
+  const [newWsCreating, setNewWsCreating] = useState(false);
 
 
   const [selectedAction, setSelectedAction] = useState<any | null>(null);
@@ -134,9 +141,9 @@ export default function WorkspacesScreen() {
   const activeScope = currentWorkspace?.scope ?? undefined;
   const { draft, publish, saveDraft, refresh: refreshSite } = useSite(activeScope);
 
-  // Load workspace index.md and dynamic module files from S3 when info modal opens
+  // Load workspace index.md and dynamic module files from S3 when workspace changes
   useEffect(() => {
-    if (showInfo && currentWorkspace?.scope) {
+    if (currentWorkspace?.scope) {
       const scope = currentWorkspace.scope;
       const cached = workspaceToolsCache.current[scope];
 
@@ -154,62 +161,65 @@ export default function WorkspacesScreen() {
         setLoadingIndex(true);
       }
 
-      tar.okf.readIndex(scope)
-        .then(async (res: any) => {
-          if (res && res.content) {
-            const { name, type, modules } = parseIndexMarkdown(res.content);
+      Promise.all([
+        tar.okf.readIndex(scope).catch(() => null),
+        tar.okf.read(scope, 'team/members.md').catch(() => null),
+        getCurrentUser().catch(() => null)
+      ]).then(async ([indexRes, membersRes, currentUser]) => {
+        if (indexRes && indexRes.content) {
+          const { name, type, modules } = parseIndexMarkdown(indexRes.content);
+          
+          const userEmail = currentUser?.email || 'owner@gmail.com';
+          const allowedModules = filterModulesByRole(userEmail, modules, membersRes?.content || null);
 
-            // Fetch each module's markdown content in parallel
-            try {
-              const fetchedTools = await Promise.all(
-                modules.map(async (mod) => {
-                  try {
-                    const fileRes = await tar.okf.read(scope, `skills/${mod}.md`);
-                    if (fileRes && fileRes.content) {
-                      return parseModuleMarkdown(mod, fileRes.content);
-                    }
-                  } catch (e) {
-                    console.warn(`[OKF] Failed to fetch module skills/${mod}.md:`, e);
+          try {
+            const fetchedTools = await Promise.all(
+              allowedModules.map(async (mod) => {
+                try {
+                  const fileRes = await tar.okf.read(scope, `skills/${mod}.md`);
+                  if (fileRes && fileRes.content) {
+                    return parseModuleMarkdown(mod, fileRes.content);
                   }
-                  return null;
-                })
-              );
+                } catch (e) {
+                  console.warn(`[OKF] Failed to fetch module skills/${mod}.md:`, e);
+                }
+                return null;
+              })
+            );
 
-              const validTools = fetchedTools.filter(t => t !== null) as any[];
+            const validTools = fetchedTools.filter(t => t !== null) as any[];
 
-              // Update cache
-              workspaceToolsCache.current[scope] = {
-                workspaceName: name || '',
-                detectedVertical: type,
-                activeModules: modules,
-                parsedToolsList: validTools
-              };
+            workspaceToolsCache.current[scope] = {
+              workspaceName: name || '',
+              detectedVertical: type,
+              activeModules: allowedModules,
+              parsedToolsList: validTools
+            };
 
-              // Update states
-              setDetectedVertical(type);
-              setActiveModules(modules);
-              setParsedToolsList(validTools);
-              if (name) {
-                setWorkspaceName(name);
-              }
-            } catch (err) {
-              console.warn('[OKF] Failed to load module details:', err);
+            setDetectedVertical(type);
+            setActiveModules(allowedModules);
+            setParsedToolsList(validTools);
+            if (name) {
+              setWorkspaceName(name);
             }
+          } catch (err) {
+            console.warn('[OKF] Failed to load module details:', err);
           }
-        })
-        .catch((err: any) => {
-          console.warn('[OKF] Failed to fetch workspace index.md:', err);
-          if (!cached) {
-            setDetectedVertical(currentWorkspace.type || 'business');
-            setActiveModules([]);
-            setParsedToolsList([]);
-          }
-        })
-        .finally(() => {
-          setLoadingIndex(false);
-        });
+        }
+      })
+      .catch((err: any) => {
+        console.warn('[OKF] Failed to fetch workspace index.md:', err);
+        if (!cached) {
+          setDetectedVertical(currentWorkspace.type || 'business');
+          setActiveModules([]);
+          setParsedToolsList([]);
+        }
+      })
+      .finally(() => {
+        setLoadingIndex(false);
+      });
     }
-  }, [showInfo, currentWorkspace?.scope]);
+  }, [currentWorkspace?.scope]);
 
   // Fetch workspaces list on mount
   const fetchWorkspacesList = useCallback(async () => {
@@ -245,6 +255,89 @@ export default function WorkspacesScreen() {
     fetchWorkspacesList();
   }, [fetchWorkspacesList]);
 
+  // Handle native deep link account verification
+  useEffect(() => {
+    if (paramCode && currentWorkspace?.scope) {
+      const scope = currentWorkspace.scope;
+      getCurrentUser().then(async (user) => {
+        if (user && user.email) {
+          try {
+            const membersRes = await tar.okf.read(scope, 'team/members.md');
+            if (membersRes && membersRes.content) {
+              const { frontmatter, markdownBody } = parseYamlFrontmatter(membersRes.content);
+              const membersList = frontmatter.members || [];
+              
+              const memberIdx = membersList.findIndex((m: any) => String(m.code) === String(paramCode) && m.status === 'pending');
+              if (memberIdx !== -1) {
+                membersList[memberIdx].email = user.email;
+                membersList[memberIdx].status = 'verified';
+                delete membersList[memberIdx].code;
+                
+                const rolesYaml = Object.entries(frontmatter.roles || {})
+                  .map(([r, skills]) => `  ${r}: [${(skills as any).join(', ')}]`)
+                  .join('\n');
+                
+                const membersYaml = membersList
+                  .map((m: any) => {
+                    let lines = `  - email: "${m.email}"\n    role: "${m.role}"\n    status: "${m.status}"`;
+                    if (m.platform) lines += `\n    platform: "${m.platform}"`;
+                    if (m.channelId) lines += `\n    channelId: "${m.channelId}"`;
+                    return lines;
+                  })
+                  .join('\n');
+
+                const updatedYaml = `---
+type: TeamConfiguration
+title: Team Access & Channel Mappings
+timestamp: ${new Date().toISOString()}
+roles:
+${rolesYaml}
+members:
+${membersYaml}
+---
+`;
+                
+                await tar.okf.edit(scope, 'team/members.md', updatedYaml + markdownBody);
+                setAgentFeedback({ text: 'Successfully linked your chat channel account!', type: 'success' });
+              } else {
+                setAgentFeedback({ text: 'Invalid or expired linking code.', type: 'error' });
+              }
+            }
+          } catch (err: any) {
+            console.warn('[LinkVerification] Code verification failed:', err);
+            setAgentFeedback({ text: err.message || 'Failed to link account.', type: 'error' });
+          }
+        }
+      });
+    }
+  }, [paramCode, currentWorkspace?.scope]);
+
+  const [newWsDesc, setNewWsDesc] = useState('');
+
+  const handleCreateInlineWorkspace = async () => {
+    if (!newWsName.trim() || newWsCreating) return;
+    setNewWsCreating(true);
+    try {
+      const name = newWsName.trim();
+      const desc = newWsDesc.trim() || name;
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+      await tar.createWorkspace({
+        name,
+        subdomain: slug,
+        description: desc
+      });
+      await SecureStore.setItemAsync('active_workspace_subdomain', slug).catch(() => null);
+      setNewWsName('');
+      setNewWsDesc('');
+      setIsCreatingWorkspace(false);
+      await fetchWorkspacesList();
+    } catch (err: any) {
+      setAgentFeedback({ text: err.message || 'Failed to create workspace', type: 'error' });
+    } finally {
+      setNewWsCreating(false);
+    }
+  };
+
   // Update current workspace if the route parameter changes while screen is mounted
   useEffect(() => {
     if (paramSubdomain && workspaces.length > 0) {
@@ -274,7 +367,6 @@ export default function WorkspacesScreen() {
       const result = await tar.tool('read', {
         table: 'matter',
         type: 'product',
-        active: 1,
         scope
       });
       setProducts(result?.rows || []);
@@ -285,11 +377,11 @@ export default function WorkspacesScreen() {
 
   const refreshOrders = async (scope: string) => {
     try {
-      const result = await tar.tool('read', { table: 'matter', type: 'order', active: 1, scope });
+      const result = await tar.tool('read', { table: 'matter', type: 'order', scope });
       if (result?.rows && result.rows.length > 0) {
         setOrders(result.rows);
       } else {
-        const motionRes = await tar.tool('read', { table: 'motion', active: 1, scope });
+        const motionRes = await tar.tool('read', { table: 'motion', scope });
         setOrders(motionRes?.rows || []);
       }
     } catch (e) {
@@ -316,8 +408,9 @@ export default function WorkspacesScreen() {
       
       Promise.all([
         tar.okf.read(scope, 'DESIGN.md').catch(() => null),
-        tar.okf.readIndex(scope).catch(() => null)
-      ]).then(async ([designRes, indexRes]) => {
+        tar.okf.readIndex(scope).catch(() => null),
+        tar.okf.read(scope, 'team/canvas.md').catch(() => null)
+      ]).then(async ([designRes, indexRes, canvasRes]) => {
         let tokens = null;
         if (designRes && designRes.content) {
           try {
@@ -329,8 +422,10 @@ export default function WorkspacesScreen() {
           }
         }
         
+        let modulesList: string[] = [];
         if (indexRes && indexRes.content) {
           const { name, modules } = parseIndexMarkdown(indexRes.content);
+          modulesList = modules;
           if (name) {
             setWorkspaceName(name);
           }
@@ -348,6 +443,22 @@ export default function WorkspacesScreen() {
             })
           );
           setCanvasLayouts(fetchedLayouts.filter(Boolean) as any[]);
+        }
+
+        if (canvasRes && canvasRes.content) {
+          try {
+            const { blocks } = parseCanvasMarkdown(canvasRes.content);
+            setCanvasBlocks(blocks);
+          } catch (err) {
+            console.warn('[Canvas] Failed to parse team/canvas.md:', err);
+          }
+        } else if (modulesList.length > 0) {
+          const fallbackBlocks = modulesList.map(mod => ({
+            title: mod.charAt(0).toUpperCase() + mod.slice(1),
+            type: mod === 'orders' ? 'pos-sale' : 'data-grid',
+            props: { type: mod === 'orders' ? 'order' : mod === 'inventory' ? 'product' : mod, mode: 'table' }
+          }));
+          setCanvasBlocks(fallbackBlocks);
         }
       }).catch(err => {
         console.warn('[Canvas] Failed to load workspace specs:', err);
@@ -384,24 +495,52 @@ export default function WorkspacesScreen() {
       const subdomain = currentWorkspace.subdomain;
       const workspaceType = currentWorkspace.type || 'business';
 
-      if (/^(clear|reset|clean|home|canvas)\b/i.test(cleanText)) {
-        setActiveWidget(null);
-        setExecuting(false);
-        setAgentFeedback({ text: 'Cleared active canvas widgets.', type: 'success' });
-        return;
+      // 1. Resolve Intent via in-memory intent resolver
+      const resolved = resolveIntent(textToSend, activeModules);
+      if (resolved.match) {
+        if (resolved.action === 'clear') {
+          setActiveWidget(null);
+          setExecuting(false);
+          setAgentFeedback({ text: resolved.feedbackText || 'Cleared active widgets.', type: 'success' });
+          return;
+        } else if (resolved.action === 'show_module' && resolved.moduleName) {
+          if (resolved.moduleName === 'inventory') {
+            await refreshProducts(scope);
+          } else if (resolved.moduleName === 'orders') {
+            await refreshOrders(scope);
+          }
+          setActiveWidget({ moduleName: resolved.moduleName });
+          setExecuting(false);
+          setAgentFeedback({ text: resolved.feedbackText || `Loaded ${resolved.moduleName} widget.`, type: 'success' });
+          return;
+        } else if (resolved.action === 'add_module' && resolved.moduleName) {
+          await tar.canvas.add(scope, resolved.moduleName);
+          const canvasRes = await tar.okf.read(scope, 'team/canvas.md').catch(() => null);
+          if (canvasRes && canvasRes.content) {
+            const { blocks } = parseCanvasMarkdown(canvasRes.content);
+            setCanvasBlocks(blocks);
+          }
+          setActiveWidget({ moduleName: resolved.moduleName });
+          setExecuting(false);
+          setAgentFeedback({ text: resolved.feedbackText || `Added ${resolved.moduleName} skill to canvas.`, type: 'success' });
+          return;
+        } else if (resolved.action === 'remove_module' && resolved.moduleName) {
+          await tar.canvas.remove(scope, resolved.moduleName);
+          const canvasRes = await tar.okf.read(scope, 'team/canvas.md').catch(() => null);
+          if (canvasRes && canvasRes.content) {
+            const { blocks } = parseCanvasMarkdown(canvasRes.content);
+            setCanvasBlocks(blocks);
+          }
+          if (activeWidget?.moduleName === resolved.moduleName) {
+            setActiveWidget(null);
+          }
+          setExecuting(false);
+          setAgentFeedback({ text: resolved.feedbackText || `Removed ${resolved.moduleName} skill from canvas.`, type: 'success' });
+          return;
+        }
       }
 
-      if (/^(show|list|get|view)\s+(products|menu|services|inventory)/i.test(cleanText)) {
-        await refreshProducts(scope);
-        setActiveWidget({ moduleName: 'inventory' });
-        setAgentFeedback({ text: 'Loaded latest product inventory.', type: 'success' });
-      }
-      else if (/^(show|list|get|view)\s+(orders|sales)/i.test(cleanText)) {
-        await refreshOrders(scope);
-        setActiveWidget({ moduleName: 'orders' });
-        setAgentFeedback({ text: 'Loaded latest orders.', type: 'success' });
-      }
-      else if (/^(show|view|get)\s+(site|storefront|web|website)/i.test(cleanText)) {
+      if (/^(show|view|get)\s+(site|storefront|web|website)/i.test(cleanText)) {
         await refreshSite();
         setAgentFeedback({ text: 'Displayed current website draft layout.', type: 'success' });
       }
@@ -442,27 +581,6 @@ export default function WorkspacesScreen() {
         }
       }
       else {
-        // Automatically check if any active modules are called/referred in search text
-        const cleanLower = cleanText.toLowerCase();
-        const matchedModule = canvasLayouts.find(layout => {
-          const modName = layout.moduleName.toLowerCase();
-          return cleanLower.includes(modName) || 
-                 (modName === 'crm' && (cleanLower.includes('contact') || cleanLower.includes('company') || cleanLower.includes('deal') || cleanLower.includes('sales'))) ||
-                 (modName === 'bookings' && (cleanLower.includes('book') || cleanLower.includes('appoint') || cleanLower.includes('slot') || cleanLower.includes('schedule'))) ||
-                 (modName === 'support' && (cleanLower.includes('ticket') || cleanLower.includes('help'))) ||
-                 (modName === 'projects' && (cleanLower.includes('task') || cleanLower.includes('project'))) ||
-                 (modName === 'hr' && (cleanLower.includes('staff') || cleanLower.includes('employee') || cleanLower.includes('salary') || cleanLower.includes('clock'))) ||
-                 (modName === 'logistics' && (cleanLower.includes('shipment') || cleanLower.includes('track') || cleanLower.includes('deliver'))) ||
-                 (modName === 'lms' && (cleanLower.includes('course') || cleanLower.includes('class'))) ||
-                 (modName === 'listings' && (cleanLower.includes('listing') || cleanLower.includes('property'))) ||
-                 (modName === 'expenses' && (cleanLower.includes('expense') || cleanLower.includes('spend'))) ||
-                 (modName === 'documents' && (cleanLower.includes('doc') || cleanLower.includes('file') || cleanLower.includes('upload'))) ||
-                 (modName === 'team-chat' && (cleanLower.includes('chat') || cleanLower.includes('message') || cleanLower.includes('send')));
-        });
-        if (matchedModule) {
-          setActiveWidget({ moduleName: matchedModule.moduleName });
-        }
-
         const response = await tar.chat(sessionId, textToSend, scope);
         setAgentFeedback({ text: response.reply, type: 'info' });
         
@@ -607,61 +725,112 @@ export default function WorkspacesScreen() {
     );
   }
 
-  // Handle case where user has no workspaces created
-  if (workspaces.length === 0) {
+  // Handle case where user is creating a workspace or has 0 workspaces
+  const isCreating = isCreatingWorkspace || paramAction === 'new' || workspaces.length === 0;
+
+  if (isCreating) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.background, paddingHorizontal: 32 }]}>
-        <View style={styles.emptyContainer}>
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>Welcome to tar.</Text>
-          <Text style={[styles.emptySubtitle, { color: theme.textMuted }]}>
-            Create a workspace to start managing your storefront with agentic AI.
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={[styles.center, { backgroundColor: theme.background, paddingHorizontal: 24, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+          <View style={[{ width: '100%', maxWidth: 400, backgroundColor: theme.backgroundElement, borderRadius: 16, padding: 24, borderWidth: 1, borderColor: theme.border }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: theme.text }}>Create Workspace</Text>
+            {workspaces.length > 0 && (
+              <TouchableOpacity onPress={() => setIsCreatingWorkspace(false)}>
+                <Ionicons name="close" size={24} color={theme.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 20 }}>
+            Enter your business or team workspace name. AI will automatically scaffold your canvas and skills.
           </Text>
+
+          <TextInput
+            style={{
+              height: 48,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: theme.border,
+              paddingHorizontal: 16,
+              fontSize: 16,
+              color: theme.text,
+              backgroundColor: theme.background,
+              marginBottom: 12,
+            }}
+            value={newWsName}
+            onChangeText={setNewWsName}
+            placeholder="Workspace Name (e.g. Bella Pizza)"
+            placeholderTextColor={theme.textMuted + '80'}
+            autoFocus
+          />
+
+          <TextInput
+            style={{
+              height: 48,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: theme.border,
+              paddingHorizontal: 16,
+              fontSize: 15,
+              color: theme.text,
+              backgroundColor: theme.background,
+              marginBottom: 12,
+            }}
+            value={newWsDesc}
+            onChangeText={setNewWsDesc}
+            placeholder="Business Type / Description (e.g. Italian Restaurant)"
+            placeholderTextColor={theme.textMuted + '80'}
+          />
+
+          {newWsName.trim().length > 0 && (
+            <Text style={{ fontSize: 12, color: theme.primary, marginBottom: 20, fontWeight: '600' }}>
+              URL: {newWsName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)}.tarai.space
+            </Text>
+          )}
+
           <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => router.push('/add-workspace')}
-            style={[styles.emptyButton, { backgroundColor: theme.primary }]}
+            activeOpacity={0.8}
+            onPress={handleCreateInlineWorkspace}
+            disabled={!newWsName.trim() || newWsCreating}
+            style={{
+              height: 48,
+              borderRadius: 8,
+              backgroundColor: newWsName.trim() ? theme.primary : theme.border,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
-            <Ionicons name="add" size={20} color="#ffffff" style={{ marginRight: 4 }} />
-            <Text style={styles.emptyButtonText}>Create Workspace</Text>
+            {newWsCreating ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={{ color: newWsName.trim() ? '#ffffff' : theme.textMuted, fontSize: 16, fontWeight: '700' }}>
+                Create Workspace
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
+    </KeyboardAvoidingView>
     );
   }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header with Switcher */}
-      <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: theme.border }]}>
-        <Pressable
-          onPress={() => setShowDropdown(true)}
-          style={[
-            styles.switcherChip,
-            { backgroundColor: theme.background, borderColor: theme.border + '80' }
-          ]}
-        >
-          <WorkspaceThumbnail name={workspaceName || currentWorkspace?.subdomain || ''} size={24} theme={theme} />
-          <Text style={[styles.switcherText, { color: theme.text }]} numberOfLines={1}>
-            {workspaceName || (currentWorkspace?.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : '')}
-          </Text>
-        </Pressable>
-
-        <View style={{ flex: 1 }} />
-
-        <Pressable onPress={() => setShowInfo(true)} style={styles.headerTextButton}>
-          <Text style={[styles.headerTextButtonLabel, { color: theme.primary }]}>Skills</Text>
-        </Pressable>
-      </View>
-
-      {/* Main Content — scrollable with keyboard */}
-      <KeyboardAwareScrollView
-        ref={scrollViewRef}
-        style={{ flex: 1 }}
-        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 12, paddingTop: 12, paddingBottom: 120 }}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        bottomOffset={80}
+      <KeyboardAvoidingView
+        style={{ flex: 1, paddingTop: insets.top }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        {/* Main Content — scrollable with keyboard */}
+        <KeyboardAwareScrollView
+          ref={scrollViewRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 12, paddingTop: 12, paddingBottom: 16 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+        >
         {/* 1. Live Site Status Widget */}
         {draft && (
           <SiteCard
@@ -682,10 +851,11 @@ export default function WorkspacesScreen() {
               Generating custom branded canvas...
             </Text>
           </View>
-        ) : designTokens && canvasLayouts.length > 0 ? (
+        ) : designTokens && (canvasLayouts.length > 0 || canvasBlocks.length > 0) ? (
           activeWidget ? (
             <WorkspaceCanvas
               designTokens={designTokens}
+              blocks={canvasBlocks.filter(b => b.props?.type === activeWidget.moduleName || b.type === activeWidget.moduleName || b.title?.toLowerCase() === activeWidget.moduleName.toLowerCase())}
               layouts={canvasLayouts.filter(l => l.moduleName === activeWidget.moduleName)}
               onExecuteAction={async (actionName, params) => {
                 if (currentWorkspace?.scope) {
@@ -703,7 +873,9 @@ export default function WorkspacesScreen() {
               }}
               tableData={{
                 'orders': orders,
-                'inventory': products
+                'inventory': products,
+                'order': orders,
+                'product': products
               }}
             />
           ) : null
@@ -721,7 +893,7 @@ export default function WorkspacesScreen() {
       </KeyboardAwareScrollView>
 
       {/* Input Section — confined to bottom right */}
-      <View style={[styles.inputContainer, { borderTopColor: 'transparent', paddingBottom: 4 }]}>
+      <View style={[styles.inputContainer, { borderTopColor: 'transparent', paddingBottom: Math.max(insets.bottom, 8) }]}>
         {/* Agent Response Feedback Alert */}
         {agentFeedback && (
           <View style={[styles.feedbackContainer, { backgroundColor: theme.background, borderColor: theme.border, marginBottom: 12 }]}>
@@ -848,7 +1020,28 @@ export default function WorkspacesScreen() {
             <Ionicons name="arrow-up" size={18} color="#ffffff" />
           </Pressable>
         </View>
+
+        {/* Bottom Bar Controls: Workspace Selector + Skills */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+          <Pressable
+            onPress={() => setShowDropdown(true)}
+            style={[
+              styles.switcherChip,
+              { backgroundColor: theme.backgroundElement, borderColor: theme.border, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginLeft: 12 }
+            ]}
+          >
+            <WorkspaceThumbnail name={workspaceName || currentWorkspace?.subdomain || ''} size={20} theme={theme} />
+            <Text style={[styles.switcherText, { color: theme.text, fontSize: 12, marginLeft: 6 }]} numberOfLines={1}>
+              {workspaceName || (currentWorkspace?.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : '')}
+            </Text>
+          </Pressable>
+
+          <Pressable onPress={() => setShowInfo(true)} style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
+            <Text style={{ color: theme.primary, fontSize: 13, fontWeight: '600' }}>Skills</Text>
+          </Pressable>
+        </View>
       </View>
+    </KeyboardAvoidingView>
 
       {/* Workspace Switcher Dropdown Modal */}
       <Modal
@@ -872,7 +1065,7 @@ export default function WorkspacesScreen() {
             <View style={[styles.drawerHandle, { backgroundColor: theme.textMuted + '40' }]} />
             <View style={styles.dropdownHeader}>
               <Text style={[styles.dropdownTitle, { color: theme.text }]}>Switch Workspace</Text>
-              <Pressable onPress={() => { setShowDropdown(false); router.push('/add-workspace'); }} style={styles.dropdownAddBtn}>
+              <Pressable onPress={() => { setShowDropdown(false); setIsCreatingWorkspace(true); }} style={styles.dropdownAddBtn}>
                 <Ionicons name="add" size={20} color={theme.primary} />
               </Pressable>
             </View>
@@ -1030,7 +1223,10 @@ export default function WorkspacesScreen() {
 
       {/* Dynamic Action Modal — GitHub notification style */}
       <Modal visible={selectedAction !== null} transparent={true} animationType="slide">
-        <View style={styles.githubModalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.githubModalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={[styles.githubModalContainer, { backgroundColor: theme.background }]}>
             {/* Handle bar */}
             <View style={styles.githubHandleBarContainer}>
@@ -1049,11 +1245,15 @@ export default function WorkspacesScreen() {
             </View>
 
             {/* Sentence with inline chips */}
-            <View style={styles.githubModalBody}>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={[styles.githubModalBody, { paddingVertical: 12 }]}
+              keyboardShouldPersistTaps="handled"
+            >
               {buildGitHubSentence(selectedAction, formParams, theme, activeChipField, (field, val) => {
                 setFormParams(prev => ({ ...prev, [field]: val }));
               }, setActiveChipField, chipInputRef)}
-            </View>
+            </ScrollView>
 
             {/* Submit — text button */}
             <View style={[styles.githubSubmitRow, { borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 24) + 8 }]}>
@@ -1080,7 +1280,7 @@ export default function WorkspacesScreen() {
               </View>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -1129,7 +1329,7 @@ function buildGitHubSentence(
   const parts: React.ReactNode[] = [];
   const actionName = action.name?.replace(/_/g, ' ') || 'action';
 
-  parts.push(<Text key="action" style={{ color: theme.text, fontSize: 16 }}>{actionName}</Text>);
+  parts.push(<Text key="action" style={{ color: theme.text, fontSize: 18, lineHeight: 34 }}>{actionName}</Text>);
 
   const connectors = [' with ', ' for ', ' using ', ' to '];
 
@@ -1140,7 +1340,7 @@ function buildGitHubSentence(
     const isActive = activeChipField === paramName;
     const connector = connectors[idx % connectors.length];
 
-    parts.push(<Text key={`conn-${idx}`} style={{ color: theme.text, fontSize: 16 }}>{connector}</Text>);
+    parts.push(<Text key={`conn-${idx}`} style={{ color: theme.text, fontSize: 18, lineHeight: 34 }}>{connector}</Text>);
 
     if (isActive) {
       parts.push(
@@ -1149,13 +1349,14 @@ function buildGitHubSentence(
           ref={inputRef}
           style={{
             color: theme.text,
-            backgroundColor: theme.primary + '20',
-            paddingHorizontal: 10,
-            paddingVertical: 4,
-            borderRadius: 8,
-            fontSize: 16,
+            backgroundColor: theme.primary + '25',
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: 10,
+            fontSize: 17,
             fontWeight: '600',
-            minWidth: 60,
+            minWidth: 80,
+            marginVertical: 4,
             borderBottomWidth: 2,
             borderBottomColor: theme.primary,
           }}
@@ -1178,11 +1379,12 @@ function buildGitHubSentence(
           style={{
             color: hasValue ? '#fff' : theme.textMuted,
             backgroundColor: hasValue ? theme.primary : theme.backgroundElement,
-            paddingHorizontal: 10,
-            paddingVertical: 4,
-            borderRadius: 8,
-            fontSize: 16,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: 10,
+            fontSize: 17,
             fontWeight: '600',
+            marginVertical: 4,
             overflow: 'hidden',
           }}
         >
@@ -1192,7 +1394,7 @@ function buildGitHubSentence(
     }
   });
 
-  parts.push(<Text key="end" style={{ color: theme.text, fontSize: 16 }}>.</Text>);
+  parts.push(<Text key="end" style={{ color: theme.text, fontSize: 18, lineHeight: 34 }}>.</Text>);
 
   return parts;
 }
@@ -1415,12 +1617,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   inputContainer: {
-    position: 'absolute',
-    bottom: 24,
-    left: 0,
-    right: 0,
     width: '100%',
-    zIndex: 99,
     paddingHorizontal: 0,
     paddingTop: 8,
   },
@@ -1694,7 +1891,7 @@ const styles = StyleSheet.create({
   githubModalContainer: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '60%',
+    height: '60%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,

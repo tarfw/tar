@@ -29,36 +29,57 @@ export default function DataTable({ props, designTokens, data = [] }: SectionPro
             {emptyMessage || 'No records'}
           </Text>
         ) : (
-          data.map((row: any, idx: number) => (
-            <View
-              key={row.id || idx}
-              style={[
-                styles.row,
-                {
-                  borderBottomWidth: idx < data.length - 1 ? StyleSheet.hairlineWidth : 0,
-                  borderBottomColor: 'rgba(0,0,0,0.06)',
-                  paddingVertical: 8,
-                  paddingHorizontal: 6,
-                },
-              ]}
-            >
-              <View style={styles.rowContent}>
-                <Text style={[styles.rowTitle, { color: '#111' }]} numberOfLines={1}>
-                  {row.title || row.id}
-                </Text>
-                {row.value !== undefined && (
-                  <Text style={[styles.rowValue, { color: colors.tertiary || colors.primary }]}>
-                    ${row.value}
+          data.map((row: any, idx: number) => {
+            let rowDataObj: any = {};
+            if (typeof row.data === 'string') {
+              try { rowDataObj = JSON.parse(row.data); } catch {}
+            } else if (typeof row.data === 'object' && row.data !== null) {
+              rowDataObj = row.data;
+            }
+
+            const itemTitle = row.title || row.name || rowDataObj.title || row.id;
+            const price = rowDataObj.price ?? row.price;
+            const stock = row.value ?? rowDataObj.stock;
+            const category = rowDataObj.category || row.category || row.type;
+
+            return (
+              <View
+                key={row.id || idx}
+                style={[
+                  styles.row,
+                  {
+                    borderBottomWidth: idx < data.length - 1 ? StyleSheet.hairlineWidth : 0,
+                    borderBottomColor: 'rgba(0,0,0,0.06)',
+                    paddingVertical: 10,
+                    paddingHorizontal: 8,
+                  },
+                ]}
+              >
+                <View style={styles.rowContent}>
+                  <Text style={[styles.rowTitle, { color: '#111' }]} numberOfLines={1}>
+                    {itemTitle}
                   </Text>
-                )}
+                  {price !== undefined && (
+                    <Text style={[styles.rowValue, { color: colors.primary || '#10b981' }]}>
+                      ₹{price}
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.rowSubContent}>
+                  {category && (
+                    <Text style={[styles.rowSubtitle, { color: '#64748b' }]} numberOfLines={1}>
+                      {category}
+                    </Text>
+                  )}
+                  {stock !== undefined && (
+                    <Text style={[styles.rowStock, { color: '#64748b', fontSize: 11 }]}>
+                      Stock: {stock}
+                    </Text>
+                  )}
+                </View>
               </View>
-              {(row.subtitle || row.description || row.type) && (
-                <Text style={[styles.rowSubtitle, { color: '#94a3b8' }]} numberOfLines={1}>
-                  {row.subtitle || row.description || row.type}
-                </Text>
-              )}
-            </View>
-          ))
+            );
+          })
         )}
       </View>
     </View>
@@ -72,7 +93,9 @@ const styles = StyleSheet.create({
   empty: { fontSize: 12, padding: 10, textAlign: 'center' },
   row: {},
   rowContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  rowTitle: { fontSize: 13, fontWeight: '500', flex: 1 },
-  rowValue: { fontSize: 13, fontWeight: '600' },
-  rowSubtitle: { fontSize: 11, marginTop: 1, color: '#94a3b8' },
+  rowSubContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
+  rowTitle: { fontSize: 13, fontWeight: '600', flex: 1 },
+  rowValue: { fontSize: 13, fontWeight: '700' },
+  rowSubtitle: { fontSize: 11, color: '#64748b' },
+  rowStock: { fontSize: 11, color: '#64748b' },
 });

@@ -12,10 +12,10 @@ There are 4 stores. Each has a single responsibility.
 |-------|------|------|
 | **Cloudflare D1** | Workspace registry + public listing | Free tier |
 | **Turso `tar-search`** | Global vector search index (native libSQL vector) | Free tier |
-| **Turso `ws:{id}`** | Per-workspace operational data — matter, motion, graph, inbox (one DB per workspace) | Free tier per DB |
+| **Turso `w:{id}`** | Per-workspace operational data — matter, motion, graph, inbox (one DB per workspace) | Free tier per DB |
 | **S3** | Skill `.md` templates + full entity payloads + workspace agent memory | Near zero |
 
-- Workspace is identified by its `scope` value (e.g. `ws:anjalis`).
+- Workspace is identified by its `scope` value (e.g. `w:anjalis`).
 - Never query across workspace Turso DBs directly — use `tar-search` for cross-workspace queries.
 
 ### D1 Workspace Registry (Cloudflare D1 — not Turso)
@@ -25,7 +25,7 @@ D1 is the only shared store. It holds the workspace directory used by the market
 | Column | Purpose |
 |--------|---------|
 | `subdomain` | Unique workspace identifier |
-| `scope` | `ws:{subdomain}` — used in all Turso queries |
+| `scope` | `w:{subdomain}` — used in all Turso queries |
 | `name` | Display name |
 | `type` | Business type (restaurant, salon, retail…) |
 | `user` | Owner user ID |
@@ -70,7 +70,7 @@ ON search_index (libsql_vector_idx(embedding));
   ORDER BY score ASC;
   ```
 - Exact distance (small sets): `SELECT *, vector_distance_cos(embedding, vector32(?)) AS score FROM search_index ORDER BY score ASC LIMIT 20`
-- ID convention: `{scope}::{matter_id}` (e.g. `ws:anjalis::prd_abc123`)
+- ID convention: `{scope}::{matter_id}` (e.g. `w:anjalis::prd_abc123`)
 - `search_index` is a write-through cache — source of truth is always the workspace Turso DB.
 - `tar-search` URL and token stored as Worker secrets — never per-workspace.
 
@@ -240,7 +240,7 @@ CREATE INDEX IF NOT EXISTS idx_graph_tgt            ON graph(tgt);
 ### memory (S3 — not Turso)
 - AI-inferred patterns and context only. Stored as individual JSON files in S3, not in the workspace Turso DB.
 - **S3 key format:** `{scope}/memory/{type}/{slug}.json`
-  - Example: `ws:anjalis/memory/preference/evening-orders.json`
+  - Example: `w:anjalis/memory/preference/evening-orders.json`
   - `slug` = URL-safe lowercase title (spaces → hyphens, e.g. `"Friday evening orders"` → `friday-evening-orders`)
 - User-entered profile data belongs in `matter(type=customer).data` — not here.
 - **Write:** PUT to the key — overwrites if exists. Equivalent to UPSERT. Never creates duplicates.
@@ -359,10 +359,10 @@ Every module follows this 5-step pattern. Steps 2–5 are conditional.
 
 ### Scope Validation Contract
 
-- `scope` is always of the form `"ws:{subdomain}"` (e.g. `"ws:anjalis"`).
+- `scope` is always of the form `"w:{subdomain}"` (e.g. `"w:anjalis"`).
 - **`scope` must always be resolved from the authenticated workspace session — never from user input, query parameters, or AI-generated values.**
 - An agent must never accept a `scope` value from a user prompt. Doing so enables cross-workspace data access via prompt injection.
-- Validate: if the resolved `scope` does not match `"ws:{subdomain}"` pattern, reject the operation entirely.
+- Validate: if the resolved `scope` does not match `"w:{subdomain}"` pattern, reject the operation entirely.
 
 - Always filter by `scope` first.
 - Entity current state → `matter`. History → `motion`.

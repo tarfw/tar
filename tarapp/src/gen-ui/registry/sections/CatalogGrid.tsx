@@ -19,39 +19,55 @@ export default function CatalogGrid({ props, designTokens, data = [] }: SectionP
         </Text>
       ) : (
         <View style={[styles.grid, { gap: spacing.sm }]}>
-          {data.map((item: any, idx: number) => (
-            <View
-              key={item.id || idx}
-              style={[
-                styles.card,
-                {
-                  flex: 1 / columns,
-                  backgroundColor: '#fff',
-                  borderRadius: rounded.md,
-                  borderWidth: 1,
-                  borderColor: 'rgba(0,0,0,0.05)',
-                },
-              ]}
-            >
+          {data.map((item: any, idx: number) => {
+            let itemDataObj: any = {};
+            if (typeof item.data === 'string') {
+              try { itemDataObj = JSON.parse(item.data); } catch {}
+            } else if (typeof item.data === 'object' && item.data !== null) {
+              itemDataObj = item.data;
+            }
+
+            const itemTitle = item.title || item.name || itemDataObj.title || 'Product';
+            const price = itemDataObj.price ?? item.price;
+            const stock = item.value ?? itemDataObj.stock;
+            const desc = item.description || itemDataObj.category || (stock !== undefined ? `Stock: ${stock}` : 'Quality product');
+
+            return (
               <View
+                key={item.id || idx}
                 style={[
-                  styles.cardImage,
-                  { backgroundColor: colors.secondary || colors.primary },
+                  styles.card,
+                  {
+                    flex: 1 / columns,
+                    backgroundColor: '#fff',
+                    borderRadius: rounded.md,
+                    borderWidth: 1,
+                    borderColor: 'rgba(0,0,0,0.05)',
+                  },
                 ]}
-              />
-              <View style={[styles.cardBody, { padding: spacing.sm }]}>
-                <Text style={[styles.cardTitle, { color: '#111' }]} numberOfLines={1}>
-                  {item.title || item.name || 'Product'}
-                </Text>
-                <Text style={[styles.cardDesc, { color: '#64748b' }]} numberOfLines={2}>
-                  {item.description || 'Quality product'}
-                </Text>
-                <Text style={[styles.cardPrice, { color: colors.tertiary || colors.primary }]}>
-                  ${item.price ?? item.value ?? '0.00'}
-                </Text>
+              >
+                <View
+                  style={[
+                    styles.cardImage,
+                    { backgroundColor: colors.secondary || colors.primary },
+                  ]}
+                />
+                <View style={[styles.cardBody, { padding: spacing.sm }]}>
+                  <Text style={[styles.cardTitle, { color: '#111' }]} numberOfLines={1}>
+                    {itemTitle}
+                  </Text>
+                  <Text style={[styles.cardDesc, { color: '#64748b' }]} numberOfLines={2}>
+                    {desc}
+                  </Text>
+                  {price !== undefined && (
+                    <Text style={[styles.cardPrice, { color: colors.primary || '#10b981' }]}>
+                      ₹{price}
+                    </Text>
+                  )}
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </View>

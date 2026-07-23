@@ -217,6 +217,51 @@ export async function scaffoldOkfFolders(
     await uploadWorkspaceFile(env, scope, `${folder}/index.md`, folderIndex);
   }
 
+  // Root team/canvas.md
+  const defaultBlocks = modules.map(mod => {
+    const title = mod.charAt(0).toUpperCase() + mod.slice(1);
+    if (mod === 'orders') {
+      return `  - title: "${title} Tool"\n    type: "pos-sale"\n    props: { "catalogType": "product", "taxRate": 0.05 }`;
+    }
+    const typeKey = mod === 'inventory' ? 'product' : mod === 'bookings' ? 'booking' : mod;
+    const modeVal = mod === 'bookings' ? 'calendar' : 'table';
+    return `  - title: "${title} List"\n    type: "data-grid"\n    props: { "type": "${typeKey}", "mode": "${modeVal}" }`;
+  }).join('\n');
+
+  const defaultCanvas = `---
+type: CanvasLayout
+title: ${workspaceName} Canvas
+timestamp: ${new Date().toISOString()}
+blocks:
+${defaultBlocks}
+---
+
+# Workspace Canvas
+`;
+  await uploadWorkspaceFile(env, scope, 'team/canvas.md', defaultCanvas);
+
+  // Root team/members.md
+  const defaultMembers = `---
+type: TeamConfiguration
+title: Team Access & Channel Mappings
+timestamp: ${new Date().toISOString()}
+roles:
+  Staff: [orders, inventory]
+  Delivery: [logistics]
+  Admin: [*]
+members:
+  - email: "owner@gmail.com"
+    role: "Admin"
+    status: "verified"
+---
+
+# Channel Mappings
+
+| Channel Name | Platform | Channel ID | Mapped Role |
+|--------------|----------|------------|-------------|
+`;
+  await uploadWorkspaceFile(env, scope, 'team/members.md', defaultMembers);
+
   // Site layouts folder placeholder
   await uploadWorkspaceFile(env, scope, 'site/layouts/.gitkeep', '');
 }
@@ -403,3 +448,82 @@ components:
 
   await uploadWorkspaceFile(env, scope, 'site/layouts/home.json', JSON.stringify(homeJson, null, 2));
 }
+
+// ── Canvas Block Operations ──────────────────────────────────────────
+
+export async function addCanvasBlock(
+  env: any,
+  scope: string,
+  moduleOrBlock: string | { title?: string; type: string; props?: Record<string, any> }
+): Promise<{ ok: boolean }> {
+  const canvasContent = await readWorkspaceFile(env, scope, 'team/canvas.md');
+  const modName = typeof moduleOrBlock === 'string' ? moduleOrBlock : moduleOrBlock.type;
+  const title = typeof moduleOrBlock === 'string'
+    ? modName.charAt(0).toUpperCase() + modName.slice(1)
+    : (moduleOrBlock.title || modName);
+
+  const blockType = modName === 'orders' ? 'pos-sale' : 'data-grid';
+  const typeKey = modName === 'inventory' ? 'product' : modName === 'bookings' ? 'booking' : modName;
+  const modeVal = modName === 'bookings' ? 'calendar' : 'table';
+  const propsObj = typeof moduleOrBlock === 'object' && moduleOrBlock.props
+    ? moduleOrBlock.props
+    : { type: typeKey, mode: modeVal };
+
+  const newBlockStr = `  - title: "${title}"\n    type: "${blockType}"\n    props: ${JSON.stringify(propsObj)}`;
+
+  let updatedContent = '';
+  if (canvasContent && canvasContent.includes('blocks:')) {
+    if (canvasContent.includes(`"${title}"`) || canvasContent.includes(`"${blockType}"`)) {
+      return { ok: true };
+    }
+    updatedContent = canvasContent.replace('blocks:\n', `blocks:\n${newBlockStr}\n`);
+  } else {
+    updatedContent = `---
+type: CanvasLayout
+title: Workspace Canvas
+timestamp: ${new Date().toISOString()}
+blocks:
+${newBlockStr}
+---
+
+# Workspace Canvas
+`;
+  }
+
+  await uploadWorkspaceFile(env, scope, 'team/canvas.md', updatedContent);
+  return { ok: true };
+}
+
+export async function removeCanvasBlock(
+  env: any,
+  scope: string,
+  moduleOrTitle: string
+): Promise<{ ok: boolean }> {
+  const canvasContent = await readWorkspaceFile(env, scope, 'team/canvas.md');
+  if (!canvasContent) return { ok: true };
+
+  const lines = canvasContent.split('\n');
+  const filteredLines = [];
+  let skipping = false;
+
+  for (let line of lines) {
+    if (line.trim().startsWith('-') && line.toLowerCase().includes(moduleOrTitle.toLowerCase())) {
+      skipping = true;
+      continue;
+    }
+    if (skipping) {
+      if (line.trim().startsWith('-') || (line.search(/\S/) === 0 && line.trim() !== '')) {
+        skipping = false;
+        filteredLines.push(line);
+      } else {
+        continue;
+      }
+    } else {
+      filteredLines.push(line);
+    }
+  }
+
+  await uploadWorkspaceFile(env, scope, 'team/canvas.md', filteredLines.join('\n'));
+  return { ok: true };
+}
+

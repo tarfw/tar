@@ -176,4 +176,16 @@ export const tar = {
     edit: (scope: string, path: string, content: string) =>
       post('/okf/edit', { scope, path, content }),
   },
+
+  // ── Canvas Operations ─────────────────────────────────────
+
+  canvas: {
+    /** Add a skill or block to active canvas.md */
+    add: (scope: string, block: string | { title?: string; type: string; props?: Record<string, any> }) =>
+      post('/canvas/add', { scope, block }),
+
+    /** Remove a skill or block from active canvas.md */
+    remove: (scope: string, moduleOrTitle: string) =>
+      post('/canvas/remove', { scope, module: moduleOrTitle }),
+  },
 };

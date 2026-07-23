@@ -19,7 +19,7 @@ export default function Index() {
         if (list.length > 0) {
           setTarget('/inbox');
         } else {
-          setTarget('/add-workspace');
+          setTarget('/(tabs)/workspaces?action=new');
         }
       } catch (e) {
         console.warn('[Index] Failed to check workspaces:', e);

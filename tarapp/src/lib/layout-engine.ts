@@ -223,3 +223,77 @@ export function buildModuleLayout(moduleName: string, mdContent: string): Worksp
     actions,
   };
 }
+
+export interface CanvasBlock {
+  title: string;
+  type: string;
+  props: Record<string, any>;
+}
+
+export function parseCanvasMarkdown(content: string): { title: string; blocks: CanvasBlock[] } {
+  const parts = content.split('---');
+  if (parts.length < 3) {
+    return { title: 'Workspace Canvas', blocks: [] };
+  }
+  
+  const yamlText = parts[1];
+  const blocks: CanvasBlock[] = [];
+  let title = 'Workspace Canvas';
+
+  // Read title
+  const titleMatch = yamlText.match(/title:\s*["']?([^"\n\r']+)["']?/);
+  if (titleMatch) {
+    title = titleMatch[1];
+  }
+
+  // Parse blocks manually from list items in YAML
+  const lines = yamlText.split('\n');
+  let currentBlock: any = null;
+  let inBlocks = false;
+
+  for (let line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('blocks:')) {
+      inBlocks = true;
+      continue;
+    }
+
+    if (inBlocks) {
+      // If we hit another root key, stop parsing blocks
+      if (line.search(/\S/) === 0 && trimmed !== '' && !trimmed.startsWith('-')) {
+        inBlocks = false;
+        continue;
+      }
+
+      if (trimmed.startsWith('-')) {
+        if (currentBlock && currentBlock.type) {
+          blocks.push(currentBlock);
+        }
+        currentBlock = { title: '', type: '', props: {} };
+        // Check if there are inline fields, otherwise wait for next lines
+        const typeMatch = trimmed.match(/type:\s*["']?([^"\n\r']+)["']?/);
+        if (typeMatch) currentBlock.type = typeMatch[1];
+      } else if (trimmed.startsWith('type:') && currentBlock) {
+        currentBlock.type = trimmed.replace('type:', '').trim().replace(/^['"]|['"]$/g, '');
+      } else if (trimmed.startsWith('title:') && currentBlock) {
+        currentBlock.title = trimmed.replace('title:', '').trim().replace(/^['"]|['"]$/g, '');
+      } else if (trimmed.startsWith('props:') && currentBlock) {
+        const propsMatch = trimmed.match(/props:\s*({.+})/);
+        if (propsMatch) {
+          try {
+            currentBlock.props = JSON.parse(propsMatch[1]);
+          } catch (e) {
+            console.warn('[parseCanvasMarkdown] Failed to parse props:', propsMatch[1], e);
+          }
+        }
+      }
+    }
+  }
+
+  if (currentBlock && currentBlock.type) {
+    blocks.push(currentBlock);
+  }
+
+  return { title, blocks };
+}
+

@@ -69,3 +69,26 @@ registerComponent('entity-navigator', {
   icon: 'navigate-outline',
   description: 'Grid of pressable entity navigation chips',
 });
+
+// Register Plan 4 Master Primitive Aliases
+registerComponent('data-grid', {
+  component: DataTable,
+  label: 'Data Grid',
+  icon: 'grid-outline',
+  description: 'Unified data grid for table, catalog, and booking views',
+});
+
+registerComponent('status-board', {
+  component: TimelineFeed,
+  label: 'Status Board',
+  icon: 'shapes-outline',
+  description: 'Kanban column board for tracking entity states',
+});
+
+registerComponent('pos-sale', {
+  component: CatalogGrid,
+  label: 'POS Register',
+  icon: 'card-outline',
+  description: 'Point of sale billing register',
+});
+

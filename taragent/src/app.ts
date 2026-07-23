@@ -6,7 +6,7 @@ import { getUserTimeline } from './lib/inbox';
 import { executeRead, executeCreate, executeUpdate, executeDelete } from './lib/helpers';
 import { handleChannelMessage, sendChannelMessage, getChannelConfig } from './channels';
 import { uploadDocument, getPresignedUrl, getDocument, listDocuments, deleteDocument } from './lib/s3';
-import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspace, listWorkspaceModules, readWithFallback, scaffoldOkfFolders, generateOkfContent } from './lib/okf';
+import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorkspaceFile, initWorkspace, listWorkspaceModules, readWithFallback, scaffoldOkfFolders, generateOkfContent, addCanvasBlock, removeCanvasBlock } from './lib/okf';
 import { CORE_MODULES } from './lib/core-modules';
 import { extractBusinessInfo } from './lib/extract-business';
 import { writeEvent, getUserInbox, markTaskDone } from './lib/events';
@@ -98,17 +98,34 @@ app.post('/workspaces/create', async (c) => {
 
   const scope = `w:${wsSubdomain}`;
 
-  // AI generates workspace type from description
+  // AI generates workspace type from description or business name
+  const combinedText = `${wsName} ${wsDescription}`.toLowerCase();
+  
   const workspaceType = businessData?.type
-    || wsDescription.toLowerCase().includes('restaurant') ? 'restaurant'
-    : wsDescription.toLowerCase().includes('salon') || wsDescription.toLowerCase().includes('beauty') ? 'salon'
-    : wsDescription.toLowerCase().includes('clinic') || wsDescription.toLowerCase().includes('doctor') ? 'clinic'
-    : wsDescription.toLowerCase().includes('gym') || wsDescription.toLowerCase().includes('fitness') ? 'gym'
-    : wsDescription.toLowerCase().includes('retail') || wsDescription.toLowerCase().includes('store') ? 'retail'
-    : 'business';
+    || (combinedText.includes('restaurant') || combinedText.includes('cafe') || combinedText.includes('pizza') || combinedText.includes('food') || combinedText.includes('bakery') ? 'restaurant'
+    : combinedText.includes('salon') || combinedText.includes('beauty') || combinedText.includes('spa') || combinedText.includes('barber') ? 'salon'
+    : combinedText.includes('clinic') || combinedText.includes('doctor') || combinedText.includes('health') || combinedText.includes('dental') ? 'clinic'
+    : combinedText.includes('gym') || combinedText.includes('fitness') ? 'gym'
+    : combinedText.includes('taxi') || combinedText.includes('cab') || combinedText.includes('delivery') || combinedText.includes('logistics') ? 'logistics'
+    : combinedText.includes('grocery') || combinedText.includes('mart') || combinedText.includes('supermarket') ? 'grocery'
+    : combinedText.includes('retail') || combinedText.includes('store') || combinedText.includes('shop') || combinedText.includes('clothing') ? 'retail'
+    : 'business');
 
-  // AI picks modules based on description if not provided
-  const mods = modules || ['orders', 'inventory', 'crm', 'reports'];
+  // AI picks core skills based on business matrix if modules are not provided
+  let defaultModsForType = ['orders', 'inventory', 'crm', 'reports'];
+  if (workspaceType === 'restaurant') {
+    defaultModsForType = ['orders', 'inventory', 'bookings', 'hr'];
+  } else if (workspaceType === 'salon') {
+    defaultModsForType = ['bookings', 'inventory', 'crm'];
+  } else if (workspaceType === 'clinic') {
+    defaultModsForType = ['bookings', 'crm', 'hr', 'documents'];
+  } else if (workspaceType === 'logistics') {
+    defaultModsForType = ['logistics', 'orders', 'crm', 'expenses'];
+  } else if (workspaceType === 'grocery') {
+    defaultModsForType = ['orders', 'inventory', 'logistics'];
+  }
+
+  const mods = (modules && Array.isArray(modules) && modules.length > 0) ? modules : defaultModsForType;
 
   try {
     // Check if subdomain is already taken
@@ -778,6 +795,36 @@ app.delete('/okf/file', async (c) => {
   if (!scope || !path) return c.json({ error: 'Missing scope or path' }, 400);
   await deleteWorkspaceFile(c.env, scope, path);
   return c.json({ ok: true });
+});
+
+// POST /canvas/add — add skill/block to active canvas
+app.post('/canvas/add', async (c) => {
+  const body = await c.req.json();
+  const { scope, block, module: modName } = body || {};
+  if (!scope || (!block && !modName)) {
+    return c.json({ error: 'Missing scope and block/module' }, 400);
+  }
+  try {
+    const res = await addCanvasBlock(c.env, scope, block || modName);
+    return c.json({ ok: true, ...res });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// POST /canvas/remove — remove skill/block from active canvas
+app.post('/canvas/remove', async (c) => {
+  const body = await c.req.json();
+  const { scope, module: modName, title } = body || {};
+  if (!scope || (!modName && !title)) {
+    return c.json({ error: 'Missing scope and module/title' }, 400);
+  }
+  try {
+    const res = await removeCanvasBlock(c.env, scope, modName || title);
+    return c.json({ ok: true, ...res });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
 });
 
 // ============================================================

@@ -32,7 +32,6 @@ presets:
   gym:
     - bookings
     - crm
-    - lms
     - hr
     - reports
     - expenses

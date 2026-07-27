@@ -490,6 +490,22 @@ ${newBlockStr}
 `;
   }
 
+  // 1. Ensure skills/<modName>.md exists in S3
+  const skillFileContent = await readWorkspaceFile(env, scope, `skills/${modName}.md`);
+  if (!skillFileContent && CORE_MODULES[modName]) {
+    await uploadWorkspaceFile(env, scope, `skills/${modName}.md`, CORE_MODULES[modName]);
+  }
+
+  // 2. Ensure index.md frontmatter includes the module
+  const indexContent = await readWorkspaceFile(env, scope, 'index.md');
+  if (indexContent && !indexContent.includes(modName)) {
+    const updatedIndex = indexContent.replace(
+      /(\*\*Modules:\*\*.*)$/m,
+      `$1, ${modName}`
+    );
+    await uploadWorkspaceFile(env, scope, 'index.md', updatedIndex);
+  }
+
   await uploadWorkspaceFile(env, scope, 'team/canvas.md', updatedContent);
   return { ok: true };
 }

@@ -107,6 +107,7 @@ export async function create(opts: {
   title?: string;
   value?: number;
   status?: string;
+  role?: string;
   data?: any;
   file?: string;
   ref?: string;
@@ -148,8 +149,8 @@ export async function create(opts: {
 
     await withTransaction(db, async () => {
       await db.run(
-        `INSERT INTO matter (id, type, title, value, status, data, file, scope, at, updated)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO matter (id, type, title, value, status, data, file, role, scope, at, updated)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           opts.type || 'product',
@@ -158,6 +159,7 @@ export async function create(opts: {
           opts.status || 'active',
           JSON.stringify(mergedData),
           opts.file || null,
+          opts.role || null,
           opts.scope,
           opts.at || nowUnix,
           nowUnix
@@ -258,6 +260,7 @@ export async function read(opts: {
   scope: string;
   id?: string;
   type?: string;
+  role?: string;
   ref?: string;
   status?: string;
   fields?: string[];
@@ -312,6 +315,11 @@ export async function read(opts: {
   if (opts.type) {
     query += ' AND type = ?';
     params.push(opts.type);
+  }
+
+  if (opts.role && opts.table === 'matter') {
+    query += ' AND role = ?';
+    params.push(opts.role);
   }
 
   if (opts.ref) {
@@ -420,6 +428,7 @@ export async function update(opts: {
     title?: string;
     value?: number;
     status?: string;
+    role?: string;
     data?: any;
     file?: string;
     due?: number;
@@ -466,6 +475,10 @@ export async function update(opts: {
   if (opts.patch.status !== undefined) {
     sets.push('status = ?');
     params.push(opts.patch.status);
+  }
+  if (opts.patch.role !== undefined && opts.table === 'matter') {
+    sets.push('role = ?');
+    params.push(opts.patch.role);
   }
   if (opts.patch.file !== undefined && opts.table === 'matter') {
     sets.push('file = ?');

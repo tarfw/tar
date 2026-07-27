@@ -1,4 +1,4 @@
-# TAR Workspace GenUI — Plan 4 (Component-First Architecture & OKF-Native)
+# TAR Workspace GenUI — Plan 4+5 (Component-First Architecture & OKF-Native)
 
 > Grounded in existing code and Google's Open Knowledge Format (OKF). Key decisions:
 > - **One word: `Block`.** In code a Block is a `UISection` (`layout-engine.ts`). A skill's `app_layout.sections` is a list of Blocks.
@@ -10,6 +10,9 @@
 > - **Native Master Primitives.** `data-grid`, `metric-card`, `quick-actions`, `status-board`, `pos-sale` cover 100% of workspace UI needs (§3). Web Views serve only as an optional external URL escape hatch (`custom-view`).
 > - **Auto-clean.** Canvas starts empty or loads default layout; `"clear"` / `"home"` resets active blocks.
 > - **LLM last.** In-memory keyword index compiled on workspace load matches direct intents first; LLM tool-calling agent runs only on no-match (§5).
+> - **`role` column on `matter`.** Entities keep their fast-indexed `type` field AND gain an additive `role` column for semantic sub-classification. No JSON extraction needed (§10).
+> - **Named `motion` taxonomy.** Every event written to `motion` uses a defined type vocabulary (`sale`, `shipment`, `clock-in`, …) not free-form strings (§10).
+> - **Named `graph` vocabulary.** Every relationship edge uses a defined `rel` name (`placed_by`, `assigned_to`, …) not vague strings (§10).
 
 ---
 
@@ -66,6 +69,7 @@ Before adding anything, this is what's built today (do not re-invent):
 | Action execution | `taragent` `/ai-tasks/execute`, `/tools/:name` | ✅ built |
 | OKF File storage (S3) | `taragent/src/lib/okf.ts` + `/okf/*` routes | ✅ built |
 | DB rules (source of truth) | `taragent/src/modules/dbrules.md` | ✅ built |
+| `matter.role` column | `tarapp/src/lib/schema.ts` + `tools.ts` | ⬜ to add (Phase 5) |
 
 **Scope prefix is `w:` — not `ws:`.** `app.ts` uses `w:${subdomain}` and every route does `scope.replace('w:', '')`. All SQL and examples here use `w:`.
 
@@ -152,16 +156,20 @@ members:
 
 ## 7. Universal by Composition
 
-| Business | Enabled skills | matter.type used |
-|----------|---------------|------------------|
-| Restaurant | orders inventory bookings hr | product order booking |
-| Clothing | orders inventory listings crm | product order listing |
-| Groceries | orders inventory logistics | product order shipment |
-| Delivery | logistics orders crm | shipment order customer |
-| Taxi | bookings logistics crm expenses | booking shipment customer |
-| Clinic | bookings crm hr documents | booking customer staff |
-| Salon | bookings inventory crm | booking product customer |
-| Agency | projects crm expenses hr | project customer expense |
+A business type is a *set of enabled skills* over the 4 core tables. The `matter.type` column stays specific and indexed; the additive `matter.role` column adds semantic sub-classification where needed.
+
+| Business | Enabled skills | matter.type | matter.role (where used) |
+|----------|---------------|-------------|---------------------------|
+| Restaurant | orders inventory bookings hr | product, order, booking | staff, manager |
+| Clothing | orders inventory listings crm | product, order, listing | customer, contact |
+| Groceries | orders inventory logistics | product, order, shipment | customer |
+| Delivery | logistics orders crm | shipment, order | customer, driver |
+| Taxi | bookings logistics crm expenses | booking, shipment | customer, driver |
+| Clinic | bookings crm hr documents | booking, document | customer, staff, doctor |
+| Salon | bookings inventory crm | booking, product | customer, staff |
+| Agency | projects crm expenses hr | project, expense | customer, staff, manager |
+
+**Rule:** `matter.type` = what the record *is* (product, order, booking…). `matter.role` = who or what subtype within that entity (customer, staff, driver…). Both columns are independently indexed — no JSON extraction required.
 
 ---
 
@@ -211,8 +219,96 @@ Legend: **NEW** = create · **keep** = do not touch · **DELETE** = remove.
 | **2 — Onboarding Block** | Name-only workspace creation via standard registry component (`quick-actions` / `action-form`) | delete old `add-workspace.tsx` |
 | **3 — OKF Canvas Management** | S3 `team/canvas.md` CRUD endpoints (`/canvas/add`, `/canvas/remove`) | `taragent` routes + `WorkspaceCanvas.tsx` |
 | **4 — OKF Role Filter (CLAC)** | Read YAML frontmatter from S3 `team/members.md` for role-based skill filtering | `role-filter.ts` (NEW) |
+| **5 — Entity Role Column** | `ALTER TABLE matter ADD COLUMN role TEXT` + index + update `generateEntityId()` to entity-level prefixes + update all skill `.md` queries | `schema.ts`, `tools.ts`, `dbrules.md`, skill files |
+
+---
+
+## 10. Entity Roles, Motion Taxonomy & Graph Vocabulary
+
+*Adopted from plan5. Additive — does not replace any plan4 foundation.*
+
+### 10.1 `matter.role` — Additive Column, Indexed
+
+The `matter` table gains one new column. **`type` is never removed or generalised** — it stays the primary discriminator for fast indexed queries.
+
+```sql
+-- One migration, backward-compatible
+ALTER TABLE matter ADD COLUMN role TEXT;
+CREATE INDEX IF NOT EXISTS idx_matter_scope_type_role ON matter(scope, type, role);
+```
+
+| `matter.type` | `matter.role` values | Example |
+|--------------|---------------------|----------|
+| `product` | *(none needed)* | Inventory item |
+| `order` | *(none needed)* | Sales order |
+| `booking` | *(none needed)* | Appointment |
+| `customer` | `vip`, `wholesale`, `retail` | Loyalty tier |
+| `staff` | `manager`, `admin`, `driver`, `doctor` | Sub-role within staff |
+| `listing` | `real-estate`, `subscription`, `catalog` | Listing subtype |
+| `expense` | `travel`, `salary`, `vendor` | Expense category |
+
+**Query pattern — both styles work, both hit an index:**
+```sql
+-- Fast, specific (preferred for UI queries)
+SELECT * FROM matter WHERE scope = 'w:acme' AND type = 'staff';
+
+-- Role-filtered (used by agent when semantic sub-role matters)
+SELECT * FROM matter WHERE scope = 'w:acme' AND type = 'staff' AND role = 'manager';
+```
+
+**`generateEntityId()` stays type-based** (`stf`, `cus`, `prd`…). No change to existing IDs.
+
+---
+
+### 10.2 `motion` Event Taxonomy — Named Type Vocabulary
+
+Every event written to `motion` must use a type from this vocabulary. No free-form strings.
+
+| Category | `motion.type` values |
+|----------|---------------------|
+| **Transaction** | `sale`, `refund`, `payment` |
+| **Logistics** | `shipment`, `delivery`, `tracking` |
+| **Schedule** | `booking`, `cancellation` |
+| **Work** | `clock-in`, `clock-out`, `assignment` |
+| **Money** | `expense`, `write-off` |
+| **Pipeline** | `deal`, `stage` |
+| **Inventory** | `adjust`, `restock` |
+| **System** | `status-change`, `activity` |
+
+Skill `.md` files reference these types in their action definitions so the agent knows which `motion.type` to write for each action.
+
+---
+
+### 10.3 `graph` Relationship Vocabulary — Named `rel` Values
+
+Every edge written to `graph` must use a `rel` name from this vocabulary.
+
+| `rel` | `src` type | `tgt` type | Meaning |
+|-------|-----------|-----------|----------|
+| `placed_by` | `order` | `customer` | Order belongs to customer |
+| `booked_by` | `booking` | `customer` | Booking belongs to customer |
+| `fulfils` | `shipment` | `order` | Shipment fulfils order |
+| `assigned_to` | `project` | `staff` | Project assigned to staff |
+| `works_at` | `staff` | `company` | Staff member works at company |
+| `supplied_by` | `product` | `company` | Product supplied by vendor |
+| `tagged` | any | any | Generic label/tag edge |
+
+When an agent writes a `sale` motion it also writes a `graph(src=order_id, rel='placed_by', tgt=customer_id)` edge — this is now explicit, not implicit.
+
+---
+
+### 10.4 OKF ↔ Turso Bridge (Where Data Lives)
+
+| OKF File (brain — *how*) | Turso table (memory — *what*) |
+|--------------------------|-------------------------------|
+| `team/members.md` | `matter` (`type='staff'`) |
+| `skills/orders.md` | `motion` (`type='sale'`) |
+| `products/catalog.md` | `matter` (`type='product'`) |
+| `site/layouts/*.json` | `graph` (layout relationships) |
+| `team/canvas.md` | `inbox` (pending canvas tasks) |
 
 ---
 
 ## Future v2 Deferred Tasks
 * **Customer storefront sites** — Cart, checkout, booking widgets, and storefront grid layouts kept in a separate project to focus purely on internal workspace efficiency.
+* **Full entity unification** (`type='person'` + `json role`) — only worth doing if the same human genuinely appears as both customer and staff and the `role` column alone is insufficient. Requires json_extract indexes (SQLite generated columns) and a full data migration.

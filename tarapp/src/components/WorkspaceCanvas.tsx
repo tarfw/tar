@@ -119,12 +119,12 @@ export default function WorkspaceCanvas({
               if (section.type === 'metric-card') {
                 const metricValue = metricsData[section.title || ''] || metricsData[layout.moduleName] || '0';
                 sectionData = [{ value: metricValue, title: section.title || 'Metric' }];
-              } else if (section.type === 'data-table' || section.type === 'data-grid' || section.type === 'timeline-feed' || section.type === 'booking-grid' || section.type === 'catalog-grid' || section.type === 'pos-sale') {
-                const typeKey = section.props?.type || layout.moduleName;
+              } else if ((section.type as string) === 'data-table' || (section.type as string) === 'data-grid' || (section.type as string) === 'timeline-feed' || (section.type as string) === 'booking-grid' || (section.type as string) === 'catalog-grid' || (section.type as string) === 'pos-sale' || (section.type as string) === 'entity-directory' || (section.type as string) === 'plan5-directory') {
+                const typeKey = (section as any).props?.type || layout.moduleName;
                 sectionData = tableData[typeKey] || tableData[layout.moduleName] || [];
               }
 
-              const isPosOrSale = section.type === 'pos-sale' || layout.moduleName === 'orders';
+              const isPosOrSale = (section.type as string) === 'pos-sale' || layout.moduleName === 'orders';
               return (
                 <View
                   key={`sec_${layout.moduleName}_${section.type}_${idx}`}

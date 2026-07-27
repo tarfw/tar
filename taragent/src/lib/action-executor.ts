@@ -373,13 +373,25 @@ export async function executeAITask(
     }
   }
 
+  // 2. Fallback to built-in Core Event Registry if action not found in OKF workspace skills
+  if (!action) {
+    for (const [evtName, evtContent] of Object.entries(CORE_MODULES)) {
+      const parsed = parseSkillMarkdown(evtContent);
+      const found = parsed.actions.find(a => a.name === actionName);
+      if (found) {
+        action = found;
+        break;
+      }
+    }
+  }
+
   if (!action) {
     return {
       success: false,
       actionName,
       stepsExecuted: 0,
       history: [],
-      error: `Action '${actionName}' not found in any skill modules.`
+      error: `Action '${actionName}' not found in any skill modules or built-in event registry.`
     };
   }
 

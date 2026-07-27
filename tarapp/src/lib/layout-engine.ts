@@ -1,7 +1,7 @@
 import { parseDesignTokens, DesignTokens } from './design-tokens';
 
 export interface UISection {
-  type: 'quick-actions' | 'metric-card' | 'data-table' | 'timeline-feed' | 'booking-grid' | 'catalog-grid' | 'report-chart' | 'status-board' | 'entity-navigator';
+  type: 'quick-actions' | 'metric-card' | 'data-table' | 'timeline-feed' | 'booking-grid' | 'catalog-grid' | 'report-chart' | 'status-board' | 'entity-navigator' | 'entity-directory' | 'plan5-directory' | 'explore-feed' | 'inbox-feed';
   title?: string;
   actions?: string[];
   data?: string;

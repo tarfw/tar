@@ -12,6 +12,9 @@ import TimelineFeed from './sections/TimelineFeed';
 import QuickActions from './sections/QuickActions';
 import ContentCard from './sections/ContentCard';
 import EntityNavigator from './sections/EntityNavigator';
+import EntityDirectory from './sections/EntityDirectory';
+import ExploreFeed from './sections/ExploreFeed';
+import InboxFeed from './sections/InboxFeed';
 
 // Register all built-in native components
 registerComponent('metric-card', {
@@ -91,4 +94,33 @@ registerComponent('pos-sale', {
   icon: 'card-outline',
   description: 'Point of sale billing register',
 });
+
+registerComponent('entity-directory', {
+  component: EntityDirectory,
+  label: 'Entity Directory',
+  icon: 'folder-outline',
+  description: 'Plan 5 Directory list for People, Companies, and Items',
+});
+
+registerComponent('plan5-directory', {
+  component: EntityDirectory,
+  label: 'Plan 5 Directory',
+  icon: 'folder-outline',
+  description: 'Plan 5 Directory list for People, Companies, and Items',
+});
+
+registerComponent('explore-feed', {
+  component: ExploreFeed,
+  label: 'Explore Feed',
+  icon: 'compass-outline',
+  description: 'Public workspace discovery feed',
+});
+
+registerComponent('inbox-feed', {
+  component: InboxFeed,
+  label: 'Inbox Feed',
+  icon: 'tray-outline',
+  description: 'Real-time activity and notifications inbox',
+});
+
 

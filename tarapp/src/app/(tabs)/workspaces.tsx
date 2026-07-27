@@ -25,6 +25,8 @@ import { resolveIntent } from '@/lib/intent-resolver';
 import { getCurrentUser } from '@/lib/auth';
 import { filterModulesByRole } from '@/lib/role-filter';
 import WorkspaceCanvas from '@/components/WorkspaceCanvas';
+import AdBanner from '@/components/AdBanner';
+import EventComposeModal from '@/components/EventComposeModal';
 
 interface Workspace {
   scope: string;
@@ -78,11 +80,23 @@ const WorkspaceThumbnail = ({ name, size = 36, theme }: { name: string; size?: n
   );
 };
 
+const BUSINESS_VERTICALS = [
+  { id: 'business', label: 'General Business', icon: 'briefcase-outline' },
+  { id: 'retail', label: 'Retail & Store', icon: 'cart-outline' },
+  { id: 'restaurant', label: 'Restaurant & Cafe', icon: 'restaurant-outline' },
+  { id: 'salon', label: 'Salon & Spa', icon: 'cut-outline' },
+  { id: 'clinic', label: 'Clinic & Healthcare', icon: 'medical-outline' },
+  { id: 'logistics', label: 'Logistics & Fleet', icon: 'car-outline' },
+];
+
 export default function WorkspacesScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
-  const { subdomain: paramSubdomain, code: paramCode, action: paramAction } = useLocalSearchParams<{ subdomain?: string; code?: string; action?: string }>();
+  const params = useLocalSearchParams();
+  const paramSubdomain = typeof params.subdomain === 'string' ? params.subdomain : undefined;
+  const paramCode = typeof params.code === 'string' ? params.code : undefined;
+  const paramAction = typeof params.action === 'string' ? params.action : undefined;
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
@@ -92,10 +106,17 @@ export default function WorkspacesScreen() {
   const [products, setProducts] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [agentFeedback, setAgentFeedback] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  // Auto-dismiss feedback toast after 4 seconds
+  useEffect(() => {
+    if (agentFeedback) {
+      const timer = setTimeout(() => setAgentFeedback(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [agentFeedback]);
   const [input, setInput] = useState('');
   const [executing, setExecuting] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [showInfo, setShowInfo] = useState(false);
   
   // Dynamic workspace blueprints/modules
   const [loadingIndex, setLoadingIndex] = useState(false);
@@ -112,6 +133,7 @@ export default function WorkspacesScreen() {
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [newWsName, setNewWsName] = useState('');
   const [newWsCreating, setNewWsCreating] = useState(false);
+  const [selectedVertical, setSelectedVertical] = useState<string>('business');
 
 
   const [selectedAction, setSelectedAction] = useState<any | null>(null);
@@ -314,22 +336,33 @@ ${membersYaml}
 
   const [newWsDesc, setNewWsDesc] = useState('');
 
+  const closeCreateModal = useCallback(() => {
+    setIsCreatingWorkspace(false);
+    if (paramAction === 'new') {
+      router.setParams({ action: undefined });
+    }
+  }, [paramAction, router]);
+
   const handleCreateInlineWorkspace = async () => {
     if (!newWsName.trim() || newWsCreating) return;
     setNewWsCreating(true);
     try {
       const name = newWsName.trim();
       const desc = newWsDesc.trim() || name;
-      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+      let slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+      if (!slug) {
+        slug = `ws-${Date.now().toString(36)}`;
+      }
       await tar.createWorkspace({
         name,
         subdomain: slug,
-        description: desc
+        description: desc,
+        type: selectedVertical,
       });
       await SecureStore.setItemAsync('active_workspace_subdomain', slug).catch(() => null);
       setNewWsName('');
       setNewWsDesc('');
-      setIsCreatingWorkspace(false);
+      closeCreateModal();
       await fetchWorkspacesList();
     } catch (err: any) {
       setAgentFeedback({ text: err.message || 'Failed to create workspace', type: 'error' });
@@ -452,11 +485,12 @@ ${membersYaml}
           } catch (err) {
             console.warn('[Canvas] Failed to parse team/canvas.md:', err);
           }
-        } else if (modulesList.length > 0) {
-          const fallbackBlocks = modulesList.map(mod => ({
+        } else {
+          const activeList = modulesList.length > 0 ? modulesList : ['orders', 'inventory', 'crm', 'reports'];
+          const fallbackBlocks = activeList.map(mod => ({
             title: mod.charAt(0).toUpperCase() + mod.slice(1),
-            type: mod === 'orders' ? 'pos-sale' : 'data-grid',
-            props: { type: mod === 'orders' ? 'order' : mod === 'inventory' ? 'product' : mod, mode: 'table' }
+            type: mod === 'orders' || mod === 'transactions' ? 'pos-sale' : 'data-grid',
+            props: { type: (mod === 'orders' || mod === 'transactions') ? 'order' : mod === 'inventory' ? 'product' : mod, mode: 'table' }
           }));
           setCanvasBlocks(fallbackBlocks);
         }
@@ -629,9 +663,10 @@ ${membersYaml}
       // Execute directly
       setExecuting(true);
       const actionName = action.name || action.actionId;
+      console.log(`[Agent] Executing action "${actionName}" for scope: ${currentWorkspace?.scope}`);
       tar.executeAITask(actionName, {}, currentWorkspace?.scope!)
         .then(async (res) => {
-          alert(`Successfully executed ${actionName.replace(/_/g, ' ')}`);
+          console.log(`[Agent] Action "${actionName}" completed successfully:`, res);
           // Refresh records
           if (currentWorkspace?.scope) {
             await refreshProducts(currentWorkspace.scope);
@@ -639,22 +674,23 @@ ${membersYaml}
           }
         })
         .catch((err) => {
-          alert(`Error: ${err.message}`);
+          console.error(`[Agent] Action "${actionName}" failed:`, err);
         })
         .finally(() => setExecuting(false));
     }
   };
 
-  const handleActionFormSubmit = async () => {
+  const handleActionFormSubmit = async (submittedParams?: Record<string, string>) => {
     if (!selectedAction || !currentWorkspace) return;
     setSubmittingAction(true);
     setActionResultMessage(null);
     try {
+      const activeParams = submittedParams || formParams;
       const cleanParams: Record<string, any> = {};
       selectedAction.params.forEach((p: any) => {
         const paramName = typeof p === 'string' ? p : p.name;
         const paramType = typeof p === 'string' ? 'text' : p.type;
-        const val = formParams[paramName] || '';
+        const val = activeParams[paramName] || '';
         if (paramType === 'number') {
           cleanParams[paramName] = parseFloat(val) || 0;
         } else {
@@ -663,7 +699,7 @@ ${membersYaml}
       });
 
       const res = await tar.executeAITask(selectedAction.name, cleanParams, currentWorkspace.scope);
-      setActionResultMessage(res?.message || `Successfully executed ${selectedAction.name.replace(/_/g, ' ')}`);
+      setActionResultMessage(res?.message || `Successfully recorded event: ${selectedAction.name.replace(/_/g, ' ')}`);
       
       // Refresh records after action is performed
       await refreshProducts(currentWorkspace.scope);
@@ -725,97 +761,8 @@ ${membersYaml}
     );
   }
 
-  // Handle case where user is creating a workspace or has 0 workspaces
-  const isCreating = isCreatingWorkspace || paramAction === 'new' || workspaces.length === 0;
-
-  if (isCreating) {
-    return (
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <View style={[styles.center, { backgroundColor: theme.background, paddingHorizontal: 24, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-          <View style={[{ width: '100%', maxWidth: 400, backgroundColor: theme.backgroundElement, borderRadius: 16, padding: 24, borderWidth: 1, borderColor: theme.border }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: theme.text }}>Create Workspace</Text>
-            {workspaces.length > 0 && (
-              <TouchableOpacity onPress={() => setIsCreatingWorkspace(false)}>
-                <Ionicons name="close" size={24} color={theme.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
-          <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 20 }}>
-            Enter your business or team workspace name. AI will automatically scaffold your canvas and skills.
-          </Text>
-
-          <TextInput
-            style={{
-              height: 48,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: theme.border,
-              paddingHorizontal: 16,
-              fontSize: 16,
-              color: theme.text,
-              backgroundColor: theme.background,
-              marginBottom: 12,
-            }}
-            value={newWsName}
-            onChangeText={setNewWsName}
-            placeholder="Workspace Name (e.g. Bella Pizza)"
-            placeholderTextColor={theme.textMuted + '80'}
-            autoFocus
-          />
-
-          <TextInput
-            style={{
-              height: 48,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: theme.border,
-              paddingHorizontal: 16,
-              fontSize: 15,
-              color: theme.text,
-              backgroundColor: theme.background,
-              marginBottom: 12,
-            }}
-            value={newWsDesc}
-            onChangeText={setNewWsDesc}
-            placeholder="Business Type / Description (e.g. Italian Restaurant)"
-            placeholderTextColor={theme.textMuted + '80'}
-          />
-
-          {newWsName.trim().length > 0 && (
-            <Text style={{ fontSize: 12, color: theme.primary, marginBottom: 20, fontWeight: '600' }}>
-              URL: {newWsName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)}.tarai.space
-            </Text>
-          )}
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={handleCreateInlineWorkspace}
-            disabled={!newWsName.trim() || newWsCreating}
-            style={{
-              height: 48,
-              borderRadius: 8,
-              backgroundColor: newWsName.trim() ? theme.primary : theme.border,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {newWsCreating ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={{ color: newWsName.trim() ? '#ffffff' : theme.textMuted, fontSize: 16, fontWeight: '700' }}>
-                Create Workspace
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
-    );
-  }
+  // Determine if workspace creation modal should be visible
+  const showCreateModal = isCreatingWorkspace || paramAction === 'new' || (workspaces.length === 0 && !loadingWorkspaces);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -831,6 +778,9 @@ ${membersYaml}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
+        {/* Top Sponsored Ad Banner */}
+        <AdBanner />
+
         {/* 1. Live Site Status Widget */}
         {draft && (
           <SiteCard
@@ -851,34 +801,90 @@ ${membersYaml}
               Generating custom branded canvas...
             </Text>
           </View>
+        ) : activeWidget ? (
+          (() => {
+            const effectiveTokens = designTokens || {
+              colors: { primary: theme.primary || '#0f172a', secondary: '#3b82f6', background: '#ffffff' },
+              rounded: { sm: 8, md: 12, lg: 16 },
+              spacing: { sm: 8, md: 16 },
+              typography: {}
+            };
+            const modName = activeWidget.moduleName.toLowerCase();
+            let widgetBlocks = canvasBlocks.filter(
+              b => b.props?.type === modName || b.type === modName || b.title?.toLowerCase() === modName
+            );
+            let widgetLayouts = canvasLayouts.filter(l => l.moduleName.toLowerCase() === modName);
+
+            if (widgetBlocks.length === 0 && widgetLayouts.length === 0) {
+              if (['directory', 'crm', 'entity-directory', 'plan5-directory', 'people', 'companies', 'items'].includes(modName)) {
+                widgetBlocks = [{ title: 'Entity Directory', type: 'entity-directory', props: {} }];
+              } else if (['explore', 'explore-feed'].includes(modName)) {
+                widgetBlocks = [{ title: 'Explore Public Workspaces', type: 'explore-feed', props: {} }];
+              } else if (['inbox', 'inbox-feed'].includes(modName)) {
+                widgetBlocks = [{ title: 'Inbox & Notifications', type: 'inbox-feed', props: {} }];
+              } else if (modName === 'orders') {
+                widgetBlocks = [{ title: 'Orders & POS', type: 'pos-sale', props: { type: 'order' } }];
+              } else if (modName === 'inventory') {
+                widgetBlocks = [{ title: 'Product Catalog', type: 'catalog-grid', props: { type: 'product' } }];
+              } else {
+                widgetBlocks = [{ title: activeWidget.moduleName.toUpperCase(), type: 'data-grid', props: { type: activeWidget.moduleName } }];
+              }
+            }
+
+            return (
+              <WorkspaceCanvas
+                designTokens={effectiveTokens}
+                blocks={widgetBlocks}
+                layouts={widgetLayouts}
+                onExecuteAction={async (actionName, params) => {
+                  if (currentWorkspace?.scope) {
+                    const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
+                    await refreshProducts(currentWorkspace.scope);
+                    await refreshOrders(currentWorkspace.scope);
+                    return res;
+                  }
+                  throw new Error('No active workspace scope');
+                }}
+                metricsData={{
+                  'orders': orders.length,
+                  'inventory': products.length,
+                  'bookings': orders.filter(o => o.type === 'booking').length
+                }}
+                tableData={{
+                  'orders': orders,
+                  'inventory': products,
+                  'order': orders,
+                  'product': products
+                }}
+              />
+            );
+          })()
         ) : designTokens && (canvasLayouts.length > 0 || canvasBlocks.length > 0) ? (
-          activeWidget ? (
-            <WorkspaceCanvas
-              designTokens={designTokens}
-              blocks={canvasBlocks.filter(b => b.props?.type === activeWidget.moduleName || b.type === activeWidget.moduleName || b.title?.toLowerCase() === activeWidget.moduleName.toLowerCase())}
-              layouts={canvasLayouts.filter(l => l.moduleName === activeWidget.moduleName)}
-              onExecuteAction={async (actionName, params) => {
-                if (currentWorkspace?.scope) {
-                  const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
-                  await refreshProducts(currentWorkspace.scope);
-                  await refreshOrders(currentWorkspace.scope);
-                  return res;
-                }
-                throw new Error('No active workspace scope');
-              }}
-              metricsData={{
-                'orders': orders.length,
-                'inventory': products.length,
-                'bookings': orders.filter(o => o.type === 'booking').length
-              }}
-              tableData={{
-                'orders': orders,
-                'inventory': products,
-                'order': orders,
-                'product': products
-              }}
-            />
-          ) : null
+          <WorkspaceCanvas
+            designTokens={designTokens}
+            blocks={canvasBlocks}
+            layouts={canvasLayouts}
+            onExecuteAction={async (actionName, params) => {
+              if (currentWorkspace?.scope) {
+                const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
+                await refreshProducts(currentWorkspace.scope);
+                await refreshOrders(currentWorkspace.scope);
+                return res;
+              }
+              throw new Error('No active workspace scope');
+            }}
+            metricsData={{
+              'orders': orders.length,
+              'inventory': products.length,
+              'bookings': orders.filter(o => o.type === 'booking').length
+            }}
+            tableData={{
+              'orders': orders,
+              'inventory': products,
+              'order': orders,
+              'product': products
+            }}
+          />
         ) : (
           <>
             {/* 2. Inventory Section */}
@@ -893,48 +899,77 @@ ${membersYaml}
       </KeyboardAwareScrollView>
 
       {/* Input Section — confined to bottom right */}
-      <View style={[styles.inputContainer, { borderTopColor: 'transparent', paddingBottom: Math.max(insets.bottom, 8) }]}>
-        {/* Agent Response Feedback Alert */}
-        {agentFeedback && (
-          <View style={[styles.feedbackContainer, { backgroundColor: theme.background, borderColor: theme.border, marginBottom: 12 }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <Ionicons 
-                  name={agentFeedback.type === 'error' ? "alert-circle" : "sparkles"} 
-                  size={15} 
-                  color={agentFeedback.type === 'error' ? "#ff4d4f" : theme.primary} 
-                />
-                <Text style={[
-                  styles.feedbackTitle, 
-                  { 
-                    color: agentFeedback.type === 'error' ? "#ff4d4f" : theme.text, 
-                    marginLeft: 6 
-                  }
-                ]}>
-                  {agentFeedback.type === 'error' ? "Error" : "Agent Response"}
-                </Text>
-              </View>
-              <Pressable onPress={() => setAgentFeedback(null)} hitSlop={12}>
-                <Ionicons name="close" size={18} color={theme.textMuted} />
-              </Pressable>
-            </View>
-            <Text style={[styles.feedbackText, { color: theme.text }]}>
-              {agentFeedback.text}
-            </Text>
-          </View>
-        )}
+      <View style={[styles.inputContainer, { borderTopColor: 'transparent', paddingBottom: Math.max(insets.bottom + 4, 16) }]}>
 
-        {/* Loading Spinner during execution */}
-        {executing && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 }}>
-            <ActivityIndicator size="small" color={theme.primary} />
-            <Text style={{ color: theme.textMuted, fontSize: 13, marginLeft: 8 }}>Agent executing action...</Text>
-          </View>
-        )}
 
-        {/* Autocomplete chips when input is empty */}
+
+
+        {/* Autocomplete chips when input is empty with quick action icons at start */}
         {!input.trim() ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hintsContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hintsContainer} contentContainerStyle={{ alignItems: 'center' }}>
+            {/* Directory Quick Action Icon */}
+            <Pressable
+              onPress={() => setActiveWidget({ moduleName: 'directory' })}
+              style={({ pressed }) => [{
+                paddingHorizontal: 8,
+                paddingVertical: 6,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: activeWidget?.moduleName === 'directory' ? theme.primary : theme.border,
+                backgroundColor: activeWidget?.moduleName === 'directory' ? theme.primary + '20' : theme.backgroundElement,
+                marginRight: 6,
+                opacity: pressed ? 0.7 : 1,
+              }]}
+            >
+              <Ionicons
+                name={activeWidget?.moduleName === 'directory' ? 'folder' : 'folder-outline'}
+                size={16}
+                color={activeWidget?.moduleName === 'directory' ? theme.primary : theme.textSecondary}
+              />
+            </Pressable>
+
+            {/* Explore Quick Action Icon */}
+            <Pressable
+              onPress={() => setActiveWidget({ moduleName: 'explore' })}
+              style={({ pressed }) => [{
+                paddingHorizontal: 8,
+                paddingVertical: 6,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: activeWidget?.moduleName === 'explore' ? theme.primary : theme.border,
+                backgroundColor: activeWidget?.moduleName === 'explore' ? theme.primary + '20' : theme.backgroundElement,
+                marginRight: 6,
+                opacity: pressed ? 0.7 : 1,
+              }]}
+            >
+              <Ionicons
+                name={activeWidget?.moduleName === 'explore' ? 'compass' : 'compass-outline'}
+                size={16}
+                color={activeWidget?.moduleName === 'explore' ? theme.primary : theme.textSecondary}
+              />
+            </Pressable>
+
+            {/* Inbox Quick Action Icon */}
+            <Pressable
+              onPress={() => setActiveWidget({ moduleName: 'inbox' })}
+              style={({ pressed }) => [{
+                paddingHorizontal: 8,
+                paddingVertical: 6,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: activeWidget?.moduleName === 'inbox' ? theme.primary : theme.border,
+                backgroundColor: activeWidget?.moduleName === 'inbox' ? theme.primary + '20' : theme.backgroundElement,
+                marginRight: 10,
+                opacity: pressed ? 0.7 : 1,
+              }]}
+            >
+              <Ionicons
+                name={activeWidget?.moduleName === 'inbox' ? 'mail' : 'mail-outline'}
+                size={16}
+                color={activeWidget?.moduleName === 'inbox' ? theme.primary : theme.textSecondary}
+              />
+            </Pressable>
+
             {getFilteredActions().map((hint, idx) => (
               <Pressable
                 key={idx}
@@ -1002,42 +1037,41 @@ ${membersYaml}
         ) : null}
 
         {/* Text Input Bar */}
-        <View style={[styles.textInputWrapper, { borderColor: theme.border, backgroundColor: theme.background, borderWidth: 1 }]}>
+        <View style={[styles.textInputWrapper, { borderColor: theme.border, backgroundColor: theme.background, borderWidth: 1, alignItems: 'center', flexDirection: 'row' }]}>
           <TextInput
             value={input}
             onChangeText={setInput}
             placeholder="Ask anything..."
             placeholderTextColor={theme.textMuted}
-            style={[styles.textInput, { color: theme.text }]}
+            style={[styles.textInput, { color: theme.text, flex: 1 }]}
             multiline={true}
             onSubmitEditing={() => handleSend()}
           />
-          <Pressable
-            onPress={() => handleSend()}
-            style={[styles.sendButton, { backgroundColor: input.trim() ? theme.primary : theme.border }]}
-            disabled={!input.trim()}
-          >
-            <Ionicons name="arrow-up" size={18} color="#ffffff" />
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 4 }}>
+            {/* Send Button */}
+            <Pressable
+              onPress={() => handleSend()}
+              style={[styles.sendButton, { backgroundColor: input.trim() ? theme.primary : theme.border }]}
+              disabled={!input.trim()}
+            >
+              <Ionicons name="arrow-up" size={18} color="#ffffff" />
+            </Pressable>
+          </View>
         </View>
 
-        {/* Bottom Bar Controls: Workspace Selector + Skills */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+        {/* Bottom Bar Controls: Workspace Selector */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', marginTop: 8 }}>
           <Pressable
             onPress={() => setShowDropdown(true)}
             style={[
               styles.switcherChip,
-              { backgroundColor: theme.backgroundElement, borderColor: theme.border, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginLeft: 12 }
+              { backgroundColor: theme.background, borderColor: theme.border, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginLeft: 12 }
             ]}
           >
             <WorkspaceThumbnail name={workspaceName || currentWorkspace?.subdomain || ''} size={20} theme={theme} />
             <Text style={[styles.switcherText, { color: theme.text, fontSize: 12, marginLeft: 6 }]} numberOfLines={1}>
               {workspaceName || (currentWorkspace?.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : '')}
             </Text>
-          </Pressable>
-
-          <Pressable onPress={() => setShowInfo(true)} style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
-            <Text style={{ color: theme.primary, fontSize: 13, fontWeight: '600' }}>Skills</Text>
           </Pressable>
         </View>
       </View>
@@ -1105,183 +1139,147 @@ ${membersYaml}
           </Pressable>
         </Pressable>
       </Modal>
-      {/* Workspace Details Info & AI Tools Full-Screen Modal */}
+      {/* Create Workspace Modal — Minimal Clean Style */}
       <Modal
-        visible={showInfo}
-        transparent={false}
+        visible={showCreateModal}
+        transparent={true}
         animationType="slide"
-        onRequestClose={() => setShowInfo(false)}
+        onRequestClose={() => {
+          if (workspaces.length > 0) closeCreateModal();
+        }}
       >
-        <View style={{ flex: 1, backgroundColor: theme.background, paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 16 }}>
-          {/* Full Screen Header */}
-          {/* Full Screen Header */}
-          <View style={{ 
-            flexDirection: 'row', 
-            alignItems: 'flex-start', 
-            justifyContent: 'space-between',
-            paddingVertical: 16, 
-            borderBottomWidth: StyleSheet.hairlineWidth, 
-            borderBottomColor: theme.border 
-          }}>
-            <View style={{ flex: 1, marginRight: 16 }}>
-              <Text numberOfLines={1} style={{ fontSize: 26, fontWeight: '900', color: theme.text, letterSpacing: -0.5 }}>
-                {workspaceName || (currentWorkspace?.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : '')}
-              </Text>
-              <Text numberOfLines={1} style={{ fontSize: 11, color: theme.textMuted, marginTop: 4, textTransform: 'uppercase', fontWeight: '600' }}>
-                {currentWorkspace?.type} • {currentWorkspace?.scope}
-              </Text>
-            </View>
+        <Pressable 
+          style={styles.modalBackdrop} 
+          onPress={() => {
+            if (workspaces.length > 0) closeCreateModal();
+          }}
+        >
+          <Pressable
+            style={[
+              styles.dropdownContent,
+              {
+                backgroundColor: theme.background,
+                borderColor: theme.border,
+                paddingBottom: Math.max(insets.bottom + 16, 32),
+                paddingHorizontal: 20,
+              }
+            ]}
+            onPress={() => {}}
+          >
+            <View style={[styles.drawerHandle, { backgroundColor: theme.textMuted + '30', marginBottom: 12 }]} />
             
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-              <Ionicons name="globe-outline" size={15} color={theme.primary} style={{ marginRight: 5 }} />
-              <Text selectable style={{ fontSize: 13, color: theme.primary, fontWeight: '600' }}>
-                {currentWorkspace?.subdomain}.tarai.space
-              </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>New Workspace</Text>
+              {workspaces.length > 0 && (
+                <Pressable onPress={closeCreateModal} hitSlop={12}>
+                  <Ionicons name="close" size={20} color={theme.textMuted} />
+                </Pressable>
+              )}
             </View>
-          </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1, marginTop: 16 }}>
-            {/* Skills Section */}
-            <Text style={{ fontSize: 13, fontWeight: '700', color: theme.primary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
-              Workspace Skills
+            <TextInput
+              style={{
+                height: 44,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                paddingHorizontal: 14,
+                fontSize: 15,
+                color: theme.text,
+                backgroundColor: theme.backgroundElement,
+                marginBottom: 14,
+              }}
+              value={newWsName}
+              onChangeText={setNewWsName}
+              placeholder="Workspace Name"
+              placeholderTextColor={theme.textMuted}
+              autoFocus
+            />
+
+            {/* Business Vertical Selector */}
+            <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 }}>
+              Business Vertical
             </Text>
-
-            {loadingIndex ? (
-              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-                <ActivityIndicator size="small" color={theme.primary} />
-                <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>Loading workspace skills...</Text>
-              </View>
-            ) : parsedToolsList.length === 0 ? (
-              <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                <Text style={{ color: theme.textMuted, fontSize: 14 }}>No skills installed in this workspace.</Text>
-              </View>
-            ) : (
-              parsedToolsList.map((skill: any, idx: number) => {
-                const title = skill.category.replace(/\s+Skill$/i, '').replace(/\s+Module$/i, '');
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+              {BUSINESS_VERTICALS.map((vert) => {
+                const selected = selectedVertical === vert.id;
                 return (
-                  <View 
-                    key={idx} 
-                    style={{ 
-                      marginBottom: 16,
-                      padding: 16,
-                      borderRadius: 12,
+                  <Pressable
+                    key={vert.id}
+                    onPress={() => setSelectedVertical(vert.id)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 7,
+                      borderRadius: 16,
                       borderWidth: 1,
-                      borderColor: theme.border,
-                      backgroundColor: theme.backgroundElement
+                      borderColor: selected ? theme.primary : theme.border,
+                      backgroundColor: selected ? theme.primary + '15' : 'transparent',
                     }}
                   >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-                      <Ionicons 
-                        name={
-                          title.toLowerCase().includes('crm') ? 'person-outline' :
-                          title.toLowerCase().includes('logistics') ? 'car-outline' :
-                          title.toLowerCase().includes('booking') ? 'calendar-outline' :
-                          title.toLowerCase().includes('inventory') ? 'cube-outline' :
-                          title.toLowerCase().includes('order') ? 'receipt-outline' :
-                          title.toLowerCase().includes('report') ? 'bar-chart-outline' :
-                          title.toLowerCase().includes('document') ? 'document-text-outline' :
-                          title.toLowerCase().includes('expense') ? 'wallet-outline' :
-                          'extension-puzzle-outline'
-                        } 
-                        size={20} 
-                        color={theme.primary} 
-                        style={{ marginRight: 8 }}
-                      />
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>
-                        {title}
-                      </Text>
-                    </View>
-                    
-                    {skill.items && skill.items.length > 0 ? (
-                      skill.items.map((action: any, actionIdx: number) => (
-                        <View 
-                          key={actionIdx} 
-                          style={{ 
-                            paddingVertical: 8, 
-                            borderTopWidth: actionIdx > 0 ? StyleSheet.hairlineWidth : 0, 
-                            borderTopColor: theme.border 
-                          }}
-                        >
-                          <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textSecondary }}>
-                            {action.name}
-                          </Text>
-                          <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
-                            {action.desc}
-                          </Text>
-                        </View>
-                      ))
-                    ) : (
-                      <Text style={{ fontSize: 12, color: theme.textMuted }}>No actions defined.</Text>
-                    )}
-                  </View>
+                    <Ionicons
+                      name={vert.icon as any}
+                      size={14}
+                      color={selected ? theme.primary : theme.textSecondary}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: selected ? '600' : '400',
+                        color: selected ? theme.primary : theme.textSecondary,
+                      }}
+                    >
+                      {vert.label}
+                    </Text>
+                  </Pressable>
                 );
-              })
-            )}
-          </ScrollView>
-        </View>
-      </Modal>
-
-      {/* Dynamic Action Modal — GitHub notification style */}
-      <Modal visible={selectedAction !== null} transparent={true} animationType="slide">
-        <KeyboardAvoidingView
-          style={styles.githubModalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <View style={[styles.githubModalContainer, { backgroundColor: theme.background }]}>
-            {/* Handle bar */}
-            <View style={styles.githubHandleBarContainer}>
-              <View style={styles.githubHandleBar} />
+              })}
             </View>
 
-            {/* Header */}
-            <View style={styles.githubModalHeader}>
-              <TouchableOpacity onPress={() => setSelectedAction(null)} disabled={submittingAction} hitSlop={12}>
-                <Ionicons name="chevron-down" size={24} color={theme.textMuted} />
-              </TouchableOpacity>
-              <Text style={[styles.githubModalTitle, { color: theme.text }]}>
-                {selectedAction?.name?.replace(/_/g, ' ') || 'Action'}
-              </Text>
-              <View style={{ width: 24 }} />
-            </View>
-
-            {/* Sentence with inline chips */}
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={[styles.githubModalBody, { paddingVertical: 12 }]}
-              keyboardShouldPersistTaps="handled"
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={handleCreateInlineWorkspace}
+              disabled={!newWsName.trim() || newWsCreating}
+              style={{
+                height: 44,
+                borderRadius: 10,
+                backgroundColor: newWsName.trim() ? theme.primary : theme.border,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
             >
-              {buildGitHubSentence(selectedAction, formParams, theme, activeChipField, (field, val) => {
-                setFormParams(prev => ({ ...prev, [field]: val }));
-              }, setActiveChipField, chipInputRef)}
-            </ScrollView>
-
-            {/* Submit — text button */}
-            <View style={[styles.githubSubmitRow, { borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 24) + 8 }]}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={handleActionFormSubmit}
-                disabled={submittingAction || !hasAnyValue}
-              >
-                {submittingAction ? (
-                  <ActivityIndicator color={theme.primary} size="small" />
-                ) : (
-                  <Text style={[styles.githubSubmitText, { color: hasAnyValue ? theme.primary : theme.border }]}>
-                    submit
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {actionResultMessage && (
-              <View style={[styles.githubResultBanner, { backgroundColor: actionResultMessage.includes('Error') ? '#fef2f2' : '#f0fdf4', marginBottom: insets.bottom }]}>
-                <Text style={{ fontSize: 13, color: actionResultMessage.includes('Error') ? '#dc2626' : '#16a34a', textAlign: 'center' }}>
-                  {actionResultMessage}
+              {newWsCreating ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={{ color: newWsName.trim() ? '#ffffff' : theme.textMuted, fontSize: 15, fontWeight: '600' }}>
+                  Create
                 </Text>
-              </View>
-            )}
-          </View>
-        </KeyboardAvoidingView>
+              )}
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
+
+
+      {/* Full-Screen Gmail Mobile App Style Event Compose Modal */}
+      <EventComposeModal
+        visible={selectedAction !== null}
+        action={selectedAction}
+        formParams={formParams}
+        theme={theme}
+        submitting={submittingAction}
+        resultMessage={actionResultMessage}
+        onClose={() => {
+          setSelectedAction(null);
+          setFormParams({});
+          setActionResultMessage(null);
+        }}
+        onSubmit={(submittedParams) => {
+          handleActionFormSubmit(submittedParams);
+        }}
+      />
     </View>
   );
 }

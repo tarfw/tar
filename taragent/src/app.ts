@@ -774,7 +774,7 @@ app.get('/okf/read', async (c) => {
   const scope = c.req.query('scope');
   const path = c.req.query('path');
   if (!scope || !path) return c.json({ error: 'Missing scope or path' }, 400);
-  const content = await readWorkspaceFile(c.env, scope, path);
+  const content = await readWithFallback(c.env, scope, path);
   if (content === null) return c.json({ error: 'File not found' }, 404);
   return c.json({ content });
 });

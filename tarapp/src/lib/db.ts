@@ -299,6 +299,8 @@ export async function initWorkspaceSync(subdomain: string): Promise<void> {
       'ALTER TABLE matter ADD COLUMN qty REAL DEFAULT 0',
       'ALTER TABLE matter ADD COLUMN time TEXT',
       'ALTER TABLE matter ADD COLUMN updated TEXT',
+      'ALTER TABLE matter ADD COLUMN role TEXT',
+      'CREATE INDEX IF NOT EXISTS idx_matter_scope_type_role ON matter(scope, type, role)',
       'ALTER TABLE motion ADD COLUMN scope TEXT DEFAULT \'global\'',
     ];
     for (const sql of migrations) {

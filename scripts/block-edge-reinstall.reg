@@ -1,0 +1,32 @@
+Windows Registry Editor Version 5.00
+
+; =============================================
+; BLOCK MICROSOFT EDGE AUTO-INSTALL
+; Group Policy Registry Tweaks
+; =============================================
+
+; Prevent EdgeUpdate from updating to Edge with Chromium
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\EdgeUpdate]
+"DoNotUpdateToEdgeWithChromium"=dword:00000001
+
+; =============================================
+; Group Policy: Prevent Edge Installation
+; =============================================
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\EdgeUpdate]
+"UpdateDefault"=dword:00000000
+"AllowEdgeReinstall"=dword:00000000
+"InstallDefault"=dword:00000000
+"Update{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}"=dword:00000000
+"Install{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}"=dword:00000000
+
+; =============================================
+; Block Edge installer executables via DisallowRun
+; =============================================
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer]
+"DisallowRun"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\DisallowRun]
+"1"="msedge_setup.exe"
+"2"="MicrosoftEdgeUpdate.exe"
+"3"="msedge_installer.exe"
+"4"="MicrosoftEdgeSetup.exe"

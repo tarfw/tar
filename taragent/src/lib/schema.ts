@@ -17,6 +17,7 @@ export const SCHEMA_STATEMENTS = [
     status  TEXT DEFAULT 'active',
     data    TEXT,
     file    TEXT,
+    role    TEXT,
     scope   TEXT NOT NULL,
     at      INTEGER DEFAULT (unixepoch()),
     updated INTEGER DEFAULT (unixepoch())
@@ -57,7 +58,8 @@ export const SCHEMA_STATEMENTS = [
   )`,
 
   // Indexes for optimal query performance
-  `CREATE INDEX IF NOT EXISTS idx_matter_scope_type    ON matter(scope, type)`,
+  `CREATE INDEX IF NOT EXISTS idx_matter_scope_type      ON matter(scope, type)`,
+  `CREATE INDEX IF NOT EXISTS idx_matter_scope_type_role ON matter(scope, type, role)`,
   `CREATE INDEX IF NOT EXISTS idx_matter_scope_status  ON matter(scope, status)`,
   `CREATE INDEX IF NOT EXISTS idx_matter_scope_updated ON matter(scope, updated)`,
   `CREATE INDEX IF NOT EXISTS idx_motion_scope_type    ON motion(scope, type)`,

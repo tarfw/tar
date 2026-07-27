@@ -12,19 +12,24 @@ export interface IntentResult {
 }
 
 const MODULE_KEYWORDS: Record<string, string[]> = {
+  transactions: ['transaction', 'order', 'sale', 'sales', 'pos', 'receipt', 'billing', 'refund', 'invoice', 'void'],
   orders: ['order', 'sale', 'sales', 'pos', 'transaction', 'receipt', 'billing', 'refund', 'invoice'],
-  inventory: ['inventory', 'stock', 'product', 'item', 'catalog', 'warehouse', 'add product', 'add item'],
+  inventory: ['inventory', 'stock', 'product', 'item', 'catalog', 'warehouse', 'add product', 'add item', 'adjust', 'write off'],
+  schedule: ['schedule', 'booking', 'book', 'slot', 'calendar', 'appointment', 'cancel'],
   bookings: ['booking', 'book', 'slot', 'calendar', 'appointment', 'schedule', 'salon', 'clinic'],
-  crm: ['crm', 'customer', 'client', 'lead', 'contact', 'deal', 'pipeline', 'company'],
+  pipeline: ['pipeline', 'crm', 'customer', 'client', 'lead', 'contact', 'deal', 'stage', 'activity', 'company'],
+  crm: ['crm', 'customer', 'client', 'lead', 'contact', 'deal', 'pipeline', 'company', 'people', 'directory', 'companies', 'items'],
+  directory: ['directory', 'people', 'companies', 'items', 'entity-directory', 'plan5-directory'],
   logistics: ['logistics', 'shipment', 'delivery', 'carrier', 'track', 'tracking', 'transit'],
+  work: ['work', 'project', 'task', 'todo', 'kanban', 'milestone', 'assignee', 'clock', 'clockin', 'clockout', 'attendance'],
   projects: ['project', 'task', 'todo', 'kanban', 'milestone', 'assignee'],
   hr: ['hr', 'employee', 'staff', 'salary', 'payroll', 'attendance', 'clock'],
+  money: ['money', 'expense', 'spend', 'outflow', 'receipts', 'cost', 'write off'],
   expenses: ['expense', 'spend', 'outflow', 'receipts', 'cost'],
   listings: ['listing', 'property', 'real estate', 'house', 'apartment', 'catalog'],
   support: ['support', 'ticket', 'help', 'issue', 'complaint'],
   reports: ['report', 'analytics', 'chart', 'insight', 'daily sales'],
   documents: ['document', 'file', 'vault', 'upload doc', 'contract'],
-  lms: ['lms', 'course', 'class', 'teach', 'student', 'enroll'],
   'team-chat': ['chat', 'message', 'slack', 'telegram', 'send message']
 };
 

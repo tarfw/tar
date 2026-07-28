@@ -1,64 +1,102 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, Linking, Alert, Image } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-const NEON_LOGO_URI = 'https://neon.tech/favicon/favicon.png';
+const ADS = [
+  {
+    title: 'Neon · Serverless Postgres in seconds',
+    url: 'https://neon.tech',
+    logoUri: 'https://neon.tech/favicon/favicon.png',
+    accentColor: '#00e599',
+    fallbackLetter: 'N',
+  },
+  {
+    title: 'Vercel · Deploy frontend apps instantly',
+    url: 'https://vercel.com',
+    logoUri: 'https://assets.vercel.com/image/upload/front/favicon/vercel/favicon.ico',
+    accentColor: '#000000',
+    fallbackLetter: '▲',
+  },
+  {
+    title: 'Railway · Ship apps faster with ease',
+    url: 'https://railway.com',
+    logoUri: 'https://railway.com/favicon.ico',
+    accentColor: '#a855f7',
+    fallbackLetter: 'R',
+  },
+];
 
-function NeonLogo() {
-  const [imageError, setImageError] = useState(false);
-
-  if (!imageError) {
-    return (
-      <Image
-        source={{ uri: NEON_LOGO_URI }}
-        style={styles.logoImage}
-        onError={() => setImageError(true)}
-        resizeMode="contain"
-      />
-    );
-  }
-
-  // Pixel-perfect vector representation of the Neon logo (Neon Green Square + N symbol)
+function AdLogo({ logoUri, accentColor, fallbackLetter, onError }: { logoUri: string; accentColor: string; fallbackLetter: string; onError: () => void }) {
   return (
-    <View style={styles.neonVectorBox}>
-      <View style={styles.neonInnerBorder}>
-        <Text style={styles.neonNText}>N</Text>
+    <Image
+      source={{ uri: logoUri }}
+      style={styles.logoImage}
+      onError={onError}
+      resizeMode="contain"
+    />
+  );
+}
+
+function AdFallback({ accentColor, fallbackLetter }: { accentColor: string; fallbackLetter: string }) {
+  return (
+    <View style={[styles.vectorBox, { backgroundColor: accentColor }]}>
+      <View style={styles.innerBorder}>
+        <Text style={styles.fallbackText}>{fallbackLetter}</Text>
       </View>
     </View>
   );
 }
 
 export default function AdBanner() {
-  const adUrl = 'https://neon.tech';
-  const adTitle = 'Neon · Serverless Postgres in seconds';
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [imageError, setImageError] = useState(false);
 
-  const handleOpen = async () => {
+  const ad = ADS[currentIndex];
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % ADS.length);
+      setImageError(false);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleOpen = useCallback(async () => {
     try {
-      const supported = await Linking.canOpenURL(adUrl);
+      const supported = await Linking.canOpenURL(ad.url);
       if (supported) {
-        await Linking.openURL(adUrl);
+        await Linking.openURL(ad.url);
       } else {
-        Alert.alert('Neon Postgres', adTitle);
+        Alert.alert(ad.title, ad.url);
       }
     } catch {
-      Alert.alert('Neon Postgres', adTitle);
+      Alert.alert(ad.title, ad.url);
     }
-  };
+  }, [ad.url, ad.title]);
 
   return (
     <Pressable
       style={({ pressed }) => [styles.bannerContainer, pressed && { opacity: 0.95 }]}
       onPress={handleOpen}
     >
-      {/* Official Neon Postgres Logo */}
+      {/* Official Logo */}
       <View style={styles.logoWrapper}>
-        <NeonLogo />
+        {imageError ? (
+          <AdFallback accentColor={ad.accentColor} fallbackLetter={ad.fallbackLetter} />
+        ) : (
+          <AdLogo
+            logoUri={ad.logoUri}
+            accentColor={ad.accentColor}
+            fallbackLetter={ad.fallbackLetter}
+            onError={() => setImageError(true)}
+          />
+        )}
       </View>
 
       {/* Middle Headline Title */}
       <View style={styles.textContent}>
         <Text style={styles.headlineText} numberOfLines={1}>
-          {adTitle}
+          {ad.title}
         </Text>
       </View>
 
@@ -99,7 +137,7 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 8,
   },
-  neonVectorBox: {
+  vectorBox: {
     width: 34,
     height: 34,
     borderRadius: 8,
@@ -108,7 +146,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 3,
   },
-  neonInnerBorder: {
+  innerBorder: {
     width: 26,
     height: 26,
     borderWidth: 2,
@@ -117,7 +155,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  neonNText: {
+  fallbackText: {
     fontSize: 14,
     fontWeight: '900',
     color: '#0f172a',

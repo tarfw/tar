@@ -53,7 +53,7 @@ export default function EventComposeModal({
   // Group params into plan5.md concepts: To (target), Items (what), Values (amount/price), Details (reason/notes)
   const targetParams = paramList.filter((p) => {
     const name = (typeof p === 'string' ? p : p.name).toLowerCase();
-    return name.includes('customer') || name.includes('client') || name.includes('contact') || name.includes('user') || name.includes('staff') || name.includes('assignee');
+    return name.includes('name') || name.includes('title') || name.includes('customer') || name.includes('client') || name.includes('contact') || name.includes('user') || name.includes('staff') || name.includes('assignee') || name.includes('person') || name.includes('to');
   });
 
   const itemParams = paramList.filter((p) => {

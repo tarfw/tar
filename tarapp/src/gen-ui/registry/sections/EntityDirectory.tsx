@@ -5,9 +5,7 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ScrollView,
   FlatList,
-  Alert,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { SectionProps } from '../ComponentRegistry';
@@ -20,33 +18,10 @@ export interface EntityItem {
   company?: string;
   avatarColor?: string;
   icon?: string;
-  metadata?: string;
+  type?: string;
+  data?: any;
+  value?: number;
 }
-
-const DEFAULT_ENTITIES: EntityItem[] = [
-  // People
-  { id: '1', name: 'Raven', category: 'people', subRole: 'Admin', company: 'Internal Team', avatarColor: '#e2e8f0' },
-  { id: '2', name: '[Sample] Horace Hamill', category: 'people', subRole: 'Account manager', company: 'Globex Corp', avatarColor: '#ddd6fe' },
-  { id: '3', name: '[Sample] Jonathon Kunde', category: 'people', subRole: 'Account Executive', company: 'Smyth Industries', avatarColor: '#bae6fd' },
-  { id: '4', name: '[Sample] Alberto Ziemann', category: 'people', subRole: 'Sales Associate', company: 'Stark Enterprises', avatarColor: '#fef08a' },
-  { id: '5', name: '[Sample] Terry Beier', category: 'people', subRole: 'Account manager', company: 'Omni Consumer Products', avatarColor: '#e2e8f0' },
-  { id: '6', name: '[Sample] Stacey Schumm', category: 'people', subRole: 'Account manager', company: 'Wayne Enterprises', avatarColor: '#e2e8f0' },
-  { id: '7', name: '[Sample] Doug Gottlieb', category: 'people', subRole: 'Sales Manager', company: 'Acme Corporation', avatarColor: '#ddd6fe' },
-  { id: '8', name: '[Sample] Marilyn Fisher', category: 'people', subRole: 'Sales Rep', company: 'Cyberdyne Systems', avatarColor: '#bae6fd' },
-  { id: '9', name: '[Sample] Vanessa Hickle', category: 'people', subRole: 'Sales Rep', company: 'Initech', avatarColor: '#fef08a' },
-
-  // Companies
-  { id: '10', name: 'Globex Corp', category: 'companies', subRole: 'Business Partner', company: 'Tier 1 Enterprise', avatarColor: '#fed7aa', icon: 'business-outline' },
-  { id: '11', name: 'Smyth Industries', category: 'companies', subRole: 'Vendor', company: 'Hardware Supplier', avatarColor: '#e9d5ff', icon: 'business-outline' },
-  { id: '12', name: 'Stark Enterprises', category: 'companies', subRole: 'Business', company: 'Tech Client', avatarColor: '#bfdbfe', icon: 'business-outline' },
-  { id: '13', name: 'Acme Corporation', category: 'companies', subRole: 'Vendor', company: 'Logistics Partner', avatarColor: '#fef08a', icon: 'business-outline' },
-
-  // Items
-  { id: '14', name: 'Enterprise Cloud License', category: 'items', subRole: 'Product', company: '$499 / mo', avatarColor: '#bbf7d0', icon: 'cube-outline' },
-  { id: '15', name: 'Real Estate Office Space #402', category: 'items', subRole: 'Listing', company: 'Lease Contract', avatarColor: '#fbcfe8', icon: 'home-outline' },
-  { id: '16', name: 'Onboarding & Setup Consulting', category: 'items', subRole: 'Service', company: '$150 / hr', avatarColor: '#fed7aa', icon: 'calendar-outline' },
-  { id: '17', name: 'Master SLA Agreement 2026', category: 'items', subRole: 'Document', company: 'Legal PDF', avatarColor: '#e2e8f0', icon: 'document-text-outline' },
-];
 
 const PASTEL_COLORS = ['#ddd6fe', '#bae6fd', '#fef08a', '#e2e8f0', '#fed7aa', '#bbf7d0', '#fbcfe8'];
 
@@ -63,20 +38,38 @@ export default function EntityDirectory({ props, designTokens, data, onExecuteAc
   const [activeTab, setActiveTab] = useState<'people' | 'companies' | 'items'>('people');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Use passed data if provided, otherwise default sample data
+  // Use passed data from Turso DB (`matter` rows)
   const rawList: EntityItem[] = useMemo(() => {
     if (data && Array.isArray(data) && data.length > 0) {
-      return data.map((d, index) => ({
-        id: d.id || `ent_${index}`,
-        name: d.name || d.title || 'Untitled',
-        category: (d.category || d.type === 'company' ? 'companies' : d.type === 'item' ? 'items' : 'people') as any,
-        subRole: d.role || d.subRole || d.type || 'Entity',
-        company: d.company || d.metadata || d.subtitle || '',
-        avatarColor: d.avatarColor || getAvatarColor(d.name || ''),
-        icon: d.icon,
-      }));
+      return data.map((d, index) => {
+        const typeStr = (d.type || d.category || '').toLowerCase();
+        let cat: 'people' | 'companies' | 'items' = 'people';
+        if (['business', 'vendor', 'partner', 'company', 'companies', 'organization'].includes(typeStr)) {
+          cat = 'companies';
+        } else if (['product', 'listing', 'service', 'document', 'asset', 'item', 'items', 'order', 'booking', 'expense', 'deal', 'project', 'shipment'].includes(typeStr)) {
+          cat = 'items';
+        } else {
+          cat = 'people';
+        }
+
+        const displayName = d.title || d.name || d.data?.name || d.data?.title || (d.id ? `Record #${d.id}` : 'Untitled Entity');
+        const displayCompany = d.company || d.data?.company || d.data?.email || d.data?.phone || d.data?.category || d.metadata || d.subtitle || '';
+
+        return {
+          id: d.id || `ent_${index}`,
+          name: displayName,
+          category: cat,
+          subRole: d.type || d.role || d.subRole || 'Entity',
+          company: displayCompany,
+          avatarColor: d.avatarColor || getAvatarColor(displayName),
+          icon: d.icon || (cat === 'companies' ? 'business-outline' : cat === 'items' ? 'cube-outline' : 'person-outline'),
+          type: d.type,
+          data: d.data,
+          value: d.value,
+        };
+      });
     }
-    return DEFAULT_ENTITIES;
+    return [];
   }, [data]);
 
   const filteredList = useMemo(() => {
@@ -91,23 +84,22 @@ export default function EntityDirectory({ props, designTokens, data, onExecuteAc
     });
   }, [rawList, activeTab, searchQuery]);
 
-  const handleAddPress = () => {
+  const handleRowPress = (item: EntityItem) => {
     if (onExecuteAction) {
-      onExecuteAction('create_entity', { category: activeTab });
-    } else {
-      Alert.alert('Create New', `Add new ${activeTab.slice(0, -1)}`);
+      onExecuteAction('view_entity', { entity: item });
     }
   };
 
   const renderItem = ({ item }: { item: EntityItem }) => {
     const bgColor = item.avatarColor || getAvatarColor(item.name);
-    const initial = item.name.replace(/^\[Sample\]\s*/, '').charAt(0).toUpperCase() || 'P';
+    const initial = item.name.charAt(0).toUpperCase() || 'E';
 
     return (
       <Pressable
+        onPress={() => handleRowPress(item)}
         style={({ pressed }) => [
           styles.itemRow,
-          pressed && { backgroundColor: 'rgba(0,0,0,0.02)' },
+          pressed && { backgroundColor: 'rgba(0,0,0,0.03)' },
         ]}
       >
         <View style={[styles.avatar, { backgroundColor: bgColor }]}>
@@ -123,7 +115,7 @@ export default function EntityDirectory({ props, designTokens, data, onExecuteAc
           </Text>
           {(item.company || item.subRole) && (
             <View style={styles.subtitleRow}>
-              <Ionicons name="business-outline" size={13} color="#94a3b8" style={{ marginRight: 4 }} />
+              <Ionicons name="information-circle-outline" size={13} color="#94a3b8" style={{ marginRight: 4 }} />
               <Text style={styles.itemSubtitle} numberOfLines={1}>
                 {item.company}
                 {item.company && item.subRole ? ' · ' : ''}
@@ -132,18 +124,36 @@ export default function EntityDirectory({ props, designTokens, data, onExecuteAc
             </View>
           )}
         </View>
+        <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
       </Pressable>
     );
   };
 
   return (
     <View style={styles.container}>
+      {/* Header Title & Add Button */}
+      <View style={styles.headerRow}>
+        <Text style={styles.directoryTitle}>Entity Directory</Text>
+        <Pressable
+          onPress={() => {
+            if (onExecuteAction) {
+              const actionName = activeTab === 'people' ? 'action_add_contact' : activeTab === 'companies' ? 'action_add_company' : 'action_add_product';
+              onExecuteAction(actionName, { category: activeTab });
+            }
+          }}
+          style={styles.addTextBtn}
+        >
+          <Ionicons name="add" size={15} color="#0f172a" />
+          <Text style={styles.addText}>New {activeTab === 'people' ? 'Person' : activeTab === 'companies' ? 'Company' : 'Item'}</Text>
+        </Pressable>
+      </View>
+
       {/* Search Input */}
       <View style={styles.searchContainer}>
         <Ionicons name="search-outline" size={18} color="#94a3b8" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search"
+          placeholder="Search people, companies, items..."
           placeholderTextColor="#94a3b8"
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -197,22 +207,13 @@ export default function EntityDirectory({ props, designTokens, data, onExecuteAc
           scrollEnabled={false}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No {activeTab} found</Text>
+              <Ionicons name="folder-open-outline" size={32} color="#cbd5e1" style={{ marginBottom: 8 }} />
+              <Text style={styles.emptyText}>No {activeTab} records found</Text>
+              <Text style={styles.emptySubText}>Create records or record event motions to populate this workspace directory.</Text>
             </View>
           }
         />
       </View>
-
-      {/* Floating Action Button (+) */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.fab,
-          pressed && { opacity: 0.8, transform: [{ scale: 0.96 }] },
-        ]}
-        onPress={handleAddPress}
-      >
-        <Ionicons name="add" size={24} color="#ffffff" />
-      </Pressable>
     </View>
   );
 }
@@ -224,18 +225,42 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     padding: 16,
-    position: 'relative',
-    minHeight: 480,
+    minHeight: 380,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  addTextBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: '#f1f5f9',
+  },
+  addText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  directoryTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#cbd5e1',
-    borderRadius: 4,
+    borderRadius: 8,
     paddingHorizontal: 10,
     height: 40,
-    marginBottom: 16,
+    marginBottom: 14,
     backgroundColor: '#ffffff',
   },
   searchIcon: {
@@ -243,7 +268,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
     color: '#0f172a',
     paddingVertical: 0,
   },
@@ -260,7 +285,7 @@ const styles = StyleSheet.create({
   },
   tabActive: {},
   tabText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#94a3b8',
   },
@@ -283,19 +308,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#f1f5f9',
   },
   avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
+    marginRight: 12,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.05)',
   },
   avatarText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#334155',
   },
@@ -303,7 +330,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   itemName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#0f172a',
     marginBottom: 2,
@@ -313,31 +340,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   itemSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#64748b',
   },
   emptyContainer: {
-    paddingVertical: 32,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#94a3b8',
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#0f172a',
+    paddingVertical: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 5,
+  },
+  emptyText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  emptySubText: {
+    fontSize: 12,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: 4,
+    maxWidth: 260,
   },
 });

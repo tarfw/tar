@@ -27,6 +27,8 @@ import { filterModulesByRole } from '@/lib/role-filter';
 import WorkspaceCanvas from '@/components/WorkspaceCanvas';
 import AdBanner from '@/components/AdBanner';
 import EventComposeModal from '@/components/EventComposeModal';
+import EntityDetailsModal from '@/components/EntityDetailsModal';
+import DirectoryModal from '@/components/DirectoryModal';
 
 interface Workspace {
   scope: string;
@@ -89,6 +91,24 @@ const BUSINESS_VERTICALS = [
   { id: 'logistics', label: 'Logistics & Fleet', icon: 'car-outline' },
 ];
 
+export const PLAN5_EVENT_MOTIONS = [
+  { event: 'Sale', actionName: 'action_record_sale', whatHappened: 'Transaction completed', linksTo: 'Order', params: [{ name: 'items', type: 'text', required: true }, { name: 'payment_method', type: 'text', required: true }, { name: 'total', type: 'number', required: true }, { name: 'customer_id', type: 'text', required: false }] },
+  { event: 'Refund', actionName: 'action_refund_order', whatHappened: 'Money returned', linksTo: 'Order', params: [{ name: 'order_id', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
+  { event: 'Status Change', actionName: 'action_update_status', whatHappened: 'State updated', linksTo: 'Any entity', params: [{ name: 'entity_id', type: 'text', required: true }, { name: 'status', type: 'text', required: true }] },
+  { event: 'Booking', actionName: 'action_book_slot', whatHappened: 'Appointment made', linksTo: 'Booking', params: [{ name: 'service', type: 'text', required: true }, { name: 'date', type: 'text', required: true }, { name: 'slot', type: 'text', required: true }, { name: 'customer_id', type: 'text', required: false }] },
+  { event: 'Cancel', actionName: 'action_cancel_booking', whatHappened: 'Booking cancelled', linksTo: 'Booking', params: [{ name: 'booking_id', type: 'text', required: true }, { name: 'reason', type: 'text', required: false }] },
+  { event: 'Clock In', actionName: 'action_clock_in', whatHappened: 'Staff arrived', linksTo: 'Person', params: [{ name: 'staff_id', type: 'text', required: true }] },
+  { event: 'Clock Out', actionName: 'action_clock_out', whatHappened: 'Staff left', linksTo: 'Person', params: [{ name: 'staff_id', type: 'text', required: true }] },
+  { event: 'Tracking', actionName: 'action_update_tracking', whatHappened: 'Shipment updated', linksTo: 'Shipment', params: [{ name: 'shipment_id', type: 'text', required: true }, { name: 'status', type: 'text', required: true }, { name: 'location', type: 'text', required: false }] },
+  { event: 'Delivered', actionName: 'action_complete_delivery', whatHappened: 'Shipment fulfilled', linksTo: 'Shipment', params: [{ name: 'shipment_id', type: 'text', required: true }, { name: 'recipient_signature', type: 'text', required: false }] },
+  { event: 'Stage', actionName: 'action_update_deal_stage', whatHappened: 'Deal advanced', linksTo: 'Deal', params: [{ name: 'deal_id', type: 'text', required: true }, { name: 'stage', type: 'text', required: true }, { name: 'win_loss_reason', type: 'text', required: false }] },
+  { event: 'Activity', actionName: 'action_log_activity', whatHappened: 'Call/meeting logged', linksTo: 'Deal, Person', params: [{ name: 'type', type: 'text', required: true }, { name: 'description', type: 'text', required: true }, { name: 'contact_id', type: 'text', required: false }, { name: 'deal_id', type: 'text', required: false }] },
+  { event: 'Adjust', actionName: 'action_adjust_stock', whatHappened: 'Stock changed', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
+  { event: 'Write Off', actionName: 'action_write_off', whatHappened: 'Stock removed', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
+  { event: 'Expense', actionName: 'action_record_expense', whatHappened: 'Cost recorded', linksTo: 'Expense', params: [{ name: 'category', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'description', type: 'text', required: false }, { name: 'date', type: 'text', required: false }] },
+  { event: 'Assignment', actionName: 'action_create_task', whatHappened: 'Task assigned', linksTo: 'Project', params: [{ name: 'title', type: 'text', required: true }, { name: 'description', type: 'text', required: false }, { name: 'assignee_id', type: 'text', required: false }, { name: 'due_date', type: 'text', required: false }] },
+];
+
 export default function WorkspacesScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -134,6 +154,9 @@ export default function WorkspacesScreen() {
   const [newWsName, setNewWsName] = useState('');
   const [newWsCreating, setNewWsCreating] = useState(false);
   const [selectedVertical, setSelectedVertical] = useState<string>('business');
+  const [selectedEntityDetails, setSelectedEntityDetails] = useState<any | null>(null);
+  const [showDirectoryModal, setShowDirectoryModal] = useState(false);
+  const [allEntities, setAllEntities] = useState<any[]>([]);
 
 
   const [selectedAction, setSelectedAction] = useState<any | null>(null);
@@ -422,12 +445,22 @@ ${membersYaml}
     }
   };
 
-  // Load products and orders when workspace changes
+  const refreshEntities = async (scope: string) => {
+    try {
+      const result = await tar.tool('read', { table: 'matter', scope });
+      setAllEntities(result?.rows || []);
+    } catch (e) {
+      console.warn('[Workspace] Failed to fetch directory entities:', e);
+    }
+  };
+
+  // Load products, orders, and entities when workspace changes
   useEffect(() => {
     if (currentWorkspace?.scope) {
       const scope = currentWorkspace.scope;
       refreshProducts(scope);
       refreshOrders(scope);
+      refreshEntities(scope);
       setAgentFeedback(null);
       setActiveWidget(null);
     }
@@ -622,6 +655,7 @@ ${membersYaml}
         if (response.executorResult?.success || cleanText.includes('product') || cleanText.includes('item') || cleanText.includes('add') || cleanText.includes('create') || cleanText.includes('order')) {
           await refreshProducts(scope);
           await refreshOrders(scope);
+          await refreshEntities(scope);
           await refreshSite();
         }
       }
@@ -671,6 +705,7 @@ ${membersYaml}
           if (currentWorkspace?.scope) {
             await refreshProducts(currentWorkspace.scope);
             await refreshOrders(currentWorkspace.scope);
+            await refreshEntities(currentWorkspace.scope);
           }
         })
         .catch((err) => {
@@ -698,12 +733,36 @@ ${membersYaml}
         }
       });
 
+      // Direct entity creation fallback
+      if (
+        selectedAction.name === 'action_add_contact' ||
+        selectedAction.name === 'action_add_company' ||
+        selectedAction.name === 'action_add_product' ||
+        selectedAction.name === 'create_entity'
+      ) {
+        const titleVal = cleanParams.name || cleanParams.title || cleanParams.to || 'New Entity';
+        const typeVal = cleanParams.role || cleanParams.type || (selectedAction.name === 'action_add_company' ? 'company' : selectedAction.name === 'action_add_product' ? 'product' : 'customer');
+        try {
+          await tar.tool('create', {
+            table: 'matter',
+            type: typeVal,
+            title: titleVal,
+            value: cleanParams.value || cleanParams.price || 0,
+            data: cleanParams,
+            scope: currentWorkspace.scope,
+          });
+        } catch (errCreate) {
+          console.warn('[Workspace] Fallback matter creation:', errCreate);
+        }
+      }
+
       const res = await tar.executeAITask(selectedAction.name, cleanParams, currentWorkspace.scope);
       setActionResultMessage(res?.message || `Successfully recorded event: ${selectedAction.name.replace(/_/g, ' ')}`);
       
       // Refresh records after action is performed
       await refreshProducts(currentWorkspace.scope);
       await refreshOrders(currentWorkspace.scope);
+      await refreshEntities(currentWorkspace.scope);
 
       setTimeout(() => {
         setSelectedAction(null);
@@ -718,38 +777,24 @@ ${membersYaml}
   };
 
   const getFilteredActions = () => {
-    const resultList: any[] = [];
-    
-    // Dynamic actions from layouts
-    canvasLayouts.forEach(layout => {
-      if (layout && layout.actions) {
-        Object.values(layout.actions).forEach((action: any) => {
-          if (!action || !action.name) return;
-          // Label is clean name: e.g. "Record Sale"
-          const cleanName = action.name
-            .replace('action_report_', '')
-            .replace('action_', '')
-            .split('_')
-            .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(' ');
-          
-          if (!resultList.some(r => r.label === cleanName)) {
-            resultList.push({
-              label: cleanName,
-              action: { ...action, moduleName: layout.moduleName }
-            });
-          }
-        });
-      }
-    });
-    
+    const resultList = PLAN5_EVENT_MOTIONS.map((item) => ({
+      label: item.event,
+      subtitle: `${item.whatHappened} • ${item.linksTo}`,
+      action: {
+        name: item.actionName,
+        purpose: item.whatHappened,
+        params: item.params,
+      },
+    }));
+
     if (!input.trim()) return resultList;
-    
-    const query = input.toLowerCase();
-    return resultList.filter(h => 
-      h.label.toLowerCase().includes(query) ||
-      (h.text && h.text.toLowerCase().includes(query)) ||
-      (h.action && h.action.name.toLowerCase().includes(query))
+
+    const query = input.trim().toLowerCase();
+    return resultList.filter(
+      (h) =>
+        h.label.toLowerCase().includes(query) ||
+        h.subtitle.toLowerCase().includes(query) ||
+        h.action.name.toLowerCase().includes(query)
     );
   };
 
@@ -837,10 +882,30 @@ ${membersYaml}
                 blocks={widgetBlocks}
                 layouts={widgetLayouts}
                 onExecuteAction={async (actionName, params) => {
+                  if (actionName === 'view_entity' && params?.entity) {
+                    setSelectedEntityDetails(params.entity);
+                    return { success: true };
+                  }
+                  if (actionName.startsWith('action_add_') || actionName === 'create_entity') {
+                    handleTriggerAction({
+                      name: actionName,
+                      params: [
+                        { name: 'name', type: 'text', required: true },
+                        { name: 'role', type: 'text', required: true },
+                        { name: 'company', type: 'text', required: false },
+                        { name: 'value', type: 'number', required: false },
+                      ],
+                    });
+                    setFormParams({
+                      role: params?.category || 'person',
+                    });
+                    return { success: true };
+                  }
                   if (currentWorkspace?.scope) {
                     const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
                     await refreshProducts(currentWorkspace.scope);
                     await refreshOrders(currentWorkspace.scope);
+                    await refreshEntities(currentWorkspace.scope);
                     return res;
                   }
                   throw new Error('No active workspace scope');
@@ -854,7 +919,10 @@ ${membersYaml}
                   'orders': orders,
                   'inventory': products,
                   'order': orders,
-                  'product': products
+                  'product': products,
+                  'directory': allEntities,
+                  'entity-directory': allEntities,
+                  'plan5-directory': allEntities
                 }}
               />
             );
@@ -865,10 +933,30 @@ ${membersYaml}
             blocks={canvasBlocks}
             layouts={canvasLayouts}
             onExecuteAction={async (actionName, params) => {
+              if (actionName === 'view_entity' && params?.entity) {
+                setSelectedEntityDetails(params.entity);
+                return { success: true };
+              }
+              if (actionName.startsWith('action_add_') || actionName === 'create_entity') {
+                handleTriggerAction({
+                  name: actionName,
+                  params: [
+                    { name: 'name', type: 'text', required: true },
+                    { name: 'role', type: 'text', required: true },
+                    { name: 'company', type: 'text', required: false },
+                    { name: 'value', type: 'number', required: false },
+                  ],
+                });
+                setFormParams({
+                  role: params?.category || 'person',
+                });
+                return { success: true };
+              }
               if (currentWorkspace?.scope) {
                 const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
                 await refreshProducts(currentWorkspace.scope);
                 await refreshOrders(currentWorkspace.scope);
+                await refreshEntities(currentWorkspace.scope);
                 return res;
               }
               throw new Error('No active workspace scope');
@@ -882,7 +970,10 @@ ${membersYaml}
               'orders': orders,
               'inventory': products,
               'order': orders,
-              'product': products
+              'product': products,
+              'directory': allEntities,
+              'entity-directory': allEntities,
+              'plan5-directory': allEntities
             }}
           />
         ) : (
@@ -909,14 +1000,14 @@ ${membersYaml}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hintsContainer} contentContainerStyle={{ alignItems: 'center' }}>
             {/* Directory Quick Action Icon */}
             <Pressable
-              onPress={() => setActiveWidget({ moduleName: 'directory' })}
+              onPress={() => setShowDirectoryModal(true)}
               style={({ pressed }) => [{
                 paddingHorizontal: 8,
                 paddingVertical: 6,
                 borderRadius: 16,
                 borderWidth: 1,
-                borderColor: activeWidget?.moduleName === 'directory' ? theme.primary : theme.border,
-                backgroundColor: activeWidget?.moduleName === 'directory' ? theme.primary + '20' : theme.backgroundElement,
+                borderColor: showDirectoryModal ? theme.primary : theme.border,
+                backgroundColor: showDirectoryModal ? theme.primary + '20' : theme.backgroundElement,
                 marginRight: 6,
                 opacity: pressed ? 0.7 : 1,
               }]}
@@ -999,13 +1090,13 @@ ${membersYaml}
             <Text style={{ fontSize: 10, fontWeight: '700', color: theme.textMuted, paddingHorizontal: 12, paddingVertical: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               Suggested Actions
             </Text>
-            {getFilteredActions().slice(0, 3).map((hint, idx) => (
+            {getFilteredActions().slice(0, 5).map((hint, idx) => (
               <TouchableOpacity
                 key={idx}
                 style={{
                   paddingVertical: 10,
                   paddingHorizontal: 12,
-                  borderBottomWidth: idx < getFilteredActions().slice(0, 3).length - 1 ? StyleSheet.hairlineWidth : 0,
+                  borderBottomWidth: idx < getFilteredActions().slice(0, 5).length - 1 ? StyleSheet.hairlineWidth : 0,
                   borderBottomColor: theme.border,
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -1024,9 +1115,9 @@ ${membersYaml}
                   <Text style={{ fontSize: 13, color: theme.text, fontWeight: '600' }} numberOfLines={1}>
                     {hint.label}
                   </Text>
-                  {hint.action && (
+                  {hint.subtitle && (
                     <Text style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }} numberOfLines={1}>
-                      {hint.action.purpose || `Execute ${hint.action.name}`}
+                      {hint.subtitle}
                     </Text>
                   )}
                 </View>
@@ -1278,6 +1369,64 @@ ${membersYaml}
         }}
         onSubmit={(submittedParams) => {
           handleActionFormSubmit(submittedParams);
+        }}
+      />
+
+      {/* Full-Screen Entity Details Modal */}
+      <EntityDetailsModal
+        visible={selectedEntityDetails !== null}
+        entity={selectedEntityDetails}
+        scope={currentWorkspace?.scope}
+        theme={theme}
+        onClose={() => setSelectedEntityDetails(null)}
+        onRefresh={async () => {
+          if (currentWorkspace?.scope) {
+            await refreshProducts(currentWorkspace.scope);
+            await refreshOrders(currentWorkspace.scope);
+            await refreshEntities(currentWorkspace.scope);
+          }
+        }}
+        onLogEventForEntity={(ent) => {
+          setSelectedEntityDetails(null);
+          handleTriggerAction({
+            name: 'action_record_sale',
+            params: [
+              { name: 'customer_id', type: 'text', required: true },
+              { name: 'total', type: 'number', required: true },
+              { name: 'items', type: 'text', required: true },
+              { name: 'payment_method', type: 'text', required: true },
+            ],
+          });
+          setFormParams({
+            customer_id: ent.name || ent.id || '',
+            items: ent.name || ent.id || '',
+          });
+        }}
+      />
+
+      {/* Standalone Full-Screen Directory Modal (Free from Canvas) */}
+      <DirectoryModal
+        visible={showDirectoryModal}
+        scope={currentWorkspace?.scope}
+        theme={theme}
+        onClose={() => setShowDirectoryModal(false)}
+        onSelectEntity={(entity) => {
+          setSelectedEntityDetails(entity);
+        }}
+        onAddNewEntity={(category) => {
+          const actionName = category === 'people' ? 'action_add_contact' : category === 'companies' ? 'action_add_company' : 'action_add_product';
+          handleTriggerAction({
+            name: actionName,
+            params: [
+              { name: 'name', type: 'text', required: true },
+              { name: 'role', type: 'text', required: true },
+              { name: 'email', type: 'text', required: false },
+              { name: 'phone', type: 'text', required: false },
+            ],
+          });
+          setFormParams({
+            role: category === 'people' ? 'Customer' : category === 'companies' ? 'Company' : 'Product',
+          });
         }}
       />
     </View>

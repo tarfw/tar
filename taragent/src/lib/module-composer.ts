@@ -91,10 +91,10 @@ pages:
     module: orders
 ---
 
-4. "skills/<module>.md" (One file per selected module) - Personalized skill file. 
-   - Retain the exact YAML frontmatter structure, but you can customize fields/icons or adjust details to the business.
-   - Retain the exact action headings "### action_..." and the step definitions.
-   - Personalize the prose (descriptions, titles) for this specific business.
+4. "skills/<module>.md" (One file per selected module) - Event UI layout & agent persona spec for this business vertical.
+   - Specify the YAML frontmatter with type: skill, name: <module>, and app_layout.sections (quick-actions, metric-cards, status-board, data-grid).
+   - Core event actions (like sale, booking, adjust, expense) are built into the platform natively. Only define custom ### action_... step definitions if this business requires specialized custom events beyond standard built-in events.
+   - Include clear persona guidelines in the prose body for handling customer inquiries in this business vertical.
 
 OUTPUT FORMAT RULES:
 Wrap each file in <file path="[filename]">[content]</file> tags.
@@ -106,12 +106,26 @@ Example Output:
 ...
 ---
 </file>
-<file path="skills/orders.md">
+<file path="skills/transactions.md">
 ---
-...
+type: skill
+name: transactions
+version: 1.0.0
+app_layout:
+  primary_action: action_record_sale
+  layout: dashboard
+  sections:
+    - type: quick-actions
+      actions: [action_record_sale, action_refund_order, action_void_order]
+    - type: metric-card
+      title: "Daily Sales"
+      data: "SELECT SUM(value) FROM matter WHERE type='order' AND status='active'"
+    - type: data-grid
+      title: "Transactions Feed"
+      props: { type: "order", mode: "table" }
 ---
-# Orders
-...
+# Transactions Event Spec
+Handles sales, POS checkout, and transaction logs.
 </file>
 `;
 }

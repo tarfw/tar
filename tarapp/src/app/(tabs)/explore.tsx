@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Modal, ScrollView, Alert, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Pressable, TouchableOpacity, FlatList, ActivityIndicator, Modal, ScrollView, Alert, Animated, Easing } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { useState, useEffect, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -136,37 +136,16 @@ export default function ExploreScreen() {
 
   const [workspacesList, setWorkspacesList] = useState<WorkspaceItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
 
-  // AI-powered rotating promo ad bar
-  const [adIndex, setAdIndex] = useState(0);
-  const adOpacity = useState(() => new Animated.Value(1))[0];
-
-  useEffect(() => {
-    const rotate = () => {
-      Animated.timing(adOpacity, {
-        toValue: 0,
-        duration: 800,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start(() => {
-        setAdIndex((prev) => (prev + 1) % PROMO_ADS.length);
-        Animated.timing(adOpacity, {
-          toValue: 1,
-          duration: 800,
-          easing: Easing.in(Easing.ease),
-          useNativeDriver: true,
-        }).start();
-      });
-    };
-    const id = setInterval(rotate, 8000);
-    return () => clearInterval(id);
-  }, [adOpacity]);
-
-  const handleAdPress = () => {
-    const ad = PROMO_ADS[adIndex];
-    const match = MOCK_PUBLIC_WORKSPACES.find((w) => w.type === ad.type);
-    if (match) handleOpenStorefront(match);
-  };
+  const categories = [
+    { id: 'all', label: 'All' },
+    { id: 'bakery', label: 'Bakery' },
+    { id: 'retail', label: 'Retail' },
+    { id: 'beauty', label: 'Beauty & Spa' },
+    { id: 'taxi', label: 'Transport' },
+  ];
 
   // Modal storefront interaction states
   const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceItem | null>(null);
@@ -375,86 +354,136 @@ export default function ExploreScreen() {
 
 
 
+  const filteredWorkspaces = workspacesList.filter((item) => {
+    const matchesCategory = selectedCategory === 'all' || item.type === selectedCategory;
+    const matchesQuery =
+      searchQuery.trim() === '' ||
+      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.description.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCategory && matchesQuery;
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-
-
-      {/* AI-powered rotating promo ad bar */}
-      <View style={[styles.adBarWrap, { marginTop: 4, paddingTop: insets.top }]}>
-        <Animated.View style={[styles.adBar, { opacity: adOpacity }]}>
-          <View
-            style={[styles.adBarInner, { backgroundColor: PROMO_ADS[adIndex].accent + '12' }]}
-          >
-            <View style={[styles.adSpark, { backgroundColor: PROMO_ADS[adIndex].accent }]}>
-              <Ionicons name="sparkles" size={14} color="#ffffff" />
-            </View>
-            <View style={styles.adTextWrap}>
-              <Text style={[styles.adTitle, { color: theme.text }]}>{PROMO_ADS[adIndex].title}</Text>
-              <Text style={[styles.adSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
-                {PROMO_ADS[adIndex].subtitle}
-              </Text>
-            </View>
-            <Pressable
-              style={[styles.adCta, { backgroundColor: PROMO_ADS[adIndex].accent }]}
-              onPress={handleAdPress}
-            >
-              <Text style={styles.adCtaText}>{PROMO_ADS[adIndex].cta}</Text>
-            </Pressable>
-          </View>
-        </Animated.View>
+      {/* Top Header */}
+      <View style={{ paddingTop: Math.max(insets.top + 8, 16), paddingHorizontal: 16, paddingBottom: 8 }}>
+        <Text style={{ fontSize: 22, fontWeight: '700', color: theme.text }}>
+          Explore Marketplace
+        </Text>
       </View>
 
+      {/* Full-width Search Bar matching Workspace Input Bar UI */}
+      <View style={{
+        minHeight: 48,
+        backgroundColor: theme.background,
+        borderColor: theme.border,
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
+        paddingHorizontal: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 10,
+      }}>
+        <Ionicons name="search-outline" size={17} color={theme.textMuted} style={{ marginRight: 10 }} />
+        <TextInput
+          style={{ flex: 1, fontSize: 14, color: theme.text, paddingVertical: 12 }}
+          placeholder="Search storefronts or services..."
+          placeholderTextColor={theme.textMuted + '80'}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+            <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
 
+      {/* Category Pills */}
+      <View style={{ paddingBottom: 12 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}>
+          {categories.map((cat) => {
+            const active = selectedCategory === cat.id;
+            return (
+              <TouchableOpacity
+                key={cat.id}
+                onPress={() => setSelectedCategory(cat.id)}
+                activeOpacity={0.7}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 6,
+                  borderRadius: 20,
+                  borderWidth: 1,
+                  borderColor: active ? theme.text : theme.border + '60',
+                  backgroundColor: active ? theme.text : 'transparent',
+                }}
+              >
+                <Text style={{
+                  fontSize: 12.5,
+                  fontWeight: active ? '600' : '400',
+                  color: active ? theme.background : theme.textSecondary,
+                }}>
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-      {/* Suggestion Chip Grid */}
+      {/* High-Performance Minimal FlatList */}
       {!loading ? (
-        <View style={{ flex: 1, paddingHorizontal: 16, justifyContent: 'center', paddingTop: 12 }}>
-          {/* Greeting + Title */}
-          <View style={{ marginBottom: 24 }}>
-            <Text style={[styles.greetingText, { color: theme.textMuted }]}>Good {getTimeOfDay()}.</Text>
-            <Text style={[styles.heroTitle, { color: theme.text }]}>How can I help you?</Text>
-            <Text style={[styles.subtitle, { color: theme.textMuted, marginTop: 6 }]}>
-              Order, book, and request services from public workspaces
-            </Text>
-          </View>
+        <FlatList
+          data={filteredWorkspaces}
+          keyExtractor={(item) => item.subdomain}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom + 24, 32) }}
+          renderItem={({ item }) => (
+            <Pressable
+              onPress={() => handleOpenStorefront(item)}
+              style={({ pressed }) => [{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingVertical: 14,
+                borderBottomWidth: StyleSheet.hairlineWidth,
+                borderBottomColor: theme.border,
+                opacity: pressed ? 0.7 : 1,
+              }]}
+            >
+              <View style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: theme.primary + '15',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 12,
+              }}>
+                <Text style={{ fontSize: 20 }}>{getVerticalEmoji(item.type)}</Text>
+              </View>
 
-          {/* 2-column pill grid */}
-          <View style={styles.chipGrid}>
-            {workspacesList.map((item) => {
-              const colors = VERTICAL_COLORS[item.type] || { bg: '#f4f4f5', text: '#71717a', icon: 'business-outline' };
-              return (
-                <Pressable
-                  key={item.subdomain}
-                  onPress={() => handleOpenStorefront(item)}
-                  style={({ pressed }) => [
-                    styles.chipCard,
-                    {
-                      backgroundColor: theme.backgroundElement,
-                      borderColor: theme.border,
-                      opacity: pressed ? 0.8 : 1,
-                    },
-                  ]}
-                >
-                  <Text style={styles.chipEmoji}>{getVerticalEmoji(item.type)}</Text>
-                  <Text style={[styles.chipLabel, { color: theme.text }]} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text, marginBottom: 2 }} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <Text style={{ fontSize: 13, color: theme.textMuted }} numberOfLines={1}>
+                  {item.description || `${item.type.toUpperCase()} • ${item.subdomain}`}
+                </Text>
+              </View>
 
-          {workspacesList.length === 0 && (
-            <View style={styles.centered}>
-              <Ionicons name="compass-outline" size={40} color={theme.textMuted} />
-              <Text style={[styles.emptyText, { color: theme.textMuted, marginTop: 8 }]}>
-                No workspaces found
+              <Ionicons name="chevron-forward" size={16} color={theme.textMuted} style={{ marginLeft: 8 }} />
+            </Pressable>
+          )}
+          ListEmptyComponent={
+            <View style={{ paddingVertical: 48, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="compass-outline" size={36} color={theme.textMuted} style={{ marginBottom: 8 }} />
+              <Text style={{ fontSize: 14, color: theme.textMuted, fontWeight: '500' }}>
+                No storefronts match your search
               </Text>
             </View>
-          )}
-        </View>
+          }
+        />
       ) : (
-        <View style={styles.centered}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="small" color={theme.primary} />
         </View>
       )}

@@ -81,6 +81,162 @@ function getInitials(name: string = '') {
   return name.slice(0, 2).toUpperCase();
 }
 
+function MiniCalendarPicker({
+  selectedDate,
+  onSelectDate,
+  theme,
+}: {
+  selectedDate: string;
+  onSelectDate: (dateStr: string) => void;
+  theme: any;
+}) {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const handlePrevMonth = () => {
+    setCurrentMonth(new Date(year, month - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCurrentMonth(new Date(year, month + 1, 1));
+  };
+
+  const days: Array<{ dayNum: number | null; dateStr: string | null }> = [];
+  for (let i = 0; i < firstDay; i++) {
+    days.push({ dayNum: null, dateStr: null });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const mStr = String(month + 1).padStart(2, '0');
+    const dStr = String(d).padStart(2, '0');
+    days.push({ dayNum: d, dateStr: `${year}-${mStr}-${dStr}` });
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  return (
+    <View style={{ marginTop: 8, marginBottom: 12, paddingHorizontal: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <TouchableOpacity onPress={handlePrevMonth} hitSlop={8} style={{ padding: 4 }}>
+          <Ionicons name="chevron-back" size={18} color={theme.text} />
+        </TouchableOpacity>
+        <Text style={{ fontSize: 14, fontWeight: '700', color: theme.text }}>
+          {monthNames[month]} {year}
+        </Text>
+        <TouchableOpacity onPress={handleNextMonth} hitSlop={8} style={{ padding: 4 }}>
+          <Ionicons name="chevron-forward" size={18} color={theme.text} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 6 }}>
+        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((w, idx) => (
+          <Text key={idx} style={{ width: 32, textAlign: 'center', fontSize: 11, fontWeight: '700', color: theme.textMuted }}>
+            {w}
+          </Text>
+        ))}
+      </View>
+
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {days.map((item, idx) => {
+          if (!item.dayNum || !item.dateStr) {
+            return <View key={`empty_${idx}`} style={{ width: '14.28%', height: 34 }} />;
+          }
+          const isSelected = selectedDate === item.dateStr;
+          const isToday = todayStr === item.dateStr;
+
+          return (
+            <TouchableOpacity
+              key={item.dateStr}
+              onPress={() => onSelectDate(item.dateStr!)}
+              style={{
+                width: '14.28%',
+                height: 34,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <View style={{
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: isSelected ? theme.primary : isToday ? theme.primary + '20' : 'transparent',
+              }}>
+                <Text style={{
+                  fontSize: 12.5,
+                  fontWeight: isSelected || isToday ? '700' : '500',
+                  color: isSelected ? '#ffffff' : isToday ? theme.primary : theme.text,
+                }}>
+                  {item.dayNum}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function MiniTimeSlotGrid({
+  selectedSlot,
+  onSelectSlot,
+  theme,
+}: {
+  selectedSlot: string;
+  onSelectSlot: (slotStr: string) => void;
+  theme: any;
+}) {
+  const slots = [
+    '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
+    '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM',
+    '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM',
+  ];
+
+  return (
+    <View style={{ marginTop: 8, marginBottom: 12 }}>
+      <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+        Time Slots
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {slots.map((slot) => {
+          const isSelected = selectedSlot === slot;
+          return (
+            <TouchableOpacity
+              key={slot}
+              onPress={() => onSelectSlot(slot)}
+              style={{
+                width: '31%',
+                paddingVertical: 7,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: isSelected ? theme.primary : theme.border,
+                backgroundColor: isSelected ? theme.primary : theme.backgroundElement,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: isSelected ? '700' : '500', color: isSelected ? '#ffffff' : theme.text }}>
+                {slot}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 export default function EventComposeModal({
   visible,
   action,
@@ -109,6 +265,12 @@ export default function EventComposeModal({
       setParams({ ...formParams });
     }
   }, [formParams]);
+
+  const updateLineItemQty = (id: string, qty: number) => {
+    setLineItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, qty: Math.max(1, qty) } : item))
+    );
+  };
 
   // Ensure an extra empty line item always exists at the bottom
   useEffect(() => {
@@ -180,7 +342,16 @@ export default function EventComposeModal({
       return { key: rawName, label: rawName.replace(/_id$/i, '').replace(/_/g, ' '), isTarget: false, isSelectable: true, isRequired };
     }
 
-    if (name === 'payment_method' || name === 'status' || name === 'stage' || name === 'date' || name === 'slot' || name === 'category' || name === 'type') {
+    if (
+      name === 'payment_method' ||
+      name === 'status' ||
+      name === 'stage' ||
+      name.includes('date') ||
+      name.includes('slot') ||
+      name.includes('service') ||
+      name.includes('category') ||
+      name === 'type'
+    ) {
       return { key: rawName, label: rawName.replace(/_/g, ' '), isTarget: false, isSelectable: true, isRequired };
     }
 
@@ -241,11 +412,7 @@ export default function EventComposeModal({
       setActivePicker({
         title: `Select ${info.label}`,
         paramName: info.key,
-        options: options.length > 0 ? options : [
-          { label: 'Anjali Sharma', value: 'Anjali Sharma', subtitle: 'Customer', email: 'anjali@example.com' },
-          { label: 'Rahul Verma', value: 'Rahul Verma', subtitle: 'Staff Member', email: 'rahul@workspace.com' },
-          { label: 'Acme Traders', value: 'Acme Traders', subtitle: 'Vendor', email: 'orders@acme.com' },
-        ],
+        options,
       });
       return;
     }
@@ -270,11 +437,30 @@ export default function EventComposeModal({
         title: 'Select Product',
         paramName: targetLineId ? '__line_product__' : info.key,
         targetLineId,
-        options: options.length > 0 ? options : [
-          { label: 'Cappuccino', value: 'Cappuccino', subtitle: 'Price: $5', rawEntity: { value: 5 } },
-          { label: 'Croissant', value: 'Croissant', subtitle: 'Price: $4', rawEntity: { value: 4 } },
-          { label: 'Espresso', value: 'Espresso', subtitle: 'Price: $3', rawEntity: { value: 3 } },
-        ],
+        options,
+      });
+      return;
+    }
+
+    // 2b. Target Entity picker (Used for Status Change, Refund, Cancel, Tracking, Stage)
+    if (key === 'entity_id' || key === 'ref' || key === 'order_id' || key === 'booking_id' || key === 'shipment_id' || key === 'deal_id') {
+      const targetType = key.replace(/_id$/, '').toLowerCase();
+      const filtered = (allEntities || []).filter((e: any) => {
+        const t = (e?.type || '').toLowerCase();
+        return !targetType || t.includes(targetType) || key === 'entity_id' || key === 'ref';
+      });
+
+      const options = filtered.map((e: any) => ({
+        label: e.title || e.name || e.id || 'Entity',
+        value: e.title || e.name || e.id,
+        subtitle: `${e.type || 'Entity'} • Status: ${e.status || 'Active'}`,
+        rawEntity: e,
+      }));
+
+      setActivePicker({
+        title: `Select ${info.label}`,
+        paramName: info.key,
+        options,
       });
       return;
     }
@@ -324,6 +510,18 @@ export default function EventComposeModal({
         { label: 'Document', value: 'Document', subtitle: 'Files, Contracts, Receipts' },
         { label: 'Asset', value: 'Asset', subtitle: 'Equipment, Tools, Machinery' },
       ];
+    } else if (key.includes('service')) {
+      const serviceEntities = (allEntities || []).filter((e: any) => {
+        const t = (e?.type || '').toLowerCase();
+        const r = (e?.role || '').toLowerCase();
+        return t.includes('service') || r.includes('service') || t.includes('booking') || t.includes('appointment');
+      });
+
+      presets = serviceEntities.map((e: any) => ({
+        label: e.title || e.name || 'Service',
+        value: e.title || e.name || e.id,
+        subtitle: `Service • ${e.data?.duration || '30 mins'}`,
+      }));
     }
 
     if (presets.length > 0) {
@@ -404,7 +602,6 @@ export default function EventComposeModal({
               <Text style={[styles.headerEventText, { color: theme.primary }]}>
                 {actionName}
               </Text>
-              <Ionicons name="chevron-down" size={14} color={theme.primary} />
             </Pressable>
 
             {/* Right Send Action Button */}
@@ -417,7 +614,7 @@ export default function EventComposeModal({
               {submitting ? (
                 <ActivityIndicator size="small" color={theme.primary} />
               ) : (
-                <Text style={[styles.sendText, { color: theme.primary }]}>Send</Text>
+                <Text style={[styles.sendText, { color: theme.primary }]}>Submit</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -505,15 +702,61 @@ export default function EventComposeModal({
                       >
                         {item.name ? (
                           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 4 }}>
-                            <Text style={[styles.fieldTextValue, { color: theme.text, fontWeight: '500' }]} numberOfLines={1}>
-                              {item.name} {item.qty > 1 ? `(x${item.qty})` : ''}
+                            <Text style={[styles.fieldTextValue, { color: theme.text, fontWeight: '600', fontSize: 16, flex: 1 }]} numberOfLines={1}>
+                              {item.name}
                             </Text>
-                            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text, marginLeft: 8 }}>
+
+                            {/* Inline Spacious Touch-Friendly Quantity Stepper */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 14, marginRight: 16 }}>
+                              <TouchableOpacity
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  updateLineItemQty(item.id, item.qty - 1);
+                                }}
+                                hitSlop={10}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 16,
+                                  backgroundColor: theme.backgroundElement,
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderWidth: 1,
+                                  borderColor: theme.border,
+                                }}
+                              >
+                                <Ionicons name="remove" size={16} color={theme.text} />
+                              </TouchableOpacity>
+                              <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text, minWidth: 22, textAlign: 'center' }}>
+                                {item.qty}
+                              </Text>
+                              <TouchableOpacity
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  updateLineItemQty(item.id, item.qty + 1);
+                                }}
+                                hitSlop={10}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 16,
+                                  backgroundColor: theme.backgroundElement,
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderWidth: 1,
+                                  borderColor: theme.border,
+                                }}
+                              >
+                                <Ionicons name="add" size={16} color={theme.text} />
+                              </TouchableOpacity>
+                            </View>
+
+                            <Text style={{ fontSize: 15.5, fontWeight: '700', color: theme.text, marginLeft: 4 }}>
                               ${(item.qty * (item.price || 0)).toFixed(2)}
                             </Text>
                           </View>
                         ) : (
-                          <Text style={[styles.fieldTextValue, { color: theme.textMuted + '80' }]}>
+                          <Text style={[styles.fieldTextValue, { color: theme.textMuted + '80', fontSize: 15.5 }]}>
                             {idx === 0 ? 'Items' : `Item ${idx + 1}`} {idx === 0 && info.isRequired ? <Text style={{ color: '#ef4444' }}>*</Text> : null}
                           </Text>
                         )}
@@ -524,13 +767,13 @@ export default function EventComposeModal({
                               e.stopPropagation();
                               removeLineItem(item.id);
                             }}
-                            hitSlop={8}
-                            style={{ paddingLeft: 4 }}
+                            hitSlop={10}
+                            style={{ paddingLeft: 6 }}
                           >
-                            <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                            <Ionicons name="close" size={18} color={theme.textMuted} />
                           </TouchableOpacity>
                         ) : (
-                          <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
+                          <Ionicons name="chevron-down" size={18} color={theme.textMuted} />
                         )}
                       </Pressable>
                     ))}
@@ -606,15 +849,67 @@ export default function EventComposeModal({
 
             {/* Search Input inside Picker */}
             {activePicker?.options && activePicker.options.length > 4 ? (
-              <View style={[styles.searchBox, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                <Ionicons name="search" size={16} color={theme.textMuted} />
+              <View style={{
+                minHeight: 44,
+                backgroundColor: theme.background,
+                borderColor: theme.border,
+                borderTopWidth: 1,
+                borderBottomWidth: 1,
+                paddingHorizontal: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginBottom: 8,
+              }}>
+                <Ionicons name="search-outline" size={17} color={theme.textMuted} style={{ marginRight: 10 }} />
                 <TextInput
-                  style={[styles.searchInput, { color: theme.text }]}
+                  style={{ flex: 1, fontSize: 14, color: theme.text, paddingVertical: 10 }}
                   placeholder="Search options..."
                   placeholderTextColor={theme.textMuted + '80'}
                   value={pickerSearch}
                   onChangeText={setPickerSearch}
                 />
+                {pickerSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setPickerSearch('')} hitSlop={8}>
+                    <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : null}
+
+            {/* Interactive Calendar Grid for Date Picker */}
+            {activePicker?.paramName?.toLowerCase().includes('date') ? (
+              <MiniCalendarPicker
+                selectedDate={params[activePicker.paramName] || ''}
+                onSelectDate={(dStr) => {
+                  setParams((prev) => ({ ...prev, [activePicker.paramName]: dStr }));
+                  setActivePicker(null);
+                }}
+                theme={theme}
+              />
+            ) : null}
+
+            {/* Time Slot Grid for Slot/Time Picker */}
+            {activePicker?.paramName?.toLowerCase().includes('slot') || activePicker?.paramName?.toLowerCase().includes('time') ? (
+              <MiniTimeSlotGrid
+                selectedSlot={params[activePicker.paramName] || ''}
+                onSelectSlot={(sStr) => {
+                  setParams((prev) => ({ ...prev, [activePicker.paramName]: sStr }));
+                  setActivePicker(null);
+                }}
+                theme={theme}
+              />
+            ) : null}
+
+            {/* Production Empty State when workspace entities are empty */}
+            {activePicker?.options?.length === 0 &&
+             !activePicker?.paramName?.toLowerCase().includes('date') &&
+             !activePicker?.paramName?.toLowerCase().includes('slot') &&
+             !activePicker?.paramName?.toLowerCase().includes('time') ? (
+              <View style={{ paddingVertical: 28, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="folder-open-outline" size={32} color={theme.textMuted} />
+                <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 8, fontWeight: '500' }}>
+                  No matching records in workspace
+                </Text>
               </View>
             ) : null}
 
@@ -628,18 +923,20 @@ export default function EventComposeModal({
                   return !q || labelStr.includes(q) || subStr.includes(q);
                 })
                 .map((opt, idx) => {
+                  const currentPicker = activePicker;
+                  if (!currentPicker) return null;
                   const optVal = opt.value ?? `opt_${idx}`;
-                  const isSelected = activePicker.paramName === '__event__'
+                  const isSelected = currentPicker.paramName === '__event__'
                     ? action?.name === optVal
-                    : params[activePicker.paramName] === optVal;
+                    : params[currentPicker.paramName] === optVal;
 
-                  const isPersonPicker = activePicker.title.includes('To') || activePicker.title.includes('Contact') || activePicker.title.includes('Staff');
+                  const isPersonPicker = currentPicker.title.includes('To') || currentPicker.title.includes('Contact') || currentPicker.title.includes('Staff');
 
                   return (
                     <Pressable
                       key={`${optVal}_${idx}`}
                       onPress={() => {
-                        if (activePicker.paramName === '__event__') {
+                        if (currentPicker.paramName === '__event__') {
                           const eventObj = PLAN5_EVENT_MOTIONS.find((e) => e.actionName === optVal);
                           if (eventObj) {
                             onSelectEvent?.({
@@ -648,15 +945,15 @@ export default function EventComposeModal({
                               params: eventObj.params,
                             });
                           }
-                        } else if (activePicker.paramName === '__line_product__' && activePicker.targetLineId) {
+                        } else if (currentPicker.paramName === '__line_product__' && currentPicker.targetLineId) {
                           const prdName = opt.label || optVal;
                           const prdPrice = opt.rawEntity?.value || opt.rawEntity?.data?.price || 0;
-                          updateLineItem(activePicker.targetLineId, 'name', prdName);
+                          updateLineItem(currentPicker.targetLineId, 'name', prdName);
                           if (prdPrice > 0) {
-                            updateLineItem(activePicker.targetLineId, 'price', prdPrice);
+                            updateLineItem(currentPicker.targetLineId, 'price', prdPrice);
                           }
                         } else {
-                          handleTextChange(activePicker.paramName, optVal);
+                          handleTextChange(currentPicker.paramName, optVal);
                         }
                         setActivePicker(null);
                       }}
@@ -742,7 +1039,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   fieldRow: {
-    minHeight: 50,
+    minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,

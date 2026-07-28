@@ -11,6 +11,7 @@ import {
   Alert,
   Platform,
   KeyboardAvoidingView,
+  Pressable,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -112,36 +113,30 @@ export default function EntityDetailsModal({
     setShowMenu(false);
     Alert.alert(
       'Delete Entity',
-      `Are you sure you want to delete "${name}"? This action cannot be undone.`,
+      `Are you sure you want to delete "${name}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            if (!scope || !entity?.id) return;
+            if (!entity?.id) return;
             setDeleting(true);
             try {
-              await tar.tool('delete', { table: 'matter', id: entity.id, scope });
-              onClose();
-              if (onRefresh) onRefresh();
+              await Promise.all([
+                tar.tool('delete', { table: 'matter', id: entity.id, scope: scope || '' }).catch(() => null),
+                tar.tool('update', { table: 'matter', id: entity.id, scope: scope || '', type: entity.type || 'matter', patch: { status: 'deleted' } }).catch(() => null),
+              ]);
             } catch (e: any) {
-              Alert.alert('Delete Failed', e.message || 'Could not delete entity');
+              console.warn('[EntityDetails] Delete matter error:', e);
             } finally {
               setDeleting(false);
+              onClose();
+              if (onRefresh) onRefresh();
             }
           },
         },
       ]
-    );
-  };
-
-  const handleViewMetadata = () => {
-    setShowMenu(false);
-    Alert.alert(
-      'Entity Metadata Card',
-      JSON.stringify(entity.data || entity, null, 2),
-      [{ text: 'Close' }]
     );
   };
 
@@ -210,7 +205,7 @@ export default function EntityDetailsModal({
             {/* Structured Fields Section */}
             <View style={styles.fieldsSection}>
               {/* Field: Name */}
-              <View style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
+              <View style={[styles.fieldRow, { borderBottomColor: theme.border + '25', borderBottomWidth: StyleSheet.hairlineWidth }]}>
                 <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Name</Text>
                 {isEditing ? (
                   <TextInput
@@ -226,7 +221,7 @@ export default function EntityDetailsModal({
               </View>
 
               {/* Field: Category */}
-              <View style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
+              <View style={[styles.fieldRow, { borderBottomColor: theme.border + '25', borderBottomWidth: StyleSheet.hairlineWidth }]}>
                 <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Category</Text>
                 <Text style={[styles.fieldTextValue, { color: theme.text, textTransform: 'capitalize' }]}>
                   {categoryName}
@@ -234,7 +229,7 @@ export default function EntityDetailsModal({
               </View>
 
               {/* Field: Role / SubType */}
-              <View style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
+              <View style={[styles.fieldRow, { borderBottomColor: theme.border + '25', borderBottomWidth: StyleSheet.hairlineWidth }]}>
                 <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Role/Type</Text>
                 {isEditing ? (
                   <TextInput
@@ -250,7 +245,7 @@ export default function EntityDetailsModal({
               </View>
 
               {/* Field: Organization / Subtitle */}
-              <View style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
+              <View style={[styles.fieldRow, { borderBottomColor: theme.border + '25', borderBottomWidth: StyleSheet.hairlineWidth }]}>
                 <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Details</Text>
                 {isEditing ? (
                   <TextInput
@@ -266,7 +261,7 @@ export default function EntityDetailsModal({
               </View>
 
               {/* Field: Value / Amount */}
-              <View style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
+              <View style={[styles.fieldRow, { borderBottomWidth: 0 }]}>
                 <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Value</Text>
                 {isEditing ? (
                   <TextInput
@@ -285,10 +280,10 @@ export default function EntityDetailsModal({
               </View>
             </View>
 
-            {/* Event History Motion Section — Minimal Simple Text List */}
+            {/* History Section — Minimal Simple Text List */}
             <View style={styles.timelineSection}>
               <View style={styles.timelineHeaderRow}>
-                <Text style={[styles.sectionHeading, { color: theme.text }]}>Event History Motion</Text>
+                <Text style={[styles.sectionHeading, { color: theme.text }]}>History</Text>
                 <TouchableOpacity
                   onPress={() => {
                     if (onLogEventForEntity) {
@@ -306,16 +301,25 @@ export default function EntityDetailsModal({
               {loadingMotions ? (
                 <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 16 }} />
               ) : linkedMotions.length > 0 ? (
-                linkedMotions.map((m, idx) => (
-                  <View key={m.id || idx} style={[styles.motionRow, { borderBottomColor: theme.border }]}>
-                    <Text style={[styles.motionTitle, { color: theme.text }]}>
-                      {m.type ? m.type.toUpperCase() : 'EVENT'}
-                    </Text>
-                    <Text style={[styles.motionSub, { color: theme.textMuted }]}>
-                      {m.by ? `By ${m.by} • ` : ''}{m.timestamp || 'recent'}
-                    </Text>
-                  </View>
-                ))
+                linkedMotions.map((m, idx) => {
+                  const isLast = idx === linkedMotions.length - 1;
+                  return (
+                    <View
+                      key={m.id || idx}
+                      style={[
+                        styles.motionRow,
+                        !isLast && { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth },
+                      ]}
+                    >
+                      <Text style={[styles.motionTitle, { color: theme.text }]}>
+                        {m.type ? m.type.toUpperCase() : 'EVENT'}
+                      </Text>
+                      <Text style={[styles.motionSub, { color: theme.textMuted }]}>
+                        {m.by ? `By ${m.by} • ` : ''}{m.timestamp || 'recent'}
+                      </Text>
+                    </View>
+                  );
+                })
               ) : (
                 <Text style={[styles.emptyTimelineText, { color: theme.textMuted }]}>
                   No events recorded yet
@@ -325,47 +329,37 @@ export default function EntityDetailsModal({
           </ScrollView>
         </KeyboardAvoidingView>
 
-        {/* Three Dotted Options Drawer / Action Sheet Menu */}
+        {/* Minimal Three-Dots Floating Menu */}
         <Modal
           visible={showMenu}
           transparent
           animationType="fade"
           onRequestClose={() => setShowMenu(false)}
         >
-          <TouchableOpacity
-            style={styles.menuBackdrop}
-            activeOpacity={1}
-            onPress={() => setShowMenu(false)}
-          >
+          <Pressable style={styles.menuBackdrop} onPress={() => setShowMenu(false)}>
             <View style={[styles.menuContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
               <TouchableOpacity
-                style={[styles.menuItem, { borderBottomColor: theme.border }]}
+                style={styles.menuItem}
                 onPress={() => {
                   setShowMenu(false);
                   setIsEditing(true);
                 }}
               >
-                <Ionicons name="create-outline" size={18} color={theme.text} />
-                <Text style={[styles.menuItemText, { color: theme.text }]}>Edit Entity Details</Text>
+                <Ionicons name="create-outline" size={16} color={theme.text} />
+                <Text style={[styles.menuItemText, { color: theme.text }]}>Edit Details</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.menuItem, { borderBottomColor: theme.border }]}
-                onPress={handleViewMetadata}
-              >
-                <Ionicons name="card-outline" size={18} color={theme.text} />
-                <Text style={[styles.menuItemText, { color: theme.text }]}>View Metadata Card</Text>
-              </TouchableOpacity>
+              <View style={[styles.menuDivider, { backgroundColor: theme.border }]} />
 
               <TouchableOpacity
                 style={styles.menuItem}
                 onPress={handleDeleteEntity}
               >
-                <Ionicons name="trash-outline" size={18} color="#dc2626" />
-                <Text style={[styles.menuItemText, { color: '#dc2626' }]}>Delete Entity</Text>
+                <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                <Text style={[styles.menuItemText, { color: '#ef4444' }]}>Delete</Text>
               </TouchableOpacity>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         </Modal>
       </View>
     </Modal>
@@ -418,7 +412,6 @@ const styles = StyleSheet.create({
     minHeight: 50,
     flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 16,
   },
   fieldLabel: {
@@ -462,7 +455,6 @@ const styles = StyleSheet.create({
   },
   motionRow: {
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   motionTitle: {
     fontSize: 14,
@@ -479,33 +471,36 @@ const styles = StyleSheet.create({
   },
   menuBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
     justifyContent: 'flex-start',
-    paddingTop: 60,
+    paddingTop: 54,
     paddingRight: 16,
     alignItems: 'flex-end',
   },
   menuContainer: {
-    width: 200,
-    borderRadius: 12,
+    width: 150,
+    borderRadius: 10,
     borderWidth: 1,
     paddingVertical: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.12,
     shadowRadius: 8,
-    elevation: 6,
+    elevation: 5,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
   },
   menuItemText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '500',
+  },
+  menuDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 2,
   },
 });

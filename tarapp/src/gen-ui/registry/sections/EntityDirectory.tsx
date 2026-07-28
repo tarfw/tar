@@ -148,18 +148,29 @@ export default function EntityDirectory({ props, designTokens, data, onExecuteAc
         </Pressable>
       </View>
 
-      {/* Search Input */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={18} color="#94a3b8" style={styles.searchIcon} />
+      {/* Full-width Search Bar matching Workspace Input Bar UI */}
+      <View style={{
+        minHeight: 48,
+        backgroundColor: '#ffffff',
+        borderColor: '#e2e8f0',
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
+        paddingHorizontal: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: -12,
+        marginBottom: 8,
+      }}>
+        <Ionicons name="search-outline" size={17} color="#94a3b8" style={{ marginRight: 10 }} />
         <TextInput
-          style={styles.searchInput}
+          style={{ flex: 1, fontSize: 14, color: '#0f172a', paddingVertical: 12 }}
           placeholder="Search people, companies, items..."
           placeholderTextColor="#94a3b8"
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
-          <Pressable onPress={() => setSearchQuery('')}>
+          <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
             <Ionicons name="close-circle" size={16} color="#94a3b8" />
           </Pressable>
         )}

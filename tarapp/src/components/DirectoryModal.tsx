@@ -55,7 +55,20 @@ export default function DirectoryModal({
     setLoading(true);
     try {
       const res = await tar.tool('read', { table: 'matter', scope });
-      setEntities(res?.rows || []);
+      const activeRows = (res?.rows || []).filter((r: any) => {
+        if (!r) return false;
+        const statusStr = String(r.status || '').toLowerCase();
+        const typeStr = String(r.type || '').toLowerCase();
+        return (
+          statusStr !== 'deleted' &&
+          statusStr !== 'archived' &&
+          typeStr !== 'deleted' &&
+          !r.deleted &&
+          r.deleted !== 'true' &&
+          r.is_deleted !== 1
+        );
+      });
+      setEntities(activeRows);
     } catch (e) {
       console.warn('[DirectoryModal] Failed to read matter entities:', e);
       setEntities([]);
@@ -167,23 +180,31 @@ export default function DirectoryModal({
           </TouchableOpacity>
         </View>
 
-        {/* Search Input Bar */}
-        <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
-          <View style={[styles.searchContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-            <Ionicons name="search-outline" size={18} color={theme.textMuted} style={{ marginRight: 8 }} />
-            <TextInput
-              style={[styles.searchInput, { color: theme.text }]}
-              placeholder={`Search ${activeTab}...`}
-              placeholderTextColor={theme.textMuted + '80'}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Ionicons name="close-circle" size={16} color={theme.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
+        {/* Full-width Search Bar matching Workspace Input Bar UI */}
+        <View style={{
+          minHeight: 48,
+          backgroundColor: theme.background,
+          borderColor: theme.border,
+          borderTopWidth: 1,
+          borderBottomWidth: 1,
+          paddingHorizontal: 16,
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: 8,
+        }}>
+          <Ionicons name="search-outline" size={17} color={theme.textMuted} style={{ marginRight: 10 }} />
+          <TextInput
+            style={{ flex: 1, fontSize: 14, color: theme.text, paddingVertical: 12 }}
+            placeholder={`Search ${activeTab}...`}
+            placeholderTextColor={theme.textMuted + '80'}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Tabs Bar */}

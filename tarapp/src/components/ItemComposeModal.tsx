@@ -114,7 +114,6 @@ export default function ItemComposeModal({
               <Text style={[styles.headerPillText, { color: theme.primary }]}>
                 {subType}
               </Text>
-              <Ionicons name="chevron-down" size={14} color={theme.primary} />
             </Pressable>
 
             {/* Right Save Action */}

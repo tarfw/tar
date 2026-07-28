@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, Linking, Alert, Image } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useTheme } from '@/hooks/use-theme';
 
 const ADS = [
   {
@@ -48,6 +49,7 @@ function AdFallback({ accentColor, fallbackLetter }: { accentColor: string; fall
 }
 
 export default function AdBanner() {
+  const theme = useTheme();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [imageError, setImageError] = useState(false);
 
@@ -76,7 +78,13 @@ export default function AdBanner() {
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.bannerContainer, pressed && { opacity: 0.95 }]}
+      style={({ pressed }) => [
+        styles.bannerContainer,
+        {
+          borderColor: theme.border,
+        },
+        pressed && { opacity: 0.8 },
+      ]}
       onPress={handleOpen}
     >
       {/* Official Logo */}
@@ -95,14 +103,14 @@ export default function AdBanner() {
 
       {/* Middle Headline Title */}
       <View style={styles.textContent}>
-        <Text style={styles.headlineText} numberOfLines={1}>
+        <Text style={[styles.headlineText, { color: theme.text }]} numberOfLines={1}>
           {ad.title}
         </Text>
       </View>
 
       {/* External Link Arrow Icon */}
       <View style={styles.actionsRow}>
-        <Ionicons name="open-outline" size={15} color="#64748b" />
+        <Ionicons name="open-outline" size={14} color={theme.textMuted} />
       </View>
     </Pressable>
   );
@@ -110,20 +118,21 @@ export default function AdBanner() {
 
 const styles = StyleSheet.create({
   bannerContainer: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    marginTop: 6,
+    marginBottom: 4,
+    marginHorizontal: -12,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    elevation: 0,
+    shadowOpacity: 0,
   },
   logoWrapper: {
     width: 34,

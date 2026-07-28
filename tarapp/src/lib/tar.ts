@@ -98,7 +98,7 @@ export const tar = {
    * Create a new workspace.
    * POST /workspaces/create
    */
-  createWorkspace: (data: { name: string; subdomain: string; description?: string; message?: string; modules?: string[] }) =>
+  createWorkspace: (data: { name: string; subdomain: string; description?: string; message?: string; modules?: string[]; type?: string }) =>
     post('/workspaces/create', data),
 
   // ── Tools Execute ────────────────────────────────────────────

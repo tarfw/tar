@@ -111,7 +111,6 @@ export default function ContactComposeModal({
               <Text style={[styles.headerPillText, { color: theme.primary }]}>
                 {role}
               </Text>
-              <Ionicons name="chevron-down" size={14} color={theme.primary} />
             </Pressable>
 
             {/* Right Save Action */}

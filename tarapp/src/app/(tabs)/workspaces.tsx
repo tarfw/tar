@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Modal, Platform, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Modal, Platform, TouchableOpacity, Keyboard } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as SecureStore from 'expo-secure-store';
+import { BlurView } from 'expo-blur';
 
 import { useTheme } from '@/hooks/use-theme';
 import { tar } from '@/lib/tar';
@@ -31,6 +32,7 @@ import AdBanner from '@/components/AdBanner';
 import EventComposeModal from '@/components/EventComposeModal';
 import EntityDetailsModal from '@/components/EntityDetailsModal';
 import DirectoryModal from '@/components/DirectoryModal';
+import ExploreModal from '@/components/ExploreModal';
 import ItemComposeModal from '@/components/ItemComposeModal';
 import ContactComposeModal from '@/components/ContactComposeModal';
 
@@ -160,11 +162,26 @@ export default function WorkspacesScreen() {
   const [selectedVertical, setSelectedVertical] = useState<string>('business');
   const [selectedEntityDetails, setSelectedEntityDetails] = useState<any | null>(null);
   const [showDirectoryModal, setShowDirectoryModal] = useState(false);
+  const [showExploreModal, setShowExploreModal] = useState(false);
   const [showCanvasModal, setShowCanvasModal] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [inboxTasks, setInboxTasks] = useState<LinearInboxItem[]>([]);
   const [loadingInbox, setLoadingInbox] = useState(false);
   const [allEntities, setAllEntities] = useState<any[]>([]);
-
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setIsKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setIsKeyboardVisible(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const [selectedAction, setSelectedAction] = useState<any | null>(null);
   const [formParams, setFormParams] = useState<Record<string, string>>({});
@@ -182,6 +199,9 @@ export default function WorkspacesScreen() {
   const [initialContactType, setInitialContactType] = useState('Customer');
   const [submittingContact, setSubmittingContact] = useState(false);
   const [contactResultMessage, setContactResultMessage] = useState<string | null>(null);
+
+  // Inbox Task Resolution State
+  const [resolvingTaskId, setResolvingTaskId] = useState<string | null>(null);
 
   const hasAnyValue = selectedAction?.params?.some((p: any) => {
     const paramName = typeof p === 'string' ? p : p.name;
@@ -435,6 +455,22 @@ ${membersYaml}
     }
   }, [currentWorkspace]);
 
+  const filterActiveRows = (rows: any[]) => {
+    return (rows || []).filter((r: any) => {
+      if (!r) return false;
+      const statusStr = String(r.status || '').toLowerCase();
+      const typeStr = String(r.type || '').toLowerCase();
+      return (
+        statusStr !== 'deleted' &&
+        statusStr !== 'archived' &&
+        typeStr !== 'deleted' &&
+        !r.deleted &&
+        r.deleted !== 'true' &&
+        r.is_deleted !== 1
+      );
+    });
+  };
+
   const refreshProducts = async (scope: string) => {
     try {
       const result = await tar.tool('read', {
@@ -442,7 +478,7 @@ ${membersYaml}
         type: 'product',
         scope
       });
-      setProducts(result?.rows || []);
+      setProducts(filterActiveRows(result?.rows || []));
     } catch (e) {
       console.warn('[Workspace] Failed to fetch products:', e);
     }
@@ -452,10 +488,10 @@ ${membersYaml}
     try {
       const result = await tar.tool('read', { table: 'matter', type: 'order', scope });
       if (result?.rows && result.rows.length > 0) {
-        setOrders(result.rows);
+        setOrders(filterActiveRows(result.rows));
       } else {
         const motionRes = await tar.tool('read', { table: 'motion', scope });
-        setOrders(motionRes?.rows || []);
+        setOrders(filterActiveRows(motionRes?.rows || []));
       }
     } catch (e) {
       console.warn('[Workspace] Failed to fetch orders:', e);
@@ -465,7 +501,7 @@ ${membersYaml}
   const refreshEntities = async (scope: string) => {
     try {
       const result = await tar.tool('read', { table: 'matter', scope });
-      setAllEntities(result?.rows || []);
+      setAllEntities(filterActiveRows(result?.rows || []));
     } catch (e) {
       console.warn('[Workspace] Failed to fetch directory entities:', e);
     }
@@ -934,7 +970,16 @@ ${membersYaml}
       }
 
       const res = await tar.executeAITask(selectedAction.name, cleanParams, currentWorkspace.scope);
-      setActionResultMessage(res?.message || `Successfully recorded event: ${selectedAction.name.replace(/_/g, ' ')}`);
+      
+      // Auto-complete resolved Inbox Task if triggered from Inbox row
+      if (resolvingTaskId) {
+        setInboxTasks((prev) => prev.filter((t) => t.id !== resolvingTaskId));
+        await markTaskDone(currentWorkspace.scope, resolvingTaskId).catch(() => null);
+        setResolvingTaskId(null);
+        setActionResultMessage(`Task completed & Event recorded: ${selectedAction.name.replace(/_/g, ' ')}`);
+      } else {
+        setActionResultMessage(res?.message || `Successfully recorded event: ${selectedAction.name.replace(/_/g, ' ')}`);
+      }
       
       // Refresh records after action is performed
       await refreshProducts(currentWorkspace.scope);
@@ -955,7 +1000,7 @@ ${membersYaml}
   };
 
   const getFilteredActions = () => {
-    const resultList = PLAN5_EVENT_MOTIONS.map((item) => ({
+    const resultList: Array<{ label: string; subtitle?: string; action?: any; text?: string }> = PLAN5_EVENT_MOTIONS.map((item) => ({
       label: item.event,
       subtitle: `${item.whatHappened} • ${item.linksTo}`,
       action: {
@@ -971,8 +1016,8 @@ ${membersYaml}
     return resultList.filter(
       (h) =>
         h.label.toLowerCase().includes(query) ||
-        h.subtitle.toLowerCase().includes(query) ||
-        h.action.name.toLowerCase().includes(query)
+        (h.subtitle && h.subtitle.toLowerCase().includes(query)) ||
+        (h.action?.name && h.action.name.toLowerCase().includes(query))
     );
   };
 
@@ -1015,17 +1060,18 @@ ${membersYaml}
           />
         )}
 
-        <View style={{ height: 12 }} />
+        <View style={{ height: 4 }} />
 
-        {loadingCanvas ? (
-          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-            <ActivityIndicator size="small" color={theme.primary} />
-            <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>
-              Generating custom branded canvas...
-            </Text>
-          </View>
-        ) : activeWidget ? (
-          (() => {
+        {activeWidget ? (
+          loadingCanvas ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={theme.primary} />
+              <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>
+                Loading...
+              </Text>
+            </View>
+          ) : (
+            (() => {
             const effectiveTokens = designTokens || {
               colors: { primary: theme.primary || '#0f172a', secondary: '#3b82f6', background: '#ffffff' },
               rounded: { sm: 8, md: 12, lg: 16 },
@@ -1102,11 +1148,33 @@ ${membersYaml}
                 }}
               />
             );
-          })()
+          })())
         ) : (
           <LinearInboxList
             tasks={inboxTasks}
             loading={loadingInbox}
+            headerRight={(
+              <Pressable
+                onPress={() => setShowDropdown(true)}
+                style={({ pressed }) => [{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 8,
+                  backgroundColor: '#ffffff',
+                  borderColor: theme.border,
+                  borderWidth: 1,
+                  opacity: pressed ? 0.7 : 1,
+                }]}
+              >
+                <WorkspaceThumbnail name={workspaceName || currentWorkspace?.subdomain || ''} size={20} theme={theme} />
+                <Text style={{ color: theme.text, fontSize: 13, fontWeight: '700' }} numberOfLines={1}>
+                  {workspaceName || (currentWorkspace?.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : 'Workspace')}
+                </Text>
+              </Pressable>
+            )}
             onToggleDone={async (taskId) => {
               setInboxTasks(prev => prev.filter(t => t.id !== taskId));
               if (currentWorkspace?.scope) {
@@ -1117,101 +1185,86 @@ ${membersYaml}
             onSelectTask={(item) => {
               if (item.data?.entity) {
                 setSelectedEntityDetails(item.data.entity);
+                return;
+              }
+
+              // Open EventComposeModal pre-filled to resolve the inbox task
+              setResolvingTaskId(item.id);
+              const titleLower = (item.title || '').toLowerCase();
+              const typeLower = (item.type || '').toLowerCase();
+
+              let actionObj = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_update_status');
+              let initialParams: Record<string, string> = {};
+
+              if (typeLower.includes('stock') || titleLower.includes('stock') || titleLower.includes('inventory')) {
+                actionObj = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_adjust_stock');
+                initialParams = {
+                  product_id: item.data?.product_id || item.ref || '',
+                  qty: String(item.data?.qty || '10'),
+                  reason: `Resolving ${item.title}`,
+                };
+              } else if (typeLower.includes('booking') || titleLower.includes('appointment') || titleLower.includes('booking')) {
+                actionObj = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_book_slot');
+                initialParams = {
+                  service: item.data?.service || item.title,
+                  customer_id: item.data?.customer_id || item.data?.customer || '',
+                  date: item.data?.date || new Date().toISOString().slice(0, 10),
+                  slot: item.data?.slot || '9:00 AM',
+                };
+              } else if (typeLower.includes('order') || titleLower.includes('order') || titleLower.includes('sale')) {
+                actionObj = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');
+                initialParams = {
+                  customer_id: item.data?.customer_id || '',
+                  payment_method: item.data?.payment_method || 'Cash',
+                  total: String(item.data?.total || item.data?.value || ''),
+                };
+              } else if (typeLower.includes('shipment') || titleLower.includes('delivery')) {
+                actionObj = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_complete_delivery');
+                initialParams = {
+                  shipment_id: item.data?.shipment_id || item.ref || '',
+                };
+              } else {
+                actionObj = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_update_status');
+                initialParams = {
+                  entity_id: item.ref || item.id,
+                  status: 'Confirmed',
+                };
+              }
+
+              if (actionObj) {
+                handleTriggerAction({
+                  name: actionObj.actionName,
+                  purpose: actionObj.whatHappened,
+                  params: actionObj.params,
+                });
+                setFormParams(initialParams);
               }
             }}
           />
         )}
       </KeyboardAwareScrollView>
 
-      {/* Input Section — confined to bottom right */}
-      <View style={[styles.inputContainer, { borderTopColor: 'transparent', paddingBottom: Math.max(insets.bottom + 4, 16) }]}>
+      {/* Blur Overlay over background content when typing/inputting */}
+      {input.trim().length > 0 && (
+        <Pressable
+          style={[StyleSheet.absoluteFill, { zIndex: 1 }]}
+          onPress={() => Keyboard.dismiss()}
+        >
+          <BlurView
+            intensity={90}
+            tint="light"
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: theme.background + 'D8' }
+            ]}
+          />
+        </Pressable>
+      )}
 
-
-
-
-        {/* Autocomplete chips when input is empty with quick action icons at start */}
-        {!input.trim() ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hintsContainer} contentContainerStyle={{ alignItems: 'center' }}>
-            {/* Directory Quick Action Icon */}
-            <Pressable
-              onPress={() => setShowDirectoryModal(true)}
-              style={({ pressed }) => [{
-                paddingHorizontal: 8,
-                paddingVertical: 6,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: showDirectoryModal ? theme.primary : theme.border,
-                backgroundColor: showDirectoryModal ? theme.primary + '20' : theme.backgroundElement,
-                marginRight: 6,
-                opacity: pressed ? 0.7 : 1,
-              }]}
-            >
-              <Ionicons
-                name={activeWidget?.moduleName === 'directory' ? 'folder' : 'folder-outline'}
-                size={16}
-                color={activeWidget?.moduleName === 'directory' ? theme.primary : theme.textSecondary}
-              />
-            </Pressable>
-
-            {/* Explore Quick Action Icon */}
-            <Pressable
-              onPress={() => setActiveWidget({ moduleName: 'explore' })}
-              style={({ pressed }) => [{
-                paddingHorizontal: 8,
-                paddingVertical: 6,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: activeWidget?.moduleName === 'explore' ? theme.primary : theme.border,
-                backgroundColor: activeWidget?.moduleName === 'explore' ? theme.primary + '20' : theme.backgroundElement,
-                marginRight: 6,
-                opacity: pressed ? 0.7 : 1,
-              }]}
-            >
-              <Ionicons
-                name={activeWidget?.moduleName === 'explore' ? 'compass' : 'compass-outline'}
-                size={16}
-                color={activeWidget?.moduleName === 'explore' ? theme.primary : theme.textSecondary}
-              />
-            </Pressable>
-
-            {/* Canvas Quick Action Icon */}
-            <Pressable
-              onPress={() => setShowCanvasModal(true)}
-              style={({ pressed }) => [{
-                paddingHorizontal: 8,
-                paddingVertical: 6,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: showCanvasModal ? theme.primary : theme.border,
-                backgroundColor: showCanvasModal ? theme.primary + '20' : theme.backgroundElement,
-                marginRight: 10,
-                opacity: pressed ? 0.7 : 1,
-              }]}
-            >
-              <Ionicons
-                name={showCanvasModal ? 'easel' : 'easel-outline'}
-                size={16}
-                color={showCanvasModal ? theme.primary : theme.textSecondary}
-              />
-            </Pressable>
-
-            {getFilteredActions().map((hint, idx) => (
-              <Pressable
-                key={idx}
-                onPress={() => {
-                  if (hint.action) {
-                    handleTriggerAction(hint.action);
-                  } else if (hint.text) {
-                    handleSend(hint.text);
-                  }
-                }}
-                style={[styles.hintChip, { borderColor: theme.border, backgroundColor: theme.backgroundElement, borderWidth: 1 }]}
-              >
-                <Text style={[styles.hintText, { color: theme.textSecondary }]}>{hint.label}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        ) : getFilteredActions().length > 0 ? (
+      {/* Input Section — confined to bottom (z-index above blur) */}
+      <View style={[styles.inputContainer, { borderTopColor: 'transparent', paddingBottom: 0, paddingTop: 0, zIndex: 2 }]}>
+        {/* Suggested Actions popup list when typing */}
+        {input.trim().length > 0 && getFilteredActions().length > 0 ? (
           <View style={{
             backgroundColor: theme.backgroundElement,
             borderColor: theme.border,
@@ -1260,13 +1313,26 @@ ${membersYaml}
             ))}
           </View>
         ) : null}
-
-        {/* Text Input Bar */}
-        <View style={[styles.textInputWrapper, { borderColor: theme.border, backgroundColor: theme.background, borderWidth: 1, alignItems: 'center', flexDirection: 'row' }]}>
+        {/* Text Input Bar — Full Width, Square Corners */}
+        <View style={[
+          styles.textInputWrapper,
+          {
+            borderColor: theme.border,
+            backgroundColor: theme.background,
+            borderTopWidth: 1,
+            borderBottomWidth: 0,
+            borderLeftWidth: 0,
+            borderRightWidth: 0,
+            borderRadius: 0,
+            marginHorizontal: 0,
+            paddingHorizontal: 16,
+            alignItems: 'center',
+            flexDirection: 'row',
+          }
+        ]}>
           <TextInput
             value={input}
             onChangeText={setInput}
-            placeholder="Ask anything..."
             placeholderTextColor={theme.textMuted}
             style={[styles.textInput, { color: theme.text, flex: 1 }]}
             multiline={true}
@@ -1283,53 +1349,135 @@ ${membersYaml}
             </Pressable>
           </View>
         </View>
+      </View>
 
-        {/* Bottom Bar Controls: Workspace Selector */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', marginTop: 8 }}>
-          <Pressable
-            onPress={() => setShowDropdown(true)}
-            style={[
-              styles.switcherChip,
-              { backgroundColor: theme.background, borderColor: theme.border, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginLeft: 12 }
-            ]}
-          >
-            <WorkspaceThumbnail name={workspaceName || currentWorkspace?.subdomain || ''} size={20} theme={theme} />
-            <Text style={[styles.switcherText, { color: theme.text, fontSize: 12, marginLeft: 6 }]} numberOfLines={1}>
-              {workspaceName || (currentWorkspace?.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : '')}
-            </Text>
-          </Pressable>
-        </View>
+      {/* Persistent Material 3 Icon-Only Bottom Navigation Bar */}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-around',
+          backgroundColor: theme.background,
+          borderTopWidth: 1,
+          borderTopColor: theme.border,
+          height: 48 + (isKeyboardVisible ? 0 : Math.max(insets.bottom, 4)),
+          paddingBottom: isKeyboardVisible ? 0 : Math.max(insets.bottom, 4),
+          paddingTop: 0,
+          marginTop: 0,
+        }}
+      >
+        {/* Directory Tab */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setShowDirectoryModal(prev => !prev)}
+          style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
+        >
+          <View style={{
+            width: 60,
+            height: 32,
+            borderRadius: 16,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: showDirectoryModal ? theme.primary + '25' : 'transparent',
+          }}>
+            <Ionicons
+              name={showDirectoryModal ? 'folder' : 'folder-outline'}
+              size={22}
+              color={showDirectoryModal ? theme.primary : theme.textSecondary}
+            />
+          </View>
+        </TouchableOpacity>
+
+        {/* Explore Tab */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setShowExploreModal(prev => !prev)}
+          style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
+        >
+          <View style={{
+            width: 60,
+            height: 32,
+            borderRadius: 16,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: showExploreModal ? theme.primary + '25' : 'transparent',
+          }}>
+            <Ionicons
+              name={showExploreModal ? 'globe' : 'globe-outline'}
+              size={22}
+              color={showExploreModal ? theme.primary : theme.textSecondary}
+            />
+          </View>
+        </TouchableOpacity>
+
+        {/* Canvas Tab */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setShowCanvasModal(prev => !prev)}
+          style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
+        >
+          <View style={{
+            width: 60,
+            height: 32,
+            borderRadius: 16,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: showCanvasModal ? theme.primary + '25' : 'transparent',
+          }}>
+            <Ionicons
+              name={showCanvasModal ? 'easel' : 'easel-outline'}
+              size={22}
+              color={showCanvasModal ? theme.primary : theme.textSecondary}
+            />
+          </View>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
 
-      {/* Workspace Switcher Dropdown Modal */}
+      {/* Workspace Switcher Selector Modal (Ultra-Minimalist) */}
       <Modal
         visible={showDropdown}
         transparent={true}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowDropdown(false)}
       >
         <Pressable style={styles.modalBackdrop} onPress={() => setShowDropdown(false)}>
+          <BlurView
+            intensity={100}
+            tint="default"
+            style={[StyleSheet.absoluteFill, { backgroundColor: theme.background + 'E6' }]}
+          />
           <Pressable
             style={[
               styles.dropdownContent,
               {
                 backgroundColor: theme.background,
-                borderColor: theme.border,
-                paddingBottom: Math.max(insets.bottom, 24)
+                borderColor: theme.border + '80',
+                borderRadius: 16,
+                padding: 16,
+                width: '88%',
+                maxWidth: 380,
+                elevation: 0,
+                shadowOpacity: 0,
               }
             ]}
             onPress={() => {}}
           >
-            <View style={[styles.drawerHandle, { backgroundColor: theme.textMuted + '40' }]} />
-            <View style={styles.dropdownHeader}>
-              <Text style={[styles.dropdownTitle, { color: theme.text }]}>Switch Workspace</Text>
-              <Pressable onPress={() => { setShowDropdown(false); setIsCreatingWorkspace(true); }} style={styles.dropdownAddBtn}>
-                <Ionicons name="add" size={20} color={theme.primary} />
+            {/* Minimal Header with + Icon Button on Right End */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, paddingHorizontal: 2 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textMuted, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                Workspaces
+              </Text>
+              <Pressable
+                onPress={() => { setShowDropdown(false); setIsCreatingWorkspace(true); }}
+                hitSlop={12}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, padding: 2 }]}
+              >
+                <Ionicons name="add" size={22} color={theme.primary} />
               </Pressable>
             </View>
 
-            <ScrollView style={{ maxHeight: 300 }}>
+            <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
               {workspaces.map((w) => {
                 const isActive = w.subdomain === currentWorkspace?.subdomain;
                 const name = w.name || w.subdomain;
@@ -1338,25 +1486,27 @@ ${membersYaml}
                     key={w.scope}
                     onPress={() => handleSelectWorkspace(w)}
                     style={({ pressed }) => [
-                      styles.workspaceOption,
                       {
-                        backgroundColor: isActive ? theme.border + '20' : 'transparent',
-                        opacity: pressed ? 0.8 : 1
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: isActive ? theme.primary + '15' : 'transparent',
+                        borderRadius: 10,
+                        paddingVertical: 10,
+                        paddingHorizontal: 10,
+                        marginBottom: 4,
+                        opacity: pressed ? 0.7 : 1,
                       }
                     ]}
                   >
-                    <WorkspaceThumbnail name={name} size={36} theme={theme} />
+                    <WorkspaceThumbnail name={name} size={34} theme={theme} />
                     <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={[styles.workspaceOptionName, { color: theme.text, fontWeight: isActive ? '700' : '500' }]}>
+                      <Text style={{ color: theme.text, fontWeight: isActive ? '700' : '600', fontSize: 14 }} numberOfLines={1}>
                         {name}
                       </Text>
-                      <Text style={[styles.workspaceOptionSubdomain, { color: theme.textMuted }]}>
+                      <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: 1 }} numberOfLines={1}>
                         {w.subdomain}.tarai.space
                       </Text>
                     </View>
-                    {isActive && (
-                      <Ionicons name="checkmark" size={18} color={theme.primary} />
-                    )}
                   </Pressable>
                 );
               })}
@@ -1630,19 +1780,32 @@ ${membersYaml}
         }}
         onLogEventForEntity={(ent) => {
           setSelectedEntityDetails(null);
-          handleTriggerAction({
-            name: 'action_record_sale',
-            params: [
-              { name: 'customer_id', type: 'text', required: true },
-              { name: 'total', type: 'number', required: true },
-              { name: 'items', type: 'text', required: true },
-              { name: 'payment_method', type: 'text', required: true },
-            ],
-          });
-          setFormParams({
-            customer_id: ent.name || ent.id || '',
-            items: ent.name || ent.id || '',
-          });
+          const entityName = ent.title || ent.name || ent.id || '';
+          const entityCategory = (ent.category || ent.type || '').toLowerCase();
+
+          let targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');
+          let initialParams: Record<string, string> = { customer_id: entityName };
+
+          if (entityCategory.includes('item') || entityCategory.includes('product')) {
+            targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_adjust_stock');
+            initialParams = { product_id: entityName, qty: '1', reason: 'Manual Adjustment' };
+          } else if (entityCategory.includes('order') || entityCategory.includes('booking')) {
+            targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_update_status');
+            initialParams = { entity_id: entityName, status: 'Confirmed' };
+          } else {
+            // Customer / Person / Contact / Company
+            targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');
+            initialParams = { customer_id: entityName };
+          }
+
+          if (targetAction) {
+            handleTriggerAction({
+              name: targetAction.actionName,
+              purpose: targetAction.whatHappened,
+              params: targetAction.params,
+            });
+            setFormParams(initialParams);
+          }
         }}
       />
 
@@ -1656,7 +1819,7 @@ ${membersYaml}
           setSelectedEntityDetails(entity);
         }}
         onAddNewEntity={(category) => {
-          if (category === 'products' || category === 'items') {
+          if (category === 'items') {
             setShowItemModal(true);
             return;
           }
@@ -1670,6 +1833,16 @@ ${membersYaml}
             setShowContactModal(true);
             return;
           }
+        }}
+      />
+
+      {/* Standalone Dedicated Explore Marketplace Modal */}
+      <ExploreModal
+        visible={showExploreModal}
+        theme={theme}
+        onClose={() => setShowExploreModal(false)}
+        onSelectWorkspace={(ws) => {
+          console.log('[Workspace] Selected public workspace from explore:', ws.subdomain);
         }}
       />
 
@@ -2107,12 +2280,15 @@ const styles = StyleSheet.create({
   textInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 24,
+    borderTopWidth: 1,
+    borderBottomWidth: 0,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderRadius: 0,
     paddingLeft: 16,
     paddingRight: 8,
-    paddingVertical: 12,
-    marginHorizontal: 12,
+    paddingVertical: 10,
+    marginHorizontal: 0,
   },
   textInput: {
     flex: 1,
@@ -2130,23 +2306,18 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
   },
   dropdownContent: {
-    width: '100%',
-    maxWidth: Platform.OS === 'web' ? 500 : '100%',
-    alignSelf: 'center',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    width: '88%',
+    maxWidth: 360,
+    borderRadius: 14,
     borderWidth: 1,
-    borderBottomWidth: 0,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 20,
+    padding: 14,
+    elevation: 0,
+    shadowOpacity: 0,
   },
   drawerHandle: {
     width: 38,

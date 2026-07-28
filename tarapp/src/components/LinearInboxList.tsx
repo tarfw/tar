@@ -19,6 +19,7 @@ interface LinearInboxListProps {
   loading?: boolean;
   onToggleDone?: (id: string) => void;
   onSelectTask?: (task: LinearInboxItem) => void;
+  headerRight?: React.ReactNode;
 }
 
 export default function LinearInboxList({
@@ -26,6 +27,7 @@ export default function LinearInboxList({
   loading = false,
   onToggleDone,
   onSelectTask,
+  headerRight,
 }: LinearInboxListProps) {
   const theme = useTheme();
 
@@ -162,10 +164,11 @@ export default function LinearInboxList({
 
   return (
     <View style={styles.container}>
-      <View style={[styles.headerRow, { borderBottomColor: theme.border + '40' }]}>
+      <View style={[styles.headerRow, { borderBottomColor: theme.border + '40', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
         <Text style={[styles.sectionHeader, { color: theme.textMuted }]}>
           INBOX ({tasks.length})
         </Text>
+        {headerRight}
       </View>
       <FlatList
         data={tasks}

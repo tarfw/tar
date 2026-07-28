@@ -31,6 +31,8 @@ import AdBanner from '@/components/AdBanner';
 import EventComposeModal from '@/components/EventComposeModal';
 import EntityDetailsModal from '@/components/EntityDetailsModal';
 import DirectoryModal from '@/components/DirectoryModal';
+import ItemComposeModal from '@/components/ItemComposeModal';
+import ContactComposeModal from '@/components/ContactComposeModal';
 
 interface Workspace {
   scope: string;
@@ -170,6 +172,16 @@ export default function WorkspacesScreen() {
   const [actionResultMessage, setActionResultMessage] = useState<string | null>(null);
   const [activeChipField, setActiveChipField] = useState<string | null>(null);
   const chipInputRef = useRef<TextInput>(null);
+
+  // Dedicated Item & Contact Modal state
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [submittingItem, setSubmittingItem] = useState(false);
+  const [itemResultMessage, setItemResultMessage] = useState<string | null>(null);
+
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [initialContactType, setInitialContactType] = useState('Customer');
+  const [submittingContact, setSubmittingContact] = useState(false);
+  const [contactResultMessage, setContactResultMessage] = useState<string | null>(null);
 
   const hasAnyValue = selectedAction?.params?.some((p: any) => {
     const paramName = typeof p === 'string' ? p : p.name;
@@ -829,17 +841,22 @@ ${membersYaml}
         selectedAction.name === 'action_add_product' ||
         selectedAction.name === 'create_entity'
       ) {
-        const titleVal = cleanParams.name || cleanParams.title || cleanParams.to || 'New Entity';
+        const titleVal = cleanParams.title || cleanParams.name || cleanParams.to || 'New Entity';
         const typeVal = cleanParams.role || cleanParams.type || (selectedAction.name === 'action_add_company' ? 'company' : selectedAction.name === 'action_add_product' ? 'product' : 'customer');
+        const payloadData = {
+          ...cleanParams,
+          item_subtype: cleanParams.item_subtype || (selectedAction.name === 'action_add_product' ? 'product' : undefined),
+        };
         try {
           await tar.tool('create', {
             table: 'matter',
             type: typeVal,
             title: titleVal,
             value: cleanParams.value || cleanParams.price || 0,
-            data: cleanParams,
+            data: payloadData,
             scope: currentWorkspace.scope,
           });
+          await refreshEntities(currentWorkspace.scope);
         } catch (errCreate) {
           console.warn('[Workspace] Fallback matter creation:', errCreate);
         }
@@ -1639,19 +1656,95 @@ ${membersYaml}
           setSelectedEntityDetails(entity);
         }}
         onAddNewEntity={(category) => {
-          const actionName = category === 'people' ? 'action_add_contact' : category === 'companies' ? 'action_add_company' : 'action_add_product';
-          handleTriggerAction({
-            name: actionName,
-            params: [
-              { name: 'name', type: 'text', required: true },
-              { name: 'role', type: 'text', required: true },
-              { name: 'email', type: 'text', required: false },
-              { name: 'phone', type: 'text', required: false },
-            ],
-          });
-          setFormParams({
-            role: category === 'people' ? 'Customer' : category === 'companies' ? 'Company' : 'Product',
-          });
+          if (category === 'products' || category === 'items') {
+            setShowItemModal(true);
+            return;
+          }
+          if (category === 'people') {
+            setInitialContactType('Customer');
+            setShowContactModal(true);
+            return;
+          }
+          if (category === 'companies') {
+            setInitialContactType('Vendor');
+            setShowContactModal(true);
+            return;
+          }
+        }}
+      />
+
+      {/* Standalone Dedicated Item Compose Modal (Product, Listing, Service, Document, Asset) */}
+      <ItemComposeModal
+        visible={showItemModal}
+        theme={theme}
+        submitting={submittingItem}
+        resultMessage={itemResultMessage}
+        onClose={() => {
+          setShowItemModal(false);
+          setItemResultMessage(null);
+        }}
+        onSave={async (itemData) => {
+          if (!currentWorkspace?.scope) return;
+          setSubmittingItem(true);
+          try {
+            await tar.tool('create', {
+              table: 'matter',
+              type: 'product',
+              title: itemData.title,
+              value: itemData.price || 0,
+              data: itemData,
+              scope: currentWorkspace.scope,
+            });
+            await refreshEntities(currentWorkspace.scope);
+            setItemResultMessage('Item saved successfully!');
+            setTimeout(() => {
+              setShowItemModal(false);
+              setSubmittingItem(false);
+              setItemResultMessage(null);
+            }, 1000);
+          } catch (errItem) {
+            console.error('[Workspace] Item creation failed:', errItem);
+            setItemResultMessage('Failed to save item.');
+            setSubmittingItem(false);
+          }
+        }}
+      />
+
+      {/* Standalone Dedicated Contact Compose Modal (People & Companies) */}
+      <ContactComposeModal
+        visible={showContactModal}
+        theme={theme}
+        submitting={submittingContact}
+        resultMessage={contactResultMessage}
+        initialType={initialContactType}
+        onClose={() => {
+          setShowContactModal(false);
+          setContactResultMessage(null);
+        }}
+        onSave={async (contactData) => {
+          if (!currentWorkspace?.scope) return;
+          setSubmittingContact(true);
+          try {
+            const matterType = contactData.role === 'Vendor' || contactData.role === 'Partner' ? 'company' : 'customer';
+            await tar.tool('create', {
+              table: 'matter',
+              type: matterType,
+              title: contactData.name,
+              data: contactData,
+              scope: currentWorkspace.scope,
+            });
+            await refreshEntities(currentWorkspace.scope);
+            setContactResultMessage('Contact saved successfully!');
+            setTimeout(() => {
+              setShowContactModal(false);
+              setSubmittingContact(false);
+              setContactResultMessage(null);
+            }, 1000);
+          } catch (errContact) {
+            console.error('[Workspace] Contact creation failed:', errContact);
+            setContactResultMessage('Failed to save contact.');
+            setSubmittingContact(false);
+          }
         }}
       />
     </View>

@@ -31,6 +31,7 @@ export const PLAN5_EVENT_MOTIONS = [
   { event: 'Write Off', actionName: 'action_write_off', whatHappened: 'Stock removed', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
   { event: 'Expense', actionName: 'action_record_expense', whatHappened: 'Cost recorded', linksTo: 'Expense', params: [{ name: 'category', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'description', type: 'text', required: false }, { name: 'date', type: 'text', required: false }] },
   { event: 'Assignment', actionName: 'action_create_task', whatHappened: 'Task assigned', linksTo: 'Project', params: [{ name: 'title', type: 'text', required: true }, { name: 'description', type: 'text', required: false }, { name: 'assignee_id', type: 'text', required: false }, { name: 'due_date', type: 'text', required: false }] },
+  { event: 'Add Item', actionName: 'action_add_product', whatHappened: 'Item cataloged', linksTo: 'Item', params: [{ name: 'title', type: 'text', required: true }, { name: 'item_subtype', type: 'text', required: true }, { name: 'price', type: 'number', required: false }, { name: 'stock', type: 'number', required: false }, { name: 'category', type: 'text', required: false }] },
 ];
 
 export interface EventComposeModalProps {
@@ -49,7 +50,35 @@ export interface EventComposeModalProps {
 interface OptionPickerConfig {
   title: string;
   paramName: string;
-  options: Array<{ label: string; value: string; subtitle?: string }>;
+  options: Array<{ label: string; value: string; subtitle?: string; email?: string; rawEntity?: any }>;
+  targetLineId?: string;
+}
+
+export interface LineItem {
+  id: string;
+  name: string;
+  qty: number;
+  price: number;
+}
+
+const AVATAR_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#6366f1'];
+
+function getAvatarColor(name: string = '') {
+  let hash = 0;
+  for (let i = 0; i < (name || '').length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[index];
+}
+
+function getInitials(name: string = '') {
+  if (!name) return 'U';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
 }
 
 export default function EventComposeModal({
@@ -68,6 +97,12 @@ export default function EventComposeModal({
   const [params, setParams] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
   const [activePicker, setActivePicker] = useState<OptionPickerConfig | null>(null);
+  const [pickerSearch, setPickerSearch] = useState('');
+
+  // Line items state (starts with 1 empty row, always maintains 1 trailing empty row)
+  const [lineItems, setLineItems] = useState<LineItem[]>([
+    { id: 'item_1', name: '', qty: 1, price: 0 },
+  ]);
 
   useEffect(() => {
     if (formParams) {
@@ -75,12 +110,57 @@ export default function EventComposeModal({
     }
   }, [formParams]);
 
+  // Ensure an extra empty line item always exists at the bottom
+  useEffect(() => {
+    if (action?.name === 'action_record_sale') {
+      const last = lineItems[lineItems.length - 1];
+      if (last && (last.name.trim() !== '' || last.price > 0)) {
+        setLineItems((prev) => [
+          ...prev,
+          { id: `item_${Date.now()}`, name: '', qty: 1, price: 0 },
+        ]);
+      }
+    }
+  }, [lineItems, action?.name]);
+
+  // Recalculate Total & Summary Items when lineItems change
+  useEffect(() => {
+    if (action?.name === 'action_record_sale') {
+      const validItems = lineItems.filter((i) => i.name.trim() !== '');
+      const calculatedTotal = validItems.reduce((sum, item) => sum + (item.qty || 1) * (item.price || 0), 0);
+      const summaryItems = validItems
+        .map((i) => `${i.name.trim()}${i.qty > 1 ? ` x${i.qty}` : ''}`)
+        .join(', ');
+
+      setParams((prev) => ({
+        ...prev,
+        total: calculatedTotal > 0 ? calculatedTotal.toString() : '',
+        items: summaryItems || prev.items || '',
+      }));
+    }
+  }, [lineItems, action?.name]);
+
   if (!visible || !action) return null;
 
   const actionName = action?.name?.replace(/_/g, ' ') || 'Record Event';
   const paramList: any[] = action?.params || [];
 
-  // Helper to identify parameter field types & labels cleanly
+  // Categorize & Order Params: 1. To, 2. Items/Products, 3. Total/Value, 4. Intermediate, 99. Payment Method (last)
+  const getParamRank = (name: string) => {
+    const n = name.toLowerCase();
+    if (n === 'customer_id' || n === 'contact_id' || n === 'staff_id' || n === 'assignee_id' || n === 'person_id' || n === 'to') return 1;
+    if (n === 'items' || n === 'product_id' || n === 'service' || n === 'order_id' || n === 'booking_id') return 2;
+    if (n === 'total' || n === 'amount' || n === 'qty' || n === 'price') return 3;
+    if (n === 'payment_method') return 99; // Payment method always last before notes
+    return 10;
+  };
+
+  const sortedParamList = [...paramList].sort((a, b) => {
+    const nameA = typeof a === 'string' ? a : a.name;
+    const nameB = typeof b === 'string' ? b : b.name;
+    return getParamRank(nameA) - getParamRank(nameB);
+  });
+
   const getFieldInfo = (p: any) => {
     const rawName = typeof p === 'string' ? p : p.name;
     const name = rawName.toLowerCase();
@@ -107,7 +187,7 @@ export default function EventComposeModal({
     return { key: rawName, label: rawName.replace(/_/g, ' '), isTarget: false, isSelectable: false, isRequired };
   };
 
-  const fieldInfos = paramList.map(getFieldInfo);
+  const fieldInfos = sortedParamList.map(getFieldInfo);
 
   // Check required parameters validation
   const missingRequired = fieldInfos.filter((info) => info.isRequired && !params[info.key]?.trim());
@@ -127,172 +207,79 @@ export default function EventComposeModal({
     onSubmit(finalParams);
   };
 
-  const openPickerForField = (info: ReturnType<typeof getFieldInfo>) => {
+  const updateLineItem = (id: string, field: keyof LineItem, value: any) => {
+    setLineItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const removeLineItem = (id: string) => {
+    setLineItems((prev) => (prev.length > 1 ? prev.filter((i) => i.id !== id) : prev));
+  };
+
+  const openPickerForField = (info: ReturnType<typeof getFieldInfo>, targetLineId?: string) => {
     const key = info.key.toLowerCase();
+    setPickerSearch('');
 
     // 1. Target Person / Customer / Contact picker (Person / Company entities only)
     if (info.isTarget || key === 'customer_id' || key === 'contact_id' || key === 'staff_id' || key === 'assignee_id' || key === 'person_id') {
       const personTypes = ['customer', 'person', 'contact', 'staff', 'manager', 'admin', 'company', 'vendor', 'partner'];
-      const filtered = allEntities.filter((e: any) => {
-        const t = (e.type || '').toLowerCase();
-        const r = (e.role || '').toLowerCase();
+      const filtered = (allEntities || []).filter((e: any) => {
+        const t = (e?.type || '').toLowerCase();
+        const r = (e?.role || '').toLowerCase();
         return personTypes.includes(t) || personTypes.includes(r);
       });
 
       const options = filtered.map((e: any) => ({
-        label: e.title || e.name || e.id,
-        value: e.id || e.name || e.title,
+        label: e.title || e.name || 'Contact',
+        value: e.title || e.name || e.id,
         subtitle: `${e.type || 'Person'} • ${e.role || 'Member'}`,
+        email: e.data?.email || e.email || `${(e.title || 'user').toLowerCase().replace(/\s+/g, '')}@workspace.com`,
+        rawEntity: e,
       }));
 
       setActivePicker({
         title: `Select ${info.label}`,
         paramName: info.key,
         options: options.length > 0 ? options : [
-          { label: 'Customer (Guest)', value: 'customer_guest', subtitle: 'Walk-in Buyer' },
-          { label: 'Staff Member', value: 'staff_member', subtitle: 'Internal Team' },
-          { label: 'Vendor Contact', value: 'vendor_contact', subtitle: 'External Partner' },
+          { label: 'Anjali Sharma', value: 'Anjali Sharma', subtitle: 'Customer', email: 'anjali@example.com' },
+          { label: 'Rahul Verma', value: 'Rahul Verma', subtitle: 'Staff Member', email: 'rahul@workspace.com' },
+          { label: 'Acme Traders', value: 'Acme Traders', subtitle: 'Vendor', email: 'orders@acme.com' },
         ],
       });
       return;
     }
 
-    // 2. Product / Item picker (Item / Product entities only)
-    if (key === 'product_id' || key === 'item_id') {
+    // 2. Product / Item picker (Used for single Product fields and multi-line item rows)
+    if (key === 'product_id' || key === 'item_id' || targetLineId) {
       const productTypes = ['product', 'item', 'listing', 'asset', 'inventory'];
-      const filtered = allEntities.filter((e: any) => {
-        const t = (e.type || '').toLowerCase();
-        const r = (e.role || '').toLowerCase();
+      const filtered = (allEntities || []).filter((e: any) => {
+        const t = (e?.type || '').toLowerCase();
+        const r = (e?.role || '').toLowerCase();
         return productTypes.includes(t) || productTypes.includes(r);
       });
 
       const options = filtered.map((e: any) => ({
-        label: e.title || e.name || e.id,
-        value: e.id || e.name || e.title,
-        subtitle: `Product • ${e.stock !== undefined ? 'Stock: ' + e.stock : 'Available'}`,
+        label: e.title || e.name || 'Product',
+        value: e.title || e.name || e.id,
+        subtitle: `Product • Price: $${e.value || e.data?.price || 0}`,
+        rawEntity: e,
       }));
 
       setActivePicker({
         title: 'Select Product',
-        paramName: info.key,
+        paramName: targetLineId ? '__line_product__' : info.key,
+        targetLineId,
         options: options.length > 0 ? options : [
-          { label: 'Standard Product', value: 'product_standard', subtitle: 'Catalog Item' },
+          { label: 'Cappuccino', value: 'Cappuccino', subtitle: 'Price: $5', rawEntity: { value: 5 } },
+          { label: 'Croissant', value: 'Croissant', subtitle: 'Price: $4', rawEntity: { value: 4 } },
+          { label: 'Espresso', value: 'Espresso', subtitle: 'Price: $3', rawEntity: { value: 3 } },
         ],
       });
       return;
     }
 
-    // 3. Order picker (Order / Sale entities only)
-    if (key === 'order_id') {
-      const filtered = allEntities.filter((e: any) => {
-        const t = (e.type || '').toLowerCase();
-        return t === 'order' || t === 'sale';
-      });
-
-      const options = filtered.map((e: any) => ({
-        label: e.title || `Order #${e.id?.slice(-4)}`,
-        value: e.id || e.title,
-        subtitle: `Order • ${e.status || 'Active'}`,
-      }));
-
-      setActivePicker({
-        title: 'Select Order',
-        paramName: info.key,
-        options: options.length > 0 ? options : [
-          { label: 'Order #1042', value: 'ord_1042', subtitle: 'Active Order' },
-        ],
-      });
-      return;
-    }
-
-    // 4. Booking picker (Booking entities only)
-    if (key === 'booking_id') {
-      const filtered = allEntities.filter((e: any) => {
-        const t = (e.type || '').toLowerCase();
-        return t === 'booking';
-      });
-
-      const options = filtered.map((e: any) => ({
-        label: e.title || `Booking #${e.id?.slice(-4)}`,
-        value: e.id || e.title,
-        subtitle: `Booking • ${e.status || 'Confirmed'}`,
-      }));
-
-      setActivePicker({
-        title: 'Select Booking',
-        paramName: info.key,
-        options: options.length > 0 ? options : [
-          { label: 'Booking #201', value: 'book_201', subtitle: 'Active Appointment' },
-        ],
-      });
-      return;
-    }
-
-    // 5. Shipment picker (Shipment / Delivery entities only)
-    if (key === 'shipment_id') {
-      const filtered = allEntities.filter((e: any) => {
-        const t = (e.type || '').toLowerCase();
-        return t === 'shipment' || t === 'delivery';
-      });
-
-      const options = filtered.map((e: any) => ({
-        label: e.title || `Shipment #${e.id?.slice(-4)}`,
-        value: e.id || e.title,
-        subtitle: `Shipment • ${e.status || 'In Transit'}`,
-      }));
-
-      setActivePicker({
-        title: 'Select Shipment',
-        paramName: info.key,
-        options: options.length > 0 ? options : [
-          { label: 'Shipment #401', value: 'ship_401', subtitle: 'In Transit' },
-        ],
-      });
-      return;
-    }
-
-    // 6. Deal picker (Deal / Pipeline entities only)
-    if (key === 'deal_id') {
-      const filtered = allEntities.filter((e: any) => {
-        const t = (e.type || '').toLowerCase();
-        return t === 'deal' || t === 'pipeline';
-      });
-
-      const options = filtered.map((e: any) => ({
-        label: e.title || `Deal #${e.id?.slice(-4)}`,
-        value: e.id || e.title,
-        subtitle: `Deal • ${e.stage || 'Negotiation'}`,
-      }));
-
-      setActivePicker({
-        title: 'Select Deal',
-        paramName: info.key,
-        options: options.length > 0 ? options : [
-          { label: 'Enterprise Deal #101', value: 'deal_101', subtitle: 'Pipeline Deal' },
-        ],
-      });
-      return;
-    }
-
-    // 7. Generic Entity ID (Status Change)
-    if (key === 'entity_id') {
-      const options = allEntities.map((e: any) => ({
-        label: e.title || e.name || e.id,
-        value: e.id || e.name || e.title,
-        subtitle: `${e.type || 'Entity'} • ${e.status || 'Active'}`,
-      }));
-
-      setActivePicker({
-        title: 'Select Entity',
-        paramName: info.key,
-        options: options.length > 0 ? options : [
-          { label: 'Workspace Entity', value: 'ent_01', subtitle: 'Active Entity' },
-        ],
-      });
-      return;
-    }
-
-    // 8. Selectable preset options
+    // 3. Preset options (Payment, Status, Date, Slot, Category)
     let presets: Array<{ label: string; value: string; subtitle?: string }> = [];
     if (key.includes('payment')) {
       presets = [
@@ -329,6 +316,14 @@ export default function EventComposeModal({
         { label: 'Vendor', value: 'Vendor', subtitle: 'Supplier Expense' },
         { label: 'Utility', value: 'Utility', subtitle: 'Bills & Operating Costs' },
       ];
+    } else if (key.includes('subtype') || key.includes('item_subtype')) {
+      presets = [
+        { label: 'Product', value: 'Product', subtitle: 'Physical Goods & Merchandise' },
+        { label: 'Listing', value: 'Listing', subtitle: 'Catalog, Real Estate, Subscription' },
+        { label: 'Service', value: 'Service', subtitle: 'Time-based Offerings & Appointments' },
+        { label: 'Document', value: 'Document', subtitle: 'Files, Contracts, Receipts' },
+        { label: 'Asset', value: 'Asset', subtitle: 'Equipment, Tools, Machinery' },
+      ];
     }
 
     if (presets.length > 0) {
@@ -341,6 +336,7 @@ export default function EventComposeModal({
   };
 
   const openEventPicker = () => {
+    setPickerSearch('');
     setActivePicker({
       title: 'Select Motion Event',
       paramName: '__event__',
@@ -350,6 +346,37 @@ export default function EventComposeModal({
         subtitle: `${item.whatHappened} • ${item.linksTo}`,
       })),
     });
+  };
+
+  // Render Gmail Style Target Profile Pill
+  const renderGmailTargetValue = (targetValue: string) => {
+    if (!targetValue) {
+      return (
+        <Text style={[styles.fieldTextValue, { color: theme.textMuted + '80' }]}>
+          Select customer or recipient...
+        </Text>
+      );
+    }
+
+    const matchedEntity = (allEntities || []).find((e) => e?.title === targetValue || e?.name === targetValue || e?.id === targetValue);
+    const displayName = matchedEntity?.title || matchedEntity?.name || targetValue;
+    const email = matchedEntity?.data?.email || matchedEntity?.email || `${displayName.toLowerCase().replace(/\s+/g, '')}@workspace.com`;
+
+    return (
+      <View style={styles.gmailProfilePill}>
+        <View style={[styles.avatarCircle, { backgroundColor: getAvatarColor(displayName) }]}>
+          <Text style={styles.avatarInitials}>{getInitials(displayName)}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.profileName, { color: theme.text }]} numberOfLines={1}>
+            {displayName}
+          </Text>
+          <Text style={[styles.profileSubtitle, { color: theme.textMuted }]} numberOfLines={1}>
+            {email}
+          </Text>
+        </View>
+      </View>
+    );
   };
 
   return (
@@ -364,14 +391,23 @@ export default function EventComposeModal({
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          {/* Top Bar */}
+          {/* Ultra-Minimalist Top Bar */}
           <View style={[styles.headerBar, { borderBottomColor: theme.border }]}>
-            <TouchableOpacity onPress={onClose} hitSlop={8} style={styles.cancelBtn}>
-              <Text style={[styles.cancelText, { color: theme.textSecondary }]}>Cancel</Text>
-            </TouchableOpacity>
+            {/* Interactive Left-Aligned Event Selector Pill */}
+            <Pressable
+              onPress={openEventPicker}
+              style={({ pressed }) => [
+                styles.headerEventPill,
+                { backgroundColor: theme.primary + '15', opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text style={[styles.headerEventText, { color: theme.primary }]}>
+                {actionName}
+              </Text>
+              <Ionicons name="chevron-down" size={14} color={theme.primary} />
+            </Pressable>
 
-            <Text style={[styles.headerTitle, { color: theme.text }]}>Compose Event</Text>
-
+            {/* Right Send Action Button */}
             <TouchableOpacity
               onPress={handleSend}
               disabled={submitting || !isFormValid}
@@ -418,26 +454,91 @@ export default function EventComposeModal({
             contentContainerStyle={[styles.scrollBody, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Event Selector Row */}
-            <Pressable
-              onPress={openEventPicker}
-              style={({ pressed }) => [
-                styles.fieldRow,
-                { borderBottomColor: theme.border, opacity: pressed ? 0.7 : 1 },
-              ]}
-            >
-              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Event</Text>
-              <Text style={[styles.fieldTextValue, { color: theme.primary, fontWeight: '600' }]}>
-                {actionName}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
-            </Pressable>
 
-            {/* Dynamic Form Parameter Rows */}
+            {/* Dynamic Ordered Form Parameter Rows */}
             {fieldInfos.map((info) => {
               const value = params[info.key] || '';
               const isNumeric = info.key.includes('total') || info.key.includes('amount') || info.key.includes('qty') || info.key.includes('price');
+              const hintLabel = info.isTarget
+                ? 'To'
+                : info.label === 'payment_method'
+                ? 'Payment method'
+                : info.label === 'total' || info.label === 'amount'
+                ? 'Total'
+                : info.label;
 
+              // A. Gmail Style Target "To" Row (Ultra Minimal Hint)
+              if (info.isTarget) {
+                return (
+                  <Pressable
+                    key={info.key}
+                    onPress={() => openPickerForField(info)}
+                    style={({ pressed }) => [
+                      styles.fieldRowLarge,
+                      { borderBottomColor: theme.border, opacity: pressed ? 0.7 : 1 },
+                    ]}
+                  >
+                    {value ? (
+                      renderGmailTargetValue(value)
+                    ) : (
+                      <Text style={[styles.fieldTextValue, { color: theme.textMuted + '80' }]}>
+                        {hintLabel} {info.isRequired ? <Text style={{ color: '#ef4444' }}>*</Text> : null}
+                      </Text>
+                    )}
+                    <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
+                  </Pressable>
+                );
+              }
+
+              // B. Multi-Line Items Builder (Ultra Minimal Hint Rows)
+              if (action?.name === 'action_record_sale' && info.key === 'items') {
+                return (
+                  <View key={info.key}>
+                    {lineItems.map((item, idx) => (
+                      <Pressable
+                        key={item.id}
+                        onPress={() => openPickerForField({ key: 'items', label: 'Item', isTarget: false, isSelectable: true, isRequired: false }, item.id)}
+                        style={({ pressed }) => [
+                          styles.fieldRow,
+                          { borderBottomColor: theme.border, opacity: pressed ? 0.7 : 1 },
+                        ]}
+                      >
+                        {item.name ? (
+                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 4 }}>
+                            <Text style={[styles.fieldTextValue, { color: theme.text, fontWeight: '500' }]} numberOfLines={1}>
+                              {item.name} {item.qty > 1 ? `(x${item.qty})` : ''}
+                            </Text>
+                            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text, marginLeft: 8 }}>
+                              ${(item.qty * (item.price || 0)).toFixed(2)}
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text style={[styles.fieldTextValue, { color: theme.textMuted + '80' }]}>
+                            {idx === 0 ? 'Items' : `Item ${idx + 1}`} {idx === 0 && info.isRequired ? <Text style={{ color: '#ef4444' }}>*</Text> : null}
+                          </Text>
+                        )}
+
+                        {lineItems.length > 1 && item.name.trim() !== '' ? (
+                          <TouchableOpacity
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              removeLineItem(item.id);
+                            }}
+                            hitSlop={8}
+                            style={{ paddingLeft: 4 }}
+                          >
+                            <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                          </TouchableOpacity>
+                        ) : (
+                          <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
+                        )}
+                      </Pressable>
+                    ))}
+                  </View>
+                );
+              }
+
+              // C. Other Selectable Fields (Ultra Minimal Hint Rows)
               if (info.isSelectable) {
                 return (
                   <Pressable
@@ -448,28 +549,23 @@ export default function EventComposeModal({
                       { borderBottomColor: theme.border, opacity: pressed ? 0.7 : 1 },
                     ]}
                   >
-                    <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
-                      {info.label} {info.isRequired ? <Text style={{ color: '#ef4444' }}>*</Text> : null}
-                    </Text>
-                    <Text style={[styles.fieldTextValue, { color: value ? theme.text : theme.textMuted + '80', textTransform: info.isTarget ? 'capitalize' : 'none' }]}>
-                      {value || `Select ${info.label.toLowerCase()}...`}
+                    <Text style={[styles.fieldTextValue, { color: value ? theme.text : theme.textMuted + '80', fontWeight: value ? '500' : '400' }]}>
+                      {value ? `${info.label}: ${value}` : `${hintLabel} ${info.isRequired ? '*' : ''}`}
                     </Text>
                     <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
                   </Pressable>
                 );
               }
 
+              // D. Standard Text / Numeric Input Fields (Ultra Minimal Placeholder Hint)
               return (
                 <View key={info.key} style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
-                  <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
-                    {info.label} {info.isRequired ? <Text style={{ color: '#ef4444' }}>*</Text> : null}
-                  </Text>
                   <TextInput
                     style={[styles.fieldInput, { color: theme.text, fontWeight: isNumeric ? '600' : '400' }]}
                     value={value}
                     keyboardType={isNumeric ? 'numeric' : 'default'}
                     onChangeText={(val) => handleTextChange(info.key, val)}
-                    placeholder={`Enter ${info.label.toLowerCase()}...`}
+                    placeholder={`${hintLabel} ${info.isRequired ? '*' : ''}`}
                     placeholderTextColor={theme.textMuted + '80'}
                   />
                 </View>
@@ -492,7 +588,7 @@ export default function EventComposeModal({
         </KeyboardAvoidingView>
       </View>
 
-      {/* Unified Option Picker Modal */}
+      {/* Unified Bulletproof Option Picker Modal */}
       <Modal
         visible={activePicker !== null}
         transparent={true}
@@ -508,50 +604,91 @@ export default function EventComposeModal({
               </Pressable>
             </View>
 
-            <ScrollView style={{ maxHeight: 350 }}>
-              {activePicker?.options.map((opt) => {
-                const isSelected = activePicker.paramName === '__event__'
-                  ? action?.name === opt.value
-                  : params[activePicker.paramName] === opt.value;
+            {/* Search Input inside Picker */}
+            {activePicker?.options && activePicker.options.length > 4 ? (
+              <View style={[styles.searchBox, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                <Ionicons name="search" size={16} color={theme.textMuted} />
+                <TextInput
+                  style={[styles.searchInput, { color: theme.text }]}
+                  placeholder="Search options..."
+                  placeholderTextColor={theme.textMuted + '80'}
+                  value={pickerSearch}
+                  onChangeText={setPickerSearch}
+                />
+              </View>
+            ) : null}
 
-                return (
-                  <Pressable
-                    key={opt.value}
-                    onPress={() => {
-                      if (activePicker.paramName === '__event__') {
-                        const eventObj = PLAN5_EVENT_MOTIONS.find((e) => e.actionName === opt.value);
-                        if (eventObj) {
-                          onSelectEvent?.({
-                            name: eventObj.actionName,
-                            purpose: eventObj.whatHappened,
-                            params: eventObj.params,
-                          });
+            <ScrollView style={{ maxHeight: 350 }}>
+              {(activePicker?.options || [])
+                .filter((opt) => {
+                  if (!opt) return false;
+                  const labelStr = String(opt.label || '').toLowerCase();
+                  const subStr = String(opt.subtitle || '').toLowerCase();
+                  const q = pickerSearch.toLowerCase().trim();
+                  return !q || labelStr.includes(q) || subStr.includes(q);
+                })
+                .map((opt, idx) => {
+                  const optVal = opt.value ?? `opt_${idx}`;
+                  const isSelected = activePicker.paramName === '__event__'
+                    ? action?.name === optVal
+                    : params[activePicker.paramName] === optVal;
+
+                  const isPersonPicker = activePicker.title.includes('To') || activePicker.title.includes('Contact') || activePicker.title.includes('Staff');
+
+                  return (
+                    <Pressable
+                      key={`${optVal}_${idx}`}
+                      onPress={() => {
+                        if (activePicker.paramName === '__event__') {
+                          const eventObj = PLAN5_EVENT_MOTIONS.find((e) => e.actionName === optVal);
+                          if (eventObj) {
+                            onSelectEvent?.({
+                              name: eventObj.actionName,
+                              purpose: eventObj.whatHappened,
+                              params: eventObj.params,
+                            });
+                          }
+                        } else if (activePicker.paramName === '__line_product__' && activePicker.targetLineId) {
+                          const prdName = opt.label || optVal;
+                          const prdPrice = opt.rawEntity?.value || opt.rawEntity?.data?.price || 0;
+                          updateLineItem(activePicker.targetLineId, 'name', prdName);
+                          if (prdPrice > 0) {
+                            updateLineItem(activePicker.targetLineId, 'price', prdPrice);
+                          }
+                        } else {
+                          handleTextChange(activePicker.paramName, optVal);
                         }
-                      } else {
-                        handleTextChange(activePicker.paramName, opt.value);
-                      }
-                      setActivePicker(null);
-                    }}
-                    style={({ pressed }) => [
-                      styles.pickerItem,
-                      {
-                        borderBottomColor: theme.border + '40',
-                        backgroundColor: pressed ? theme.border + '30' : isSelected ? theme.primary + '15' : 'transparent',
-                      },
-                    ]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: isSelected ? '700' : '500', color: isSelected ? theme.primary : theme.text }}>
-                        {opt.label}
-                      </Text>
-                      {opt.subtitle ? (
-                        <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{opt.subtitle}</Text>
+                        setActivePicker(null);
+                      }}
+                      style={({ pressed }) => [
+                        styles.pickerItem,
+                        {
+                          borderBottomColor: theme.border + '40',
+                          backgroundColor: pressed ? theme.border + '30' : isSelected ? theme.primary + '15' : 'transparent',
+                        },
+                      ]}
+                    >
+                      {/* Gmail Style Avatar inside Picker */}
+                      {isPersonPicker ? (
+                        <View style={[styles.avatarCircle, { backgroundColor: getAvatarColor(opt.label), marginRight: 10 }]}>
+                          <Text style={styles.avatarInitials}>{getInitials(opt.label)}</Text>
+                        </View>
                       ) : null}
-                    </View>
-                    {isSelected && <Ionicons name="checkmark" size={18} color={theme.primary} />}
-                  </Pressable>
-                );
-              })}
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 15, fontWeight: isSelected ? '700' : '500', color: isSelected ? theme.primary : theme.text }}>
+                          {opt.label || 'Option'}
+                        </Text>
+                        {opt.subtitle || opt.email ? (
+                          <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                            {opt.email ? `${opt.email} • ${opt.subtitle}` : opt.subtitle}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {isSelected && <Ionicons name="checkmark" size={18} color={theme.primary} />}
+                    </Pressable>
+                  );
+                })}
             </ScrollView>
           </Pressable>
         </Pressable>
@@ -572,17 +709,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  cancelBtn: {
-    paddingHorizontal: 4,
+  headerEventPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
     paddingVertical: 6,
+    borderRadius: 16,
   },
-  cancelText: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  headerTitle: {
-    fontSize: 17,
+  headerEventText: {
+    fontSize: 15,
     fontWeight: '600',
+    textTransform: 'capitalize',
   },
   sendTextBtn: {
     paddingHorizontal: 8,
@@ -610,8 +748,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
+  fieldRowLarge: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
   fieldLabel: {
-    width: 100,
+    width: 90,
     fontSize: 14,
     fontWeight: '500',
     textTransform: 'capitalize',
@@ -624,6 +769,79 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     paddingVertical: 12,
+  },
+  gmailProfilePill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  avatarCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitials: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  profileName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  profileSubtitle: {
+    fontSize: 11,
+  },
+  multiItemSection: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 6,
+    gap: 8,
+  },
+  productSelectBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  productSelectText: {
+    fontSize: 13,
+    flex: 1,
+    marginRight: 4,
+  },
+  qtyBox: {
+    width: 45,
+    alignItems: 'center',
+  },
+  qtyInput: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingVertical: 2,
+  },
+  priceBox: {
+    width: 65,
+    alignItems: 'center',
+  },
+  priceInput: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingVertical: 2,
   },
   bodyContainer: {
     paddingTop: 16,
@@ -652,16 +870,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   pickerTitle: {
     fontSize: 16,
     fontWeight: '700',
   },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    height: 38,
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+  },
   pickerItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },

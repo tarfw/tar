@@ -154,19 +154,16 @@ export default function DirectoryModal({
       <View style={[styles.container, { backgroundColor: theme.background, paddingTop: Math.max(insets.top, 12) }]}>
         {/* Top Header Bar */}
         <View style={[styles.headerBar, { borderBottomColor: theme.border }]}>
-          <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <Text style={{ fontSize: 16, color: theme.textSecondary, fontWeight: '400' }}>Done</Text>
-          </TouchableOpacity>
+          {/* Left-Aligned Title */}
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Directory</Text>
 
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Workspace Directory</Text>
-
+          {/* Right Text Button (+ New) */}
           <TouchableOpacity
             onPress={() => onAddNewEntity(activeTab)}
             hitSlop={8}
-            style={[styles.addBtn, { backgroundColor: theme.primary }]}
+            style={styles.newTextBtn}
           >
-            <Ionicons name="add" size={16} color="#ffffff" />
-            <Text style={styles.addBtnText}>New</Text>
+            <Text style={[styles.newText, { color: theme.primary }]}>+ New</Text>
           </TouchableOpacity>
         </View>
 
@@ -266,20 +263,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  newTextBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  newText: {
     fontSize: 17,
-    fontWeight: '600',
-  },
-  addBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  addBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
     fontWeight: '600',
   },
   searchContainer: {

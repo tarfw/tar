@@ -25,6 +25,8 @@ import { resolveIntent } from '@/lib/intent-resolver';
 import { getCurrentUser } from '@/lib/auth';
 import { filterModulesByRole } from '@/lib/role-filter';
 import WorkspaceCanvas from '@/components/WorkspaceCanvas';
+import LinearInboxList, { LinearInboxItem } from '@/components/LinearInboxList';
+import { fetchInbox, markTaskDone } from '@/lib/inbox';
 import AdBanner from '@/components/AdBanner';
 import EventComposeModal from '@/components/EventComposeModal';
 import EntityDetailsModal from '@/components/EntityDetailsModal';
@@ -156,6 +158,9 @@ export default function WorkspacesScreen() {
   const [selectedVertical, setSelectedVertical] = useState<string>('business');
   const [selectedEntityDetails, setSelectedEntityDetails] = useState<any | null>(null);
   const [showDirectoryModal, setShowDirectoryModal] = useState(false);
+  const [showCanvasModal, setShowCanvasModal] = useState(false);
+  const [inboxTasks, setInboxTasks] = useState<LinearInboxItem[]>([]);
+  const [loadingInbox, setLoadingInbox] = useState(false);
   const [allEntities, setAllEntities] = useState<any[]>([]);
 
 
@@ -454,17 +459,96 @@ ${membersYaml}
     }
   };
 
-  // Load products, orders, and entities when workspace changes
+  const refreshInboxTasks = useCallback(async (scope: string) => {
+    setLoadingInbox(true);
+    try {
+      // 1. Query Turso `inbox` table directly
+      const inboxRes = await tar.tool('read', { table: 'inbox', scope }).catch(() => null);
+      const dbInboxRows = (inboxRes?.rows || []).filter((r: any) => !r.status || r.status === 'open' || r.status === 'pending');
+
+      if (dbInboxRows.length > 0) {
+        setInboxTasks(dbInboxRows.map((t: any) => {
+          let parsedData = t.data;
+          if (typeof t.data === 'string') {
+            try { parsedData = JSON.parse(t.data); } catch (e) { parsedData = t.data; }
+          }
+          let rawTitle = t.title || t.name || 'Inbox Event';
+          if (rawTitle.startsWith('New Order:')) rawTitle = 'New Order';
+          else if (rawTitle.startsWith('Appointment Booked:')) rawTitle = 'Appointment Booked';
+          else if (rawTitle.includes('Low Stock Alert:')) {
+            const m = rawTitle.match(/Low Stock Alert:\s*([^(]+)/i);
+            if (m) rawTitle = `Low Stock Alert: ${m[1].trim()}`;
+          }
+
+          return {
+            id: t.id,
+            type: t.type || 'task',
+            title: rawTitle,
+            status: t.status || 'open',
+            ref: t.ref,
+            due: t.due,
+            created_at: t.at ? new Date(t.at * (t.at > 1e10 ? 1 : 1000)).toISOString() : undefined,
+            data: parsedData,
+          };
+        }));
+        return;
+      }
+
+      // 2. Fallback to fetchInbox worker endpoint
+      const fetched = await fetchInbox(scope).catch(() => []);
+      if (fetched && fetched.length > 0) {
+        setInboxTasks(fetched.map(t => ({
+          id: t.id,
+          type: t.event_type || 'task',
+          title: t.title,
+          status: t.status || 'open',
+          created_at: t.created_at,
+          data: t.event_data,
+        })));
+        return;
+      }
+
+      // 3. Fallback to open orders & stock alerts from matter table
+      const res = await tar.tool('read', { table: 'matter', scope }).catch(() => null);
+      const rows = res?.rows || [];
+      const synthesized: LinearInboxItem[] = [];
+      rows.filter((r: any) => r.type === 'order' && (r.status === 'open' || r.status === 'pending' || !r.status)).slice(0, 10).forEach((o: any, i: number) => {
+        synthesized.push({
+          id: o.id || `ibx_ord_${i}`,
+          type: 'order',
+          title: `Order #${o.id?.slice(-4) || i + 1} — ${o.title || o.name || 'Items'}`,
+          status: o.status || 'open',
+          created_at: o.created_at,
+        });
+      });
+      rows.filter((r: any) => r.type === 'product' && (r.stock ?? 10) < 5).forEach((p: any, i: number) => {
+        synthesized.push({
+          id: p.id || `ibx_stk_${i}`,
+          type: 'stock',
+          title: `Low Stock Alert: ${p.title || p.name} (${p.stock ?? 0} remaining)`,
+          status: 'open',
+        });
+      });
+      setInboxTasks(synthesized);
+    } catch (e) {
+      console.warn('[Workspace] Failed to fetch inbox tasks:', e);
+    } finally {
+      setLoadingInbox(false);
+    }
+  }, []);
+
+  // Load products, orders, entities, and inbox when workspace changes
   useEffect(() => {
     if (currentWorkspace?.scope) {
       const scope = currentWorkspace.scope;
       refreshProducts(scope);
       refreshOrders(scope);
       refreshEntities(scope);
+      refreshInboxTasks(scope);
       setAgentFeedback(null);
       setActiveWidget(null);
     }
-  }, [currentWorkspace]);
+  }, [currentWorkspace?.scope]);
 
   // Load DESIGN.md + modules SKILL.md specs from S3 whenever workspace changes
   useEffect(() => {
@@ -706,6 +790,7 @@ ${membersYaml}
             await refreshProducts(currentWorkspace.scope);
             await refreshOrders(currentWorkspace.scope);
             await refreshEntities(currentWorkspace.scope);
+            await refreshInboxTasks(currentWorkspace.scope);
           }
         })
         .catch((err) => {
@@ -732,8 +817,12 @@ ${membersYaml}
           cleanParams[paramName] = val;
         }
       });
+      if (activeParams.notes) {
+        cleanParams.notes = activeParams.notes;
+        cleanParams.description = activeParams.notes;
+      }
 
-      // Direct entity creation fallback
+      // Direct entity & inbox creation fallback
       if (
         selectedAction.name === 'action_add_contact' ||
         selectedAction.name === 'action_add_company' ||
@@ -754,6 +843,77 @@ ${membersYaml}
         } catch (errCreate) {
           console.warn('[Workspace] Fallback matter creation:', errCreate);
         }
+      } else if (selectedAction.name === 'action_record_sale') {
+        const titleVal = 'New Order';
+        try {
+          await tar.tool('create', {
+            table: 'matter',
+            type: 'order',
+            title: titleVal,
+            value: cleanParams.total || 0,
+            data: cleanParams,
+            scope: currentWorkspace.scope,
+          });
+          await tar.tool('create', {
+            table: 'inbox',
+            type: 'order',
+            title: titleVal,
+            status: 'open',
+            data: cleanParams,
+            scope: currentWorkspace.scope,
+          });
+        } catch (e) {
+          console.warn('[Workspace] Direct sale creation fallback:', e);
+        }
+      } else if (selectedAction.name === 'action_adjust_stock' || selectedAction.name === 'action_write_off') {
+        const titleVal = `Low Stock Alert: ${cleanParams.product_id || 'Product'}`;
+        try {
+          await tar.tool('create', {
+            table: 'inbox',
+            type: 'stock',
+            title: titleVal,
+            status: 'open',
+            data: cleanParams,
+            scope: currentWorkspace.scope,
+          });
+        } catch (e) {
+          console.warn('[Workspace] Direct stock alert creation fallback:', e);
+        }
+      } else if (selectedAction.name === 'action_book_slot') {
+        const titleVal = 'Appointment Booked';
+        try {
+          await tar.tool('create', {
+            table: 'matter',
+            type: 'booking',
+            title: titleVal,
+            data: cleanParams,
+            scope: currentWorkspace.scope,
+          });
+          await tar.tool('create', {
+            table: 'inbox',
+            type: 'booking',
+            title: titleVal,
+            status: 'open',
+            data: cleanParams,
+            scope: currentWorkspace.scope,
+          });
+        } catch (e) {
+          console.warn('[Workspace] Direct booking creation fallback:', e);
+        }
+      } else if (selectedAction.name === 'action_create_task') {
+        const titleVal = cleanParams.title || 'New Task Assignment';
+        try {
+          await tar.tool('create', {
+            table: 'inbox',
+            type: 'task',
+            title: titleVal,
+            status: 'open',
+            data: cleanParams,
+            scope: currentWorkspace.scope,
+          });
+        } catch (e) {
+          console.warn('[Workspace] Direct task creation fallback:', e);
+        }
       }
 
       const res = await tar.executeAITask(selectedAction.name, cleanParams, currentWorkspace.scope);
@@ -763,6 +923,7 @@ ${membersYaml}
       await refreshProducts(currentWorkspace.scope);
       await refreshOrders(currentWorkspace.scope);
       await refreshEntities(currentWorkspace.scope);
+      await refreshInboxTasks(currentWorkspace.scope);
 
       setTimeout(() => {
         setSelectedAction(null);
@@ -865,8 +1026,6 @@ ${membersYaml}
                 widgetBlocks = [{ title: 'Entity Directory', type: 'entity-directory', props: {} }];
               } else if (['explore', 'explore-feed'].includes(modName)) {
                 widgetBlocks = [{ title: 'Explore Public Workspaces', type: 'explore-feed', props: {} }];
-              } else if (['inbox', 'inbox-feed'].includes(modName)) {
-                widgetBlocks = [{ title: 'Inbox & Notifications', type: 'inbox-feed', props: {} }];
               } else if (modName === 'orders') {
                 widgetBlocks = [{ title: 'Orders & POS', type: 'pos-sale', props: { type: 'order' } }];
               } else if (modName === 'inventory') {
@@ -927,65 +1086,23 @@ ${membersYaml}
               />
             );
           })()
-        ) : designTokens && (canvasLayouts.length > 0 || canvasBlocks.length > 0) ? (
-          <WorkspaceCanvas
-            designTokens={designTokens}
-            blocks={canvasBlocks}
-            layouts={canvasLayouts}
-            onExecuteAction={async (actionName, params) => {
-              if (actionName === 'view_entity' && params?.entity) {
-                setSelectedEntityDetails(params.entity);
-                return { success: true };
-              }
-              if (actionName.startsWith('action_add_') || actionName === 'create_entity') {
-                handleTriggerAction({
-                  name: actionName,
-                  params: [
-                    { name: 'name', type: 'text', required: true },
-                    { name: 'role', type: 'text', required: true },
-                    { name: 'company', type: 'text', required: false },
-                    { name: 'value', type: 'number', required: false },
-                  ],
-                });
-                setFormParams({
-                  role: params?.category || 'person',
-                });
-                return { success: true };
-              }
+        ) : (
+          <LinearInboxList
+            tasks={inboxTasks}
+            loading={loadingInbox}
+            onToggleDone={async (taskId) => {
+              setInboxTasks(prev => prev.filter(t => t.id !== taskId));
               if (currentWorkspace?.scope) {
-                const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
-                await refreshProducts(currentWorkspace.scope);
-                await refreshOrders(currentWorkspace.scope);
-                await refreshEntities(currentWorkspace.scope);
-                return res;
+                await tar.tool('update', { table: 'inbox', id: taskId, status: 'done', scope: currentWorkspace.scope }).catch(() => null);
+                await markTaskDone(currentWorkspace.scope, taskId).catch(() => null);
               }
-              throw new Error('No active workspace scope');
             }}
-            metricsData={{
-              'orders': orders.length,
-              'inventory': products.length,
-              'bookings': orders.filter(o => o.type === 'booking').length
-            }}
-            tableData={{
-              'orders': orders,
-              'inventory': products,
-              'order': orders,
-              'product': products,
-              'directory': allEntities,
-              'entity-directory': allEntities,
-              'plan5-directory': allEntities
+            onSelectTask={(item) => {
+              if (item.data?.entity) {
+                setSelectedEntityDetails(item.data.entity);
+              }
             }}
           />
-        ) : (
-          <>
-            {/* 2. Inventory Section */}
-            <ProductListCard products={products} />
-
-            <View style={{ height: 12 }} />
-
-            {/* 3. Recent Orders Section */}
-            <OrderListCard orders={orders} />
-          </>
         )}
       </KeyboardAwareScrollView>
 
@@ -1040,24 +1157,24 @@ ${membersYaml}
               />
             </Pressable>
 
-            {/* Inbox Quick Action Icon */}
+            {/* Canvas Quick Action Icon */}
             <Pressable
-              onPress={() => setActiveWidget({ moduleName: 'inbox' })}
+              onPress={() => setShowCanvasModal(true)}
               style={({ pressed }) => [{
                 paddingHorizontal: 8,
                 paddingVertical: 6,
                 borderRadius: 16,
                 borderWidth: 1,
-                borderColor: activeWidget?.moduleName === 'inbox' ? theme.primary : theme.border,
-                backgroundColor: activeWidget?.moduleName === 'inbox' ? theme.primary + '20' : theme.backgroundElement,
+                borderColor: showCanvasModal ? theme.primary : theme.border,
+                backgroundColor: showCanvasModal ? theme.primary + '20' : theme.backgroundElement,
                 marginRight: 10,
                 opacity: pressed ? 0.7 : 1,
               }]}
             >
               <Ionicons
-                name={activeWidget?.moduleName === 'inbox' ? 'mail' : 'mail-outline'}
+                name={showCanvasModal ? 'easel' : 'easel-outline'}
                 size={16}
-                color={activeWidget?.moduleName === 'inbox' ? theme.primary : theme.textSecondary}
+                color={showCanvasModal ? theme.primary : theme.textSecondary}
               />
             </Pressable>
 
@@ -1230,6 +1347,110 @@ ${membersYaml}
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Full Screen Workspace Canvas GenUI Modal */}
+      <Modal
+        visible={showCanvasModal}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowCanvasModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: theme.background, paddingTop: insets.top }}>
+          {/* Canvas Modal Header */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            borderBottomWidth: 1,
+            borderBottomColor: theme.border,
+            backgroundColor: theme.background,
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <WorkspaceThumbnail name={currentWorkspace?.name || currentWorkspace?.subdomain || 'Canvas'} size={32} theme={theme} />
+              <View>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>
+                  Workspace Canvas
+                </Text>
+                <Text style={{ fontSize: 12, color: theme.textMuted }}>
+                  {currentWorkspace?.subdomain || 'Dynamic GenUI Layout'}
+                </Text>
+              </View>
+            </View>
+
+            <Pressable
+              onPress={() => setShowCanvasModal(false)}
+              style={({ pressed }) => [{
+                padding: 6,
+                borderRadius: 20,
+                backgroundColor: theme.backgroundElement,
+                opacity: pressed ? 0.7 : 1,
+              }]}
+            >
+              <Ionicons name="close" size={22} color={theme.text} />
+            </Pressable>
+          </View>
+
+          {/* Canvas GenUI Content */}
+          <ScrollView contentContainerStyle={{ padding: 12 }}>
+            <WorkspaceCanvas
+              designTokens={designTokens || {
+                colors: { primary: theme.primary || '#0f172a', secondary: '#3b82f6', background: '#ffffff' },
+                rounded: { sm: 8, md: 12, lg: 16 },
+                spacing: { sm: 8, md: 16 },
+                typography: {}
+              }}
+              blocks={canvasBlocks}
+              layouts={canvasLayouts}
+              onExecuteAction={async (actionName, params) => {
+                if (actionName === 'view_entity' && params?.entity) {
+                  setSelectedEntityDetails(params.entity);
+                  return { success: true };
+                }
+                if (actionName.startsWith('action_add_') || actionName === 'create_entity') {
+                  handleTriggerAction({
+                    name: actionName,
+                    params: [
+                      { name: 'name', type: 'text', required: true },
+                      { name: 'role', type: 'text', required: true },
+                      { name: 'company', type: 'text', required: false },
+                      { name: 'value', type: 'number', required: false },
+                    ],
+                  });
+                  setFormParams({
+                    role: params?.category || 'person',
+                  });
+                  return { success: true };
+                }
+                if (currentWorkspace?.scope) {
+                  const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
+                  await refreshProducts(currentWorkspace.scope);
+                  await refreshOrders(currentWorkspace.scope);
+                  await refreshEntities(currentWorkspace.scope);
+                  return res;
+                }
+                throw new Error('No active workspace scope');
+              }}
+              metricsData={{
+                'orders': orders.length,
+                'inventory': products.length,
+                'bookings': orders.filter(o => o.type === 'booking').length
+              }}
+              tableData={{
+                'orders': orders,
+                'inventory': products,
+                'order': orders,
+                'product': products,
+                'directory': allEntities,
+                'entity-directory': allEntities,
+                'plan5-directory': allEntities
+              }}
+            />
+          </ScrollView>
+        </View>
+      </Modal>
+
       {/* Create Workspace Modal — Minimal Clean Style */}
       <Modal
         visible={showCreateModal}
@@ -1362,6 +1583,7 @@ ${membersYaml}
         theme={theme}
         submitting={submittingAction}
         resultMessage={actionResultMessage}
+        allEntities={allEntities}
         onClose={() => {
           setSelectedAction(null);
           setFormParams({});
@@ -1369,6 +1591,9 @@ ${membersYaml}
         }}
         onSubmit={(submittedParams) => {
           handleActionFormSubmit(submittedParams);
+        }}
+        onSelectEvent={(newAction) => {
+          handleTriggerAction(newAction);
         }}
       />
 

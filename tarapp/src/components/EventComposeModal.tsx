@@ -16,16 +16,22 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export const PLAN5_EVENT_MOTIONS = [
-  { event: 'Sale', actionName: 'action_record_sale', whatHappened: 'Transaction completed', linksTo: 'Order', params: [{ name: 'items', type: 'text', required: true }, { name: 'payment_method', type: 'text', required: true }, { name: 'total', type: 'number', required: true }, { name: 'customer_id', type: 'text', required: false }] },
-  { event: 'Refund', actionName: 'action_refund_order', whatHappened: 'Money returned', linksTo: 'Order', params: [{ name: 'order_id', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
-  { event: 'Status Change', actionName: 'action_update_status', whatHappened: 'State updated', linksTo: 'Any entity', params: [{ name: 'entity_id', type: 'text', required: true }, { name: 'status', type: 'text', required: true }] },
+  { event: 'Sale', actionName: 'action_record_sale', whatHappened: 'Transaction completed', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: true }, { name: 'items', type: 'text', required: true }, { name: 'payment_method', type: 'text', required: true }, { name: 'total', type: 'number', required: true }] },
+  { event: 'Refund', actionName: 'action_refund_order', whatHappened: 'Money returned', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: false }, { name: 'order_id', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
+  { event: 'Quote', actionName: 'action_create_quote', whatHappened: 'Quotation issued', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: true }, { name: 'items', type: 'text', required: true }, { name: 'total', type: 'number', required: true }, { name: 'valid_until', type: 'text', required: false }] },
+  { event: 'Invoice', actionName: 'action_create_invoice', whatHappened: 'Customer invoice generated', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: true }, { name: 'items', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'due_date', type: 'text', required: false }, { name: 'order_id', type: 'text', required: false }] },
+  { event: 'Payment', actionName: 'action_record_payment', whatHappened: 'Payment logged', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'payment_method', type: 'text', required: true }, { name: 'invoice_id', type: 'text', required: false }] },
+  { event: 'Delivery', actionName: 'action_issue_delivery', whatHappened: 'Delivery order issued', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: true }, { name: 'order_id', type: 'text', required: true }, { name: 'carrier', type: 'text', required: false }, { name: 'tracking_no', type: 'text', required: false }] },
+  { event: 'RFQ', actionName: 'action_create_rfq', whatHappened: 'Request for quotation sent', linksTo: 'Company', params: [{ name: 'vendor_id', type: 'text', required: true }, { name: 'items', type: 'text', required: true }, { name: 'valid_until', type: 'text', required: false }] },
+  { event: 'Purchase Order', actionName: 'action_create_po', whatHappened: 'PO issued to vendor', linksTo: 'Company', params: [{ name: 'vendor_id', type: 'text', required: true }, { name: 'items', type: 'text', required: true }, { name: 'total', type: 'number', required: true }, { name: 'due_date', type: 'text', required: false }] },
+  { event: 'Vendor Bill', actionName: 'action_log_vendor_bill', whatHappened: 'Supplier bill logged', linksTo: 'Company', params: [{ name: 'vendor_id', type: 'text', required: true }, { name: 'po_id', type: 'text', required: false }, { name: 'amount', type: 'number', required: true }, { name: 'due_date', type: 'text', required: false }] },
+  { event: 'Stock Transfer', actionName: 'action_transfer_stock', whatHappened: 'Inventory moved', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'from_loc', type: 'text', required: true }, { name: 'to_loc', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }] },
   { event: 'Booking', actionName: 'action_book_slot', whatHappened: 'Appointment made', linksTo: 'Booking', params: [{ name: 'service', type: 'text', required: true }, { name: 'date', type: 'text', required: true }, { name: 'slot', type: 'text', required: true }, { name: 'customer_id', type: 'text', required: false }] },
   { event: 'Cancel', actionName: 'action_cancel_booking', whatHappened: 'Booking cancelled', linksTo: 'Booking', params: [{ name: 'booking_id', type: 'text', required: true }, { name: 'reason', type: 'text', required: false }] },
   { event: 'Clock In', actionName: 'action_clock_in', whatHappened: 'Staff arrived', linksTo: 'Person', params: [{ name: 'staff_id', type: 'text', required: true }] },
   { event: 'Clock Out', actionName: 'action_clock_out', whatHappened: 'Staff left', linksTo: 'Person', params: [{ name: 'staff_id', type: 'text', required: true }] },
   { event: 'Tracking', actionName: 'action_update_tracking', whatHappened: 'Shipment updated', linksTo: 'Shipment', params: [{ name: 'shipment_id', type: 'text', required: true }, { name: 'status', type: 'text', required: true }, { name: 'location', type: 'text', required: false }] },
   { event: 'Delivered', actionName: 'action_complete_delivery', whatHappened: 'Shipment fulfilled', linksTo: 'Shipment', params: [{ name: 'shipment_id', type: 'text', required: true }, { name: 'recipient_signature', type: 'text', required: false }] },
-  { event: 'Stage', actionName: 'action_update_deal_stage', whatHappened: 'Deal advanced', linksTo: 'Deal', params: [{ name: 'deal_id', type: 'text', required: true }, { name: 'stage', type: 'text', required: true }, { name: 'win_loss_reason', type: 'text', required: false }] },
   { event: 'Activity', actionName: 'action_log_activity', whatHappened: 'Call/meeting logged', linksTo: 'Deal, Person', params: [{ name: 'type', type: 'text', required: true }, { name: 'description', type: 'text', required: true }, { name: 'contact_id', type: 'text', required: false }, { name: 'deal_id', type: 'text', required: false }] },
   { event: 'Adjust', actionName: 'action_adjust_stock', whatHappened: 'Stock changed', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
   { event: 'Write Off', actionName: 'action_write_off', whatHappened: 'Stock removed', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
@@ -272,9 +278,13 @@ export default function EventComposeModal({
     );
   };
 
+  const hasItemsParam = (action?.params || []).some(
+    (p: any) => (typeof p === 'string' ? p : p.name) === 'items'
+  );
+
   // Ensure an extra empty line item always exists at the bottom
   useEffect(() => {
-    if (action?.name === 'action_record_sale') {
+    if (hasItemsParam) {
       const last = lineItems[lineItems.length - 1];
       if (last && (last.name.trim() !== '' || last.price > 0)) {
         setLineItems((prev) => [
@@ -283,11 +293,11 @@ export default function EventComposeModal({
         ]);
       }
     }
-  }, [lineItems, action?.name]);
+  }, [lineItems, hasItemsParam]);
 
   // Recalculate Total & Summary Items when lineItems change
   useEffect(() => {
-    if (action?.name === 'action_record_sale') {
+    if (hasItemsParam) {
       const validItems = lineItems.filter((i) => i.name.trim() !== '');
       const calculatedTotal = validItems.reduce((sum, item) => sum + (item.qty || 1) * (item.price || 0), 0);
       const summaryItems = validItems
@@ -296,24 +306,25 @@ export default function EventComposeModal({
 
       setParams((prev) => ({
         ...prev,
-        total: calculatedTotal > 0 ? calculatedTotal.toString() : '',
+        total: calculatedTotal > 0 ? calculatedTotal.toString() : (prev.total || ''),
+        amount: calculatedTotal > 0 ? calculatedTotal.toString() : (prev.amount || ''),
         items: summaryItems || prev.items || '',
       }));
     }
-  }, [lineItems, action?.name]);
+  }, [lineItems, hasItemsParam]);
 
   if (!visible || !action) return null;
 
   const actionName = action?.name?.replace(/_/g, ' ') || 'Record Event';
   const paramList: any[] = action?.params || [];
 
-  // Categorize & Order Params: 1. To, 2. Items/Products, 3. Total/Value, 4. Intermediate, 99. Payment Method (last)
+  // Categorize & Order Params: 1. To/Vendor, 2. Items/Products/Entity, 3. Total/Amount, 4. Intermediate, 99. Payment Method/Carrier (last)
   const getParamRank = (name: string) => {
     const n = name.toLowerCase();
-    if (n === 'customer_id' || n === 'contact_id' || n === 'staff_id' || n === 'assignee_id' || n === 'person_id' || n === 'to') return 1;
-    if (n === 'items' || n === 'product_id' || n === 'service' || n === 'order_id' || n === 'booking_id') return 2;
+    if (n === 'customer_id' || n === 'contact_id' || n === 'vendor_id' || n === 'staff_id' || n === 'assignee_id' || n === 'person_id' || n === 'to') return 1;
+    if (n === 'items' || n === 'product_id' || n === 'service' || n === 'order_id' || n === 'po_id' || n === 'invoice_id' || n === 'booking_id' || n === 'shipment_id' || n === 'deal_id') return 2;
     if (n === 'total' || n === 'amount' || n === 'qty' || n === 'price') return 3;
-    if (n === 'payment_method') return 99; // Payment method always last before notes
+    if (n === 'payment_method' || n === 'carrier') return 99; // Payment method & Carrier always last before notes
     return 10;
   };
 
@@ -331,14 +342,25 @@ export default function EventComposeModal({
     if (
       name === 'customer_id' ||
       name === 'contact_id' ||
+      name === 'vendor_id' ||
       name === 'staff_id' ||
       name === 'assignee_id' ||
       name === 'person_id'
     ) {
-      return { key: rawName, label: 'To', isTarget: true, isSelectable: true, isRequired };
+      const targetLabel = name === 'vendor_id' ? 'Vendor' : name === 'staff_id' || name === 'assignee_id' ? 'Assignee' : 'To';
+      return { key: rawName, label: targetLabel, isTarget: true, isSelectable: true, isRequired };
     }
 
-    if (name === 'entity_id' || name === 'order_id' || name === 'booking_id' || name === 'shipment_id' || name === 'deal_id' || name === 'product_id') {
+    if (
+      name === 'entity_id' ||
+      name === 'order_id' ||
+      name === 'po_id' ||
+      name === 'invoice_id' ||
+      name === 'booking_id' ||
+      name === 'shipment_id' ||
+      name === 'deal_id' ||
+      name === 'product_id'
+    ) {
       return { key: rawName, label: rawName.replace(/_id$/i, '').replace(/_/g, ' '), isTarget: false, isSelectable: true, isRequired };
     }
 
@@ -346,13 +368,18 @@ export default function EventComposeModal({
       name === 'payment_method' ||
       name === 'status' ||
       name === 'stage' ||
+      name === 'carrier' ||
       name.includes('date') ||
+      name.includes('until') ||
+      name.includes('due') ||
       name.includes('slot') ||
       name.includes('service') ||
       name.includes('category') ||
+      name.includes('loc') ||
       name === 'type'
     ) {
-      return { key: rawName, label: rawName.replace(/_/g, ' '), isTarget: false, isSelectable: true, isRequired };
+      const isReq = name === 'payment_method' ? true : isRequired;
+      return { key: rawName, label: rawName.replace(/_/g, ' '), isTarget: false, isSelectable: true, isRequired: isReq };
     }
 
     return { key: rawName, label: rawName.replace(/_/g, ' '), isTarget: false, isSelectable: false, isRequired };
@@ -392,19 +419,23 @@ export default function EventComposeModal({
     const key = info.key.toLowerCase();
     setPickerSearch('');
 
-    // 1. Target Person / Customer / Contact picker (Person / Company entities only)
-    if (info.isTarget || key === 'customer_id' || key === 'contact_id' || key === 'staff_id' || key === 'assignee_id' || key === 'person_id') {
-      const personTypes = ['customer', 'person', 'contact', 'staff', 'manager', 'admin', 'company', 'vendor', 'partner'];
+    // 1. Target Person / Customer / Contact / Vendor picker
+    if (info.isTarget || key === 'customer_id' || key === 'contact_id' || key === 'vendor_id' || key === 'staff_id' || key === 'assignee_id' || key === 'person_id') {
+      const personTypes = ['customer', 'person', 'contact', 'staff', 'manager', 'admin', 'company', 'vendor', 'partner', 'supplier'];
       const filtered = (allEntities || []).filter((e: any) => {
         const t = (e?.type || '').toLowerCase();
         const r = (e?.role || '').toLowerCase();
-        return personTypes.includes(t) || personTypes.includes(r);
+        const s = (e?.subtype || '').toLowerCase();
+        if (key === 'vendor_id') {
+          return t === 'company' || r === 'vendor' || s === 'vendor' || t === 'vendor' || t === 'contact';
+        }
+        return personTypes.includes(t) || personTypes.includes(r) || personTypes.includes(s);
       });
 
       const options = filtered.map((e: any) => ({
         label: e.title || e.name || 'Contact',
         value: e.title || e.name || e.id,
-        subtitle: `${e.type || 'Person'} • ${e.role || 'Member'}`,
+        subtitle: `${e.type || 'Person'} • ${e.role || e.subtype || 'Member'}`,
         email: e.data?.email || e.email || `${(e.title || 'user').toLowerCase().replace(/\s+/g, '')}@workspace.com`,
         rawEntity: e,
       }));
@@ -417,9 +448,9 @@ export default function EventComposeModal({
       return;
     }
 
-    // 2. Product / Item picker (Used for single Product fields and multi-line item rows)
+    // 2. Product / Item picker
     if (key === 'product_id' || key === 'item_id' || targetLineId) {
-      const productTypes = ['product', 'item', 'listing', 'asset', 'inventory'];
+      const productTypes = ['product', 'item', 'listing', 'asset', 'inventory', 'warehouse'];
       const filtered = (allEntities || []).filter((e: any) => {
         const t = (e?.type || '').toLowerCase();
         const r = (e?.role || '').toLowerCase();
@@ -442,8 +473,8 @@ export default function EventComposeModal({
       return;
     }
 
-    // 2b. Target Entity picker (Used for Status Change, Refund, Cancel, Tracking, Stage)
-    if (key === 'entity_id' || key === 'ref' || key === 'order_id' || key === 'booking_id' || key === 'shipment_id' || key === 'deal_id') {
+    // 2b. Target Entity picker (Order, PO, Invoice, Booking, Shipment, Deal)
+    if (key === 'entity_id' || key === 'ref' || key === 'order_id' || key === 'po_id' || key === 'invoice_id' || key === 'booking_id' || key === 'shipment_id' || key === 'deal_id') {
       const targetType = key.replace(/_id$/, '').toLowerCase();
       const filtered = (allEntities || []).filter((e: any) => {
         const t = (e?.type || '').toLowerCase();
@@ -465,7 +496,35 @@ export default function EventComposeModal({
       return;
     }
 
-    // 3. Preset options (Payment, Status, Date, Slot, Category)
+    // 2c. Location / Warehouse picker (from_loc, to_loc)
+    if (key === 'from_loc' || key === 'to_loc' || key === 'location' || key === 'warehouse') {
+      const locTypes = ['warehouse', 'location', 'asset', 'item', 'depot'];
+      const filtered = (allEntities || []).filter((e: any) => {
+        const t = (e?.type || '').toLowerCase();
+        const s = (e?.subtype || '').toLowerCase();
+        return locTypes.includes(t) || locTypes.includes(s);
+      });
+
+      const options = filtered.length > 0 ? filtered.map((e: any) => ({
+        label: e.title || e.name || 'Location',
+        value: e.title || e.name || e.id,
+        subtitle: `${e.subtype || e.type || 'Location'} • ${e.data?.address || e.data?.location || 'Active'}`,
+        rawEntity: e,
+      })) : [
+        { label: 'Main Warehouse', value: 'Main Warehouse', subtitle: 'Central Depot' },
+        { label: 'Storefront Shelf', value: 'Storefront Shelf', subtitle: 'Retail Floor' },
+        { label: 'Secondary Storage', value: 'Secondary Storage', subtitle: 'Backroom' },
+      ];
+
+      setActivePicker({
+        title: `Select ${info.label}`,
+        paramName: info.key,
+        options,
+      });
+      return;
+    }
+
+    // 3. Preset options (Payment, Status, Date, Carrier, Category)
     let presets: Array<{ label: string; value: string; subtitle?: string }> = [];
     if (key.includes('payment')) {
       presets = [
@@ -473,6 +532,14 @@ export default function EventComposeModal({
         { label: 'Card', value: 'Card', subtitle: 'Credit/Debit Card' },
         { label: 'UPI', value: 'UPI', subtitle: 'Digital Transfer' },
         { label: 'Invoice', value: 'Invoice', subtitle: 'Pay Later / Credit' },
+      ];
+    } else if (key.includes('carrier')) {
+      presets = [
+        { label: 'FedEx', value: 'FedEx', subtitle: 'Express Shipping' },
+        { label: 'UPS', value: 'UPS', subtitle: 'Standard Shipping' },
+        { label: 'DHL', value: 'DHL', subtitle: 'International Logistics' },
+        { label: 'Local Courier', value: 'Local Courier', subtitle: 'Same Day Delivery' },
+        { label: 'Self Pickup', value: 'Self Pickup', subtitle: 'Customer Pickup' },
       ];
     } else if (key === 'status' || key === 'stage') {
       presets = [
@@ -482,11 +549,12 @@ export default function EventComposeModal({
         { label: 'Delivered', value: 'Delivered', subtitle: 'Fulfilled' },
         { label: 'Cancelled', value: 'Cancelled', subtitle: 'Voided' },
       ];
-    } else if (key.includes('date')) {
+    } else if (key.includes('date') || key.includes('until') || key.includes('due')) {
       presets = [
         { label: 'Today', value: new Date().toISOString().slice(0, 10), subtitle: 'Current Date' },
-        { label: 'Tomorrow', value: new Date(Date.now() + 86400000).toISOString().slice(0, 10), subtitle: 'Next Day' },
-        { label: 'Next Week', value: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), subtitle: 'In 7 Days' },
+        { label: 'In 7 Days', value: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), subtitle: '1 Week' },
+        { label: 'In 14 Days', value: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10), subtitle: '2 Weeks' },
+        { label: 'In 30 Days', value: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10), subtitle: 'Net 30' },
       ];
     } else if (key.includes('slot')) {
       presets = [
@@ -548,9 +616,10 @@ export default function EventComposeModal({
 
   // Render Gmail Style Target Profile Pill
   const renderGmailTargetValue = (targetValue: string) => {
+    const hintTextColor = theme?.dark ? '#a1a1aa' : '#52525b';
     if (!targetValue) {
       return (
-        <Text style={[styles.fieldTextValue, { color: theme.textMuted + '80' }]}>
+        <Text style={[styles.fieldTextValue, { color: hintTextColor }]}>
           Select customer or recipient...
         </Text>
       );
@@ -591,15 +660,16 @@ export default function EventComposeModal({
         >
           {/* Ultra-Minimalist Top Bar */}
           <View style={[styles.headerBar, { borderBottomColor: theme.border }]}>
-            {/* Interactive Left-Aligned Event Selector Pill */}
+            {/* Interactive Left-Aligned Event Selector (Noise-Free) */}
             <Pressable
               onPress={openEventPicker}
+              hitSlop={8}
               style={({ pressed }) => [
                 styles.headerEventPill,
-                { backgroundColor: theme.primary + '15', opacity: pressed ? 0.7 : 1 },
+                { opacity: pressed ? 0.6 : 1 },
               ]}
             >
-              <Text style={[styles.headerEventText, { color: theme.primary }]}>
+              <Text style={[styles.headerEventText, { color: '#000000' }]}>
                 {actionName}
               </Text>
             </Pressable>
@@ -663,6 +733,7 @@ export default function EventComposeModal({
                 : info.label === 'total' || info.label === 'amount'
                 ? 'Total'
                 : info.label;
+              const hintTextColor = theme?.dark ? '#a1a1aa' : '#52525b';
 
               // A. Gmail Style Target "To" Row (Ultra Minimal Hint)
               if (info.isTarget) {
@@ -678,110 +749,176 @@ export default function EventComposeModal({
                     {value ? (
                       renderGmailTargetValue(value)
                     ) : (
-                      <Text style={[styles.fieldTextValue, { color: theme.textMuted + '80' }]}>
+                      <Text style={[styles.fieldTextValue, { color: hintTextColor }]}>
                         {hintLabel} {info.isRequired ? <Text style={{ color: '#ef4444' }}>*</Text> : null}
                       </Text>
                     )}
-                    <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
                   </Pressable>
                 );
               }
 
-              // B. Multi-Line Items Builder (Ultra Minimal Hint Rows)
-              if (action?.name === 'action_record_sale' && info.key === 'items') {
+              // B. Multi-Line Items Builder (Thumbnail Card, No Close Icon, Left Tap Decreases/Removes, Right Tap Increases, xQty text)
+              if (hasItemsParam && info.key === 'items') {
                 return (
                   <View key={info.key}>
-                    {lineItems.map((item, idx) => (
-                      <Pressable
-                        key={item.id}
-                        onPress={() => openPickerForField({ key: 'items', label: 'Item', isTarget: false, isSelectable: true, isRequired: false }, item.id)}
-                        style={({ pressed }) => [
-                          styles.fieldRow,
-                          { borderBottomColor: theme.border, opacity: pressed ? 0.7 : 1 },
-                        ]}
-                      >
-                        {item.name ? (
-                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 4 }}>
-                            <Text style={[styles.fieldTextValue, { color: theme.text, fontWeight: '600', fontSize: 16, flex: 1 }]} numberOfLines={1}>
-                              {item.name}
-                            </Text>
-
-                            {/* Inline Spacious Touch-Friendly Quantity Stepper */}
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 14, marginRight: 16 }}>
-                              <TouchableOpacity
-                                onPress={(e) => {
-                                  e.stopPropagation();
-                                  updateLineItemQty(item.id, item.qty - 1);
-                                }}
-                                hitSlop={10}
-                                style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: 16,
-                                  backgroundColor: theme.backgroundElement,
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  borderWidth: 1,
-                                  borderColor: theme.border,
-                                }}
-                              >
-                                <Ionicons name="remove" size={16} color={theme.text} />
-                              </TouchableOpacity>
-                              <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text, minWidth: 22, textAlign: 'center' }}>
-                                {item.qty}
-                              </Text>
-                              <TouchableOpacity
-                                onPress={(e) => {
-                                  e.stopPropagation();
-                                  updateLineItemQty(item.id, item.qty + 1);
-                                }}
-                                hitSlop={10}
-                                style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: 16,
-                                  backgroundColor: theme.backgroundElement,
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  borderWidth: 1,
-                                  borderColor: theme.border,
-                                }}
-                              >
-                                <Ionicons name="add" size={16} color={theme.text} />
-                              </TouchableOpacity>
-                            </View>
-
-                            <Text style={{ fontSize: 15.5, fontWeight: '700', color: theme.text, marginLeft: 4 }}>
-                              ${(item.qty * (item.price || 0)).toFixed(2)}
-                            </Text>
-                          </View>
-                        ) : (
-                          <Text style={[styles.fieldTextValue, { color: theme.textMuted + '80', fontSize: 15.5 }]}>
-                            {idx === 0 ? 'Items' : `Item ${idx + 1}`} {idx === 0 && info.isRequired ? <Text style={{ color: '#ef4444' }}>*</Text> : null}
-                          </Text>
-                        )}
-
-                        {lineItems.length > 1 && item.name.trim() !== '' ? (
-                          <TouchableOpacity
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              removeLineItem(item.id);
-                            }}
-                            hitSlop={10}
-                            style={{ paddingLeft: 6 }}
+                    {lineItems.map((item, idx) => {
+                      if (item.name.trim() !== '') {
+                        return (
+                          <View
+                            key={item.id}
+                            style={[
+                              styles.fieldRow,
+                              { borderBottomColor: theme.border, justifyContent: 'space-between' },
+                            ]}
                           >
-                            <Ionicons name="close" size={18} color={theme.textMuted} />
-                          </TouchableOpacity>
-                        ) : (
-                          <Ionicons name="chevron-down" size={18} color={theme.textMuted} />
-                        )}
-                      </Pressable>
-                    ))}
+                            {/* Left tap zone: reduces quantity; 0 quantity removes product & clears line to drop select */}
+                            <Pressable
+                              onPress={() => {
+                                const newQty = item.qty - 1;
+                                if (newQty <= 0) {
+                                  updateLineItem(item.id, 'name', '');
+                                  updateLineItem(item.id, 'qty', 1);
+                                  updateLineItem(item.id, 'price', 0);
+                                } else {
+                                  updateLineItemQty(item.id, newQty);
+                                }
+                              }}
+                              style={({ pressed }) => [
+                                {
+                                  flex: 1,
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 12,
+                                  opacity: pressed ? 0.6 : 1,
+                                },
+                              ]}
+                            >
+                              {/* a) Thumbnail Card */}
+                              <View
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 8,
+                                  backgroundColor: theme.primary + '15',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderWidth: 1,
+                                  borderColor: theme.primary + '30',
+                                }}
+                              >
+                                <Ionicons name="cube-outline" size={20} color={theme.primary} />
+                              </View>
+                              <Text
+                                style={[styles.fieldTextValue, { color: theme.text, fontWeight: '600', fontSize: 16 }]}
+                                numberOfLines={1}
+                              >
+                                {item.name}
+                              </Text>
+                            </Pressable>
+
+                            {/* Right tap zone: increases quantity */}
+                            <Pressable
+                              onPress={() => {
+                                updateLineItemQty(item.id, item.qty + 1);
+                              }}
+                              style={({ pressed }) => [
+                                {
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 12,
+                                  paddingLeft: 8,
+                                  opacity: pressed ? 0.6 : 1,
+                                },
+                              ]}
+                            >
+                              {/* c) xQty (in nos) text instead of + - chips */}
+                              <Text style={{ fontSize: 15, color: hintTextColor }}>
+                                x<Text style={{ fontWeight: '700', color: theme.text }}>{item.qty}</Text>
+                              </Text>
+
+                              {/* Price */}
+                              <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>
+                                ${(item.qty * (item.price || 0)).toFixed(2)}
+                              </Text>
+                            </Pressable>
+                          </View>
+                        );
+                      }
+
+                      // Unselected item line: open to drop select
+                      return (
+                        <Pressable
+                          key={item.id}
+                          onPress={() =>
+                            openPickerForField(
+                              { key: 'items', label: 'Item', isTarget: false, isSelectable: true, isRequired: false },
+                              item.id
+                            )
+                          }
+                          style={({ pressed }) => [
+                            styles.fieldRow,
+                            { borderBottomColor: theme.border, opacity: pressed ? 0.7 : 1 },
+                          ]}
+                        >
+                          <Text style={[styles.fieldTextValue, { color: hintTextColor, fontSize: 15.5 }]}>
+                            {idx === 0 ? 'Items' : `Item ${idx + 1}`}{' '}
+                            {idx === 0 && info.isRequired ? <Text style={{ color: '#ef4444' }}>*</Text> : null}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
                   </View>
                 );
               }
 
-              // C. Other Selectable Fields (Ultra Minimal Hint Rows)
+              // C. Total / Amount Auto-Calculated Row (Non-editable, Label on Left, Formatted Value at Right End)
+              if (info.key === 'total' || info.key === 'amount') {
+                const numericVal = parseFloat(value || '0');
+                const formattedVal = isNaN(numericVal) || !value ? (value || '$0.00') : `$${numericVal.toFixed(2)}`;
+                return (
+                  <View
+                    key={info.key}
+                    style={[
+                      styles.fieldRow,
+                      { borderBottomColor: theme.border, justifyContent: 'space-between', alignItems: 'center' },
+                    ]}
+                  >
+                    <Text style={[styles.fieldTextValue, { color: theme.text, fontWeight: '600', fontSize: 15 }]}>
+                      {hintLabel} {info.isRequired ? <Text style={{ color: '#ef4444' }}>*</Text> : null}
+                    </Text>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>
+                      {formattedVal}
+                    </Text>
+                  </View>
+                );
+              }
+
+              // Payment Method Row (Minimal Icon + Selected Value / Placeholder)
+              if (info.key.toLowerCase().includes('payment')) {
+                return (
+                  <Pressable
+                    key={info.key}
+                    onPress={() => openPickerForField(info)}
+                    style={({ pressed }) => [
+                      styles.fieldRow,
+                      {
+                        borderBottomColor: theme.border,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 10,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="card-outline" size={18} color={value ? theme.text : hintTextColor} />
+                    <Text style={{ flex: 1, fontSize: 15, color: value ? theme.text : hintTextColor, fontWeight: value ? '600' : '400' }}>
+                      {value ? value : <>payment method <Text style={{ color: '#ef4444' }}>*</Text></>}
+                    </Text>
+                  </Pressable>
+                );
+              }
+
+              // D. Other Selectable Fields (Ultra Minimal Hint Rows)
               if (info.isSelectable) {
                 return (
                   <Pressable
@@ -792,10 +929,9 @@ export default function EventComposeModal({
                       { borderBottomColor: theme.border, opacity: pressed ? 0.7 : 1 },
                     ]}
                   >
-                    <Text style={[styles.fieldTextValue, { color: value ? theme.text : theme.textMuted + '80', fontWeight: value ? '500' : '400' }]}>
+                    <Text style={[styles.fieldTextValue, { color: value ? theme.text : hintTextColor, fontWeight: value ? '500' : '400' }]}>
                       {value ? `${info.label}: ${value}` : `${hintLabel} ${info.isRequired ? '*' : ''}`}
                     </Text>
-                    <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
                   </Pressable>
                 );
               }
@@ -809,7 +945,7 @@ export default function EventComposeModal({
                     keyboardType={isNumeric ? 'numeric' : 'default'}
                     onChangeText={(val) => handleTextChange(info.key, val)}
                     placeholder={`${hintLabel} ${info.isRequired ? '*' : ''}`}
-                    placeholderTextColor={theme.textMuted + '80'}
+                    placeholderTextColor={hintTextColor}
                   />
                 </View>
               );
@@ -823,7 +959,7 @@ export default function EventComposeModal({
                 value={notes}
                 onChangeText={setNotes}
                 placeholder="Compose event details, notes, or motion description..."
-                placeholderTextColor={theme.textMuted + '80'}
+                placeholderTextColor={theme?.dark ? '#a1a1aa' : '#52525b'}
                 textAlignVertical="top"
               />
             </View>
@@ -949,9 +1085,7 @@ export default function EventComposeModal({
                           const prdName = opt.label || optVal;
                           const prdPrice = opt.rawEntity?.value || opt.rawEntity?.data?.price || 0;
                           updateLineItem(currentPicker.targetLineId, 'name', prdName);
-                          if (prdPrice > 0) {
-                            updateLineItem(currentPicker.targetLineId, 'price', prdPrice);
-                          }
+                          updateLineItem(currentPicker.targetLineId, 'price', prdPrice > 0 ? prdPrice : 30);
                         } else {
                           handleTextChange(currentPicker.paramName, optVal);
                         }
@@ -1009,13 +1143,12 @@ const styles = StyleSheet.create({
   headerEventPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
+    gap: 4,
+    paddingHorizontal: 0,
+    paddingVertical: 2,
   },
   headerEventText: {
-    fontSize: 15,
+    fontSize: 15.5,
     fontWeight: '600',
     textTransform: 'capitalize',
   },

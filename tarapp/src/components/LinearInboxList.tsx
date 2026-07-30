@@ -20,6 +20,7 @@ interface LinearInboxListProps {
   onToggleDone?: (id: string) => void;
   onSelectTask?: (task: LinearInboxItem) => void;
   headerRight?: React.ReactNode;
+  headerLeft?: React.ReactNode;
 }
 
 export default function LinearInboxList({
@@ -28,6 +29,7 @@ export default function LinearInboxList({
   onToggleDone,
   onSelectTask,
   headerRight,
+  headerLeft,
 }: LinearInboxListProps) {
   const theme = useTheme();
 
@@ -142,40 +144,43 @@ export default function LinearInboxList({
     );
   };
 
-  if (loading) {
-    return (
-      <View style={[styles.center, { paddingVertical: 40 }]}>
-        <ActivityIndicator size="small" color={theme.primary} />
-      </View>
-    );
-  }
-
-  if (!tasks || tasks.length === 0) {
-    return (
-      <View style={[styles.emptyContainer, { borderColor: theme.border + '40' }]}>
-        <Ionicons name="checkmark-done-circle-outline" size={32} color={theme.textMuted} />
-        <Text style={[styles.emptyTitle, { color: theme.text }]}>All Inbox Tasks Done</Text>
-        <Text style={[styles.emptySub, { color: theme.textMuted }]}>
-          No pending operational tasks or notifications in this workspace.
-        </Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <View style={[styles.headerRow, { borderBottomColor: theme.border + '40', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-        <Text style={[styles.sectionHeader, { color: theme.textMuted }]}>
-          INBOX ({tasks.length})
-        </Text>
-        {headerRight}
+        {headerLeft ? headerLeft : (
+          <Text style={[styles.sectionHeader, { color: theme.textMuted }]}>
+            INBOX ({tasks?.length || 0})
+          </Text>
+        )}
+        {headerLeft ? (
+          <Text style={[styles.sectionHeader, { color: theme.textMuted }]}>
+            INBOX ({tasks?.length || 0})
+          </Text>
+        ) : (
+          headerRight
+        )}
       </View>
-      <FlatList
-        data={tasks}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        scrollEnabled={false}
-      />
+
+      {loading ? (
+        <View style={[styles.center, { paddingVertical: 40 }]}>
+          <ActivityIndicator size="small" color={theme.primary} />
+        </View>
+      ) : !tasks || tasks.length === 0 ? (
+        <View style={[styles.emptyContainer, { borderColor: theme.border + '40' }]}>
+          <Ionicons name="checkmark-done-circle-outline" size={32} color={theme.textMuted} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>All Inbox Tasks Done</Text>
+          <Text style={[styles.emptySub, { color: theme.textMuted }]}>
+            No pending operational tasks or notifications in this workspace.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={tasks}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          scrollEnabled={false}
+        />
+      )}
     </View>
   );
 }

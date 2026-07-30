@@ -98,21 +98,28 @@ const BUSINESS_VERTICALS = [
 ];
 
 export const PLAN5_EVENT_MOTIONS = [
-  { event: 'Sale', actionName: 'action_record_sale', whatHappened: 'Transaction completed', linksTo: 'Order', params: [{ name: 'items', type: 'text', required: true }, { name: 'payment_method', type: 'text', required: true }, { name: 'total', type: 'number', required: true }, { name: 'customer_id', type: 'text', required: false }] },
-  { event: 'Refund', actionName: 'action_refund_order', whatHappened: 'Money returned', linksTo: 'Order', params: [{ name: 'order_id', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
-  { event: 'Status Change', actionName: 'action_update_status', whatHappened: 'State updated', linksTo: 'Any entity', params: [{ name: 'entity_id', type: 'text', required: true }, { name: 'status', type: 'text', required: true }] },
+  { event: 'Sale', actionName: 'action_record_sale', whatHappened: 'Transaction completed', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: true }, { name: 'items', type: 'text', required: true }, { name: 'payment_method', type: 'text', required: true }, { name: 'total', type: 'number', required: true }] },
+  { event: 'Refund', actionName: 'action_refund_order', whatHappened: 'Money returned', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: false }, { name: 'order_id', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
+  { event: 'Quote', actionName: 'action_create_quote', whatHappened: 'Quotation issued', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: true }, { name: 'items', type: 'text', required: true }, { name: 'total', type: 'number', required: true }, { name: 'valid_until', type: 'text', required: false }] },
+  { event: 'Invoice', actionName: 'action_create_invoice', whatHappened: 'Customer invoice generated', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: true }, { name: 'items', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'due_date', type: 'text', required: false }, { name: 'order_id', type: 'text', required: false }] },
+  { event: 'Payment', actionName: 'action_record_payment', whatHappened: 'Payment logged', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'payment_method', type: 'text', required: true }, { name: 'invoice_id', type: 'text', required: false }] },
+  { event: 'Delivery', actionName: 'action_issue_delivery', whatHappened: 'Delivery order issued', linksTo: 'Order', params: [{ name: 'customer_id', type: 'text', required: true }, { name: 'order_id', type: 'text', required: true }, { name: 'carrier', type: 'text', required: false }, { name: 'tracking_no', type: 'text', required: false }] },
+  { event: 'RFQ', actionName: 'action_create_rfq', whatHappened: 'Request for quotation sent', linksTo: 'Company', params: [{ name: 'vendor_id', type: 'text', required: true }, { name: 'items', type: 'text', required: true }, { name: 'valid_until', type: 'text', required: false }] },
+  { event: 'Purchase Order', actionName: 'action_create_po', whatHappened: 'PO issued to vendor', linksTo: 'Company', params: [{ name: 'vendor_id', type: 'text', required: true }, { name: 'items', type: 'text', required: true }, { name: 'total', type: 'number', required: true }, { name: 'due_date', type: 'text', required: false }] },
+  { event: 'Vendor Bill', actionName: 'action_log_vendor_bill', whatHappened: 'Supplier bill logged', linksTo: 'Company', params: [{ name: 'vendor_id', type: 'text', required: true }, { name: 'po_id', type: 'text', required: false }, { name: 'amount', type: 'number', required: true }, { name: 'due_date', type: 'text', required: false }] },
+  { event: 'Stock Transfer', actionName: 'action_transfer_stock', whatHappened: 'Inventory moved', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'from_loc', type: 'text', required: true }, { name: 'to_loc', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }] },
   { event: 'Booking', actionName: 'action_book_slot', whatHappened: 'Appointment made', linksTo: 'Booking', params: [{ name: 'service', type: 'text', required: true }, { name: 'date', type: 'text', required: true }, { name: 'slot', type: 'text', required: true }, { name: 'customer_id', type: 'text', required: false }] },
   { event: 'Cancel', actionName: 'action_cancel_booking', whatHappened: 'Booking cancelled', linksTo: 'Booking', params: [{ name: 'booking_id', type: 'text', required: true }, { name: 'reason', type: 'text', required: false }] },
   { event: 'Clock In', actionName: 'action_clock_in', whatHappened: 'Staff arrived', linksTo: 'Person', params: [{ name: 'staff_id', type: 'text', required: true }] },
   { event: 'Clock Out', actionName: 'action_clock_out', whatHappened: 'Staff left', linksTo: 'Person', params: [{ name: 'staff_id', type: 'text', required: true }] },
   { event: 'Tracking', actionName: 'action_update_tracking', whatHappened: 'Shipment updated', linksTo: 'Shipment', params: [{ name: 'shipment_id', type: 'text', required: true }, { name: 'status', type: 'text', required: true }, { name: 'location', type: 'text', required: false }] },
   { event: 'Delivered', actionName: 'action_complete_delivery', whatHappened: 'Shipment fulfilled', linksTo: 'Shipment', params: [{ name: 'shipment_id', type: 'text', required: true }, { name: 'recipient_signature', type: 'text', required: false }] },
-  { event: 'Stage', actionName: 'action_update_deal_stage', whatHappened: 'Deal advanced', linksTo: 'Deal', params: [{ name: 'deal_id', type: 'text', required: true }, { name: 'stage', type: 'text', required: true }, { name: 'win_loss_reason', type: 'text', required: false }] },
   { event: 'Activity', actionName: 'action_log_activity', whatHappened: 'Call/meeting logged', linksTo: 'Deal, Person', params: [{ name: 'type', type: 'text', required: true }, { name: 'description', type: 'text', required: true }, { name: 'contact_id', type: 'text', required: false }, { name: 'deal_id', type: 'text', required: false }] },
   { event: 'Adjust', actionName: 'action_adjust_stock', whatHappened: 'Stock changed', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
   { event: 'Write Off', actionName: 'action_write_off', whatHappened: 'Stock removed', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
   { event: 'Expense', actionName: 'action_record_expense', whatHappened: 'Cost recorded', linksTo: 'Expense', params: [{ name: 'category', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'description', type: 'text', required: false }, { name: 'date', type: 'text', required: false }] },
   { event: 'Assignment', actionName: 'action_create_task', whatHappened: 'Task assigned', linksTo: 'Project', params: [{ name: 'title', type: 'text', required: true }, { name: 'description', type: 'text', required: false }, { name: 'assignee_id', type: 'text', required: false }, { name: 'due_date', type: 'text', required: false }] },
+  { event: 'Add Item', actionName: 'action_add_product', whatHappened: 'Item cataloged', linksTo: 'Item', params: [{ name: 'title', type: 'text', required: true }, { name: 'item_subtype', type: 'text', required: true }, { name: 'price', type: 'number', required: false }, { name: 'stock', type: 'number', required: false }, { name: 'category', type: 'text', required: false }] },
 ];
 
 export default function WorkspacesScreen() {
@@ -1153,24 +1160,21 @@ ${membersYaml}
           <LinearInboxList
             tasks={inboxTasks}
             loading={loadingInbox}
-            headerRight={(
+            headerLeft={(
               <Pressable
                 onPress={() => setShowDropdown(true)}
+                hitSlop={8}
                 style={({ pressed }) => [{
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 6,
-                  paddingHorizontal: 10,
-                  paddingVertical: 5,
-                  borderRadius: 8,
-                  backgroundColor: '#ffffff',
-                  borderColor: theme.border,
-                  borderWidth: 1,
-                  opacity: pressed ? 0.7 : 1,
+                  paddingHorizontal: 0,
+                  paddingVertical: 2,
+                  opacity: pressed ? 0.6 : 1,
                 }]}
               >
-                <WorkspaceThumbnail name={workspaceName || currentWorkspace?.subdomain || ''} size={20} theme={theme} />
-                <Text style={{ color: theme.text, fontSize: 13, fontWeight: '700' }} numberOfLines={1}>
+                <WorkspaceThumbnail name={workspaceName || currentWorkspace?.subdomain || ''} size={18} theme={theme} />
+                <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: '600' }} numberOfLines={1}>
                   {workspaceName || (currentWorkspace?.subdomain ? currentWorkspace.subdomain.charAt(0).toUpperCase() + currentWorkspace.subdomain.slice(1) : 'Workspace')}
                 </Text>
               </Pressable>
@@ -1224,10 +1228,11 @@ ${membersYaml}
                   shipment_id: item.data?.shipment_id || item.ref || '',
                 };
               } else {
-                actionObj = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_update_status');
+                actionObj = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_log_activity');
                 initialParams = {
-                  entity_id: item.ref || item.id,
-                  status: 'Confirmed',
+                  type: 'Resolution',
+                  description: `Resolving ${item.title}`,
+                  contact_id: item.ref || item.id,
                 };
               }
 
@@ -1790,8 +1795,8 @@ ${membersYaml}
             targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_adjust_stock');
             initialParams = { product_id: entityName, qty: '1', reason: 'Manual Adjustment' };
           } else if (entityCategory.includes('order') || entityCategory.includes('booking')) {
-            targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_update_status');
-            initialParams = { entity_id: entityName, status: 'Confirmed' };
+            targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');
+            initialParams = { customer_id: entityName, total: '0' };
           } else {
             // Customer / Person / Contact / Company
             targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');

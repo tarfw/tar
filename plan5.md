@@ -1,4 +1,4 @@
-Here's the complete model following the "one entity, many roles" pattern, with all the details from your original spec:
+cHere's the complete model following the "one entity, many roles" pattern, with all the details from your original spec:
 
 ---
 
@@ -117,14 +117,14 @@ WORKSPACE (w:{subdomain})
 |-------|---------------|----------|
 | Sale | Transaction completed | Order |
 | Refund | Money returned | Order |
-| Status Change | State updated | Any entity |
+| Status Change | State updated *(Inline entity state transition / event side-effect)* | Any entity |
 | Booking | Appointment made | Booking |
 | Cancel | Booking cancelled | Booking |
 | Clock In | Staff arrived | Person |
 | Clock Out | Staff left | Person |
 | Tracking | Shipment updated | Shipment |
 | Delivered | Shipment fulfilled | Shipment |
-| Stage | Deal advanced | Deal |
+| Stage | Deal advanced *(Inline entity state transition / CRM Pipeline view)* | Deal |
 | Activity | Call/meeting logged | Deal, Person |
 | Adjust | Stock changed | Product |
 | Write Off | Stock removed | Product |

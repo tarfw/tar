@@ -25,4 +25,10 @@ export const CORE_MODULES: Record<string, string> = {
   pipeline: CORE_EVENT_SKILL_MARKDOWN.pipeline,
   work: CORE_EVENT_SKILL_MARKDOWN.work,
   money: CORE_EVENT_SKILL_MARKDOWN.money,
+
+  // Extended ERP/CRM Module Aliases
+  sales: CORE_EVENT_SKILL_MARKDOWN.transactions,
+  purchasing: CORE_EVENT_SKILL_MARKDOWN.money,
+  finance: CORE_EVENT_SKILL_MARKDOWN.money,
+  commerce: CORE_EVENT_SKILL_MARKDOWN.transactions,
 };

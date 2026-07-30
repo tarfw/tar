@@ -100,15 +100,16 @@ export default function ContactComposeModal({
         >
           {/* Top Bar */}
           <View style={[styles.headerBar, { borderBottomColor: theme.border }]}>
-            {/* Left Role/Type Selector Pill */}
+            {/* Left Role/Type Selector (Noise-Free) */}
             <Pressable
               onPress={() => setShowRolePicker(true)}
+              hitSlop={8}
               style={({ pressed }) => [
                 styles.headerPill,
-                { backgroundColor: theme.primary + '15', opacity: pressed ? 0.7 : 1 },
+                { opacity: pressed ? 0.6 : 1 },
               ]}
             >
-              <Text style={[styles.headerPillText, { color: theme.primary }]}>
+              <Text style={[styles.headerPillText, { color: '#000000' }]}>
                 {role}
               </Text>
             </Pressable>
@@ -292,13 +293,12 @@ const styles = StyleSheet.create({
   headerPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
+    gap: 4,
+    paddingHorizontal: 0,
+    paddingVertical: 2,
   },
   headerPillText: {
-    fontSize: 15,
+    fontSize: 15.5,
     fontWeight: '600',
     textTransform: 'capitalize',
   },

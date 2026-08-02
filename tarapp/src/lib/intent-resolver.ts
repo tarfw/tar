@@ -6,9 +6,17 @@
 
 export interface IntentResult {
   match: boolean;
-  action?: 'clear' | 'show_module' | 'add_module' | 'remove_module' | 'chat';
+  action?: 'clear' | 'show_module' | 'add_module' | 'remove_module' | 'compose_item' | 'chat';
   moduleName?: string;
   feedbackText?: string;
+  itemData?: {
+    title?: string;
+    price?: number;
+    stock?: number;
+    category?: string;
+    item_subtype?: string;
+    sku?: string;
+  };
 }
 
 const MODULE_KEYWORDS: Record<string, string[]> = {
@@ -71,7 +79,49 @@ export function resolveIntent(text: string, activeModules: string[]): IntentResu
     };
   }
 
-  // 4. Direct system aliases
+  // 4. Chat-to-Compose (Add / Create Item intent)
+  const composeMatch = cleanText.match(/^(add|create|new)\s+(product|item|listing|service|asset)\s+(.+)/i);
+  if (composeMatch) {
+    const rawSubtype = composeMatch[2].toLowerCase();
+    const restStr = composeMatch[3];
+
+    // Extract price ($XX.XX or price XX)
+    const priceMatch = restStr.match(/(?:\$|price\s+|cost\s+)(\d+(?:\.\d+)?)/i);
+    const priceVal = priceMatch ? parseFloat(priceMatch[1]) : 0;
+
+    // Extract stock (XX units / stock XX / qty XX)
+    const stockMatch = restStr.match(/(\d+)\s*(?:units|qty|stock|pcs)?|stock\s+(\d+)|qty\s+(\d+)/i);
+    const stockVal = stockMatch ? parseInt(stockMatch[1] || stockMatch[2] || stockMatch[3]) : 0;
+
+    // Extract category (under / category XX)
+    const catMatch = restStr.match(/(?:category|under|in)\s+([a-zA-Z0-9_\s]+?)(?:\s+at|\s+for|\s+with|\s+price|\s*$)/i);
+    const catVal = catMatch ? catMatch[1].trim() : '';
+
+    // Extract title (clean rest string)
+    const cleanTitle = restStr
+      .replace(/(?:\$|price\s+|cost\s+)\d+(?:\.\d+)?/gi, '')
+      .replace(/\d+\s*(?:units|qty|stock|pcs)/gi, '')
+      .replace(/(?:category|under|in)\s+[a-zA-Z0-9_\s]+/gi, '')
+      .replace(/^(at|for|with)\s+/gi, '')
+      .trim();
+
+    const subtypeLabel = rawSubtype.charAt(0).toUpperCase() + rawSubtype.slice(1);
+
+    return {
+      match: true,
+      action: 'compose_item',
+      feedbackText: `Opening Item Compose for "${cleanTitle || 'New Item'}"...`,
+      itemData: {
+        title: cleanTitle ? cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1) : 'New Item',
+        price: priceVal,
+        stock: stockVal,
+        category: catVal,
+        item_subtype: subtypeLabel === 'Item' ? 'Product' : subtypeLabel,
+      },
+    };
+  }
+
+  // 5. Direct system aliases
   if (/^(show|list|get|view)\s+(products|menu|services|inventory)/i.test(cleanText)) {
     return { match: true, action: 'show_module', moduleName: 'inventory', feedbackText: 'Loaded latest product inventory.' };
   }
@@ -79,7 +129,7 @@ export function resolveIntent(text: string, activeModules: string[]): IntentResu
     return { match: true, action: 'show_module', moduleName: 'orders', feedbackText: 'Loaded latest orders.' };
   }
 
-  // 5. Scan active modules keyword map (fallback to all module keywords if activeModules is empty)
+  // 6. Scan active modules keyword map
   const modulesToScan = (activeModules && activeModules.length > 0)
     ? activeModules
     : Object.keys(MODULE_KEYWORDS);

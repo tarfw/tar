@@ -128,6 +128,7 @@ export async function chatCompletion(systemPrompt: string, userPrompt: string): 
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
+      reasoning_effort: 'medium',
     }),
   });
 

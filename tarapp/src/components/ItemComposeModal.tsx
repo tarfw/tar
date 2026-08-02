@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { chatCompletion } from '@/lib/ai';
 
 export const ITEM_SUBTYPES = [
   { label: 'Product', value: 'Product', subtitle: 'Physical Goods & Merchandise' },
@@ -24,22 +25,30 @@ export const ITEM_SUBTYPES = [
   { label: 'Warehouse', value: 'Warehouse', subtitle: 'Storage, Depot, Physical Location' },
 ];
 
+export interface ItemDataPayload {
+  title: string;
+  item_subtype: string;
+  price: number;
+  stock: number;
+  sku: string;
+  category: string;
+  min: number;
+  unit: string;
+  image_url: string;
+  refUrl?: string;
+  description?: string;
+  notes?: string;
+}
+
 export interface ItemComposeModalProps {
   visible: boolean;
   theme: any;
   submitting: boolean;
   resultMessage: string | null;
   initialType?: string;
+  initialData?: Partial<ItemDataPayload>;
   onClose: () => void;
-  onSave: (itemData: {
-    title: string;
-    item_subtype: string;
-    price: number;
-    stock: number;
-    category: string;
-    refUrl?: string;
-    notes?: string;
-  }) => void;
+  onSave: (itemData: ItemDataPayload) => void;
 }
 
 export default function ItemComposeModal({
@@ -48,6 +57,7 @@ export default function ItemComposeModal({
   submitting,
   resultMessage,
   initialType = 'Product',
+  initialData,
   onClose,
   onSave,
 }: ItemComposeModalProps) {
@@ -56,22 +66,33 @@ export default function ItemComposeModal({
   const [subType, setSubType] = useState(initialType);
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('');
+  const [sku, setSku] = useState('');
   const [category, setCategory] = useState('');
+  const [minStock, setMinStock] = useState('');
+  const [unit, setUnit] = useState('pcs');
+  const [imageUrl, setImageUrl] = useState('');
   const [refUrl, setRefUrl] = useState('');
+  const [description, setDescription] = useState('');
   const [notes, setNotes] = useState('');
   const [showTypePicker, setShowTypePicker] = useState(false);
+  const [aiFilling, setAiFilling] = useState(false);
 
   useEffect(() => {
     if (visible) {
-      setTitle('');
-      setSubType(initialType || 'Product');
-      setPrice('');
-      setStock('');
-      setCategory('');
-      setRefUrl('');
-      setNotes('');
+      setTitle(initialData?.title || '');
+      setSubType(initialData?.item_subtype || initialType || 'Product');
+      setPrice(initialData?.price !== undefined && initialData.price > 0 ? String(initialData.price) : '');
+      setStock(initialData?.stock !== undefined && initialData.stock > 0 ? String(initialData.stock) : '');
+      setSku(initialData?.sku || '');
+      setCategory(initialData?.category || '');
+      setMinStock(initialData?.min !== undefined && initialData.min > 0 ? String(initialData.min) : '');
+      setUnit(initialData?.unit || 'pcs');
+      setImageUrl(initialData?.image_url || '');
+      setRefUrl(initialData?.refUrl || '');
+      setDescription(initialData?.description || '');
+      setNotes(initialData?.notes || '');
     }
-  }, [visible, initialType]);
+  }, [visible, initialType, initialData]);
 
   if (!visible) return null;
 
@@ -84,10 +105,91 @@ export default function ItemComposeModal({
       item_subtype: subType,
       price: parseFloat(price) || 0,
       stock: parseInt(stock) || 0,
+      sku: sku.trim(),
       category: category.trim(),
+      min: parseInt(minStock) || 0,
+      unit: unit.trim() || 'pcs',
+      image_url: imageUrl.trim(),
       refUrl: refUrl.trim(),
+      description: description.trim(),
       notes: notes.trim(),
     });
+  };
+
+  // AI Auto-Fill Function (triggered by top-bar "AI" text button)
+  const handleAiAutoFill = async () => {
+    if (!title.trim() || aiFilling) return;
+    setAiFilling(true);
+    try {
+      const prompt = `Analyze this item title: "${title}".
+Current Sub-Type: ${subType}.
+Notes/Context: ${notes || description || 'None'}.
+
+STRICT SUB-TYPE RULES:
+- Detect exact Item Sub-Type from title: "Product" (goods/food), "Service" (appointments/work), "Listing" (real estate/catalog), "Document" (files/contracts), "Asset" (machinery/tools), or "Warehouse" (storage depots).
+
+STRICT CATEGORY TAXONOMY RULES:
+- Use standard industry format: "Main Category / Subcategory" (e.g. "Food & Beverage / Pizza", "Food & Beverage / Beverages", "Electronics / Audio", "Services / Consulting").
+- For restaurant & cafe dishes (e.g. "Mexican pizza", "Cheeseburger", "Matcha Latte"), ALWAYS classify under "Food & Beverage / [Dish Type]".
+
+Respond strictly in valid JSON format:
+{
+  "item_subtype": "Product",
+  "category": "Food & Beverage / Pizza",
+  "price": 12.99,
+  "stock": 10,
+  "min": 3,
+  "sku": "SKU-CODE",
+  "unit": "pcs",
+  "image_url": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500",
+  "description": "Clean 2-3 sentence item description."
+}`;
+
+      const resText = await chatCompletion(
+        'You are a standardized retail & POS catalog assistant. Strictly follow category and item sub-type standards.',
+        prompt
+      );
+
+      const jsonStr = resText.substring(resText.indexOf('{'), resText.lastIndexOf('}') + 1);
+      if (jsonStr) {
+        const parsed = JSON.parse(jsonStr);
+
+        // Auto-select Sub-Type if detected by AI
+        if (parsed.item_subtype) {
+          const matchedType = ITEM_SUBTYPES.find(
+            (t) => t.value.toLowerCase() === String(parsed.item_subtype).toLowerCase()
+          );
+          if (matchedType) {
+            setSubType(matchedType.value);
+          }
+        }
+
+        if (parsed.category) {
+          let cleanCat = String(parsed.category)
+            .replace(/\s*>\s*/g, ' / ')
+            .replace(/\s*-\s*/g, ' / ')
+            .replace(/Frozen\s+Pizza/gi, 'Pizza')
+            .replace(/Frozen\s+Food/gi, 'Food & Beverage')
+            .trim();
+
+          if (!cleanCat.includes('/') && /pizza|burger|pasta|taco|drink|coffee|tea|dessert/i.test(title)) {
+            cleanCat = `Food & Beverage / ${cleanCat}`;
+          }
+          setCategory(cleanCat);
+        }
+        if (parsed.price) setPrice(String(parsed.price));
+        if (parsed.stock !== undefined) setStock(String(parsed.stock));
+        if (parsed.min !== undefined) setMinStock(String(parsed.min));
+        if (parsed.sku) setSku(String(parsed.sku));
+        if (parsed.unit) setUnit(String(parsed.unit));
+        if (parsed.image_url && !imageUrl) setImageUrl(String(parsed.image_url));
+        if (parsed.description) setDescription(String(parsed.description));
+      }
+    } catch (err) {
+      console.error('[ItemComposeModal] AI Auto-Fill error:', err);
+    } finally {
+      setAiFilling(false);
+    }
   };
 
   return (
@@ -104,7 +206,7 @@ export default function ItemComposeModal({
         >
           {/* Top Bar */}
           <View style={[styles.headerBar, { borderBottomColor: theme.border }]}>
-            {/* Left Item Sub-Type Selector (Noise-Free) */}
+            {/* Sub-type text selector (tap to change item type) */}
             <Pressable
               onPress={() => setShowTypePicker(true)}
               hitSlop={8}
@@ -113,24 +215,40 @@ export default function ItemComposeModal({
                 { opacity: pressed ? 0.6 : 1 },
               ]}
             >
-              <Text style={[styles.headerPillText, { color: '#000000' }]}>
+              <Text style={[styles.headerPillText, { color: theme.text }]}>
                 {subType}
               </Text>
             </Pressable>
 
-            {/* Right Save Action */}
-            <TouchableOpacity
-              onPress={handleSave}
-              disabled={submitting || !isFormValid}
-              hitSlop={8}
-              style={[styles.saveBtn, { opacity: isFormValid && !submitting ? 1 : 0.4 }]}
-            >
-              {submitting ? (
-                <ActivityIndicator size="small" color={theme.primary} />
-              ) : (
-                <Text style={[styles.saveText, { color: theme.primary }]}>Save</Text>
-              )}
-            </TouchableOpacity>
+            <View style={styles.rightActions}>
+              {/* Plain Text "AI" Button at Top */}
+              <TouchableOpacity
+                onPress={handleAiAutoFill}
+                disabled={aiFilling || !title.trim()}
+                hitSlop={8}
+                style={[styles.aiTextBtn, { opacity: title.trim() && !aiFilling ? 1 : 0.35 }]}
+              >
+                {aiFilling ? (
+                  <ActivityIndicator size="small" color={theme.primary} />
+                ) : (
+                  <Text style={[styles.aiTextLabel, { color: theme.primary }]}>AI</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Save Action */}
+              <TouchableOpacity
+                onPress={handleSave}
+                disabled={submitting || !isFormValid}
+                hitSlop={8}
+                style={[styles.saveBtn, { opacity: isFormValid && !submitting ? 1 : 0.4 }]}
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color={theme.primary} />
+                ) : (
+                  <Text style={[styles.saveText, { color: theme.primary }]}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Toast Banner */}
@@ -165,10 +283,11 @@ export default function ItemComposeModal({
             contentContainerStyle={[styles.scrollBody, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Row 1: Title Input */}
-            <View style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
+            {/* Title Input */}
+            <View style={[styles.fieldBlock, { borderBottomColor: theme.border }]}>
+              {title.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Title *</Text>}
               <TextInput
-                style={[styles.fieldInput, { color: theme.text, fontWeight: '500' }]}
+                style={[styles.fieldInput, { color: theme.text, fontWeight: '600', fontSize: 17 }]}
                 value={title}
                 onChangeText={setTitle}
                 placeholder="Title *"
@@ -176,63 +295,134 @@ export default function ItemComposeModal({
               />
             </View>
 
+            {/* Price & Unit Row */}
+            <View style={styles.twoColumnRow}>
+              <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
+                {price.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Price ($)</Text>}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  {price.length > 0 && <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text, marginRight: 2 }}>$</Text>}
+                  <TextInput
+                    style={[styles.fieldInput, { flex: 1, color: theme.text, fontWeight: '600' }]}
+                    value={price}
+                    keyboardType="numeric"
+                    onChangeText={setPrice}
+                    placeholder="Price ($)"
+                    placeholderTextColor={theme.textMuted + '80'}
+                  />
+                </View>
+              </View>
 
-
-            {/* Row 3: Price / Rate */}
-            <View style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
-              <TextInput
-                style={[styles.fieldInput, { color: theme.text, fontWeight: '600' }]}
-                value={price}
-                keyboardType="numeric"
-                onChangeText={setPrice}
-                placeholder="Price ($)"
-                placeholderTextColor={theme.textMuted + '80'}
-              />
-            </View>
-
-            {/* Row 4: Dynamic Sub-Type Field (Stock / Duration / File Ref) */}
-            {subType === 'Document' ? (
-              <View style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
+              <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
+                {unit.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Unit</Text>}
                 <TextInput
                   style={[styles.fieldInput, { color: theme.text }]}
-                  value={refUrl}
-                  onChangeText={setRefUrl}
-                  placeholder="File URL or Reference"
+                  value={unit}
+                  onChangeText={setUnit}
+                  placeholder="Unit (pcs, kg, hr)"
                   placeholderTextColor={theme.textMuted + '80'}
                 />
               </View>
-            ) : (
-              <View style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
+            </View>
+
+            {/* Stock & Low Stock Alert (min) Row */}
+            <View style={styles.twoColumnRow}>
+              <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
+                {stock.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>{subType === 'Service' ? 'Capacity / Slots' : 'Stock Qty'}</Text>}
                 <TextInput
                   style={[styles.fieldInput, { color: theme.text }]}
                   value={stock}
                   keyboardType="numeric"
                   onChangeText={setStock}
-                  placeholder={subType === 'Service' ? 'Duration (mins)' : 'Stock / Quantity'}
+                  placeholder={subType === 'Service' ? 'Capacity / Slots' : 'Stock Qty'}
                   placeholderTextColor={theme.textMuted + '80'}
                 />
               </View>
-            )}
 
-            {/* Row 5: Category / SKU */}
-            <View style={[styles.fieldRow, { borderBottomColor: theme.border }]}>
+              <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
+                {minStock.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Min Alert Qty</Text>}
+                <TextInput
+                  style={[styles.fieldInput, { color: theme.text }]}
+                  value={minStock}
+                  keyboardType="numeric"
+                  onChangeText={setMinStock}
+                  placeholder="Min Alert Qty"
+                  placeholderTextColor={theme.textMuted + '80'}
+                />
+              </View>
+            </View>
+
+            {/* SKU / Barcode & Category */}
+            <View style={styles.twoColumnRow}>
+              <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
+                {sku.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>SKU / Barcode</Text>}
+                <TextInput
+                  style={[styles.fieldInput, { color: theme.text }]}
+                  value={sku}
+                  onChangeText={setSku}
+                  placeholder="SKU / Barcode"
+                  placeholderTextColor={theme.textMuted + '80'}
+                />
+              </View>
+
+              <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
+                {category.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Category</Text>}
+                <TextInput
+                  style={[styles.fieldInput, { color: theme.text }]}
+                  value={category}
+                  onChangeText={setCategory}
+                  placeholder="Category"
+                  placeholderTextColor={theme.textMuted + '80'}
+                />
+              </View>
+            </View>
+
+            {/* Primary Image URL */}
+            <View style={[styles.fieldBlock, { borderBottomColor: theme.border }]}>
+              {imageUrl.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Primary Image URL (Cover Photo)</Text>}
               <TextInput
                 style={[styles.fieldInput, { color: theme.text }]}
-                value={category}
-                onChangeText={setCategory}
-                placeholder="Category / SKU"
+                value={imageUrl}
+                onChangeText={setImageUrl}
+                placeholder="Primary Image URL (Cover Photo)"
                 placeholderTextColor={theme.textMuted + '80'}
               />
             </View>
 
-            {/* Row 6: Description & Notes */}
-            <View style={styles.bodyContainer}>
+            {/* Reference URL */}
+            <View style={[styles.fieldBlock, { borderBottomColor: theme.border }]}>
+              {refUrl.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>External Reference URL / Link</Text>}
+              <TextInput
+                style={[styles.fieldInput, { color: theme.text }]}
+                value={refUrl}
+                onChangeText={setRefUrl}
+                placeholder="External Reference URL / Link"
+                placeholderTextColor={theme.textMuted + '80'}
+              />
+            </View>
+
+            {/* Description Section */}
+            <Text style={[styles.sectionLabel, { color: theme.text, marginTop: 16 }]}>Description</Text>
+            <View style={[styles.bodyContainer, { borderColor: theme.border }]}>
               <TextInput
                 style={[styles.bodyInput, { color: theme.text }]}
                 multiline
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Compose item description or specs..."
+                placeholderTextColor={theme.textMuted + '80'}
+                textAlignVertical="top"
+              />
+            </View>
+
+            {/* Internal Notes */}
+            <Text style={[styles.sectionLabel, { color: theme.text, marginTop: 16 }]}>Internal Notes</Text>
+            <View style={[styles.bodyContainer, { minHeight: 80, borderColor: theme.border }]}>
+              <TextInput
+                style={[styles.bodyInput, { color: theme.text, minHeight: 60 }]}
+                multiline
                 value={notes}
                 onChangeText={setNotes}
-                placeholder="Compose item description, specifications, or notes..."
+                placeholder="Private team notes or supplier specifications..."
                 placeholderTextColor={theme.textMuted + '80'}
                 textAlignVertical="top"
               />
@@ -311,16 +501,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 0,
-    paddingVertical: 2,
   },
   headerPillText: {
-    fontSize: 15.5,
-    fontWeight: '600',
-    textTransform: 'capitalize',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  rightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  aiTextBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  aiTextLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   saveBtn: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     paddingVertical: 4,
   },
   saveText: {
@@ -338,30 +539,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
   },
-  fieldRow: {
-    minHeight: 50,
+  twoColumnRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
-  fieldTextValue: {
-    flex: 1,
-    fontSize: 15,
+  fieldBlock: {
+    minHeight: 48,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 2,
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: -2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   fieldInput: {
-    flex: 1,
     fontSize: 15,
-    paddingVertical: 12,
+    paddingVertical: 6,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    opacity: 0.8,
   },
   bodyContainer: {
-    paddingTop: 16,
-    minHeight: 200,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    padding: 10,
+    minHeight: 120,
+    marginTop: 6,
   },
   bodyInput: {
-    fontSize: 16,
-    lineHeight: 24,
-    minHeight: 180,
+    fontSize: 15,
+    lineHeight: 22,
+    minHeight: 100,
   },
   modalOverlay: {
     flex: 1,

@@ -4,6 +4,7 @@ import { KeyboardAwareScrollView, KeyboardAvoidingView } from 'react-native-keyb
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import * as SecureStore from 'expo-secure-store';
 import { BlurView } from 'expo-blur';
 
@@ -199,6 +200,7 @@ export default function WorkspacesScreen() {
 
   // Dedicated Item & Contact Modal state
   const [showItemModal, setShowItemModal] = useState(false);
+  const [itemInitialData, setItemInitialData] = useState<any>(null);
   const [submittingItem, setSubmittingItem] = useState(false);
   const [itemResultMessage, setItemResultMessage] = useState<string | null>(null);
 
@@ -742,6 +744,12 @@ ${membersYaml}
           }
           setExecuting(false);
           setAgentFeedback({ text: resolved.feedbackText || `Removed ${resolved.moduleName} skill from canvas.`, type: 'success' });
+          return;
+        } else if (resolved.action === 'compose_item' && resolved.itemData) {
+          setItemInitialData(resolved.itemData);
+          setShowItemModal(true);
+          setExecuting(false);
+          setAgentFeedback({ text: resolved.feedbackText || `Opening Item Compose...`, type: 'success' });
           return;
         }
       }
@@ -1422,16 +1430,16 @@ ${membersYaml}
           style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
         >
           <View style={{
-            width: 60,
+            width: 56,
             height: 32,
             borderRadius: 16,
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: showCanvasModal ? theme.primary + '25' : 'transparent',
           }}>
-            <Ionicons
-              name={showCanvasModal ? 'easel' : 'easel-outline'}
-              size={22}
+            <MaterialCommunityIcons
+              name="space-invaders"
+              size={21}
               color={showCanvasModal ? theme.primary : theme.textSecondary}
             />
           </View>
@@ -1857,28 +1865,62 @@ ${membersYaml}
         theme={theme}
         submitting={submittingItem}
         resultMessage={itemResultMessage}
+        initialData={itemInitialData}
         onClose={() => {
           setShowItemModal(false);
           setItemResultMessage(null);
+          setItemInitialData(null);
         }}
         onSave={async (itemData) => {
           if (!currentWorkspace?.scope) return;
           setSubmittingItem(true);
           try {
+            const itemType = (itemData.item_subtype || 'Product').toLowerCase();
+
+            // DB + S3 Split (@dbrules.md):
+            // matter.value = stock quantity
+            // matter.data = flat operational primitives (price, category, sku, min, unit, image_url)
+            // S3 Payload = rich content (description, notes, refUrl)
+            const primitiveData = {
+              price: itemData.price || 0,
+              category: itemData.category || '',
+              sku: itemData.sku || '',
+              min: itemData.min || 0,
+              unit: itemData.unit || 'pcs',
+              image_url: itemData.image_url || '',
+              refUrl: itemData.refUrl || '',
+              description: itemData.description || '',
+              notes: itemData.notes || '',
+            };
+
             await tar.tool('create', {
               table: 'matter',
-              type: 'product',
+              type: itemType,
               title: itemData.title,
-              value: itemData.price || 0,
-              data: itemData,
+              value: itemData.stock || 0,
+              data: primitiveData,
               scope: currentWorkspace.scope,
             });
+
+            // Low Stock Inbox Trigger: If stock <= min threshold
+            if (itemData.min > 0 && (itemData.stock || 0) <= itemData.min) {
+              await tar.tool('create', {
+                table: 'inbox',
+                type: 'stock',
+                title: `Low stock: ${itemData.title} (${itemData.stock || 0} ${itemData.unit || 'pcs'} left)`,
+                status: 'open',
+                scope: currentWorkspace.scope,
+                due: Math.floor(Date.now() / 1000),
+              }).catch((e: any) => console.warn('[Workspace] Low stock inbox trigger note:', e));
+            }
+
             await refreshEntities(currentWorkspace.scope);
             setItemResultMessage('Item saved successfully!');
             setTimeout(() => {
               setShowItemModal(false);
               setSubmittingItem(false);
               setItemResultMessage(null);
+              setItemInitialData(null);
             }, 1000);
           } catch (errItem) {
             console.error('[Workspace] Item creation failed:', errItem);

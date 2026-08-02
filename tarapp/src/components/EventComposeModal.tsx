@@ -825,21 +825,24 @@ export default function EventComposeModal({
                                 {
                                   flexDirection: 'row',
                                   alignItems: 'center',
-                                  gap: 12,
+                                  gap: 16,
                                   paddingLeft: 8,
                                   opacity: pressed ? 0.6 : 1,
                                 },
                               ]}
                             >
-                              {/* c) xQty (in nos) text instead of + - chips */}
-                              <Text style={{ fontSize: 15, color: hintTextColor }}>
-                                x<Text style={{ fontWeight: '700', color: theme.text }}>{item.qty}</Text>
-                              </Text>
+                              {/* c) Aligned xQty column (supports 1, 2, 3+ digits with small space) */}
+                              <View style={{ width: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
+                                <Text style={{ fontSize: 14, color: hintTextColor }}>x</Text>
+                                <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }}>{item.qty}</Text>
+                              </View>
 
-                              {/* Price */}
-                              <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>
-                                ${(item.qty * (item.price || 0)).toFixed(2)}
-                              </Text>
+                              {/* Total cost column (no currency symbol) */}
+                              <View style={{ minWidth: 70, alignItems: 'flex-end' }}>
+                                <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>
+                                  {(item.qty * (item.price || 0)).toFixed(2)}
+                                </Text>
+                              </View>
                             </Pressable>
                           </View>
                         );

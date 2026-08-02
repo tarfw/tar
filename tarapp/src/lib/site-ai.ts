@@ -43,6 +43,7 @@ async function chatCompletion(systemPrompt: string, userPrompt: string): Promise
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
+      reasoning_effort: 'medium',
     }),
   });
 

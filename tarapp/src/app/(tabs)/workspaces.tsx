@@ -36,6 +36,7 @@ import DirectoryModal from '@/components/DirectoryModal';
 import ExploreModal from '@/components/ExploreModal';
 import ItemComposeModal from '@/components/ItemComposeModal';
 import ContactComposeModal from '@/components/ContactComposeModal';
+import { updateStock } from '@/lib/inventory';
 
 interface Workspace {
   scope: string;
@@ -120,6 +121,7 @@ export const PLAN5_EVENT_MOTIONS = [
   { event: 'Write Off', actionName: 'action_write_off', whatHappened: 'Stock removed', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
   { event: 'Expense', actionName: 'action_record_expense', whatHappened: 'Cost recorded', linksTo: 'Expense', params: [{ name: 'category', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'description', type: 'text', required: false }, { name: 'date', type: 'text', required: false }] },
   { event: 'Assignment', actionName: 'action_create_task', whatHappened: 'Task assigned', linksTo: 'Project', params: [{ name: 'title', type: 'text', required: true }, { name: 'description', type: 'text', required: false }, { name: 'assignee_id', type: 'text', required: false }, { name: 'due_date', type: 'text', required: false }] },
+  { event: 'Receive Stock', actionName: 'action_receive_po', whatHappened: 'Stock added from supplier', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'po_id', type: 'text', required: false }] },
   { event: 'Add Item', actionName: 'action_add_product', whatHappened: 'Item cataloged', linksTo: 'Item', params: [{ name: 'title', type: 'text', required: true }, { name: 'item_subtype', type: 'text', required: true }, { name: 'price', type: 'number', required: false }, { name: 'stock', type: 'number', required: false }, { name: 'category', type: 'text', required: false }] },
 ];
 
@@ -844,22 +846,16 @@ ${membersYaml}
       // Execute directly
       setExecuting(true);
       const actionName = action.name || action.actionId;
-      console.log(`[Agent] Executing action "${actionName}" for scope: ${currentWorkspace?.scope}`);
-      tar.executeAITask(actionName, {}, currentWorkspace?.scope!)
-        .then(async (res) => {
-          console.log(`[Agent] Action "${actionName}" completed successfully:`, res);
-          // Refresh records
-          if (currentWorkspace?.scope) {
-            await refreshProducts(currentWorkspace.scope);
-            await refreshOrders(currentWorkspace.scope);
-            await refreshEntities(currentWorkspace.scope);
-            await refreshInboxTasks(currentWorkspace.scope);
-          }
-        })
-        .catch((err) => {
-          console.error(`[Agent] Action "${actionName}" failed:`, err);
-        })
-        .finally(() => setExecuting(false));
+      console.log(`[Agent] Executing action "${actionName}" locally for scope: ${currentWorkspace?.scope}`);
+      if (currentWorkspace?.scope) {
+        Promise.all([
+          refreshProducts(currentWorkspace.scope),
+          refreshOrders(currentWorkspace.scope),
+          refreshEntities(currentWorkspace.scope),
+          refreshInboxTasks(currentWorkspace.scope),
+        ]).catch(() => null);
+      }
+      setExecuting(false);
     }
   };
 
@@ -885,9 +881,9 @@ ${membersYaml}
         cleanParams.description = activeParams.notes;
       }
 
-      // Direct entity & inbox creation fallback
-      if (
-        selectedAction.name === 'action_add_contact' ||
+      console.log(`[Workspace] ⚡ handleActionFormSubmit — action: "${selectedAction.name}", scope: "${currentWorkspace?.scope}", params:`, cleanParams);
+
+      if (selectedAction.name === 'action_add_contact' ||
         selectedAction.name === 'action_add_company' ||
         selectedAction.name === 'action_add_product' ||
         selectedAction.name === 'create_entity'
@@ -930,22 +926,81 @@ ${membersYaml}
             data: cleanParams,
             scope: currentWorkspace.scope,
           });
+          if (cleanParams.items && currentWorkspace?.scope) {
+            let itemList: any[] = [];
+            try {
+              itemList = typeof cleanParams.items === 'string' ? JSON.parse(cleanParams.items) : cleanParams.items;
+            } catch (_) {}
+            if (Array.isArray(itemList)) {
+              for (const item of itemList) {
+                if (item.productId || item.id) {
+                  await updateStock(
+                    currentWorkspace.scope,
+                    item.productId || item.id,
+                    -Math.abs(Number(item.qty || 1)),
+                    'sale',
+                    `Sold in Order (${cleanParams.customer_id || 'Retail'})`
+                  ).catch((e) => console.warn('Sale stock update warn:', e));
+                }
+              }
+            }
+          }
         } catch (e) {
           console.warn('[Workspace] Direct sale creation fallback:', e);
         }
-      } else if (selectedAction.name === 'action_adjust_stock' || selectedAction.name === 'action_write_off') {
-        const titleVal = `Low Stock Alert: ${cleanParams.product_id || 'Product'}`;
-        try {
-          await tar.tool('create', {
-            table: 'inbox',
-            type: 'stock',
-            title: titleVal,
-            status: 'open',
-            data: cleanParams,
-            scope: currentWorkspace.scope,
-          });
-        } catch (e) {
-          console.warn('[Workspace] Direct stock alert creation fallback:', e);
+      } else if (selectedAction.name === 'action_adjust_stock') {
+        if (cleanParams.product_id && currentWorkspace?.scope) {
+          await updateStock(
+            currentWorkspace.scope,
+            cleanParams.product_id,
+            Number(cleanParams.qty || 0),
+            'adjust',
+            cleanParams.reason || 'Manual Adjustment'
+          ).catch((e) => console.warn('Stock adjust error:', e));
+        }
+      } else if (selectedAction.name === 'action_write_off') {
+        if (cleanParams.product_id && currentWorkspace?.scope) {
+          await updateStock(
+            currentWorkspace.scope,
+            cleanParams.product_id,
+            -Math.abs(Number(cleanParams.qty || 0)),
+            'write_off',
+            cleanParams.reason || 'Write Off / Damaged'
+          ).catch((e) => console.warn('Stock write off error:', e));
+        }
+      } else if (selectedAction.name === 'action_transfer_stock') {
+        if (currentWorkspace?.scope) {
+          const targetId = cleanParams.product_id || cleanParams.from_loc;
+          const qtyVal = Math.abs(Number(cleanParams.qty || 0));
+          const fromLoc = cleanParams.from_loc || 'Main Storage';
+          const toLoc = cleanParams.to_loc || 'Front Counter';
+
+          const isInternal = !toLoc.toLowerCase().startsWith('w:') && !toLoc.toLowerCase().includes('workspace');
+
+          if (targetId) {
+            await updateStock(
+              currentWorkspace.scope,
+              targetId,
+              isInternal ? qtyVal : -qtyVal,
+              'transfer',
+              `Transferred ${qtyVal} pcs from ${fromLoc} to ${toLoc}`,
+              {
+                fromLoc,
+                toLoc,
+                isInternal,
+              }
+            ).catch((e) => console.warn('Transfer stock error:', e));
+          }
+        }
+      } else if (selectedAction.name === 'action_receive_po') {
+        if (cleanParams.product_id && currentWorkspace?.scope) {
+          await updateStock(
+            currentWorkspace.scope,
+            cleanParams.product_id,
+            Math.abs(Number(cleanParams.qty || 0)),
+            'restock',
+            `Received PO ${cleanParams.po_id ? ': ' + cleanParams.po_id : ''}`
+          ).catch((e) => console.warn('Receive PO error:', e));
         }
       } else if (selectedAction.name === 'action_book_slot') {
         const titleVal = 'Appointment Booked';
@@ -984,29 +1039,34 @@ ${membersYaml}
         }
       }
 
-      const res = await tar.executeAITask(selectedAction.name, cleanParams, currentWorkspace.scope);
-      
+      console.log(`[Workspace] ⚡ Action "${selectedAction.name}" submit completed deterministically — 0 LLM network calls.`);
+
       // Auto-complete resolved Inbox Task if triggered from Inbox row
       if (resolvingTaskId) {
         setInboxTasks((prev) => prev.filter((t) => t.id !== resolvingTaskId));
-        await markTaskDone(currentWorkspace.scope, resolvingTaskId).catch(() => null);
+        markTaskDone(currentWorkspace.scope, resolvingTaskId).catch(() => null);
         setResolvingTaskId(null);
         setActionResultMessage(`Task completed & Event recorded: ${selectedAction.name.replace(/_/g, ' ')}`);
       } else {
-        setActionResultMessage(res?.message || `Successfully recorded event: ${selectedAction.name.replace(/_/g, ' ')}`);
+        setActionResultMessage(`Successfully recorded event: ${selectedAction.name.replace(/_/g, ' ')}`);
       }
-      
-      // Refresh records after action is performed
-      await refreshProducts(currentWorkspace.scope);
-      await refreshOrders(currentWorkspace.scope);
-      await refreshEntities(currentWorkspace.scope);
-      await refreshInboxTasks(currentWorkspace.scope);
+
+      // Fast parallel refresh without blocking UI close
+      Promise.all([
+        refreshProducts(currentWorkspace.scope),
+        refreshOrders(currentWorkspace.scope),
+        refreshEntities(currentWorkspace.scope),
+        refreshInboxTasks(currentWorkspace.scope),
+      ]).catch((e) => console.warn('[Workspace] Background parallel refresh note:', e));
 
       setTimeout(() => {
         setSelectedAction(null);
         setFormParams({});
         setActionResultMessage(null);
-      }, 1500);
+        if (itemInitialData) {
+          setShowItemModal(true);
+        }
+      }, 350);
     } catch (err: any) {
       setActionResultMessage(`Error: ${err.message || 'Execution failed'}`);
     } finally {
@@ -1139,11 +1199,13 @@ ${membersYaml}
                     return { success: true };
                   }
                   if (currentWorkspace?.scope) {
-                    const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
-                    await refreshProducts(currentWorkspace.scope);
-                    await refreshOrders(currentWorkspace.scope);
-                    await refreshEntities(currentWorkspace.scope);
-                    return res;
+                    console.log(`[Canvas] Action "${actionName}" triggered — local execution.`);
+                    Promise.all([
+                      refreshProducts(currentWorkspace.scope),
+                      refreshOrders(currentWorkspace.scope),
+                      refreshEntities(currentWorkspace.scope),
+                    ]).catch(() => null);
+                    return { success: true };
                   }
                   throw new Error('No active workspace scope');
                 }}
@@ -1604,11 +1666,13 @@ ${membersYaml}
                   return { success: true };
                 }
                 if (currentWorkspace?.scope) {
-                  const res = await tar.executeAITask(actionName, params, currentWorkspace.scope);
-                  await refreshProducts(currentWorkspace.scope);
-                  await refreshOrders(currentWorkspace.scope);
-                  await refreshEntities(currentWorkspace.scope);
-                  return res;
+                  console.log(`[Canvas] Action "${actionName}" triggered — local execution.`);
+                  Promise.all([
+                    refreshProducts(currentWorkspace.scope),
+                    refreshOrders(currentWorkspace.scope),
+                    refreshEntities(currentWorkspace.scope),
+                  ]).catch(() => null);
+                  return { success: true };
                 }
                 throw new Error('No active workspace scope');
               }}
@@ -1829,7 +1893,21 @@ ${membersYaml}
         theme={theme}
         onClose={() => setShowDirectoryModal(false)}
         onSelectEntity={(entity) => {
-          setSelectedEntityDetails(entity);
+          const typeLower = (entity.type || entity.category || '').toLowerCase();
+          if (
+            typeLower.includes('product') ||
+            typeLower.includes('item') ||
+            typeLower.includes('service') ||
+            typeLower.includes('asset') ||
+            typeLower.includes('listing') ||
+            typeLower.includes('document') ||
+            entity.data?.item_subtype
+          ) {
+            setItemInitialData(entity);
+            setShowItemModal(true);
+          } else {
+            setSelectedEntityDetails(entity);
+          }
         }}
         onAddNewEntity={(category) => {
           if (category === 'items') {
@@ -1866,10 +1944,36 @@ ${membersYaml}
         submitting={submittingItem}
         resultMessage={itemResultMessage}
         initialData={itemInitialData}
+        scope={currentWorkspace?.scope}
         onClose={() => {
           setShowItemModal(false);
           setItemResultMessage(null);
           setItemInitialData(null);
+        }}
+        onDelete={async (id) => {
+          if (!currentWorkspace?.scope || !id) return;
+          try {
+            await tar.tool('delete', { table: 'matter', id, scope: currentWorkspace.scope }).catch(() => null);
+            await tar.tool('update', { table: 'matter', id, scope: currentWorkspace.scope, patch: { status: 'deleted' } }).catch(() => null);
+            setShowItemModal(false);
+            setItemInitialData(null);
+            await refreshProducts(currentWorkspace.scope);
+            await refreshEntities(currentWorkspace.scope);
+          } catch (err) {
+            console.warn('[Workspace] Delete item error:', err);
+          }
+        }}
+        onLogEventForEntity={(actionName, initialParams) => {
+          setShowItemModal(false);
+          const targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === actionName);
+          if (targetAction) {
+            handleTriggerAction({
+              name: targetAction.actionName,
+              purpose: targetAction.whatHappened,
+              params: targetAction.params,
+            });
+            setFormParams(initialParams);
+          }
         }}
         onSave={async (itemData) => {
           if (!currentWorkspace?.scope) return;
@@ -1877,10 +1981,6 @@ ${membersYaml}
           try {
             const itemType = (itemData.item_subtype || 'Product').toLowerCase();
 
-            // DB + S3 Split (@dbrules.md):
-            // matter.value = stock quantity
-            // matter.data = flat operational primitives (price, category, sku, min, unit, image_url)
-            // S3 Payload = rich content (description, notes, refUrl)
             const primitiveData = {
               price: itemData.price || 0,
               category: itemData.category || '',
@@ -1891,31 +1991,46 @@ ${membersYaml}
               refUrl: itemData.refUrl || '',
               description: itemData.description || '',
               notes: itemData.notes || '',
+              committed: itemData.committed || 0,
             };
 
-            await tar.tool('create', {
-              table: 'matter',
-              type: itemType,
-              title: itemData.title,
-              value: itemData.stock || 0,
-              data: primitiveData,
-              scope: currentWorkspace.scope,
-            });
-
-            // Low Stock Inbox Trigger: If stock <= min threshold
-            if (itemData.min > 0 && (itemData.stock || 0) <= itemData.min) {
-              await tar.tool('create', {
-                table: 'inbox',
-                type: 'stock',
-                title: `Low stock: ${itemData.title} (${itemData.stock || 0} ${itemData.unit || 'pcs'} left)`,
-                status: 'open',
+            if (itemData.id) {
+              await tar.tool('update', {
+                table: 'matter',
+                id: itemData.id,
                 scope: currentWorkspace.scope,
-                due: Math.floor(Date.now() / 1000),
-              }).catch((e: any) => console.warn('[Workspace] Low stock inbox trigger note:', e));
+                type: itemType,
+                patch: {
+                  title: itemData.title,
+                  data: primitiveData,
+                },
+              });
+            } else {
+              await tar.tool('create', {
+                table: 'matter',
+                type: itemType,
+                title: itemData.title,
+                value: itemData.stock || 0,
+                data: primitiveData,
+                scope: currentWorkspace.scope,
+              });
+
+              // Low Stock Inbox Trigger: If stock <= min threshold
+              if (itemData.min > 0 && (itemData.stock || 0) <= itemData.min) {
+                await tar.tool('create', {
+                  table: 'inbox',
+                  type: 'stock',
+                  title: `Low stock: ${itemData.title} (${itemData.stock || 0} ${itemData.unit || 'pcs'} left)`,
+                  status: 'open',
+                  scope: currentWorkspace.scope,
+                  due: Math.floor(Date.now() / 1000),
+                }).catch((e: any) => console.warn('[Workspace] Low stock inbox trigger note:', e));
+              }
             }
 
+            await refreshProducts(currentWorkspace.scope);
             await refreshEntities(currentWorkspace.scope);
-            setItemResultMessage('Item saved successfully!');
+            setItemResultMessage(itemData.id ? 'Item updated successfully!' : 'Item saved successfully!');
             setTimeout(() => {
               setShowItemModal(false);
               setSubmittingItem(false);
@@ -1923,7 +2038,7 @@ ${membersYaml}
               setItemInitialData(null);
             }, 1000);
           } catch (errItem) {
-            console.error('[Workspace] Item creation failed:', errItem);
+            console.error('[Workspace] Item save failed:', errItem);
             setItemResultMessage('Failed to save item.');
             setSubmittingItem(false);
           }

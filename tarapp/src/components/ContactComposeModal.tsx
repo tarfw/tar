@@ -76,14 +76,18 @@ export default function ContactComposeModal({
 
   const handleSave = () => {
     if (!isFormValid || submitting) return;
-    onSave({
+    const payload = {
       name: name.trim(),
       role,
       email: email.trim(),
       phone: phone.trim(),
       org: org.trim(),
       notes: notes.trim(),
-    });
+    };
+    console.log(`[ContactComposeModal] 💾 Save triggered — role: "${role}", name: "${name}"`);
+    console.log(`[ContactComposeModal] 📤 Payload built:`, payload);
+    onSave(payload);
+    console.log(`[ContactComposeModal] ✅ Contact payload submitted!`);
   };
 
   return (

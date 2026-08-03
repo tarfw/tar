@@ -41,7 +41,21 @@ export default function EntityDirectory({ props, designTokens, data, onExecuteAc
   // Use passed data from Turso DB (`matter` rows)
   const rawList: EntityItem[] = useMemo(() => {
     if (data && Array.isArray(data) && data.length > 0) {
-      return data.map((d, index) => {
+      return data
+        .filter((d) => {
+          if (!d) return false;
+          const statusStr = String(d.status || d.data?.status || '').toLowerCase();
+          const typeStr = String(d.type || '').toLowerCase();
+          return (
+            statusStr !== 'converted' &&
+            statusStr !== 'deleted' &&
+            statusStr !== 'archived' &&
+            typeStr !== 'converted_lead' &&
+            typeStr !== 'deleted' &&
+            !d.deleted
+          );
+        })
+        .map((d, index) => {
         const typeStr = (d.type || d.category || '').toLowerCase();
         let cat: 'people' | 'companies' | 'items' = 'people';
         if (['business', 'vendor', 'partner', 'company', 'companies', 'organization'].includes(typeStr)) {
@@ -164,7 +178,7 @@ export default function EntityDirectory({ props, designTokens, data, onExecuteAc
         <Ionicons name="search-outline" size={17} color="#94a3b8" style={{ marginRight: 10 }} />
         <TextInput
           style={{ flex: 1, fontSize: 14, color: '#0f172a', paddingVertical: 12 }}
-          placeholder="Search people, companies, items..."
+          placeholder="Search people, leads, companies, items..."
           placeholderTextColor="#94a3b8"
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -203,7 +217,7 @@ export default function EntityDirectory({ props, designTokens, data, onExecuteAc
           onPress={() => setActiveTab('items')}
         >
           <Text style={[styles.tabText, activeTab === 'items' && styles.tabTextActive]}>
-            Items
+            Items / Deals
           </Text>
           {activeTab === 'items' && <View style={styles.activeIndicator} />}
         </Pressable>

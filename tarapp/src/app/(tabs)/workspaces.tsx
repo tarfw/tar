@@ -884,12 +884,19 @@ ${membersYaml}
       console.log(`[Workspace] ⚡ handleActionFormSubmit — action: "${selectedAction.name}", scope: "${currentWorkspace?.scope}", params:`, cleanParams);
 
       if (selectedAction.name === 'action_add_contact' ||
+        selectedAction.name === 'action_add_lead' ||
         selectedAction.name === 'action_add_company' ||
+        selectedAction.name === 'action_add_deal' ||
         selectedAction.name === 'action_add_product' ||
         selectedAction.name === 'create_entity'
       ) {
         const titleVal = cleanParams.title || cleanParams.name || cleanParams.to || 'New Entity';
-        const typeVal = cleanParams.role || cleanParams.type || (selectedAction.name === 'action_add_company' ? 'company' : selectedAction.name === 'action_add_product' ? 'product' : 'customer');
+        const typeVal = cleanParams.role || cleanParams.type || (
+          selectedAction.name === 'action_add_lead' ? 'lead' :
+          selectedAction.name === 'action_add_company' ? 'company' :
+          selectedAction.name === 'action_add_deal' ? 'deal' :
+          selectedAction.name === 'action_add_product' ? 'product' : 'customer'
+        );
         const payloadData = {
           ...cleanParams,
           item_subtype: cleanParams.item_subtype || (selectedAction.name === 'action_add_product' ? 'product' : undefined),
@@ -906,6 +913,50 @@ ${membersYaml}
           await refreshEntities(currentWorkspace.scope);
         } catch (errCreate) {
           console.warn('[Workspace] Fallback matter creation:', errCreate);
+        }
+      } else if (selectedAction.name === 'action_update_deal_stage') {
+        try {
+          if (cleanParams.deal_id && currentWorkspace?.scope) {
+            await tar.tool('update', {
+              table: 'matter',
+              id: cleanParams.deal_id,
+              scope: currentWorkspace.scope,
+              patch: {
+                data: { stage: cleanParams.stage, win_loss_reason: cleanParams.win_loss_reason },
+              },
+            });
+            await tar.tool('create', {
+              table: 'motion',
+              type: 'stage',
+              ref: cleanParams.deal_id,
+              data: { stage: cleanParams.stage, win_loss_reason: cleanParams.win_loss_reason },
+              scope: currentWorkspace.scope,
+            });
+            await refreshEntities(currentWorkspace.scope);
+          }
+        } catch (eStage) {
+          console.warn('[Workspace] Update deal stage warning:', eStage);
+        }
+      } else if (selectedAction.name === 'action_log_activity') {
+        try {
+          const targetRef = cleanParams.deal_id || cleanParams.contact_id || cleanParams.customer_id;
+          if (targetRef && currentWorkspace?.scope) {
+            await tar.tool('create', {
+              table: 'motion',
+              type: 'activity',
+              ref: targetRef,
+              data: {
+                activity_type: cleanParams.type || 'Call / Meeting',
+                description: cleanParams.description || cleanParams.notes || '',
+                deal_id: cleanParams.deal_id,
+                contact_id: cleanParams.contact_id,
+              },
+              scope: currentWorkspace.scope,
+            });
+            await refreshEntities(currentWorkspace.scope);
+          }
+        } catch (eAct) {
+          console.warn('[Workspace] Log activity error:', eAct);
         }
       } else if (selectedAction.name === 'action_record_sale') {
         const titleVal = 'New Order';
@@ -1855,15 +1906,39 @@ ${membersYaml}
             await refreshEntities(currentWorkspace.scope);
           }
         }}
-        onLogEventForEntity={(ent) => {
+        onLogEventForEntity={(ent, eventKind) => {
           setSelectedEntityDetails(null);
           const entityName = ent.title || ent.name || ent.id || '';
           const entityCategory = (ent.category || ent.type || '').toLowerCase();
 
-          let targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');
+          let targetAction: any = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');
           let initialParams: Record<string, string> = { customer_id: entityName };
 
-          if (entityCategory.includes('item') || entityCategory.includes('product')) {
+          if (entityCategory.includes('deal')) {
+            if (eventKind === 'activity') {
+              targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_log_activity') || {
+                name: 'action_log_activity',
+                purpose: 'Log Call, Meeting or Note',
+                params: [
+                  { name: 'type', type: 'text', required: true },
+                  { name: 'description', type: 'text', required: true },
+                  { name: 'deal_id', type: 'text', required: false },
+                ],
+              };
+              initialParams = { deal_id: ent.id, type: 'Call / Meeting', description: '' };
+            } else {
+              targetAction = {
+                name: 'action_update_deal_stage',
+                purpose: 'Advance Deal Stage',
+                params: [
+                  { name: 'deal_id', type: 'text', required: true },
+                  { name: 'stage', type: 'text', required: true },
+                  { name: 'win_loss_reason', type: 'text', required: false },
+                ],
+              };
+              initialParams = { deal_id: ent.id, stage: ent.data?.stage || 'Proposal' };
+            }
+          } else if (entityCategory.includes('item') || entityCategory.includes('product')) {
             targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_adjust_stock');
             initialParams = { product_id: entityName, qty: '1', reason: 'Manual Adjustment' };
           } else if (entityCategory.includes('order') || entityCategory.includes('booking')) {
@@ -1871,14 +1946,14 @@ ${membersYaml}
             initialParams = { customer_id: entityName, total: '0' };
           } else {
             // Customer / Person / Contact / Company
-            targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');
-            initialParams = { customer_id: entityName };
+            targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_add_deal') || PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');
+            initialParams = { contact_id: ent.id, name: `${entityName} Deal`, stage: 'New Inquiry', value: '10000' };
           }
 
           if (targetAction) {
             handleTriggerAction({
-              name: targetAction.actionName,
-              purpose: targetAction.whatHappened,
+              name: targetAction.name || targetAction.actionName,
+              purpose: targetAction.purpose || targetAction.whatHappened,
               params: targetAction.params,
             });
             setFormParams(initialParams);
@@ -2060,7 +2135,12 @@ ${membersYaml}
           if (!currentWorkspace?.scope) return;
           setSubmittingContact(true);
           try {
-            const matterType = contactData.role === 'Vendor' || contactData.role === 'Partner' ? 'company' : 'customer';
+            let matterType = 'customer';
+            if (contactData.role === 'Lead') {
+              matterType = 'lead';
+            } else if (['Company', 'Vendor', 'Partner'].includes(contactData.role)) {
+              matterType = 'company';
+            }
             await tar.tool('create', {
               table: 'matter',
               type: matterType,

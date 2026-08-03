@@ -16,7 +16,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export const CONTACT_SUBTYPES = [
+  { label: 'Lead', value: 'Lead', subtitle: 'Raw Unqualified Sales Prospect' },
   { label: 'Customer', value: 'Customer', subtitle: 'External Buyer or Client' },
+  { label: 'Company', value: 'Company', subtitle: 'Business Account / Organization' },
   { label: 'Staff', value: 'Staff', subtitle: 'Internal Team Member' },
   { label: 'Contact', value: 'Contact', subtitle: 'General Relationship / Individual' },
   { label: 'Vendor', value: 'Vendor', subtitle: 'Supplier Organization' },

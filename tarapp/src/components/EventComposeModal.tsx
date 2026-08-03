@@ -11,6 +11,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   Pressable,
+  Image,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -37,7 +38,8 @@ export const PLAN5_EVENT_MOTIONS = [
   { event: 'Write Off', actionName: 'action_write_off', whatHappened: 'Stock removed', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
   { event: 'Expense', actionName: 'action_record_expense', whatHappened: 'Cost recorded', linksTo: 'Expense', params: [{ name: 'category', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'description', type: 'text', required: false }, { name: 'date', type: 'text', required: false }] },
   { event: 'Assignment', actionName: 'action_create_task', whatHappened: 'Task assigned', linksTo: 'Project', params: [{ name: 'title', type: 'text', required: true }, { name: 'description', type: 'text', required: false }, { name: 'assignee_id', type: 'text', required: false }, { name: 'due_date', type: 'text', required: false }] },
-  { event: 'Receive Stock', actionName: 'action_receive_po', whatHappened: 'Stock added from supplier', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'po_id', type: 'text', required: false }] },
+  { event: 'Add Company', actionName: 'action_add_company', whatHappened: 'Business Account registered', linksTo: 'Company', params: [{ name: 'name', type: 'text', required: true }, { name: 'industry', type: 'text', required: false }, { name: 'website', type: 'text', required: false }, { name: 'annual_revenue', type: 'number', required: false }, { name: 'employee_count', type: 'number', required: false }] },
+  { event: 'Add Deal', actionName: 'action_add_deal', whatHappened: 'Sales deal created in pipeline', linksTo: 'Deal', params: [{ name: 'name', type: 'text', required: true }, { name: 'value', type: 'number', required: true }, { name: 'stage', type: 'text', required: true }, { name: 'expected_close_date', type: 'text', required: false }, { name: 'contact_id', type: 'text', required: false }] },
   { event: 'Add Item', actionName: 'action_add_product', whatHappened: 'Item cataloged', linksTo: 'Item', params: [{ name: 'title', type: 'text', required: true }, { name: 'item_subtype', type: 'text', required: true }, { name: 'price', type: 'number', required: false }, { name: 'stock', type: 'number', required: false }, { name: 'category', type: 'text', required: false }] },
 ];
 
@@ -314,9 +316,8 @@ export default function EventComposeModal({
     }
   }, [lineItems, hasItemsParam]);
 
-  if (!visible || !action) return null;
-
-  const actionName = action?.name?.replace(/_/g, ' ') || 'Record Event';
+  const rawActionName = action?.name ? action.name.replace(/^action_/, '').replace(/_/g, ' ') : 'Record Event';
+  const actionName = rawActionName.replace(/\b\w/g, (c: string) => c.toUpperCase());
   const paramList: any[] = action?.params || [];
 
   // Categorize & Order Params: 1. To/Vendor, 2. Items/Products/Entity, 3. Total/Amount, 4. Intermediate, 99. Payment Method/Carrier (last)
@@ -329,7 +330,14 @@ export default function EventComposeModal({
     return 10;
   };
 
-  const sortedParamList = [...paramList].sort((a, b) => {
+  const cleanParamList = paramList.filter((p) => {
+    const rawName = (typeof p === 'string' ? p : p.name).toLowerCase();
+    if (rawName === 'description' || rawName === 'notes' || rawName === 'win_loss_reason') return false;
+    if (action?.name?.includes('update_deal_stage') && (rawName === 'deal_id' || rawName === 'deal')) return false;
+    return true;
+  });
+
+  const sortedParamList = [...cleanParamList].sort((a, b) => {
     const nameA = typeof a === 'string' ? a : a.name;
     const nameB = typeof b === 'string' ? b : b.name;
     return getParamRank(nameA) - getParamRank(nameB);
@@ -389,7 +397,14 @@ export default function EventComposeModal({
   const fieldInfos = sortedParamList.map(getFieldInfo);
 
   // Check required parameters validation
-  const missingRequired = fieldInfos.filter((info) => info.isRequired && !params[info.key]?.trim());
+  const missingRequired = fieldInfos.filter((info) => {
+    if (!info.isRequired) return false;
+    const keyLower = info.key.toLowerCase();
+    if (keyLower === 'description' || keyLower === 'notes') {
+      return !params[info.key]?.trim() && !notes.trim();
+    }
+    return !params[info.key]?.trim();
+  });
   const isFormValid = missingRequired.length === 0;
 
   const handleTextChange = (paramName: string, val: string) => {
@@ -460,12 +475,16 @@ export default function EventComposeModal({
         return productTypes.includes(t) || productTypes.includes(r);
       });
 
-      const options = filtered.map((e: any) => ({
-        label: e.title || e.name || 'Product',
-        value: e.title || e.name || e.id,
-        subtitle: `Product • Price: $${e.value || e.data?.price || 0}`,
-        rawEntity: e,
-      }));
+      const options = filtered.map((e: any) => {
+        const rawData = typeof e.data === 'string' ? (JSON.parse(e.data || '{}') || {}) : (e.data || {});
+        const realPrice = Number(rawData.price ?? rawData.amount ?? 0);
+        return {
+          label: e.title || e.name || 'Product',
+          value: e.title || e.name || e.id,
+          subtitle: `Product • Price: $${realPrice.toFixed(2)}`,
+          rawEntity: e,
+        };
+      });
 
       setActivePicker({
         title: 'Select Product',
@@ -544,7 +563,16 @@ export default function EventComposeModal({
         { label: 'Local Courier', value: 'Local Courier', subtitle: 'Same Day Delivery' },
         { label: 'Self Pickup', value: 'Self Pickup', subtitle: 'Customer Pickup' },
       ];
-    } else if (key === 'status' || key === 'stage') {
+    } else if (key === 'stage' || key.includes('stage') || (action?.actionName && action.actionName.includes('deal'))) {
+      presets = [
+        { label: 'New Inquiry', value: 'New Inquiry', subtitle: 'Fresh prospect / lead inquiry' },
+        { label: 'Qualified', value: 'Qualified', subtitle: 'Confirmed interest & budget' },
+        { label: 'Proposal', value: 'Proposal', subtitle: 'Proposal / Quote issued' },
+        { label: 'Negotiation', value: 'Negotiation', subtitle: 'Terms & pricing discussion' },
+        { label: 'Closed Won', value: 'Closed Won', subtitle: 'Deal signed / Won ✅' },
+        { label: 'Closed Lost', value: 'Closed Lost', subtitle: 'Deal lost ❌' },
+      ];
+    } else if (key === 'status') {
       presets = [
         { label: 'Pending', value: 'Pending', subtitle: 'Awaiting action' },
         { label: 'Confirmed', value: 'Confirmed', subtitle: 'Order/slot confirmed' },
@@ -565,6 +593,14 @@ export default function EventComposeModal({
         { label: '12:00 PM', value: '12:00 PM', subtitle: 'Noon Slot' },
         { label: '4:00 PM', value: '4:00 PM', subtitle: 'Afternoon Slot' },
         { label: '6:00 PM', value: '6:00 PM', subtitle: 'Evening Slot' },
+      ];
+    } else if (key === 'type' && (action?.actionName?.includes('activity') || action?.name?.includes('activity') || action?.actionName?.includes('log'))) {
+      presets = [
+        { label: 'Call', value: 'Call', subtitle: 'Phone or Video Call' },
+        { label: 'Meeting', value: 'Meeting', subtitle: 'Client Meeting or Demo' },
+        { label: 'Email', value: 'Email', subtitle: 'Email Correspondence' },
+        { label: 'Note', value: 'Note', subtitle: 'General Note or Discussion' },
+        { label: 'Task', value: 'Task', subtitle: 'Follow-up Task or Action Item' },
       ];
     } else if (key.includes('category') || key === 'type') {
       presets = [
@@ -740,6 +776,10 @@ export default function EventComposeModal({
 
               // A. Gmail Style Target "To" Row (Ultra Minimal Hint)
               if (info.isTarget) {
+                // Hide empty "To" row if deal_id/order_id/po_id is already set
+                if (!value && (params.deal_id || params.order_id || params.po_id)) {
+                  return null;
+                }
                 return (
                   <Pressable
                     key={info.key}
@@ -796,21 +836,41 @@ export default function EventComposeModal({
                                 },
                               ]}
                             >
-                              {/* a) Thumbnail Card */}
-                              <View
-                                style={{
-                                  width: 36,
-                                  height: 36,
-                                  borderRadius: 8,
-                                  backgroundColor: theme.primary + '15',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  borderWidth: 1,
-                                  borderColor: theme.primary + '30',
-                                }}
-                              >
-                                <Ionicons name="cube-outline" size={20} color={theme.primary} />
-                              </View>
+                              {/* a) Thumbnail Image / Initial Avatar Card */}
+                              {(() => {
+                                const matchedProduct = (allEntities || []).find(
+                                  (e: any) => (e?.title || e?.name) === item.name || e?.id === item.name
+                                );
+                                const rawProdData = matchedProduct?.data ? (typeof matchedProduct.data === 'string' ? (JSON.parse(matchedProduct.data) || {}) : matchedProduct.data) : (matchedProduct || {});
+                                const itemImageUrl = rawProdData?.image_url || matchedProduct?.image_url;
+                                const initialChar = (item.name.trim()[0] || 'P').toUpperCase();
+
+                                if (itemImageUrl) {
+                                  return (
+                                    <Image
+                                      source={{ uri: itemImageUrl }}
+                                      style={{ width: 36, height: 36, borderRadius: 8 }}
+                                    />
+                                  );
+                                }
+
+                                return (
+                                  <View
+                                    style={{
+                                      width: 36,
+                                      height: 36,
+                                      borderRadius: 8,
+                                      backgroundColor: getAvatarColor(item.name),
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                    }}
+                                  >
+                                    <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>
+                                      {initialChar}
+                                    </Text>
+                                  </View>
+                                );
+                              })()}
                               <Text
                                 style={[styles.fieldTextValue, { color: theme.text, fontWeight: '600', fontSize: 16 }]}
                                 numberOfLines={1}
@@ -840,10 +900,10 @@ export default function EventComposeModal({
                                 <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }}>{item.qty}</Text>
                               </View>
 
-                              {/* Total cost column (no currency symbol) */}
+                              {/* Total cost column */}
                               <View style={{ minWidth: 70, alignItems: 'flex-end' }}>
                                 <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>
-                                  {(item.qty * (item.price || 0)).toFixed(2)}
+                                  ${(item.qty * (item.price || 0)).toFixed(2)}
                                 </Text>
                               </View>
                             </Pressable>
@@ -867,7 +927,7 @@ export default function EventComposeModal({
                           ]}
                         >
                           <Text style={[styles.fieldTextValue, { color: hintTextColor, fontSize: 15.5 }]}>
-                            {idx === 0 ? 'Items' : `Item ${idx + 1}`}{' '}
+                            {idx === 0 ? 'Select item...' : '+ Add item'}{' '}
                             {idx === 0 && info.isRequired ? <Text style={{ color: '#ef4444' }}>*</Text> : null}
                           </Text>
                         </Pressable>
@@ -926,6 +986,9 @@ export default function EventComposeModal({
 
               // D. Other Selectable Fields (Ultra Minimal Hint Rows)
               if (info.isSelectable) {
+                const matchedEnt = (allEntities || []).find((e) => e?.id === value || e?.title === value || e?.name === value);
+                const displayVal = matchedEnt ? (matchedEnt.title || matchedEnt.name) : value;
+
                 return (
                   <Pressable
                     key={info.key}
@@ -936,7 +999,7 @@ export default function EventComposeModal({
                     ]}
                   >
                     <Text style={[styles.fieldTextValue, { color: value ? theme.text : hintTextColor, fontWeight: value ? '500' : '400' }]}>
-                      {value ? `${info.label}: ${value}` : `${hintLabel} ${info.isRequired ? '*' : ''}`}
+                      {value ? `${info.label}: ${displayVal}` : `${hintLabel} ${info.isRequired ? '*' : ''}`}
                     </Text>
                   </Pressable>
                 );
@@ -964,7 +1027,7 @@ export default function EventComposeModal({
                 multiline
                 value={notes}
                 onChangeText={setNotes}
-                placeholder="Compose event details, notes, or motion description..."
+                placeholder="Notes..."
                 placeholderTextColor={theme?.dark ? '#a1a1aa' : '#52525b'}
                 textAlignVertical="top"
               />
@@ -1089,9 +1152,10 @@ export default function EventComposeModal({
                           }
                         } else if (currentPicker.paramName === '__line_product__' && currentPicker.targetLineId) {
                           const prdName = opt.label || optVal;
-                          const prdPrice = opt.rawEntity?.value || opt.rawEntity?.data?.price || 0;
+                          const rawData = typeof opt.rawEntity?.data === 'string' ? (JSON.parse(opt.rawEntity.data || '{}') || {}) : (opt.rawEntity?.data || {});
+                          const prdPrice = Number(rawData.price ?? rawData.amount ?? 0);
                           updateLineItem(currentPicker.targetLineId, 'name', prdName);
-                          updateLineItem(currentPicker.targetLineId, 'price', prdPrice > 0 ? prdPrice : 30);
+                          updateLineItem(currentPicker.targetLineId, 'price', prdPrice);
                         } else {
                           handleTextChange(currentPicker.paramName, optVal);
                         }

@@ -57,12 +57,14 @@ export default function DirectoryModal({
       const res = await tar.tool('read', { table: 'matter', scope });
       const activeRows = (res?.rows || []).filter((r: any) => {
         if (!r) return false;
-        const statusStr = String(r.status || '').toLowerCase();
+        const statusStr = String(r.status || r.data?.status || '').toLowerCase();
         const typeStr = String(r.type || '').toLowerCase();
         return (
           statusStr !== 'deleted' &&
           statusStr !== 'archived' &&
+          statusStr !== 'converted' &&
           typeStr !== 'deleted' &&
+          typeStr !== 'converted_lead' &&
           !r.deleted &&
           r.deleted !== 'true' &&
           r.is_deleted !== 1
@@ -87,13 +89,13 @@ export default function DirectoryModal({
     return entities.map((d, index) => {
       const typeStr = (d.type || d.category || '').toLowerCase();
       let cat: 'people' | 'companies' | 'items' = 'people';
-      
+
       if (['business', 'vendor', 'partner', 'company', 'companies', 'organization'].includes(typeStr)) {
         cat = 'companies';
       } else if (['product', 'listing', 'service', 'document', 'asset', 'item', 'items', 'order', 'booking', 'expense', 'deal', 'project', 'shipment'].includes(typeStr)) {
         cat = 'items';
       } else {
-        // Includes: customer, staff, contact, person, member, admin, or any unmapped string
+        // Includes: customer, staff, contact, person, lead, prospect, member, admin, or any person entity
         cat = 'people';
       }
 
@@ -234,7 +236,7 @@ export default function DirectoryModal({
             onPress={() => setActiveTab('items')}
           >
             <Text style={[styles.tabText, { color: activeTab === 'items' ? theme.text : theme.textMuted }]}>
-              Items ({rawList.filter(r => r.category === 'items').length})
+              Items / Deals ({rawList.filter(r => r.category === 'items').length})
             </Text>
             {activeTab === 'items' && <View style={[styles.activeIndicator, { backgroundColor: theme.primary }]} />}
           </TouchableOpacity>

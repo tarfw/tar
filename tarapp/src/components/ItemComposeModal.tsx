@@ -506,9 +506,9 @@ Respond strictly in valid JSON format:
                   </View>
                 </View>
 
-                {/* History Section */}
-                <View style={{ gap: 6 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                {/* History Section — Ultra-Minimal Single Line & Top 5 Limit */}
+                <View style={{ gap: 4 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
                     <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textMuted }}>History</Text>
                     <TouchableOpacity
                       onPress={() => onLogEventForEntity?.('action_adjust_stock', { product_id: initialData?.id || title, qty: '1' })}
@@ -521,7 +521,7 @@ Respond strictly in valid JSON format:
                   {loadingHistory ? (
                     <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 8 }} />
                   ) : stockHistory.length > 0 ? (
-                    stockHistory.map((item, idx) => {
+                    stockHistory.slice(0, 5).map((item, idx) => {
                       if (!item) return null;
                       let dataObj: any = {};
                       if (typeof item.data === 'string') {
@@ -530,31 +530,42 @@ Respond strictly in valid JSON format:
                         dataObj = item.data;
                       }
                       const deltaVal = dataObj.delta !== undefined ? dataObj.delta : 0;
-                      const isTransfer = (item.type || '').toLowerCase() === 'transfer';
-                      const transferQty = dataObj.transferQty || Math.abs(deltaVal) || 0;
+                      const isTransfer = (item.type || '').toLowerCase() === 'transfer' || (dataObj.reason || '').toLowerCase().includes('transfer');
+                      let displayQty = dataObj.transferQty || Math.abs(deltaVal) || 0;
+                      let labelText = dataObj.reason || item.type || 'Event logged';
+
+                      if (isTransfer) {
+                        if (dataObj.fromLoc && dataObj.toLoc) {
+                          labelText = `${dataObj.fromLoc} → ${dataObj.toLoc}`;
+                        } else {
+                          const locMatch = labelText.match(/from\s+(.*?)\s+to\s+(.*)/i);
+                          if (locMatch) {
+                            labelText = `${locMatch[1]} → ${locMatch[2]}`;
+                          } else {
+                            labelText = 'Stock Transfer';
+                          }
+                        }
+
+                        if (!displayQty || displayQty === 0) {
+                          const qtyMatch = (dataObj.reason || '').match(/(\d+)\s*pcs/i);
+                          if (qtyMatch) {
+                            displayQty = parseInt(qtyMatch[1], 10);
+                          }
+                        }
+                      }
 
                       return (
-                        <View key={item.id || idx} style={[styles.historyRow, { borderBottomColor: theme.border + '25' }]}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: theme.text, textTransform: 'uppercase' }}>
-                              {item.type || 'MOTION'}
+                        <View key={item.id || idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border + '20' }}>
+                          <Text style={{ fontSize: 13, fontWeight: '500', color: theme.text, flex: 1, marginRight: 8 }} numberOfLines={1}>
+                            {labelText}
+                          </Text>
+                          {isTransfer ? (
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: theme.primary }}>⇄ {displayQty} {unit}</Text>
+                          ) : deltaVal !== 0 ? (
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: deltaVal > 0 ? '#10b981' : '#dc2626' }}>
+                              {deltaVal > 0 ? `+${deltaVal}` : `${deltaVal}`} {unit}
                             </Text>
-                            <Text style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }} numberOfLines={1}>
-                              {dataObj.reason || '—'}
-                            </Text>
-                          </View>
-                          <View style={{ alignItems: 'flex-end' }}>
-                            {isTransfer ? (
-                              <Text style={{ fontSize: 13, fontWeight: '700', color: theme.primary }}>⇄ {transferQty} {unit}</Text>
-                            ) : deltaVal !== 0 ? (
-                              <Text style={{ fontSize: 13, fontWeight: '700', color: deltaVal > 0 ? '#10b981' : '#dc2626' }}>
-                                {deltaVal > 0 ? `+${deltaVal}` : `${deltaVal}`} {unit}
-                              </Text>
-                            ) : null}
-                            <Text style={{ fontSize: 10, color: theme.textMuted, marginTop: 1 }}>
-                              {item.at ? new Date(item.at * 1000).toLocaleDateString() : ''}
-                            </Text>
-                          </View>
+                          ) : null}
                         </View>
                       );
                     })

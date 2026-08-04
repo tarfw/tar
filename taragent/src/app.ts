@@ -1165,6 +1165,26 @@ app.notFound(async (c) => {
       return fn();
     };
 
+    if (pathname === '/publish') {
+      const body = await c.req.json();
+      const layout = body.layout || body;
+      await uploadWorkspaceFile(c.env, scope, 'site/layouts/home.json', JSON.stringify(layout));
+
+      if (c.env.STOREFRONT_CACHE) {
+        await c.env.STOREFRONT_CACHE.delete(`site_config:${workspaceSlug}`).catch(() => {});
+        await c.env.STOREFRONT_CACHE.delete(`ui_plan:${workspaceSlug}:web`).catch(() => {});
+      }
+
+      return c.json({ ok: true, url: `https://${workspaceSlug}.tarai.space` });
+    }
+
+    if (pathname === '/draft') {
+      const body = await c.req.json();
+      const layout = body.layout || body;
+      await uploadWorkspaceFile(c.env, scope, 'site/layouts/draft.json', JSON.stringify(layout));
+      return c.json({ ok: true });
+    }
+
     if (pathname === '/api/order') {
       const body = await c.req.json();
       const orderId = `ord_${Date.now()}_${Math.floor(Math.random() * 1000)}`;

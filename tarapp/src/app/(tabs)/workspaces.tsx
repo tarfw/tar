@@ -36,6 +36,7 @@ import DirectoryModal from '@/components/DirectoryModal';
 import ExploreModal from '@/components/ExploreModal';
 import ItemComposeModal from '@/components/ItemComposeModal';
 import ContactCreateModal from '@/components/ContactCreateModal';
+import WorkspaceSiteScreen from '@/components/WorkspaceSiteScreen';
 import { updateStock } from '@/lib/inventory';
 
 interface Workspace {
@@ -122,6 +123,7 @@ export const PLAN5_EVENT_MOTIONS = [
   { event: 'Expense', actionName: 'action_record_expense', whatHappened: 'Cost recorded', linksTo: 'Expense', params: [{ name: 'category', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'description', type: 'text', required: false }, { name: 'date', type: 'text', required: false }] },
   { event: 'Assignment', actionName: 'action_create_task', whatHappened: 'Task assigned', linksTo: 'Project', params: [{ name: 'title', type: 'text', required: true }, { name: 'description', type: 'text', required: false }, { name: 'assignee_id', type: 'text', required: false }, { name: 'due_date', type: 'text', required: false }] },
   { event: 'Receive Stock', actionName: 'action_receive_po', whatHappened: 'Stock added from supplier', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'po_id', type: 'text', required: false }] },
+  { event: 'Site', actionName: 'action_open_site', whatHappened: 'View/edit live website storefront', linksTo: 'Storefront', params: [] },
   { event: 'Add Item', actionName: 'action_add_product', whatHappened: 'Item cataloged', linksTo: 'Item', params: [{ name: 'title', type: 'text', required: true }, { name: 'item_subtype', type: 'text', required: true }, { name: 'price', type: 'number', required: false }, { name: 'stock', type: 'number', required: false }, { name: 'category', type: 'text', required: false }] },
 ];
 
@@ -207,6 +209,7 @@ export default function WorkspacesScreen() {
   const [itemResultMessage, setItemResultMessage] = useState<string | null>(null);
 
   const [showContactModal, setShowContactModal] = useState(false);
+  const [showSiteScreen, setShowSiteScreen] = useState(false);
   const [initialContactType, setInitialContactType] = useState('Customer');
   const [submittingContact, setSubmittingContact] = useState(false);
   const [contactResultMessage, setContactResultMessage] = useState<string | null>(null);
@@ -714,7 +717,12 @@ ${membersYaml}
           setAgentFeedback({ text: resolved.feedbackText || 'Cleared active widgets.', type: 'success' });
           return;
         } else if (resolved.action === 'show_module' && resolved.moduleName) {
-          if (resolved.moduleName === 'inventory') {
+          if (resolved.moduleName === 'site' || resolved.moduleName === 'storefront' || resolved.moduleName === 'website') {
+            setShowSiteScreen(true);
+            setExecuting(false);
+            setAgentFeedback({ text: 'Opened workspace site manager.', type: 'success' });
+            return;
+          } else if (resolved.moduleName === 'inventory') {
             await refreshProducts(scope);
           } else if (resolved.moduleName === 'orders') {
             await refreshOrders(scope);
@@ -756,13 +764,14 @@ ${membersYaml}
         }
       }
 
-      if (/^(show|view|get)\s+(site|storefront|web|website)/i.test(cleanText)) {
-        await refreshSite();
-        setAgentFeedback({ text: 'Displayed current website draft layout.', type: 'success' });
+      if (/^(open|show|go\s+to\s+)?settings$/i.test(cleanText)) {
+        router.push('/settings');
+        setExecuting(false);
+        return;
       }
-      else if (/^publish\s+(site|storefront|website)/i.test(cleanText)) {
-        await publish();
-        setAgentFeedback({ text: `Site published successfully! It is live at: https://${subdomain}.tarai.space`, type: 'success' });
+      else if (/^(open\s+|show\s+|view\s+|get\s+)?(site|storefront|web|website)$/i.test(cleanText) || /^publish\s+(site|storefront|website)/i.test(cleanText)) {
+        setShowSiteScreen(true);
+        setAgentFeedback({ text: 'Opened workspace site manager.', type: 'success' });
       }
       else if (/^(make|edit|change|update|design|customize)\s+(site|storefront|web|website)(.+)/i.test(cleanText)) {
         const match = textToSend.match(/^(make|edit|change|update|design|customize)\s+(site|storefront|web|website)\s+(.+)/i);
@@ -830,6 +839,10 @@ ${membersYaml}
   };
 
   const handleTriggerAction = (action: any) => {
+    if (action.name === 'action_open_site' || action.actionName === 'action_open_site') {
+      setShowSiteScreen(true);
+      return;
+    }
     if (action.moduleName) {
       setActiveWidget({ moduleName: action.moduleName });
     }
@@ -1140,15 +1153,22 @@ ${membersYaml}
   };
 
   const getFilteredActions = () => {
-    const resultList: Array<{ label: string; subtitle?: string; action?: any; text?: string }> = PLAN5_EVENT_MOTIONS.map((item) => ({
-      label: item.event,
-      subtitle: `${item.whatHappened} • ${item.linksTo}`,
-      action: {
-        name: item.actionName,
-        purpose: item.whatHappened,
-        params: item.params,
+    const resultList: Array<{ label: string; subtitle?: string; action?: any; text?: string; route?: string }> = [
+      {
+        label: 'Settings',
+        subtitle: 'App preferences & configuration • Settings',
+        route: '/settings',
       },
-    }));
+      ...PLAN5_EVENT_MOTIONS.map((item) => ({
+        label: item.event,
+        subtitle: `${item.whatHappened} • ${item.linksTo}`,
+        action: {
+          name: item.actionName,
+          purpose: item.whatHappened,
+          params: item.params,
+        },
+      })),
+    ];
 
     if (!input.trim()) return resultList;
 
@@ -1157,7 +1177,8 @@ ${membersYaml}
       (h) =>
         h.label.toLowerCase().includes(query) ||
         (h.subtitle && h.subtitle.toLowerCase().includes(query)) ||
-        (h.action?.name && h.action.name.toLowerCase().includes(query))
+        (h.action?.name && h.action.name.toLowerCase().includes(query)) ||
+        (h.route && h.route.toLowerCase().includes(query))
     );
   };
 
@@ -1431,7 +1452,9 @@ ${membersYaml}
                 }}
                 onPress={() => {
                   setInput('');
-                  if (hint.action) {
+                  if (hint.route) {
+                    router.push(hint.route as any);
+                  } else if (hint.action) {
                     handleTriggerAction(hint.action);
                   } else if (hint.text) {
                     handleSend(hint.text);
@@ -2181,6 +2204,16 @@ ${membersYaml}
             setSubmittingContact(false);
           }
         }}
+      />
+
+      {/* Standalone Workspace Site Screen Modal */}
+      <WorkspaceSiteScreen
+        visible={showSiteScreen}
+        onClose={() => setShowSiteScreen(false)}
+        workspaceName={currentWorkspace?.name || currentWorkspace?.subdomain || ''}
+        subdomain={currentWorkspace?.subdomain || ''}
+        scope={activeScope || ''}
+        products={products}
       />
     </View>
   );

@@ -402,13 +402,32 @@ function renderFooter(node: UINode): string {
 
 // ── Node router ─────────────────────────────────────────────────────
 
+function renderAnnouncementBar(node: UINode): string {
+  const p = node.props;
+  const text = p.text || p.message || p.title || '';
+  return `<div style="background:var(--primary, #111827);color:white;text-align:center;padding:10px 16px;font-size:0.9rem;font-weight:600;">
+    ${esc(text)}
+  </div>`;
+}
+
+function renderHours(node: UINode): string {
+  const p = node.props;
+  const hours = p.hours || p.body || p.text || 'Open Daily: 9am - 9pm';
+  return `<div style="padding:32px 5%;text-align:center;background:rgba(0,0,0,0.02);">
+    <h3 style="font-size:1.1rem;margin-bottom:8px;">${esc(p.title || 'Opening Hours')}</h3>
+    <p style="font-size:1rem;color:rgba(0,0,0,0.7);">${esc(hours)}</p>
+  </div>`;
+}
+
 const RENDERERS: Record<string, (node: UINode) => string> = {
   hero_banner: renderHeroBanner,
   content_grid: renderContentGrid,
   product_grid: renderProductGrid,
+  menu_grid: renderProductGrid,
   service_list: renderServiceList,
   text_block: renderTextBlock,
   testimonial: renderTestimonial,
+  testimonials: renderTestimonial,
   cta_button: renderCtaButton,
   contact_form: renderContactForm,
   map_embed: renderMapEmbed,
@@ -417,6 +436,8 @@ const RENDERERS: Record<string, (node: UINode) => string> = {
   pricing_table: renderPricingTable,
   team_grid: renderTeamGrid,
   footer: renderFooter,
+  announcement_bar: renderAnnouncementBar,
+  hours: renderHours,
 };
 
 function renderNode(node: UINode): string {
@@ -442,20 +463,37 @@ export function renderSectionsToHtml(options: RenderOptions): string {
   const { plan, tokens, workspaceName } = options;
   const { colors, typography, rounded, spacing } = tokens;
 
-  const route = plan.routes[0];
-  if (!route) {
-    return `<!DOCTYPE html><html><body><p>No layout available</p></body></html>`;
+  // Normalize nodes from either plan.sections (from mobile app site-ai) or plan.routes[0].nodes
+  let nodes: UINode[] = [];
+  if ((plan as any).sections && Array.isArray((plan as any).sections)) {
+    nodes = (plan as any).sections.map((sec: any, idx: number) => ({
+      id: `sec_${idx}_${sec.type}`,
+      type: sec.type,
+      props: sec,
+    }));
+  } else if (plan.routes && plan.routes[0] && Array.isArray(plan.routes[0].nodes)) {
+    nodes = plan.routes[0].nodes;
   }
 
+  if (!nodes || nodes.length === 0) {
+    return `<!DOCTYPE html><html><body><div style="font-family:sans-serif;text-align:center;padding:80px;"><h1>${esc(workspaceName)}</h1><p>Website structure loading...</p></div></body></html>`;
+  }
+
+  // Merge theme overrides if present in plan
+  const planTheme = (plan as any).theme || {};
+  const activePrimary = planTheme.primary || colors.primary || '#1B4332';
+  const activeSecondary = planTheme.secondary || colors.secondary || '#2D6A4F';
+  const activeNeutral = planTheme.background || colors.neutral || '#FFFFFF';
+
   // Render all nodes
-  const contentHtml = route.nodes
+  const contentHtml = nodes
     .map(node => renderNode(node))
     .filter(html => html.length > 0)
     .join('\n');
 
   // Collect responsive media queries
   const mediaQueries: string[] = [];
-  for (const node of route.nodes) {
+  for (const node of nodes) {
     const mq = generateMediaQueries(node);
     if (mq) mediaQueries.push(mq);
   }
@@ -463,10 +501,10 @@ export function renderSectionsToHtml(options: RenderOptions): string {
   // CSS from design tokens
   const styles = `
     :root {
-      --primary: ${colors.primary || '#1B4332'};
-      --secondary: ${colors.secondary || '#2D6A4F'};
+      --primary: ${activePrimary};
+      --secondary: ${activeSecondary};
       --tertiary: ${colors.tertiary || '#D4A373'};
-      --neutral: ${colors.neutral || '#FEFAE0'};
+      --neutral: ${activeNeutral};
       --on-primary: ${colors['on-primary'] || '#FFFFFF'};
       --rounded-sm: ${rounded.sm || '6px'};
       --rounded-md: ${rounded.md || '12px'};

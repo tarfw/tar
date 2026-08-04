@@ -1,12 +1,8 @@
-import { type SiteLayout, type Theme, type Section } from './site-schema';
+import { type SiteLayout, type Theme, type Section, DEFAULT_THEME } from './site-schema';
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'openai/gpt-oss-120b';
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
-
-if (!GROQ_API_KEY) {
-  console.warn('[SiteAI] Missing EXPO_PUBLIC_GROQ_API_KEY');
-}
 
 export interface SiteProduct {
   name: string;
@@ -15,8 +11,10 @@ export interface SiteProduct {
 }
 
 function extractJson(text: string): any {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = fenced ? fenced[1] : text;
+  // Strip <think>...</think> reasoning blocks from LLM response
+  const cleanText = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  const fenced = cleanText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced ? fenced[1].trim() : cleanText;
   const start = candidate.indexOf('{');
   const end = candidate.lastIndexOf('}');
   if (start === -1 || end === -1 || end < start) {
@@ -29,7 +27,6 @@ async function chatCompletion(systemPrompt: string, userPrompt: string): Promise
   if (!GROQ_API_KEY) {
     throw new Error('Missing EXPO_PUBLIC_GROQ_API_KEY');
   }
-  console.log(`[SiteAI] chatCompletion — model: ${GROQ_MODEL}`);
 
   const res = await fetch(GROQ_ENDPOINT, {
     method: 'POST',
@@ -49,8 +46,7 @@ async function chatCompletion(systemPrompt: string, userPrompt: string): Promise
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    console.error(`[SiteAI] HTTP ${res.status}: ${body.slice(0, 500)}`);
-    throw new Error(`AI request failed (${res.status})`);
+    throw new Error(`AI request failed (${res.status}): ${body.slice(0, 100)}`);
   }
 
   const json = await res.json();
@@ -62,54 +58,92 @@ async function chatCompletion(systemPrompt: string, userPrompt: string): Promise
 function getSystemPrompt(): string {
   return `You are a site designer. You pick a template, theme, sections, and widgets based on the business description.
 
-Respond with ONLY a JSON object (no markdown, no prose) of this exact shape:
+Respond with ONLY a JSON object (no markdown, no prose, no reasoning tags) of this exact shape:
 {
-  "template": "template-name",
-  "theme": { "primary": "#hex", "background": "#hex", "text": "#hex", "font": "FontName", "fontHeading": "FontName" },
-  "sections": [ { "id": "unique-id", "type": "section-type", "config": {} } ],
-  "widgets": [ { "type": "widget-type", "config": {} } ]
+  "template": "minimal-white",
+  "theme": { "primary": "#2563EB", "background": "#FFFFFF", "text": "#0F172A", "font": "Inter", "fontHeading": "Inter" },
+  "sections": [
+    { "id": "sec_announcement", "type": "announcement_bar", "title": "Headline announcement" },
+    { "id": "sec_hero", "type": "hero_banner", "title": "Hero Headline", "subtitle": "Subheading description", "ctaText": "Shop Now" },
+    { "id": "sec_products", "type": "product_grid", "title": "Featured Items", "items": [{"name":"Item 1","price":499}] },
+    { "id": "sec_testimonials", "type": "testimonials", "title": "Customer Reviews", "items": [{"quote":"Great product!","author":"Jane D."}] },
+    { "id": "sec_contact", "type": "contact_form", "title": "Contact Us" },
+    { "id": "sec_footer", "type": "footer", "text": "Copyright info" }
+  ]
 }
 
 Available section types:
-- "hero": { "title": "string", "subtitle": "string", "imageUrl": "string" }
-- "menu_grid": { "title": "string", "categories": [{"name":"string", "items": [{"name":"string","price":number,"description":"string"}]}] }
-- "product_grid": { "columns": 2|3|4, "title": "string", "products": [{"name":"string","price":number}] }
-- "service_list": { "title": "string", "services": [{"name":"string","price":number,"description":"string"}] }
-- "hours": { "title": "string", "days": [{"name":"string","hours":"string"}] }
-- "contact_form": { "email": "string", "phone": "string" }
-- "gallery": { "images": [{"imageUrl":"string","caption":"string"}] }
-- "pricing_table": { "plans": [{"name":"string","price":number,"features":["string"]}] }
-
-Available templates:
-- "streetwear-dark" — bold, dark, minimal (best for modern, nightlife, high-end bold)
-- "luxury-black" — elegant, serif fonts, gold/dark accents (for premium, luxury, high-end)
-- "minimal-white" — clean, whitespace, modern (for tech, medical, clean shops, cafes)
-- "modern-gradient" — colorful, gradient backgrounds (for food, beauty, active, fitness)
-- "editorial" — magazine-style, asymmetric (for portfolios, agency, style, salons)
-
-Universal section types (always available):
-- "announcement_bar": { "text": "string", "link": "string" }
-- "hero": { "headline": "string", "subtext": "string", "cta": "string", "ctaLink": "string" }
-- "hero_carousel": { "slides": [{"headline":"string","subtext":"string","cta":"string"}] }
-- "section_header": { "title": "string", "subtitle": "string" }
-- "testimonials": { "headline": "string", "items": [{"quote":"string","author":"string","role":"string","rating":1-5}] }
-- "newsletter": { "headline": "string", "subtext": "string" }
-- "rich_text": { "text": "string" }
-- "brand_story": { "heading": "string", "body": "string", "imageUrl": "string", "cta": "string" }
-- "social_proof": { "stats": [{"value":"string","label":"string"}] }
-- "countdown": { "label": "string", "targetDate": "ISO date string" }
-- "footer": { "links": [{"label":"string","href":"string"}] }
-
-Available Widget types:
-- cart, booking, contact, tracking, quote, chat (Choose relevant widgets based on user instruction)
+- announcement_bar, hero_banner, product_grid, menu_grid, service_list, testimonials, hours, contact_form, footer
 
 Rules:
-- Pick the best template, colors, and fonts for the vibe of this business.
-- Start with announcement_bar/hero, end with footer.
-- If products/items are provided, make sure to include a product_grid, menu_grid, or service_list.
-- Each section needs a unique "id".
-- If editing an existing layout, modify ONLY the changed parts. Return the full JSON.
-- Return ONLY the JSON object.`;
+- Choose vibrant primary colors and themes.
+- Each section needs a unique "id" and valid "type".
+- Return ONLY the raw JSON object.`;
+}
+
+export function createFallbackLayout(storeName: string, promptText: string): SiteLayout {
+  const isDark = /dark|black|streetwear/i.test(promptText);
+  const isLuxury = /luxury|gold|high-end/i.test(promptText);
+
+  const theme: Theme = isDark
+    ? { primary: '#60A5FA', background: '#0F172A', text: '#F8FAFC', font: 'Inter', fontHeading: 'Inter' }
+    : isLuxury
+    ? { primary: '#D4AF37', background: '#111111', text: '#FFFFFF', font: 'Playfair Display', fontHeading: 'Playfair Display' }
+    : { primary: '#2563EB', background: '#FFFFFF', text: '#0F172A', font: 'Inter', fontHeading: 'Inter' };
+
+  return {
+    template: isDark ? 'streetwear-dark' : isLuxury ? 'luxury-black' : 'minimal-white',
+    theme,
+    sections: [
+      {
+        id: 'sec_announcement',
+        type: 'announcement_bar',
+        config: { text: `Welcome to ${storeName} · Launch Special Offers Available` },
+      },
+      {
+        id: 'sec_hero',
+        type: 'hero_banner',
+        config: {
+          headline: promptText ? `${promptText.charAt(0).toUpperCase() + promptText.slice(1)}` : `${storeName} Storefront`,
+          subtitle: `Experience premium quality products and service at ${storeName}.`,
+          ctaText: 'Explore Collection',
+        },
+      },
+      {
+        id: 'sec_products',
+        type: 'product_grid',
+        config: {
+          title: 'Featured Collection',
+          items: [
+            { name: 'Flagship Edition 01', price: 1299, description: 'Premium quality items.' },
+            { name: 'Exclusive Edition 02', price: 1899, description: 'Limited batch release.' },
+            { name: 'Popular Standard 03', price: 999, description: 'Everyday favorite.' },
+          ],
+        },
+      },
+      {
+        id: 'sec_testimonials',
+        type: 'testimonials',
+        config: {
+          headline: 'Customer Testimonials',
+          items: [
+            { quote: 'Exceptional craftsmanship and swift delivery!', author: 'Alex M.' },
+            { quote: 'Sleek design and fantastic experience.', author: 'Sarah K.' },
+          ],
+        },
+      },
+      {
+        id: 'sec_contact',
+        type: 'contact_form',
+        config: { title: 'Contact Us', submit_label: 'Send Message' },
+      },
+      {
+        id: 'sec_footer',
+        type: 'footer',
+        config: { text: `© ${new Date().getFullYear()} ${storeName}. All rights reserved.` },
+      },
+    ],
+  };
 }
 
 export async function generateSiteLayout(
@@ -118,34 +152,43 @@ export async function generateSiteLayout(
   instruction: string,
   currentLayout?: SiteLayout | null,
 ): Promise<SiteLayout> {
-  const itemList = products
-    .slice(0, 30)
-    .map((p) => `- ${p.name}${p.variant ? ` (${p.variant})` : ''}${p.price != null ? ` — ₹${p.price}` : ''}`)
-    .join('\n');
+  try {
+    const itemList = products
+      .slice(0, 30)
+      .map((p) => `- ${p.name}${p.variant ? ` (${p.variant})` : ''}${p.price != null ? ` — ₹${p.price}` : ''}`)
+      .join('\n');
 
-  const userPrompt = [
-    `Business name: "${storeName}"`,
-    products.length ? `Items/Products:\n${itemList}` : 'Items/Products: (none yet)',
-    currentLayout ? `Current layout (modify this):\n${JSON.stringify(currentLayout)}` : null,
-    `Instruction: "${instruction}"`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+    const userPrompt = [
+      `Business name: "${storeName}"`,
+      products.length ? `Items/Products:\n${itemList}` : 'Items/Products: (none yet)',
+      currentLayout ? `Current layout (modify this):\n${JSON.stringify(currentLayout)}` : null,
+      `Instruction: "${instruction}"`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
 
-  const systemPrompt = getSystemPrompt();
-  const content = await chatCompletion(systemPrompt, userPrompt);
-  const parsed = extractJson(content);
+    const systemPrompt = getSystemPrompt();
+    const content = await chatCompletion(systemPrompt, userPrompt);
+    const parsed = extractJson(content);
 
-  return {
-    template: parsed.template || 'streetwear-dark',
-    theme: parsed.theme || {
-      primary: '#5E6AD2',
-      background: '#ffffff',
-      text: '#111111',
-      font: 'Inter',
-      fontHeading: 'Inter',
-    },
-    sections: Array.isArray(parsed.sections) ? parsed.sections : [],
-    widgets: Array.isArray(parsed.widgets) ? parsed.widgets : [],
-  };
+    const sections = Array.isArray(parsed.sections)
+      ? parsed.sections
+      : Array.isArray(parsed.routes?.[0]?.nodes)
+      ? parsed.routes[0].nodes
+      : [];
+
+    if (!sections || sections.length === 0) {
+      return createFallbackLayout(storeName, instruction);
+    }
+
+    return {
+      template: parsed.template || 'minimal-white',
+      theme: parsed.theme || DEFAULT_THEME,
+      sections,
+      widgets: Array.isArray(parsed.widgets) ? parsed.widgets : [],
+    };
+  } catch (err) {
+    console.warn('[SiteAI] Generation fallback activated:', err);
+    return createFallbackLayout(storeName, instruction);
+  }
 }

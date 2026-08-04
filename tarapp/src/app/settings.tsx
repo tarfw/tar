@@ -108,20 +108,48 @@ export default function SettingsScreen() {
         contentContainerStyle={{ paddingTop: 16, paddingBottom: insets.bottom + 16 }}
       >
       
-      {/* Section 1: AI Model */}
+      {/* Section 1: Appearance */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-        AI MODEL
+        APPEARANCE
       </Text>
-      
+
+      <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+        <TouchableOpacity
+          style={styles.row}
+          activeOpacity={0.7}
+          onPress={() => setThemeMode(themeMode === "light" ? "dark" : "light")}>
+          <View style={styles.rowLeftWithIcon}>
+            <Ionicons
+              name={themeMode === "light" ? "sunny-outline" : "moon-outline"}
+              size={20}
+              color={themeMode === "light" ? "#FFB800" : "#8B5CF6"}
+              style={styles.rowIcon}
+            />
+            <Text style={[styles.rowTitle, { color: theme.text }]}>Theme Mode</Text>
+          </View>
+          <View style={styles.rowRightContainer}>
+            <Text style={[styles.rowValue, { color: theme.textSecondary }]}>
+              {themeMode === "light" ? "Light" : "Dark"}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} style={{ marginLeft: 6 }} />
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Section 2: AI Models & Local Engine */}
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+        AI MODELS & ENGINE
+      </Text>
+
       <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
         <View style={styles.row}>
           <View style={styles.rowLeft}>
             <Text style={[styles.rowTitle, { color: theme.text }]}>Embedding Model</Text>
-            <Text style={[styles.rowSubtitle, { color: theme.textSecondary }]}>384-dim • Cosine • MiniLM</Text>
+            <Text style={[styles.rowSubtitle, { color: theme.textSecondary }]}>384-dim • MiniLM</Text>
           </View>
           <View style={styles.rowRight}>
             {isReady ? (
-              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Loaded</Text>
+              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Ready</Text>
             ) : isLoading ? (
               <Text style={[styles.statusText, { color: theme.primary }]}>
                 {Math.round(downloadProgress * 100)}%
@@ -142,11 +170,11 @@ export default function SettingsScreen() {
         <View style={styles.row}>
           <View style={styles.rowLeft}>
             <Text style={[styles.rowTitle, { color: theme.text }]}>Hammer LLM</Text>
-            <Text style={[styles.rowSubtitle, { color: theme.textSecondary }]}>0.5B • Quantized • Local Chat</Text>
+            <Text style={[styles.rowSubtitle, { color: theme.textSecondary }]}>0.5B • Quantized</Text>
           </View>
           <View style={styles.rowRight}>
             {hammerLlm.isReady ? (
-              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Loaded</Text>
+              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Ready</Text>
             ) : isHammerLoading ? (
               <Text style={[styles.statusText, { color: theme.primary }]}>
                 {Math.round(hammerLlm.downloadProgress * 100)}%
@@ -169,11 +197,11 @@ export default function SettingsScreen() {
         <View style={styles.row}>
           <View style={styles.rowLeft}>
             <Text style={[styles.rowTitle, { color: theme.text }]}>LFM 2.5 LLM</Text>
-            <Text style={[styles.rowSubtitle, { color: theme.textSecondary }]}>1.2B • Instruct • Quantized</Text>
+            <Text style={[styles.rowSubtitle, { color: theme.textSecondary }]}>1.2B • Instruct</Text>
           </View>
           <View style={styles.rowRight}>
             {lfmLlm.isReady ? (
-              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Loaded</Text>
+              <Text style={[styles.statusText, { color: theme.textSecondary }]}>Ready</Text>
             ) : isLfmLoading ? (
               <Text style={[styles.statusText, { color: theme.primary }]}>
                 {Math.round(lfmLlm.downloadProgress * 100)}%
@@ -205,56 +233,13 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Section 2: Workspaces */}
-      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-        WORKSPACES
-      </Text>
-
-      <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-        <TouchableOpacity
-          style={styles.row}
-          activeOpacity={0.7}
-          onPress={() => router.push('/(tabs)/workspaces?action=new')}>
-          <View style={styles.rowLeftWithIcon}>
-            <Ionicons name="add-circle-outline" size={20} color={theme.primary} style={styles.rowIcon} />
-            <Text style={[styles.rowTitle, { color: theme.text }]}>Create Workspace</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Section 3: Appearance */}
-      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-        APPEARANCE
-      </Text>
-      
-      <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-        <TouchableOpacity
-          style={styles.row}
-          activeOpacity={0.7}
-          onPress={() => setThemeMode(themeMode === "light" ? "dark" : "light")}>
-          <View style={styles.rowLeftWithIcon}>
-            <Ionicons
-              name={themeMode === "light" ? "sunny" : "moon"}
-              size={20}
-              color={themeMode === "light" ? "#FFB800" : "#8B5CF6"}
-              style={styles.rowIcon}
-            />
-            <Text style={[styles.rowTitle, { color: theme.text }]}>Theme</Text>
-          </View>
-          <Text style={[styles.rowValue, { color: theme.textSecondary }]}>
-            {themeMode === "light" ? "Light" : "Dark"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Section 4: Account */}
+      {/* Section 3: Account */}
       {user && (
         <>
           <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
             ACCOUNT
           </Text>
-          
+
           <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
             <View style={styles.row}>
               <View style={styles.rowLeft}>
@@ -264,9 +249,9 @@ export default function SettingsScreen() {
                 )}
               </View>
             </View>
-            
+
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
-            
+
             <TouchableOpacity
               style={styles.row}
               activeOpacity={0.7}
@@ -355,6 +340,10 @@ const styles = StyleSheet.create({
   rowRight: {
     justifyContent: 'center',
     alignItems: 'flex-end',
+  },
+  rowRightContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   statusText: {
     fontSize: 15,

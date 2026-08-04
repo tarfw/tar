@@ -262,7 +262,32 @@ members:
 `;
   await uploadWorkspaceFile(env, scope, 'team/members.md', defaultMembers);
 
-  // Site layouts folder placeholder
+  // Starter site layout home.json
+  const defaultHomeLayout = {
+    workspaceId: scope.replace('w:', ''),
+    target: 'web',
+    revision: 'v1',
+    theme: { font: 'Inter', primary: '#1B4332', background: '#FFFFFF' },
+    sections: [
+      {
+        type: 'hero_banner',
+        title: workspaceName,
+        subtitle: `Welcome to ${workspaceName}. Explore our products and services.`,
+        ctaText: 'Contact Us',
+        ctaUrl: '#contact',
+      },
+      {
+        type: 'contact_form',
+        title: 'Get in Touch',
+        subtitle: 'Send us a message or inquiry directly from our website.',
+      },
+      {
+        type: 'footer',
+        text: `© ${new Date().getFullYear()} ${workspaceName}. All rights reserved.`,
+      },
+    ],
+  };
+  await uploadWorkspaceFile(env, scope, 'site/layouts/home.json', JSON.stringify(defaultHomeLayout));
   await uploadWorkspaceFile(env, scope, 'site/layouts/.gitkeep', '');
 }
 

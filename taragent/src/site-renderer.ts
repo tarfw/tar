@@ -31,15 +31,16 @@ export async function handleSiteRequest(
     const homeJsonRaw = await readWorkspaceFile(env, scope, 'site/layouts/home.json');
     if (homeJsonRaw) {
       const homeJson = JSON.parse(homeJsonRaw);
-      const design = await loadDesign(env, scope, workspaceSlug);
+      const design = await loadDesign(env, scope, workspaceSlug).catch(() => null);
+      const tokens = design?.tokens || {
+        colors: { primary: '#1B4332', secondary: '#2D6A4F', tertiary: '#D4A373', neutral: '#FFFFFF' },
+        typography: { body: { fontFamily: 'Inter' }, h1: { fontFamily: 'Inter' } },
+        rounded: { sm: '6px', md: '12px', lg: '16px' },
+        spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px' },
+      };
       const html = renderSectionsToHtml({
         plan: homeJson,
-        tokens: {
-          colors: design.tokens.colors,
-          typography: design.tokens.typography,
-          rounded: design.tokens.rounded,
-          spacing: design.tokens.spacing,
-        },
+        tokens,
         workspaceName: wsName,
       });
       return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });

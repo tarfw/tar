@@ -86,27 +86,37 @@ export default function DirectoryModal({
   }, [visible, scope, fetchMatterEntities]);
 
   const rawList = useMemo(() => {
-    return entities.map((d, index) => {
+    // Filter for People, Companies, and Items (Products & Services only)
+    const allowedTypes = ['customer', 'person', 'contact', 'staff', 'manager', 'admin', 'company', 'business', 'vendor', 'partner', 'organization', 'product', 'service', 'listing', 'item'];
+    const filteredEntities = entities.filter((d: any) => {
+      const t = (d.type || d.category || '').toLowerCase();
+      return allowedTypes.includes(t) || !t;
+    });
+
+    return filteredEntities.map((d, index) => {
       const typeStr = (d.type || d.category || '').toLowerCase();
       let cat: 'people' | 'companies' | 'items' = 'people';
 
       if (['business', 'vendor', 'partner', 'company', 'companies', 'organization'].includes(typeStr)) {
         cat = 'companies';
-      } else if (['product', 'listing', 'service', 'document', 'asset', 'item', 'items', 'order', 'booking', 'expense', 'deal', 'project', 'shipment'].includes(typeStr)) {
+      } else if (['product', 'listing', 'service', 'item', 'items'].includes(typeStr)) {
         cat = 'items';
       } else {
-        // Includes: customer, staff, contact, person, lead, prospect, member, admin, or any person entity
         cat = 'people';
       }
 
       const displayName = d.title || d.name || d.data?.name || d.data?.title || (d.id ? `Record #${d.id}` : 'Untitled Entity');
-      const displayCompany = d.company || d.data?.company || d.data?.email || d.data?.phone || d.data?.role || d.metadata || d.subtitle || '';
+      const rawCompany = d.company || d.data?.company || d.data?.org || '';
+      const rawRole = d.type || d.role || d.subRole || (cat === 'items' ? 'Product' : 'Customer');
+      
+      const formattedRole = rawRole === 'lead' ? 'Customer' : rawRole.charAt(0).toUpperCase() + rawRole.slice(1);
+      const displayCompany = rawCompany && rawCompany !== displayName ? rawCompany : (d.price ? `₹${d.price}` : '');
 
       return {
         id: d.id || `ent_${index}`,
         name: displayName,
         category: cat,
-        subRole: d.type || d.role || d.subRole || 'Entity',
+        subRole: formattedRole,
         company: displayCompany,
         avatarColor: d.avatarColor || getAvatarColor(displayName),
         icon: d.icon || (cat === 'companies' ? 'business-outline' : cat === 'items' ? 'cube-outline' : 'person-outline'),
@@ -153,8 +163,6 @@ export default function DirectoryModal({
             {item.company ? `${item.company} • ` : ''}{item.subRole}
           </Text>
         </View>
-
-        <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
       </TouchableOpacity>
     );
   };
@@ -167,10 +175,9 @@ export default function DirectoryModal({
       onRequestClose={onClose}
     >
       <View style={[styles.container, { backgroundColor: theme.background, paddingTop: Math.max(insets.top, 12) }]}>
-        {/* Top Header Bar */}
+        {/* Top Header Bar (Noise-Free) */}
         <View style={[styles.headerBar, { borderBottomColor: theme.border }]}>
-          {/* Left-Aligned Title */}
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Directory</Text>
+          <Text style={[styles.headerTitle, { color: theme.text, flex: 1 }]}>Directory</Text>
 
           {/* Right Text Button (+ New) */}
           <TouchableOpacity
@@ -182,11 +189,11 @@ export default function DirectoryModal({
           </TouchableOpacity>
         </View>
 
-        {/* Full-width Search Bar matching Workspace Input Bar UI */}
+        {/* High-Contrast Search Bar */}
         <View style={{
           minHeight: 48,
-          backgroundColor: theme.background,
-          borderColor: theme.border,
+          backgroundColor: theme.border + '15',
+          borderColor: theme.border + '40',
           borderTopWidth: 1,
           borderBottomWidth: 1,
           paddingHorizontal: 16,
@@ -194,22 +201,22 @@ export default function DirectoryModal({
           alignItems: 'center',
           marginBottom: 8,
         }}>
-          <Ionicons name="search-outline" size={17} color={theme.textMuted} style={{ marginRight: 10 }} />
+          <Ionicons name="search-outline" size={18} color={theme.textMuted} style={{ marginRight: 10 }} />
           <TextInput
-            style={{ flex: 1, fontSize: 14, color: theme.text, paddingVertical: 12 }}
+            style={{ flex: 1, fontSize: 15, color: theme.text, paddingVertical: 12 }}
             placeholder={`Search ${activeTab}...`}
-            placeholderTextColor={theme.textMuted + '80'}
+            placeholderTextColor={theme?.dark ? '#a1a1aa' : '#52525b'}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+              <Ionicons name="close-circle" size={18} color={theme.textMuted} />
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Tabs Bar */}
+        {/* Clean Segmented Tabs Bar */}
         <View style={[styles.tabsRow, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={[styles.tabButton, activeTab === 'people' && styles.tabActive]}
@@ -236,7 +243,7 @@ export default function DirectoryModal({
             onPress={() => setActiveTab('items')}
           >
             <Text style={[styles.tabText, { color: activeTab === 'items' ? theme.text : theme.textMuted }]}>
-              Items / Deals ({rawList.filter(r => r.category === 'items').length})
+              Items ({rawList.filter(r => r.category === 'items').length})
             </Text>
             {activeTab === 'items' && <View style={[styles.activeIndicator, { backgroundColor: theme.primary }]} />}
           </TouchableOpacity>
@@ -286,8 +293,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
   newTextBtn: {
     paddingHorizontal: 4,

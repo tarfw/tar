@@ -128,24 +128,24 @@ export default function ItemComposeModal({
       setLocationsMap(dataObj?.locations && typeof dataObj.locations === 'object' ? dataObj.locations : {});
       setShowMenu(false);
 
-      const targetIdOrTitle = initialData?.id || initialData?.title;
+      const targetIdOrTitle = initialData?.id;
       if (targetIdOrTitle && scope) {
         fetchLiveProductAndHistory(targetIdOrTitle);
       } else {
         setStockHistory([]);
       }
     }
-  }, [visible, initialData?.id, initialData?.title, propMode, scope]);
+  }, [visible, initialData?.id, propMode, scope]);
 
   const fetchLiveProductAndHistory = async (identifier: string) => {
     if (!scope || !identifier) return;
     if (stockHistory.length === 0) {
       setLoadingHistory(true);
     }
-    console.log(`[ItemComposeModal] 🔄 Fetching live product data & history for: "${identifier}"`);
+    console.log(`[ItemComposeModal] 🔄 Fetching live product data & history for ID: "${identifier}"`);
     try {
       const liveProduct = await findProduct(scope, identifier);
-      if (liveProduct) {
+      if (liveProduct && (liveProduct.id === identifier || liveProduct.title === identifier)) {
         const liveQty = liveProduct.value !== undefined ? liveProduct.value : 0;
         let liveData: any = {};
         if (typeof liveProduct.data === 'string') {
@@ -506,16 +506,10 @@ Respond strictly in valid JSON format:
                   </View>
                 </View>
 
-                {/* History Section — Ultra-Minimal Single Line & Top 5 Limit */}
+                {/* History Section — Clean Minimal Header */}
                 <View style={{ gap: 4 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
                     <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textMuted }}>History</Text>
-                    <TouchableOpacity
-                      onPress={() => onLogEventForEntity?.('action_adjust_stock', { product_id: initialData?.id || title, qty: '1' })}
-                      hitSlop={8}
-                    >
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: theme.primary }}>+ Log Event</Text>
-                    </TouchableOpacity>
                   </View>
 
                   {loadingHistory ? (

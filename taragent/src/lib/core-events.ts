@@ -220,24 +220,15 @@ type: skill
 name: pipeline
 version: 1.1.0
 actions:
-  - name: action_add_lead
-    params: [name, email, phone, company, source]
-    icon: person-add-outline
-  - name: action_convert_lead
-    params: [lead_id, deal_name, deal_value, deal_stage]
-    icon: swap-horizontal
-  - name: action_disqualify_lead
-    params: [lead_id, reason]
-    icon: close-circle-outline
+  - name: action_add_contact
+    params: [name, phone, email, company_id, role]
+    icon: person-add
   - name: action_add_company
     params: [name, industry, website, annual_revenue, employee_count]
     icon: business
   - name: action_link_contact_company
     params: [contact_id, company_id, role]
     icon: link
-  - name: action_add_contact
-    params: [name, phone, email, company_id, role]
-    icon: person-add
   - name: action_add_deal
     params: [name, value, stage, expected_close_date, contact_id]
     icon: cash
@@ -248,11 +239,11 @@ actions:
     params: [type, description, contact_id, deal_id]
     icon: time
 app_layout:
-  primary_action: action_add_lead
+  primary_action: action_add_contact
   layout: dashboard
   sections:
     - type: quick-actions
-      actions: [action_add_lead, action_convert_lead, action_add_company, action_add_contact, action_add_deal, action_update_deal_stage, action_log_activity]
+      actions: [action_add_contact, action_add_company, action_add_deal, action_update_deal_stage, action_log_activity]
     - type: metric-card
       title: "Pipeline Value"
       data: "SELECT SUM(value) FROM matter WHERE type='deal' AND status='active'"
@@ -262,28 +253,6 @@ app_layout:
 ---
 
 # Pipeline Event Module
-
-### action_add_lead
-Add a new raw sales lead.
-steps:
-1. create(table='matter', type='lead', title={name}, data={email: {email}, phone: {phone}, company: {company}, source: {source}, score: 50}, status='open')
-
-### action_convert_lead
-Convert an qualified lead into a Contact, Company, and Sales Deal in one transaction.
-steps:
-1. update(table='matter', id={lead_id}, type='lead', status='converted')
-2. create(table='matter', type='customer', title={name}, data={phone: {phone}, email: {email}, source: {source}}, status='active')
-3. create(table='matter', type='company', title={company}, data={source: {source}}, status='active')
-4. create(table='matter', type='deal', title={deal_name}, value={deal_value}, data={stage: {deal_stage}}, status='active')
-5. link(src={id}, rel='customer', tgt={id})
-6. link(src={id}, rel='company', tgt={id})
-7. create(table='motion', type='stage', ref={id}, data={stage: {deal_stage}, value: {deal_value}}, by='agent:taragent')
-
-### action_disqualify_lead
-Disqualify a lead that is not a fit.
-steps:
-1. update(table='matter', id={lead_id}, type='lead', status='disqualified', data={disqualify_reason: {reason}})
-2. create(table='motion', type='disqualify', ref={lead_id}, data={reason: {reason}}, by='agent:taragent')
 
 ### action_add_company
 Add a new business account / company entity.

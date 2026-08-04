@@ -31,11 +31,11 @@ import LinearInboxList, { LinearInboxItem } from '@/components/LinearInboxList';
 import { fetchInbox, markTaskDone } from '@/lib/inbox';
 import AdBanner from '@/components/AdBanner';
 import EventComposeModal from '@/components/EventComposeModal';
-import EntityDetailsModal from '@/components/EntityDetailsModal';
+import ContactDetailsModal from '@/components/ContactDetailsModal';
 import DirectoryModal from '@/components/DirectoryModal';
 import ExploreModal from '@/components/ExploreModal';
 import ItemComposeModal from '@/components/ItemComposeModal';
-import ContactComposeModal from '@/components/ContactComposeModal';
+import ContactCreateModal from '@/components/ContactCreateModal';
 import { updateStock } from '@/lib/inventory';
 
 interface Workspace {
@@ -839,6 +839,22 @@ ${membersYaml}
         const paramName = typeof p === 'string' ? p : p.name;
         initialParams[paramName] = '';
       });
+      if (action.name === 'action_add_contact') {
+        setInitialContactType('Customer');
+        setShowContactModal(true);
+        return;
+      }
+      if (action.name === 'action_add_company') {
+        setInitialContactType('Company');
+        setShowContactModal(true);
+        return;
+      }
+      if (action.name === 'action_add_product') {
+        setItemInitialData({ item_subtype: 'Product' });
+        setShowItemModal(true);
+        return;
+      }
+
       setFormParams(initialParams);
       setSelectedAction(action);
       setActionResultMessage(null);
@@ -884,7 +900,6 @@ ${membersYaml}
       console.log(`[Workspace] ⚡ handleActionFormSubmit — action: "${selectedAction.name}", scope: "${currentWorkspace?.scope}", params:`, cleanParams);
 
       if (selectedAction.name === 'action_add_contact' ||
-        selectedAction.name === 'action_add_lead' ||
         selectedAction.name === 'action_add_company' ||
         selectedAction.name === 'action_add_deal' ||
         selectedAction.name === 'action_add_product' ||
@@ -892,7 +907,6 @@ ${membersYaml}
       ) {
         const titleVal = cleanParams.title || cleanParams.name || cleanParams.to || 'New Entity';
         const typeVal = cleanParams.role || cleanParams.type || (
-          selectedAction.name === 'action_add_lead' ? 'lead' :
           selectedAction.name === 'action_add_company' ? 'company' :
           selectedAction.name === 'action_add_deal' ? 'deal' :
           selectedAction.name === 'action_add_product' ? 'product' : 'customer'
@@ -1893,7 +1907,7 @@ ${membersYaml}
       />
 
       {/* Full-Screen Entity Details Modal */}
-      <EntityDetailsModal
+      <ContactDetailsModal
         visible={selectedEntityDetails !== null}
         entity={selectedEntityDetails}
         scope={currentWorkspace?.scope}
@@ -1945,9 +1959,18 @@ ${membersYaml}
             targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');
             initialParams = { customer_id: entityName, total: '0' };
           } else {
-            // Customer / Person / Contact / Company
-            targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_add_deal') || PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_record_sale');
-            initialParams = { contact_id: ent.id, name: `${entityName} Deal`, stage: 'New Inquiry', value: '10000' };
+            // Customer / Person / Contact / Company -> Open Add Deal Modal linked with this contact
+            targetAction = PLAN5_EVENT_MOTIONS.find(m => m.actionName === 'action_add_deal') || {
+              name: 'action_add_deal',
+              purpose: 'Create a new sales deal in pipeline',
+              params: [
+                { name: 'name', type: 'text', required: true, default: '' },
+                { name: 'value', type: 'text', required: true, default: '' },
+                { name: 'stage', type: 'text', required: true, default: 'New Inquiry' },
+                { name: 'contact_id', type: 'text', required: true, default: ent.id },
+              ],
+            };
+            initialParams = { contact_id: ent.id, name: '', stage: 'New Inquiry', value: '' };
           }
 
           if (targetAction) {
@@ -1986,19 +2009,17 @@ ${membersYaml}
         }}
         onAddNewEntity={(category) => {
           if (category === 'items') {
+            setItemInitialData({ item_subtype: 'Product' });
             setShowItemModal(true);
             return;
           }
-          if (category === 'people') {
-            setInitialContactType('Customer');
-            setShowContactModal(true);
-            return;
-          }
           if (category === 'companies') {
-            setInitialContactType('Vendor');
+            setInitialContactType('Company');
             setShowContactModal(true);
             return;
           }
+          setInitialContactType('Customer');
+          setShowContactModal(true);
         }}
       />
 
@@ -2120,25 +2141,24 @@ ${membersYaml}
         }}
       />
 
-      {/* Standalone Dedicated Contact Compose Modal (People & Companies) */}
-      <ContactComposeModal
+      {/* Standalone Dedicated Contact Create Modal (People & Companies) */}
+      <ContactCreateModal
         visible={showContactModal}
         theme={theme}
         submitting={submittingContact}
         resultMessage={contactResultMessage}
         initialType={initialContactType}
+        allEntities={allEntities}
         onClose={() => {
           setShowContactModal(false);
           setContactResultMessage(null);
         }}
-        onSave={async (contactData) => {
+        onSave={async (contactData: { name: string; role: string; email: string; phone: string; org: string; notes?: string }) => {
           if (!currentWorkspace?.scope) return;
           setSubmittingContact(true);
           try {
             let matterType = 'customer';
-            if (contactData.role === 'Lead') {
-              matterType = 'lead';
-            } else if (['Company', 'Vendor', 'Partner'].includes(contactData.role)) {
+            if (['Company', 'Vendor', 'Partner'].includes(contactData.role)) {
               matterType = 'company';
             }
             await tar.tool('create', {

@@ -340,11 +340,11 @@ Every module follows this 5-step pattern. Steps 2–5 are conditional.
 - `inbox(type=booking, due={appointment_unix_time})` — urgency auto-computed.
 
 **CRM**
-- `matter(type=lead)` — raw, unqualified prospect (status: `open`, `converted`, `disqualified`).
-- `matter(type=company)` — account entity (`industry`, `annual_revenue`, `employee_count`).
-- `matter(type=customer)`, `matter(type=deal)` — verified entities.
+- `matter(type=customer)` — person / contact entity (`phone`, `email`, `role`).
+- `matter(type=company)` — account / business entity (`industry`, `annual_revenue`, `employee_count`).
+- `matter(type=deal)` — active deal entity (`stage`, `value`, linked to contact/company).
 - `graph(deal → customer)`, `graph(contact → company)`, `graph(deal → company)` — graph traversal links.
-- `motion(type=stage)`, `motion(type=activity)`, `motion(type=disqualify)` — audit event history.
+- `motion(type=stage)`, `motion(type=activity)` — audit event history.
 - `inbox(type=deal, due=...)` — follow-up tasks.
 - S3 memory (`{scope}/memory/{type}/{slug}.json`) — AI-inferred patterns only. PUT to write, LIST+GET to read.
 

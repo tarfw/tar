@@ -25,6 +25,7 @@ export interface EntityDetailsModalProps {
   theme: any;
   onClose: () => void;
   onRefresh?: () => void;
+  onAddDeal?: (contactEntity: any) => void;
   onLogEventForEntity?: (entity: any, eventKind?: 'stage' | 'activity') => void;
 }
 
@@ -77,7 +78,7 @@ function MiniTimeSlotGrid({
   );
 }
 
-export default function EntityDetailsModal({
+export default function ContactDetailsModal({
   visible,
   entity,
   scope,
@@ -92,6 +93,8 @@ export default function EntityDetailsModal({
   const [deleting, setDeleting] = useState(false);
   const [loadingMotions, setLoadingMotions] = useState(false);
   const [linkedMotions, setLinkedMotions] = useState<any[]>([]);
+  const [loadingDeals, setLoadingDeals] = useState(false);
+  const [linkedDeals, setLinkedDeals] = useState<any[]>([]);
   const [showMenu, setShowMenu] = useState(false);
 
   // Form edit fields
@@ -290,10 +293,37 @@ export default function EntityDetailsModal({
       );
       setNotes(entity.notes || entity.data?.notes || entity.data?.description || '');
       setIsEditing(false);
-      setShowMenu(false);
       fetchLinkedMotions(entity.id);
+      fetchLinkedDeals(entity.id);
     }
   }, [entity]);
+
+  const fetchLinkedDeals = async (entityId: string) => {
+    if (!scope || !entityId) return;
+    setLoadingDeals(true);
+    try {
+      // Query graph or matter for deals linked to this contact
+      const graphRes = await tar.tool('read', { table: 'graph', graph_filter: { tgt: entityId, rel: 'customer' }, scope });
+      const dealIds = (graphRes?.rows || []).map((r: any) => r.src);
+      if (dealIds.length > 0) {
+        const dealsRes = await tar.tool('read', { table: 'matter', scope });
+        const allDeals = (dealsRes?.rows || []).filter((m: any) => m.type === 'deal' && dealIds.includes(m.id));
+        setLinkedDeals(allDeals);
+      } else {
+        // Fallback: check matter data customer/contact_id
+        const dealsRes = await tar.tool('read', { table: 'matter', scope });
+        const matched = (dealsRes?.rows || []).filter((m: any) => 
+          m.type === 'deal' && (m.data?.contact_id === entityId || m.data?.customer === entity.title)
+        );
+        setLinkedDeals(matched);
+      }
+    } catch (e) {
+      console.warn('[ContactDetails] Failed to fetch linked deals:', e);
+      setLinkedDeals([]);
+    } finally {
+      setLoadingDeals(false);
+    }
+  };
 
   const getInitials = (str: string) => {
     if (!str || str === 'None') return '?';
@@ -343,7 +373,6 @@ export default function EntityDetailsModal({
     try {
       const res = await tar.tool('read', { table: 'motion', ref: entityId, scope });
       const rows = res?.rows || [];
-      // Robust ascending sort by event time (oldest event at top -> newest event at bottom)
       rows.sort((a: any, b: any) => {
         const aData = typeof a.data === 'string' ? (JSON.parse(a.data || '{}') || {}) : (a.data || {});
         const bData = typeof b.data === 'string' ? (JSON.parse(b.data || '{}') || {}) : (b.data || {});
@@ -353,7 +382,7 @@ export default function EntityDetailsModal({
       });
       setLinkedMotions(rows);
     } catch (e) {
-      console.warn('[EntityDetails] Failed to fetch linked motions:', e);
+      console.warn('[ContactDetails] Failed to fetch linked motions:', e);
       setLinkedMotions([]);
     } finally {
       setLoadingMotions(false);
@@ -364,7 +393,6 @@ export default function EntityDetailsModal({
 
   const typeStr = (entity.type || entity.subRole || '').toLowerCase();
   const categoryName = entity.category || (
-    ['lead', 'leads', 'prospect'].includes(typeStr) ? 'leads' :
     ['customer', 'staff', 'person', 'contact'].includes(typeStr) ? 'people' :
     ['company', 'business', 'vendor', 'partner', 'organization'].includes(typeStr) ? 'companies' : 'items'
   );
@@ -449,80 +477,64 @@ export default function EntityDetailsModal({
             contentContainerStyle={[styles.scrollBody, { paddingTop: 16, paddingBottom: Math.max(insets.bottom + 24, 32) }]}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Hero Card Header */}
+            {/* Contact Specific Hero Header */}
             {(() => {
-              const clientVal = company || entity.data?.customer || entity.data?.contact_id || entity.data?.email || entity.data?.company || 'None';
+              const roleDisplay = subRole || entity.role || entity.data?.role || 'Customer';
+              const companyVal = company || entity.data?.company || entity.data?.org || '';
 
               return (
-                <View style={{ gap: 14, marginBottom: 16 }}>
-                  {/* Row 1: Deal Title (Tappable to Edit) + Deal Value (Right) */}
+                <View style={{ gap: 10, marginBottom: 16 }}>
+                  {/* Row 1: Contact Name (Tappable to Edit) */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                     {isEditing ? (
                       <TextInput
                         style={{ fontSize: 24, fontWeight: '700', color: theme.text, flex: 1, paddingVertical: 0 }}
                         value={name}
                         onChangeText={setName}
-                        placeholder="Deal Title..."
+                        placeholder="Contact Name..."
                         placeholderTextColor={theme.textMuted + '80'}
                         autoFocus
                       />
                     ) : (
                       <TouchableOpacity onPress={() => setIsEditing(true)} activeOpacity={0.7} style={{ flex: 1 }}>
                         <Text style={{ fontSize: 24, fontWeight: '700', color: theme.text }} numberOfLines={1}>
-                          {name || 'Entity Details'}
+                          {name || 'Contact Details'}
                         </Text>
                       </TouchableOpacity>
                     )}
-
-                    {/* Deal Value aligned right on Title Row */}
-                    {isEditing ? (
-                      <TextInput
-                        style={{ fontSize: 20, fontWeight: '700', color: theme.text, textAlign: 'right' }}
-                        value={value}
-                        onChangeText={setValue}
-                        placeholder="0"
-                        keyboardType="numeric"
-                        placeholderTextColor={theme.textMuted + '80'}
-                      />
-                    ) : (
-                      <Text style={{ fontSize: 22, fontWeight: '700', color: theme.text }}>
-                        {value ? `$ ${value}` : '$ 0'}
-                      </Text>
-                    )}
                   </View>
 
-                  {/* Row 2: User Detail (Left) + Deal Stage Status (Right - Same Font Style) */}
+                  {/* Row 2: Subrole / Organization info */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                     {isEditing ? (
                       <TextInput
                         style={{ fontSize: 15, color: theme.text, flex: 1, paddingVertical: 2 }}
                         value={company}
                         onChangeText={setCompany}
-                        placeholder="Client name or company..."
+                        placeholder="Company / Organization..."
                         placeholderTextColor={theme.textMuted + '80'}
                       />
-                    ) : clientVal !== 'None' ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 }}>
-                        <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: getAvatarColor(clientVal), alignItems: 'center', justifyContent: 'center' }}>
-                          <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '700' }}>
-                            {getInitials(clientVal)}
-                          </Text>
-                        </View>
-                        <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text, textTransform: 'lowercase', flexShrink: 1 }} numberOfLines={1}>
-                          {clientVal}
-                        </Text>
-                      </View>
                     ) : (
-                      <Text style={{ fontSize: 15, color: theme.textMuted }}>
-                        {subRole || categoryName || 'General Item'}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '500', color: theme.textMuted, textTransform: 'lowercase' }}>
+                          {roleDisplay}
+                        </Text>
+                        {Boolean(companyVal) && (
+                          <>
+                            <Text style={{ fontSize: 14, color: theme.textMuted }}>•</Text>
+                            <Text style={{ fontSize: 15, fontWeight: '500', color: theme.textSecondary }}>
+                              {companyVal}
+                            </Text>
+                          </>
+                        )}
+                      </View>
                     )}
 
-                    {/* Stage Status in User Detail Row (Same Font Style: 16px weight 600) */}
+                    {/* Quick Active Deals count badge */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Ionicons name="checkmark-circle-outline" size={18} color={theme.primary} />
-                      <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text }}>
-                        {entity.data?.stage || 'New Inquiry'}
+                      <Ionicons name="briefcase-outline" size={16} color={theme.primary} />
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>
+                        {linkedDeals.length} {linkedDeals.length === 1 ? 'Deal' : 'Deals'}
                       </Text>
                     </View>
                   </View>
@@ -599,6 +611,59 @@ export default function EntityDetailsModal({
                 </View>
               );
             })()}
+
+                  {/* Deals Section (For Contact / Customer profiles) */}
+            {['customer', 'staff', 'person', 'contact', 'company'].includes(typeStr) && (
+              <View style={{ marginBottom: 20 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Deals ({linkedDeals.length})
+                  </Text>
+                </View>
+
+                {loadingDeals ? (
+                  <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 8 }} />
+                ) : linkedDeals.length > 0 ? (
+                  <View style={{ gap: 8 }}>
+                    {linkedDeals.map((deal) => {
+                      const dVal = deal.value ? `$${deal.value.toLocaleString()}` : '$0';
+                      const dStage = deal.data?.stage || 'New Inquiry';
+                      return (
+                        <TouchableOpacity
+                          key={deal.id}
+                          style={{
+                            padding: 12,
+                            borderRadius: 10,
+                            backgroundColor: theme.border + '15',
+                            borderWidth: 1,
+                            borderColor: theme.border + '30',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }} numberOfLines={1}>
+                              {deal.title || 'Sales Deal'}
+                            </Text>
+                            <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                              {dStage}
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: theme.primary }}>
+                            {dVal}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 13, color: theme.textMuted, fontStyle: 'italic', marginVertical: 4 }}>
+                    No active deals for this contact.
+                  </Text>
+                )}
+              </View>
+            )}
 
             {/* Events Timeline Section — Seamless Feed */}
             <View style={styles.timelineSection}>
@@ -677,9 +742,13 @@ export default function EntityDetailsModal({
             </View>
           </ScrollView>
 
-          {/* Floating Action Button (FAB) for Adding Events (Flat — No Elevation / Shadow!) */}
+          {/* Floating Action Button (FAB) for Adding Deals */}
           <TouchableOpacity
-            onPress={() => openInteractionModal(true)}
+            onPress={() => {
+              if (onLogEventForEntity) {
+                onLogEventForEntity(entity, 'stage');
+              }
+            }}
             activeOpacity={0.85}
             style={{
               position: 'absolute',

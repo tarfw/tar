@@ -38,9 +38,6 @@ export const PLAN5_EVENT_MOTIONS = [
   { event: 'Write Off', actionName: 'action_write_off', whatHappened: 'Stock removed', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'reason', type: 'text', required: false }] },
   { event: 'Expense', actionName: 'action_record_expense', whatHappened: 'Cost recorded', linksTo: 'Expense', params: [{ name: 'category', type: 'text', required: true }, { name: 'amount', type: 'number', required: true }, { name: 'description', type: 'text', required: false }, { name: 'date', type: 'text', required: false }] },
   { event: 'Assignment', actionName: 'action_create_task', whatHappened: 'Task assigned', linksTo: 'Project', params: [{ name: 'title', type: 'text', required: true }, { name: 'description', type: 'text', required: false }, { name: 'assignee_id', type: 'text', required: false }, { name: 'due_date', type: 'text', required: false }] },
-  { event: 'Add Company', actionName: 'action_add_company', whatHappened: 'Business Account registered', linksTo: 'Company', params: [{ name: 'name', type: 'text', required: true }, { name: 'industry', type: 'text', required: false }, { name: 'website', type: 'text', required: false }, { name: 'annual_revenue', type: 'number', required: false }, { name: 'employee_count', type: 'number', required: false }] },
-  { event: 'Add Deal', actionName: 'action_add_deal', whatHappened: 'Sales deal created in pipeline', linksTo: 'Deal', params: [{ name: 'name', type: 'text', required: true }, { name: 'value', type: 'number', required: true }, { name: 'stage', type: 'text', required: true }, { name: 'expected_close_date', type: 'text', required: false }, { name: 'contact_id', type: 'text', required: false }] },
-  { event: 'Add Item', actionName: 'action_add_product', whatHappened: 'Item cataloged', linksTo: 'Item', params: [{ name: 'title', type: 'text', required: true }, { name: 'item_subtype', type: 'text', required: true }, { name: 'price', type: 'number', required: false }, { name: 'stock', type: 'number', required: false }, { name: 'category', type: 'text', required: false }] },
 ];
 
 export interface EventComposeModalProps {
@@ -1036,89 +1033,88 @@ export default function EventComposeModal({
         </KeyboardAvoidingView>
       </View>
 
-      {/* Unified Bulletproof Option Picker Modal */}
+      {/* Options Selection Modal — FULL SCREEN Presentation */}
       <Modal
         visible={activePicker !== null}
-        transparent={true}
-        animationType="fade"
+        animationType="slide"
+        presentationStyle="fullScreen"
         onRequestClose={() => setActivePicker(null)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setActivePicker(null)}>
-          <Pressable style={[styles.pickerContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
-            <View style={styles.pickerHeader}>
-              <Text style={[styles.pickerTitle, { color: theme.text }]}>{activePicker?.title}</Text>
-              <Pressable onPress={() => setActivePicker(null)}>
-                <Ionicons name="close" size={20} color={theme.textMuted} />
-              </Pressable>
+        <View style={{ flex: 1, backgroundColor: theme.background, paddingTop: Math.max(insets.top, 12), paddingHorizontal: 16 }}>
+          {/* Header Bar */}
+          <View style={{ height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border + '40', marginBottom: 12 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>{activePicker?.title}</Text>
+            <TouchableOpacity onPress={() => setActivePicker(null)} hitSlop={10}>
+              <Ionicons name="close" size={24} color={theme.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Search Input inside Picker */}
+          {activePicker?.options && activePicker.options.length > 4 ? (
+            <View style={{
+              height: 44,
+              backgroundColor: theme.border + '15',
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginBottom: 12,
+            }}>
+              <Ionicons name="search-outline" size={18} color={theme.textMuted} style={{ marginRight: 8 }} />
+              <TextInput
+                style={{ flex: 1, fontSize: 15, color: theme.text }}
+                placeholder="Search options..."
+                placeholderTextColor={theme.textMuted + '80'}
+                value={pickerSearch}
+                onChangeText={setPickerSearch}
+                autoFocus
+              />
+              {pickerSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setPickerSearch('')} hitSlop={8}>
+                  <Ionicons name="close-circle" size={18} color={theme.textMuted} />
+                </TouchableOpacity>
+              )}
             </View>
+          ) : null}
 
-            {/* Search Input inside Picker */}
-            {activePicker?.options && activePicker.options.length > 4 ? (
-              <View style={{
-                minHeight: 44,
-                backgroundColor: theme.background,
-                borderColor: theme.border,
-                borderTopWidth: 1,
-                borderBottomWidth: 1,
-                paddingHorizontal: 16,
-                flexDirection: 'row',
-                alignItems: 'center',
-                marginBottom: 8,
-              }}>
-                <Ionicons name="search-outline" size={17} color={theme.textMuted} style={{ marginRight: 10 }} />
-                <TextInput
-                  style={{ flex: 1, fontSize: 14, color: theme.text, paddingVertical: 10 }}
-                  placeholder="Search options..."
-                  placeholderTextColor={theme.textMuted + '80'}
-                  value={pickerSearch}
-                  onChangeText={setPickerSearch}
-                />
-                {pickerSearch.length > 0 && (
-                  <TouchableOpacity onPress={() => setPickerSearch('')} hitSlop={8}>
-                    <Ionicons name="close-circle" size={16} color={theme.textMuted} />
-                  </TouchableOpacity>
-                )}
-              </View>
-            ) : null}
+          {/* Interactive Calendar Grid for Date Picker */}
+          {activePicker?.paramName?.toLowerCase().includes('date') ? (
+            <MiniCalendarPicker
+              selectedDate={params[activePicker.paramName] || ''}
+              onSelectDate={(dStr) => {
+                setParams((prev) => ({ ...prev, [activePicker.paramName]: dStr }));
+                setActivePicker(null);
+              }}
+              theme={theme}
+            />
+          ) : null}
 
-            {/* Interactive Calendar Grid for Date Picker */}
-            {activePicker?.paramName?.toLowerCase().includes('date') ? (
-              <MiniCalendarPicker
-                selectedDate={params[activePicker.paramName] || ''}
-                onSelectDate={(dStr) => {
-                  setParams((prev) => ({ ...prev, [activePicker.paramName]: dStr }));
-                  setActivePicker(null);
-                }}
-                theme={theme}
-              />
-            ) : null}
+          {/* Time Slot Grid for Slot/Time Picker */}
+          {activePicker?.paramName?.toLowerCase().includes('slot') || activePicker?.paramName?.toLowerCase().includes('time') ? (
+            <MiniTimeSlotGrid
+              selectedSlot={params[activePicker.paramName] || ''}
+              onSelectSlot={(sStr) => {
+                setParams((prev) => ({ ...prev, [activePicker.paramName]: sStr }));
+                setActivePicker(null);
+              }}
+              theme={theme}
+            />
+          ) : null}
 
-            {/* Time Slot Grid for Slot/Time Picker */}
-            {activePicker?.paramName?.toLowerCase().includes('slot') || activePicker?.paramName?.toLowerCase().includes('time') ? (
-              <MiniTimeSlotGrid
-                selectedSlot={params[activePicker.paramName] || ''}
-                onSelectSlot={(sStr) => {
-                  setParams((prev) => ({ ...prev, [activePicker.paramName]: sStr }));
-                  setActivePicker(null);
-                }}
-                theme={theme}
-              />
-            ) : null}
+          {/* Production Empty State when workspace entities are empty */}
+          {activePicker?.options?.length === 0 &&
+           !activePicker?.paramName?.toLowerCase().includes('date') &&
+           !activePicker?.paramName?.toLowerCase().includes('slot') &&
+           !activePicker?.paramName?.toLowerCase().includes('time') ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="folder-open-outline" size={36} color={theme.textMuted} />
+              <Text style={{ color: theme.textMuted, fontSize: 14, marginTop: 10, fontWeight: '500' }}>
+                No matching records in workspace
+              </Text>
+            </View>
+          ) : null}
 
-            {/* Production Empty State when workspace entities are empty */}
-            {activePicker?.options?.length === 0 &&
-             !activePicker?.paramName?.toLowerCase().includes('date') &&
-             !activePicker?.paramName?.toLowerCase().includes('slot') &&
-             !activePicker?.paramName?.toLowerCase().includes('time') ? (
-              <View style={{ paddingVertical: 28, alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="folder-open-outline" size={32} color={theme.textMuted} />
-                <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 8, fontWeight: '500' }}>
-                  No matching records in workspace
-                </Text>
-              </View>
-            ) : null}
-
-            <ScrollView style={{ maxHeight: 350 }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 24, 32) }}>
               {(activePicker?.options || [])
                 .filter((opt) => {
                   if (!opt) return false;
@@ -1191,8 +1187,7 @@ export default function EventComposeModal({
                   );
                 })}
             </ScrollView>
-          </Pressable>
-        </Pressable>
+        </View>
       </Modal>
     </Modal>
   );
@@ -1218,8 +1213,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   headerEventText: {
-    fontSize: 15.5,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.5,
     textTransform: 'capitalize',
   },
   sendTextBtn: {

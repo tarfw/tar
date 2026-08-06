@@ -132,6 +132,15 @@ export interface MergedDesign {
   workspaceName: string;
 }
 
+// ── Curated Framer & Webflow Design Schemes ─────────────────────────
+
+export const FRAMER_PALETTES = {
+  'dark-luxury': { primary: '#3B82F6', secondary: '#60A5FA', surface: '#1E293B', background: '#0F172A', text: '#F8FAFC', fontHeading: 'Outfit', fontBody: 'Plus Jakarta Sans' },
+  'd2c-vibrant': { primary: '#FF5A5F', secondary: '#FF8E53', surface: '#FFFFFF', background: '#FAFAFA', text: '#0F172A', fontHeading: 'Plus Jakarta Sans', fontBody: 'Inter' },
+  'minimal-tech': { primary: '#2563EB', secondary: '#3B82F6', surface: '#FFFFFF', background: '#F8FAFC', text: '#0F172A', fontHeading: 'Plus Jakarta Sans', fontBody: 'Inter' },
+  'organic-studio': { primary: '#10B981', secondary: '#059669', surface: '#FFFFFF', background: '#F0FDF4', text: '#064E3B', fontHeading: 'Playfair Display', fontBody: 'Plus Jakarta Sans' },
+};
+
 export async function loadDesign(
   env: any,
   scope: string,
@@ -144,23 +153,26 @@ export async function loadDesign(
     loadWorkspaceDesign(env, scope),
   ]);
 
-  // Start with defaults, merge workspace overrides
+  // Start with defaults matching Framer & Webflow aesthetics, merge workspace overrides
   const tokens: DesignTokens = {
     name: workspaceName,
     version: '1.0.0',
     colors: {
-      primary: '#1B4332',
-      secondary: '#2D6A4F',
+      primary: '#18181B',
+      secondary: '#475569',
       tertiary: '#D4A373',
-      neutral: '#FEFAE0',
+      surface: '#FFFFFF',
+      background: '#F8FAFC',
+      neutral: '#F8FAFC',
+      text: '#0F172A',
       'on-primary': '#FFFFFF',
     },
     typography: {
-      h1: { fontFamily: 'Inter', fontSize: '1.75rem', fontWeight: 700 },
-      'body-md': { fontFamily: 'Inter', fontSize: '0.938rem', fontWeight: 400 },
+      h1: { fontFamily: 'Plus Jakarta Sans', fontSize: '2.5rem', fontWeight: 800 },
+      'body-md': { fontFamily: 'Inter', fontSize: '1rem', fontWeight: 400 },
     },
-    rounded: { sm: '6px', md: '12px', lg: '16px' },
-    spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px' },
+    rounded: { sm: '8px', md: '12px', lg: '16px', xl: '24px' },
+    spacing: { xs: '8px', sm: '16px', md: '24px', lg: '48px', xl: '80px' },
     components: {},
   };
 

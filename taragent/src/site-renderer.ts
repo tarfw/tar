@@ -38,6 +38,10 @@ export async function handleSiteRequest(
         rounded: { sm: '6px', md: '12px', lg: '16px' },
         spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px' },
       };
+      const templateName = homeJson.template || (design as any)?.template || (design as any)?.preset || '';
+      if (!homeJson.template && templateName) {
+        homeJson.template = templateName;
+      }
       const html = renderSectionsToHtml({
         plan: homeJson,
         tokens,

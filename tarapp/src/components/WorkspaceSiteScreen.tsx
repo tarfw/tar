@@ -20,31 +20,13 @@ import { useSite } from '@/hooks/use-site';
 import { generateSiteLayout } from '@/lib/site-ai';
 import { sectionSummary, Section } from '@/lib/site-schema';
 
-const WorkspaceThumbnail = ({ name, size = 26, theme }: { name: string; size?: number; theme: any }) => {
-  const initial = (name || 'W').charAt(0).toUpperCase();
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 3,
-        backgroundColor: theme.primary + '18',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Text style={{ color: theme.primary, fontWeight: '700', fontSize: size * 0.45 }}>
-        {initial}
-      </Text>
-    </View>
-  );
-};
-
-const STARTER_PROMPTS = [
-  'Minimalist tech product landing page',
-  'Luxury fashion boutique with dark aesthetic',
-  'Modern cafe & bakery with menu and hours',
-  'Professional agency with client testimonials',
+const DESIGN_PRESETS = [
+  { id: 'notion', label: 'Notion', prompt: 'Use notion design and create a saas workspace page' },
+  { id: 'lululemon', label: 'Lululemon', prompt: 'Use lululemon design and create activewear store' },
+  { id: 'pouch', label: 'Drink Pouch', prompt: 'Use drinkpouch design and create formula store' },
+  { id: 'tech', label: 'Minimal Tech', prompt: 'Minimalist tech product landing page' },
+  { id: 'luxury', label: 'Luxury Dark', prompt: 'Luxury fashion boutique with dark aesthetic' },
+  { id: 'cafe', label: 'Artisan Cafe', prompt: 'Modern cafe & bakery with menu and hours' },
 ];
 
 interface WorkspaceSiteScreenProps {
@@ -67,7 +49,7 @@ export default function WorkspaceSiteScreen({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const effectiveStoreId = scope || subdomain || 'default';
-  const { draft, published, loading, saveDraft, publish, refresh } = useSite(effectiveStoreId);
+  const { draft, published, loading, saveDraft, publish } = useSite(effectiveStoreId);
 
   const [instruction, setInstruction] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -76,17 +58,12 @@ export default function WorkspaceSiteScreen({
 
   const cleanSub = (subdomain || 'site').replace(/^w:/, '');
   const siteUrl = `https://${cleanSub}.tarai.space`;
-  const editorUrl = `https://${cleanSub}.tarai.space/edit`;
 
   const handleOpenLiveSite = () => {
     Linking.openURL(siteUrl);
   };
 
-  const handleOpenEditor = () => {
-    Linking.openURL(editorUrl);
-  };
-
-  const handleGenerate = async (promptText?: string) => {
+  const handleGenerate = async (promptText?: string, templateHint?: string) => {
     const text = (promptText || instruction).trim();
     if (!text || generating) return;
     setGenerating(true);
@@ -99,10 +76,10 @@ export default function WorkspaceSiteScreen({
         description: p.data?.description || '',
       }));
 
-      const newLayout = await generateSiteLayout(workspaceName || cleanSub, productList, text, draft);
+      const newLayout = await generateSiteLayout(workspaceName || cleanSub, productList, text, draft, templateHint);
       await saveDraft(newLayout);
       setInstruction('');
-      setFeedback({ text: 'Site layout generated & saved! Tap Publish to take it live.', type: 'success' });
+      setFeedback({ text: 'Layout generated & saved. Tap Publish to go live.', type: 'success' });
     } catch (err: any) {
       setFeedback({ text: err?.message || 'Failed to generate layout.', type: 'error' });
     } finally {
@@ -118,144 +95,131 @@ export default function WorkspaceSiteScreen({
       await publish(cleanSub);
       setFeedback({ text: `Published live to ${siteUrl}`, type: 'success' });
     } catch (err: any) {
-      setFeedback({ text: err?.message || 'Publishing failed.', type: 'error' });
+      setFeedback({ text: err?.message || 'Failed to publish site.', type: 'error' });
     } finally {
       setPublishing(false);
     }
   };
 
-  const isDirty = !published || (draft && JSON.stringify(draft) !== JSON.stringify(published));
-  const activeSections: Section[] = draft?.sections || [];
+  const isDirty = !published || JSON.stringify(draft) !== JSON.stringify(published);
+  const activeSections: Section[] = (draft as any)?.sections || [];
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="fullScreen"
-      onRequestClose={onClose}
-    >
-      <View style={[styles.container, { backgroundColor: theme.background, paddingTop: insets.top }]}>
-        {/* Header */}
-        <View style={[styles.header, { borderBottomColor: theme.border }]}>
-          <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={10}>
-            <Ionicons name="arrow-back" size={20} color={theme.text} />
-          </Pressable>
-          <View style={styles.headerTitleContainer}>
-            <WorkspaceThumbnail name={workspaceName || cleanSub} size={26} theme={theme} />
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
+          {/* Minimal Header */}
+          <View style={[styles.header, { borderBottomColor: theme.border + '40', paddingTop: Math.max(insets.top, 14) }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
-                {workspaceName || cleanSub}
-              </Text>
-              <Text style={[styles.headerSub, { color: theme.textMuted }]} numberOfLines={1}>
-                {cleanSub}.tarai.space
-              </Text>
+              <View style={styles.titleRow}>
+                <Text style={[styles.title, { color: theme.text }]}>{workspaceName || 'Storefront'}</Text>
+                <View style={[styles.dot, { backgroundColor: isDirty ? '#f59e0b' : '#10b981' }]} />
+              </View>
+              <Text style={[styles.subdomain, { color: theme.textMuted }]}>{cleanSub}.tarai.space</Text>
+            </View>
+
+            <View style={styles.headerRight}>
+              <Pressable onPress={handleOpenLiveSite} style={styles.iconBtn} hitSlop={8}>
+                <Ionicons name="open-outline" size={17} color={theme.primary} />
+              </Pressable>
+              <Pressable onPress={onClose} style={styles.iconBtn} hitSlop={8}>
+                <Ionicons name="close" size={20} color={theme.text} />
+              </Pressable>
             </View>
           </View>
-          <View style={styles.headerActions}>
-            <Pressable onPress={handleOpenEditor} style={[styles.headerBtn, { backgroundColor: theme.border + '50' }]}>
-              <Text style={[styles.headerBtnText, { color: theme.text }]}>Editor</Text>
-            </Pressable>
-            <Pressable onPress={handleOpenLiveSite} style={[styles.headerBtn, { backgroundColor: theme.primary + '16' }]}>
-              <Text style={[styles.headerBtnText, { color: theme.primary, fontWeight: '600' }]}>View</Text>
-            </Pressable>
-          </View>
-        </View>
 
-        <KeyboardAvoidingView
-          style={styles.keyboardContainer}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
+          {/* Toast / Feedback Banner */}
           {feedback && (
-            <View style={[styles.toast, { backgroundColor: feedback.type === 'success' ? '#10b98118' : '#ef444418' }]}>
-              <Text style={[styles.toastText, { color: feedback.type === 'success' ? '#10b981' : '#ef4444' }]}>
+            <View
+              style={[
+                styles.feedback,
+                { backgroundColor: feedback.type === 'success' ? '#10b98115' : '#ef444415' },
+              ]}
+            >
+              <Text style={[styles.feedbackText, { color: feedback.type === 'success' ? '#10b981' : '#ef4444' }]}>
                 {feedback.text}
               </Text>
             </View>
           )}
 
+          {/* Main Scroll Content */}
           {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={theme.primary} />
-              <Text style={[styles.loadingText, { color: theme.textMuted }]}>Loading storefront layout...</Text>
+            <View style={styles.center}>
+              <ActivityIndicator color={theme.primary} />
             </View>
           ) : (
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {generating && (
-                <View style={[styles.generatingBanner, { backgroundColor: theme.primary + '12' }]}>
-                  <ActivityIndicator size="small" color={theme.primary} />
-                  <Text style={[styles.generatingText, { color: theme.primary }]}>
-                    Designing layout sections...
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent}>
+              {/* Minimal Preset Pills */}
+              <View style={styles.presetSection}>
+                <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>PRESETS</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsRow}>
+                  {DESIGN_PRESETS.map((preset) => (
+                    <Pressable
+                      key={preset.id}
+                      style={({ pressed }) => [
+                        styles.presetChip,
+                        {
+                          backgroundColor: theme.backgroundElement,
+                          borderColor: theme.border + '60',
+                          opacity: pressed || generating ? 0.6 : 1,
+                        },
+                      ]}
+                      disabled={generating}
+                      onPress={() => handleGenerate(preset.prompt, preset.id)}
+                    >
+                      <Text style={[styles.presetChipText, { color: theme.text }]}>{preset.label}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Active Layout List */}
+              <View style={styles.sectionsContainer}>
+                <View style={styles.sectionsHeader}>
+                  <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>
+                    ACTIVE LAYOUT ({activeSections.length})
                   </Text>
-                </View>
-              )}
-
-              {activeSections.length > 0 ? (
-                <View style={styles.canvasContainer}>
-                  <View style={styles.subheadRow}>
-                    <Text style={[styles.subheadTitle, { color: theme.textMuted }]}>
-                      LAYOUT SECTIONS ({activeSections.length})
+                  {draft?.theme?.font && (
+                    <Text style={[styles.metaText, { color: theme.textMuted }]}>
+                      Font: {draft.theme.font}
                     </Text>
-                    {draft?.theme && (
-                      <Text style={[styles.themeText, { color: theme.textMuted }]}>
-                        Font: {draft.theme.font || 'Inter'}
-                      </Text>
-                    )}
-                  </View>
+                  )}
+                </View>
 
-                  {activeSections.map((section, idx) => {
+                {activeSections.length > 0 ? (
+                  activeSections.map((section, idx) => {
                     const typeLabel = section.type.replace(/_/g, ' ');
                     const summary = sectionSummary(section);
+
                     return (
-                      <View
-                        key={idx}
-                        style={[styles.sectionRow, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-                      >
-                        <Text style={[styles.sectionIndexText, { color: theme.textMuted }]}>#{idx + 1}</Text>
-                        <View style={styles.sectionInfo}>
-                          <Text style={[styles.sectionName, { color: theme.text }]}>{typeLabel}</Text>
-                          <Text style={[styles.sectionMeta, { color: theme.textMuted }]} numberOfLines={1}>
+                      <View key={idx} style={[styles.sectionRow, { borderBottomColor: theme.border + '30' }]}>
+                        <View style={[styles.typeDot, { backgroundColor: theme.primary }]} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.sectionType, { color: theme.text }]}>{typeLabel}</Text>
+                          <Text style={[styles.sectionSummary, { color: theme.textMuted }]} numberOfLines={1}>
                             {summary}
                           </Text>
                         </View>
                       </View>
                     );
-                  })}
-                </View>
-              ) : (
-                <View style={styles.emptyStateContainer}>
-                  <Text style={[styles.emptyTitle, { color: theme.text }]}>Design Storefront</Text>
-                  <Text style={[styles.emptySub, { color: theme.textMuted }]}>
-                    Select a starter concept or describe your vision below.
+                  })
+                ) : (
+                  <Text style={[styles.emptyText, { color: theme.textMuted }]}>
+                    No custom sections. Choose a preset above or enter a prompt.
                   </Text>
-
-                  <View style={styles.starterPillsContainer}>
-                    {STARTER_PROMPTS.map((promptText, i) => (
-                      <Pressable
-                        key={i}
-                        style={({ pressed }) => [
-                          styles.starterPill,
-                          { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.7 : 1 },
-                        ]}
-                        disabled={generating}
-                        onPress={() => handleGenerate(promptText)}
-                      >
-                        <Text style={[styles.starterPillText, { color: theme.text }]}>{promptText}</Text>
-                        <Ionicons name="arrow-forward" size={13} color={theme.textMuted} />
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              )}
+                )}
+              </View>
             </ScrollView>
           )}
 
-          {/* Fixed Bottom Bar */}
-          <View style={[styles.bottomBar, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: insets.bottom + 6 }]}>
+          {/* Minimal Bottom Action Dock */}
+          <View
+            style={[
+              styles.bottomDock,
+              { borderTopColor: theme.border + '40', backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, 12) },
+            ]}
+          >
+            {/* Publish Button */}
             <Pressable
               style={({ pressed }) => [
                 styles.publishBtn,
@@ -268,20 +232,21 @@ export default function WorkspaceSiteScreen({
               onPress={handlePublish}
             >
               {publishing ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color="#ffffff" />
               ) : (
-                <Text style={styles.publishBtnText}>
+                <Text style={styles.publishText}>
                   {isDirty ? 'Publish Site to Live' : 'Published & Up to Date'}
                 </Text>
               )}
             </Pressable>
 
-            <View style={[styles.inputBarContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+            {/* AI Prompt Input Bar */}
+            <View style={[styles.inputBar, { backgroundColor: theme.backgroundElement, borderColor: theme.border + '60' }]}>
               <TextInput
                 style={[styles.input, { color: theme.text }]}
                 value={instruction}
                 onChangeText={setInstruction}
-                placeholder={draft ? 'Describe layout changes...' : 'Describe your storefront layout...'}
+                placeholder={draft ? 'Describe layout changes...' : 'Describe storefront...'}
                 placeholderTextColor={theme.textMuted}
                 editable={!generating}
                 onSubmitEditing={() => handleGenerate()}
@@ -298,14 +263,14 @@ export default function WorkspaceSiteScreen({
                   <Ionicons
                     name="arrow-up-circle"
                     size={26}
-                    color={instruction.trim() ? theme.primary : theme.textMuted}
+                    color={instruction.trim() ? theme.primary : theme.textMuted + '60'}
                   />
                 </Pressable>
               )}
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -314,189 +279,150 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  keyboardContainer: {
-    flex: 1,
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
     borderBottomWidth: 1,
   },
-  closeBtn: {
-    padding: 4,
-  },
-  headerTitleContainer: {
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    flex: 1,
-    marginLeft: 6,
+    gap: 6,
   },
-  headerTitle: {
-    fontSize: 14.5,
+  title: {
+    fontSize: 15,
     fontWeight: '700',
   },
-  headerSub: {
-    fontSize: 11,
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  headerActions: {
+  subdomain: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 12,
   },
-  headerBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+  iconBtn: {
+    padding: 4,
   },
-  headerBtnText: {
+  feedback: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    borderRadius: 8,
+  },
+  feedbackText: {
     fontSize: 12,
     fontWeight: '500',
   },
-  toast: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginHorizontal: 14,
-    marginTop: 8,
-    borderRadius: 6,
-  },
-  toastText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  generatingBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    marginBottom: 10,
-  },
-  generatingText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  loadingContainer: {
+  center: {
     flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
-  },
-  loadingText: {
-    fontSize: 13,
-  },
-  scroll: {
-    flex: 1,
   },
   scrollContent: {
-    padding: 14,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 20,
+    gap: 20,
   },
-  canvasContainer: {
-    gap: 6,
+  presetSection: {
+    gap: 8,
   },
-  subheadRow: {
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  presetsRow: {
+    gap: 8,
+  },
+  presetChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  presetChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  sectionsContainer: {
+    gap: 10,
+  },
+  sectionsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
-    paddingHorizontal: 2,
   },
-  subheadTitle: {
+  metaText: {
     fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  themeText: {
-    fontSize: 11,
-    fontWeight: '500',
   },
   sectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 12,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
   },
-  sectionIndexText: {
-    fontSize: 11,
-    fontWeight: '700',
+  typeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
-  sectionInfo: {
-    flex: 1,
-  },
-  sectionName: {
-    fontSize: 13,
+  sectionType: {
+    fontSize: 13.5,
     fontWeight: '600',
     textTransform: 'capitalize',
   },
-  sectionMeta: {
+  sectionSummary: {
     fontSize: 11.5,
     marginTop: 2,
   },
-  emptyStateContainer: {
-    paddingVertical: 20,
-    gap: 6,
-  },
-  emptyTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  emptySub: {
+  emptyText: {
     fontSize: 12,
+    paddingVertical: 12,
   },
-  starterPillsContainer: {
-    gap: 8,
-    marginTop: 14,
-    width: '100%',
-  },
-  starterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  starterPillText: {
-    fontSize: 12,
-    fontWeight: '500',
-    flex: 1,
-  },
-  bottomBar: {
-    paddingHorizontal: 12,
-    paddingTop: 8,
+  bottomDock: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
     borderTopWidth: 1,
-    gap: 6,
+    gap: 8,
   },
   publishBtn: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 11,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  publishBtnText: {
-    color: '#fff',
+  publishText: {
+    color: '#ffffff',
     fontSize: 13.5,
     fontWeight: '600',
   },
-  inputBarContainer: {
+  inputBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
-    gap: 6,
+    gap: 8,
   },
   input: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 13.5,
     paddingVertical: 4,
   },
 });
+
+
+

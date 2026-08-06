@@ -4,12 +4,20 @@ export const TEMPLATES = [
   'minimal-white',
   'modern-gradient',
   'editorial',
+  'organic-warm',
+  'eco-sage',
+  'minimal-clean',
+  'editorial-chalk',
+  'notion',
+  'lululemon'
 ] as const;
 export type TemplateName = typeof TEMPLATES[number];
 
 export interface Theme {
   primary: string;
+  secondary?: string;
   background: string;
+  surface?: string;
   text: string;
   font: string;
   fontHeading: string;
@@ -18,6 +26,7 @@ export interface Theme {
 export interface Section {
   id: string;
   type: string;
+  variant?: string;
   config: Record<string, any>;
 }
 

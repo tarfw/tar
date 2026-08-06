@@ -17,13 +17,17 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com"
+        "EXPO_PUBLIC_TARFLUE_URL": "https://taragent.tar-54d.workers.dev",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com",
+        "EXPO_PUBLIC_TURSO_URL": "libsql://global-tarframework.aws-eu-west-1.turso.io"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com"
+        "EXPO_PUBLIC_TARFLUE_URL": "https://taragent.tar-54d.workers.dev",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com",
+        "EXPO_PUBLIC_TURSO_URL": "libsql://global-tarframework.aws-eu-west-1.turso.io"
       }
     }
   },

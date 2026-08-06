@@ -12,7 +12,7 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.tarapp.app",
+      "package": "com.tarfw.tarapp",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -63,8 +63,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "1cb02c4c-faa5-4c1e-9a31-9ae43ddee99d"
+        "projectId": "6346806d-64c3-4272-95d9-23c3da09a439"
       }
-    }
+    },
+    "owner": "tarfw"
   }
 }

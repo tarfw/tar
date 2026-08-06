@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, Pressable, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
@@ -98,6 +98,7 @@ export default function AuthScreen() {
       }
     } catch (e: any) {
       console.warn('[Auth] Google sign-in failed:', e.message);
+      Alert.alert('Google Sign-In Error', e.message || 'Failed to sign in with Google');
     } finally {
       setLoading(false);
     }

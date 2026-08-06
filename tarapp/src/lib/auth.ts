@@ -4,7 +4,7 @@ import * as SecureStore from "expo-secure-store";
 const SECURE_STORE_USER_KEY = "google_auth_user";
 
 GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "",
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com",
   offlineAccess: true,
 });
 

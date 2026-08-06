@@ -32,21 +32,26 @@ jobs:
           cd tarapp
           npm ci
 
-      - name: Setup EAS CLI
-        run: npm install -g eas-cli
-
-      - name: Build APK locally on GitHub Actions
+      - name: Expo Prebuild (Generate Native Android Project)
         run: |
           cd tarapp
-          eas build --platform android --profile preview --local --non-interactive
+          npx expo prebuild --platform android --clean
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_TARFLUE_URL: "https://taragent.tar-54d.workers.dev"
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com"
           EXPO_PUBLIC_TURSO_URL: "libsql://global-tarframework.aws-eu-west-1.turso.io"
+          EXPO_PUBLIC_TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          EXPO_PUBLIC_GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          EXPO_PUBLIC_OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+      - name: Build APK with Gradle
+        run: |
+          cd tarapp/android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-build
-          path: tarapp/*.apk
+          name: tarapp-android-apk
+          path: tarapp/android/app/build/outputs/apk/release/*.apk

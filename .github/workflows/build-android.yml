@@ -1,4 +1,4 @@
-name: Build Android App
+name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     name: Build Android APK
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -18,24 +18,24 @@ jobs:
           cache: 'npm'
           cache-dependency-path: tarapp/package-lock.json
 
-      - name: Setup Java JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           cd tarapp
           npm ci
 
-      - name: Expo Prebuild (Generate Native Android Project)
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Expo Prebuild
         run: |
           cd tarapp
-          npx expo prebuild --platform android --clean
+          npx expo prebuild --platform android
         env:
           EXPO_PUBLIC_TARFLUE_URL: "https://taragent.tar-54d.workers.dev"
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com"
@@ -44,14 +44,16 @@ jobs:
           EXPO_PUBLIC_GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           EXPO_PUBLIC_OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
-      - name: Build APK with Gradle
+      - name: Make Gradlew Executable
+        run: chmod +x ./tarapp/android/gradlew
+
+      - name: Build Release APK
         run: |
           cd tarapp/android
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tarapp-android-apk
-          path: tarapp/android/app/build/outputs/apk/release/*.apk
+          name: app-release-apk
+          path: tarapp/android/app/build/outputs/apk/release/app-release.apk

@@ -43,6 +43,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "291840005173-ojtlidsa0chte2spk7ruv80o5lo11dsd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.tarfw.tarapp",
+            "certificate_hash": "cb2e379eee4847bf02d57c1eed4b9be8bccba3e3"
+          }
+        },
+        {
           "client_id": "291840005173-ggf87u7atopdohatin502o1q9gmsceq5.apps.googleusercontent.com",
           "client_type": 3
         }

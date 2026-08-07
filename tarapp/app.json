@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "tarapp",
-    "slug": "tarapp",
+    "name": "tar",
+    "slug": "tar",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "tarapp",
+    "scheme": "tar",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
       "supportsTablet": true
     },
     "android": {
-      "package": "com.tarfw.tarapp",
+      "package": "com.tarfw.app",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -42,9 +42,9 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "androidClientId": "291840005173-ojtlidsa0chte2spk7ruv80o5lo11dsd.apps.googleusercontent.com",
-          "iosUrlScheme": "com.googleusercontent.apps.291840005173-k304m90ilvt8mtput5aeeuvh75qkd5t7",
-          "webClientId": "291840005173-k304m90ilvt8mtput5aeeuvh75qkd5t7.apps.googleusercontent.com",
+          "androidClientId": "226183831843-oo3ga188i4qna8r29a5q2446a5fdt39k.apps.googleusercontent.com",
+          "iosUrlScheme": "com.googleusercontent.apps.226183831843-5sjvl1hsv4d04aucnqsqn19u83o4f5ku",
+          "webClientId": "226183831843-5sjvl1hsv4d04aucnqsqn19u83o4f5ku.apps.googleusercontent.com",
           "scopes": [
             "profile",
             "email"
@@ -54,7 +54,8 @@
       "expo-secure-store",
       "expo-file-system",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -63,9 +64,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "6346806d-64c3-4272-95d9-23c3da09a439"
+        "projectId": "efb1d63a-cd61-4d36-8906-a2fefc57b4f8"
       }
     },
-    "owner": "tarfw"
+    "owner": "tarteam01"
   }
 }

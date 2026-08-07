@@ -46,7 +46,7 @@ jobs:
           npx expo prebuild --platform android
         env:
           EXPO_PUBLIC_TARFLUE_URL: "https://taragent.tar-54d.workers.dev"
-          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: "291840005173-k304m90ilvt8mtput5aeeuvh75qkd5t7.apps.googleusercontent.com"
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: "226183831843-5sjvl1hsv4d04aucnqsqn19u83o4f5ku.apps.googleusercontent.com"
           EXPO_PUBLIC_TURSO_URL: "libsql://global-tarframework.aws-eu-west-1.turso.io"
           EXPO_PUBLIC_TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           EXPO_PUBLIC_GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

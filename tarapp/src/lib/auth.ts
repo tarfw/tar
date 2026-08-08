@@ -1,9 +1,5 @@
 import { GoogleSignin, statusCodes } from "@react-native-google-signin/google-signin";
 import * as SecureStore from "expo-secure-store";
-import * as WebBrowser from "expo-web-browser";
-import * as Linking from "expo-linking";
-
-WebBrowser.maybeCompleteAuthSession();
 
 const SECURE_STORE_USER_KEY = "google_auth_user";
 
@@ -19,55 +15,6 @@ export interface UserProfile {
   email: string;
   photo: string | null;
   idToken: string | null;
-}
-
-export async function signInWithGoogleWebFallback(): Promise<UserProfile> {
-  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "226183831843-5sjvl1hsv4d04aucnqsqn19u83o4f5ku.apps.googleusercontent.com";
-  const redirectUri = Linking.createURL("oauthredirect");
-
-  console.log("[Auth] Starting Web OAuth Fallback. Redirect URI:", redirectUri);
-
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-    `client_id=${encodeURIComponent(webClientId)}` +
-    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&response_type=token%20id_token` +
-    `&scope=${encodeURIComponent("openid profile email")}` +
-    `&nonce=${Math.random().toString(36).substring(2)}`;
-
-  const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
-  console.log("[Auth] WebBrowser session result:", result.type);
-
-  if (result.type === "success" && result.url) {
-    const rawFragment = result.url.split("#")[1] || result.url.split("?")[1] || "";
-    const params = new URLSearchParams(rawFragment);
-    const accessToken = params.get("access_token");
-    const idToken = params.get("id_token");
-
-    if (accessToken || idToken) {
-      const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-        headers: { Authorization: `Bearer ${accessToken || idToken}` },
-      });
-      const userData = await userRes.json();
-
-      if (!userData || (!userData.sub && !userData.email)) {
-        throw new Error("Failed to fetch user profile from Google Web OAuth");
-      }
-
-      const profile: UserProfile = {
-        id: userData.sub || userData.id || userData.email,
-        name: userData.name || userData.email || "Google User",
-        email: userData.email,
-        photo: userData.picture || null,
-        idToken: idToken,
-      };
-
-      await SecureStore.setItemAsync(SECURE_STORE_USER_KEY, JSON.stringify(profile));
-      console.log(`[Auth] Web OAuth fallback success: ${profile.email}`);
-      return profile;
-    }
-  }
-
-  throw new Error("Sign in cancelled or failed in web browser session");
 }
 
 export async function signInWithGoogle(): Promise<UserProfile> {
@@ -112,16 +59,10 @@ export async function signInWithGoogle(): Promise<UserProfile> {
       String(error.code) === "10" ||
       error.message?.includes("DEVELOPER_ERROR")
     ) {
-      console.warn("[Auth] DEVELOPER_ERROR (10) encountered. Attempting Web OAuth Fallback...");
-      try {
-        return await signInWithGoogleWebFallback();
-      } catch (webErr: any) {
-        console.error("[Auth] Web OAuth Fallback failed:", webErr);
-        throw new Error(
-          "Google Sign-In DEVELOPER_ERROR (10): OAuth configuration mismatch on Google Cloud / Play Console.\n" +
-          "Please verify Google Play App Signing SHA-1 is added in Google Cloud Console."
-        );
-      }
+      throw new Error(
+        "Google Sign-In DEVELOPER_ERROR (10): OAuth configuration mismatch on Google Cloud / Play Console.\n" +
+        "Please verify Google Play App Signing SHA-1 is added in Google Cloud Console."
+      );
     } else {
       throw new Error(error.message || "An unknown error occurred during Google Sign-In");
     }

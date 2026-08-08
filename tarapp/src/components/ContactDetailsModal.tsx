@@ -25,57 +25,10 @@ export interface EntityDetailsModalProps {
   theme: any;
   onClose: () => void;
   onRefresh?: () => void;
-  onAddDeal?: (contactEntity: any) => void;
   onLogEventForEntity?: (entity: any, eventKind?: 'stage' | 'activity') => void;
-}
-
-function MiniTimeSlotGrid({
-  selectedSlot,
-  onSelectSlot,
-  theme,
-}: {
-  selectedSlot: string;
-  onSelectSlot: (slotStr: string) => void;
-  theme: any;
-}) {
-  const slots = [
-    '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
-    '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM',
-    '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM',
-  ];
-
-  return (
-    <View style={{ marginTop: 8, marginBottom: 12 }}>
-      <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-        Time Slots
-      </Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {slots.map((slot) => {
-          const isSelected = selectedSlot === slot;
-          return (
-            <TouchableOpacity
-              key={slot}
-              onPress={() => onSelectSlot(slot)}
-              style={{
-                width: '31%',
-                paddingVertical: 7,
-                borderRadius: 8,
-                borderWidth: 1,
-                borderColor: isSelected ? theme.primary : theme.border,
-                backgroundColor: isSelected ? theme.primary : theme.backgroundElement,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text style={{ fontSize: 12, fontWeight: isSelected ? '700' : '500', color: isSelected ? '#ffffff' : theme.text }}>
-                {slot}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </View>
-  );
+  onEditEntity?: (entity: any) => void;
+  onSelectDeal?: (deal: any) => void;
+  allEntities?: any[];
 }
 
 export default function ContactDetailsModal({
@@ -86,23 +39,21 @@ export default function ContactDetailsModal({
   onClose,
   onRefresh,
   onLogEventForEntity,
+  onEditEntity,
+  onSelectDeal,
+  allEntities = [],
 }: EntityDetailsModalProps) {
   const insets = useSafeAreaInsets();
-  const [isEditing, setIsEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [loadingMotions, setLoadingMotions] = useState(false);
   const [linkedMotions, setLinkedMotions] = useState<any[]>([]);
   const [loadingDeals, setLoadingDeals] = useState(false);
   const [linkedDeals, setLinkedDeals] = useState<any[]>([]);
   const [showMenu, setShowMenu] = useState(false);
 
-  // Form edit fields
-  const [name, setName] = useState('');
-  const [subRole, setSubRole] = useState('');
-  const [company, setCompany] = useState('');
-  const [value, setValue] = useState('');
-  const [notes, setNotes] = useState('');
+  // Derived display fields (not editable here)
+  const name = entity?.name || entity?.title || '';
+  const subRole = entity?.subRole || entity?.type || '';
+  const company = entity?.company || entity?.data?.company || entity?.data?.customer || entity?.data?.contact_id || entity?.data?.email || '';
 
   // New Interaction Modal & Icon Picker State (Matching Screenshots 1 & 2)
   const [showInteractionModal, setShowInteractionModal] = useState(false);
@@ -114,8 +65,6 @@ export default function ContactDetailsModal({
   const [interactionDescription, setInteractionDescription] = useState('');
   const [showIconPickerDrawer, setShowIconPickerDrawer] = useState(false);
   const [submittingInteraction, setSubmittingInteraction] = useState(false);
-
-  const CRM_STAGES = ['New Inquiry', 'Qualified', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
 
   const INTERACTION_TYPES_ICONS = [
     { id: 'notes', name: 'document-text-outline' },
@@ -153,8 +102,6 @@ export default function ContactDetailsModal({
     { id: 'closed_won', stageName: 'Closed Won', icon: '🎉', isEmoji: true, color: '#10B981' },
     { id: 'closed_lost', stageName: 'Closed Lost', icon: 'close-circle-outline', isEmoji: false, color: '#EF4444' },
   ];
-
-  const POPULAR_EMOJIS = ['🤝', '📞', '📅', '📝', '☕', '🍴', '🥂', '💼', '💡', '🎯', '🚀', '🔥', '✅', '📍', '📧', '📱', '💬', '🏆', '🎉', '📌', '📎'];
 
   const formatDateString = (d: Date) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -272,27 +219,6 @@ export default function ContactDetailsModal({
 
   useEffect(() => {
     if (entity) {
-      setName(entity.name || entity.title || '');
-      setSubRole(entity.subRole || entity.type || '');
-      setCompany(
-        entity.company ||
-        entity.data?.company ||
-        entity.data?.customer ||
-        entity.data?.contact_id ||
-        entity.data?.email ||
-        ''
-      );
-      setValue(
-        entity.value !== undefined && entity.value !== null && entity.value !== ''
-          ? String(entity.value)
-          : entity.data?.value !== undefined
-          ? String(entity.data.value)
-          : entity.data?.price
-          ? String(entity.data.price)
-          : ''
-      );
-      setNotes(entity.notes || entity.data?.notes || entity.data?.description || '');
-      setIsEditing(false);
       fetchLinkedMotions(entity.id);
       fetchLinkedDeals(entity.id);
     }
@@ -392,40 +318,18 @@ export default function ContactDetailsModal({
   if (!visible || !entity) return null;
 
   const typeStr = (entity.type || entity.subRole || '').toLowerCase();
-  const categoryName = entity.category || (
-    ['customer', 'staff', 'person', 'contact'].includes(typeStr) ? 'people' :
-    ['company', 'business', 'vendor', 'partner', 'organization'].includes(typeStr) ? 'companies' : 'items'
-  );
 
-  const handleSaveUpdate = async () => {
-    if (!scope || !entity?.id) return;
-    setSaving(true);
-    try {
-      await tar.tool('update', {
-        table: 'matter',
-        id: entity.id,
-        scope,
-        patch: {
-          title: name,
-          type: subRole || entity.type,
-          value: parseFloat(value) || 0,
-          data: {
-            ...(entity.data || {}),
-            company,
-            customer: company,
-            notes,
-            description: notes,
-            subRole,
-          },
-        },
-      });
-      setIsEditing(false);
-      if (onRefresh) onRefresh();
-    } catch (e: any) {
-      console.warn('[EntityDetails] Save update error:', e);
-    } finally {
-      setSaving(false);
-    }
+  const resolveContactName = (raw: string): string => {
+    if (!raw) return '';
+    // Try exact ID match
+    const byId = allEntities.find((e: any) => e.id === raw);
+    if (byId) return byId.title || byId.name || byId.data?.name || '';
+    // Try matching by customer_id in entity data
+    const byDataId = allEntities.find((e: any) => e.data?.customer_id === raw || e.data?.contact_id === raw);
+    if (byDataId) return byDataId.title || byDataId.name || byDataId.data?.name || '';
+    // If it looks like an ID (long, no spaces), it's unresolved
+    if (raw.length > 10 && !raw.includes(' ')) return '';
+    return raw;
   };
 
   const handleDeleteEntity = () => {
@@ -440,7 +344,6 @@ export default function ContactDetailsModal({
           style: 'destructive',
           onPress: async () => {
             if (!entity?.id) return;
-            setDeleting(true);
             try {
               await Promise.all([
                 tar.tool('delete', { table: 'matter', id: entity.id, scope: scope || '' }).catch(() => null),
@@ -449,7 +352,6 @@ export default function ContactDetailsModal({
             } catch (e: any) {
               console.warn('[EntityDetails] Delete matter error:', e);
             } finally {
-              setDeleting(false);
               onClose();
               if (onRefresh) onRefresh();
             }
@@ -477,87 +379,55 @@ export default function ContactDetailsModal({
             contentContainerStyle={[styles.scrollBody, { paddingTop: 16, paddingBottom: Math.max(insets.bottom + 24, 32) }]}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Contact Specific Hero Header */}
+            {/* Hero Header */}
             {(() => {
-              const roleDisplay = subRole || entity.role || entity.data?.role || 'Customer';
-              const companyVal = company || entity.data?.company || entity.data?.org || '';
+              const isDeal = typeStr === 'deal';
+              const contactName = isDeal
+                ? resolveContactName(entity.data?.customer || entity.data?.contact_id || entity.data?.client || '')
+                : '';
+              const dealTitle = isDeal ? (name || 'Deal') : '';
+              const displayName = isDeal ? contactName : name;
+              const roleDisplay = isDeal
+                ? (subRole || entity.data?.stage || 'Deal')
+                : (subRole || entity.role || entity.data?.role || 'Customer');
+              const avatarColor = getAvatarColor(displayName || 'U');
+              const initials = getInitials(displayName || 'U');
 
               return (
-                <View style={{ gap: 10, marginBottom: 16 }}>
-                  {/* Row 1: Contact Name (Tappable to Edit) */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                    {isEditing ? (
-                      <TextInput
-                        style={{ fontSize: 24, fontWeight: '700', color: theme.text, flex: 1, paddingVertical: 0 }}
-                        value={name}
-                        onChangeText={setName}
-                        placeholder="Contact Name..."
-                        placeholderTextColor={theme.textMuted + '80'}
-                        autoFocus
-                      />
-                    ) : (
-                      <TouchableOpacity onPress={() => setIsEditing(true)} activeOpacity={0.7} style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 24, fontWeight: '700', color: theme.text }} numberOfLines={1}>
-                          {name || 'Contact Details'}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                <View style={{ alignItems: 'center', marginBottom: 16, gap: 8 }}>
+                  {/* Profile Avatar — Tap to Edit */}
+                  <TouchableOpacity
+                    onPress={() => onEditEntity?.(entity)}
+                    activeOpacity={0.7}
+                    style={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 32,
+                      backgroundColor: avatarColor,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{ fontSize: 24, fontWeight: '700', color: '#ffffff' }}>
+                      {initials}
+                    </Text>
+                  </TouchableOpacity>
 
-                  {/* Row 2: Subrole / Organization info */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                    {isEditing ? (
-                      <TextInput
-                        style={{ fontSize: 15, color: theme.text, flex: 1, paddingVertical: 2 }}
-                        value={company}
-                        onChangeText={setCompany}
-                        placeholder="Company / Organization..."
-                        placeholderTextColor={theme.textMuted + '80'}
-                      />
-                    ) : (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
-                        <Text style={{ fontSize: 15, fontWeight: '500', color: theme.textMuted, textTransform: 'lowercase' }}>
-                          {roleDisplay}
-                        </Text>
-                        {Boolean(companyVal) && (
-                          <>
-                            <Text style={{ fontSize: 14, color: theme.textMuted }}>•</Text>
-                            <Text style={{ fontSize: 15, fontWeight: '500', color: theme.textSecondary }}>
-                              {companyVal}
-                            </Text>
-                          </>
-                        )}
-                      </View>
-                    )}
+                  {/* Name */}
+                  <Text style={{ fontSize: 22, fontWeight: '700', color: theme.text, textAlign: 'center' }} numberOfLines={1}>
+                    {displayName || 'Contact Details'}
+                  </Text>
 
-                    {/* Quick Active Deals count badge */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Ionicons name="briefcase-outline" size={16} color={theme.primary} />
-                      <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>
-                        {linkedDeals.length} {linkedDeals.length === 1 ? 'Deal' : 'Deals'}
-                      </Text>
-                    </View>
-                  </View>
+                  {/* Type / Stage */}
+                  <Text style={{ fontSize: 14, fontWeight: '500', color: theme.textMuted, textAlign: 'center' }}>
+                    {roleDisplay}
+                  </Text>
 
-                  {/* Save/Cancel Action Buttons when Editing */}
-                  {isEditing && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginTop: 4 }}>
-                      <TouchableOpacity onPress={() => setIsEditing(false)} hitSlop={8}>
-                        <Text style={{ fontSize: 15, color: theme.textSecondary }}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={handleSaveUpdate}
-                        disabled={saving}
-                        hitSlop={8}
-                        style={styles.actionTextBtn}
-                      >
-                        {saving ? (
-                          <ActivityIndicator size="small" color={theme.primary} />
-                        ) : (
-                          <Text style={[styles.actionText, { color: theme.primary }]}>Save</Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
+                  {/* Deal title under type (only for deals) */}
+                  {isDeal && Boolean(dealTitle) && (
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: theme.primary, textAlign: 'center' }} numberOfLines={1}>
+                      {dealTitle}
+                    </Text>
                   )}
                 </View>
               );
@@ -572,42 +442,19 @@ export default function ContactDetailsModal({
               }}
             />
 
-            {/* Notes Section (Omitted for Deals in View Mode — Notes live dynamically in History timeline) */}
+            {/* Notes Section */}
             {(() => {
-              if (typeStr === 'deal' && !isEditing) return null;
-              const notesDisplay = notes || entity.notes || entity.data?.notes || entity.data?.description || entity.data?.details || entity.data?.summary || '';
-              if (!isEditing && !notesDisplay) {
-                return (
-                  <TouchableOpacity
-                    onPress={() => setIsEditing(true)}
-                    style={{ marginBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                  >
-                    <Ionicons name="add" size={14} color={theme.primary} />
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: theme.primary }}>
-                      Add notes...
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }
+              if (typeStr === 'deal') return null;
+              const notesDisplay = entity.notes || entity.data?.notes || entity.data?.description || entity.data?.details || entity.data?.summary || '';
+              if (!notesDisplay) return null;
               return (
                 <View style={{ marginBottom: 20 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
                     Notes
                   </Text>
-                  {isEditing ? (
-                    <TextInput
-                      style={[styles.fieldInput, { color: theme.text, backgroundColor: theme.border + '15', borderRadius: 8, padding: 10, minHeight: 60 }]}
-                      value={notes}
-                      onChangeText={setNotes}
-                      placeholder="Notes or description..."
-                      placeholderTextColor={theme.textMuted + '80'}
-                      multiline
-                    />
-                  ) : (
-                    <Text style={{ fontSize: 14, color: theme.text, lineHeight: 20 }}>
-                      {notesDisplay}
-                    </Text>
-                  )}
+                  <Text style={{ fontSize: 14, color: theme.text, lineHeight: 20 }}>
+                    {notesDisplay}
+                  </Text>
                 </View>
               );
             })()}
@@ -631,6 +478,8 @@ export default function ContactDetailsModal({
                       return (
                         <TouchableOpacity
                           key={deal.id}
+                          activeOpacity={0.7}
+                          onPress={() => onSelectDeal?.(deal)}
                           style={{
                             padding: 12,
                             borderRadius: 10,
@@ -665,75 +514,53 @@ export default function ContactDetailsModal({
               </View>
             )}
 
-            {/* Events Timeline Section — Seamless Feed */}
+            {/* Events Timeline */}
             <View style={styles.timelineSection}>
 
               {loadingMotions ? (
                 <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 16 }} />
               ) : linkedMotions.filter(m => (m.type || '').toLowerCase() !== 'change').length > 0 ? (
-                <View style={{ gap: 12, marginTop: 4 }}>
+                <View style={{ gap: 0, marginTop: 4 }}>
                   {linkedMotions.filter(m => (m.type || '').toLowerCase() !== 'change').map((m, idx) => {
                     const mData = typeof m.data === 'string' ? (JSON.parse(m.data || '{}') || {}) : (m.data || {});
                     const iconName = mData.icon;
                     const isEmoji = mData.is_emoji;
                     const iconColor = mData.color;
-                    const title = mData.title || (m.type === 'stage' && mData.stage ? `Stage: ${mData.stage}` : 'Event');
+                    const title = mData.title || (m.type === 'stage' && mData.stage ? mData.stage : 'Event');
                     const dateStr = mData.date_str || m.timestamp || '';
-                    const notesStr = mData.notes;
 
                     return (
                       <View
                         key={m.id || idx}
                         style={{
                           flexDirection: 'row',
-                          alignItems: 'flex-start',
+                          alignItems: 'center',
                           gap: 12,
-                          paddingVertical: 8,
-                          borderBottomWidth: idx < linkedMotions.length - 1 ? StyleSheet.hairlineWidth : 0,
+                          paddingVertical: 12,
+                          borderBottomWidth: StyleSheet.hairlineWidth,
                           borderBottomColor: theme.border + '30',
                         }}
                       >
-                        {/* Selected Icon with Soft Container Background */}
-                        <View
-                          style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 12,
-                            backgroundColor: iconColor ? iconColor + '15' : theme.primary + '12',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            marginTop: 2,
-                          }}
-                        >
-                          {isEmoji ? (
-                            <Text style={{ fontSize: 17 }}>{iconName}</Text>
-                          ) : iconName ? (
-                            <Ionicons name={iconName as any} size={18} color={iconColor || theme.primary} />
-                          ) : m.type === 'stage' ? (
-                            <Ionicons name="pricetag-outline" size={17} color={theme.primary} />
-                          ) : (
-                            <Ionicons name="calendar-outline" size={17} color={theme.text} />
-                          )}
-                        </View>
+                        {/* Icon — no container, just the icon like type selector */}
+                        {isEmoji ? (
+                          <Text style={{ fontSize: 20, width: 28, textAlign: 'center' }}>{iconName}</Text>
+                        ) : iconName ? (
+                          <Ionicons name={iconName as any} size={22} color={iconColor || '#000'} style={{ width: 28, textAlign: 'center' }} />
+                        ) : m.type === 'stage' ? (
+                          <Ionicons name="pricetag-outline" size={20} color="#000" style={{ width: 28, textAlign: 'center' }} />
+                        ) : (
+                          <Ionicons name="calendar-outline" size={20} color="#000" style={{ width: 28, textAlign: 'center' }} />
+                        )}
 
-                        {/* Event Details */}
-                        <View style={{ flex: 1, gap: 2 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text, flex: 1, marginRight: 8 }} numberOfLines={1}>
-                              {title}
-                            </Text>
-                            {Boolean(dateStr) && (
-                              <Text style={{ fontSize: 12, fontWeight: '500', color: theme.textMuted }}>
-                                {compactTimestamp(dateStr)}
-                              </Text>
-                            )}
-                          </View>
-                          {Boolean(notesStr) && (
-                            <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 1 }}>
-                              {notesStr}
-                            </Text>
-                          )}
-                        </View>
+                        <Text style={{ flex: 1, fontSize: 15, fontWeight: '500', color: theme.text }} numberOfLines={1}>
+                          {title}
+                        </Text>
+
+                        {Boolean(dateStr) && (
+                          <Text style={{ fontSize: 12, color: theme.textMuted }}>
+                            {compactTimestamp(dateStr)}
+                          </Text>
+                        )}
                       </View>
                     );
                   })}
@@ -745,7 +572,9 @@ export default function ContactDetailsModal({
           {/* Floating Action Button (FAB) for Adding Deals */}
           <TouchableOpacity
             onPress={() => {
-              if (onLogEventForEntity) {
+              if (typeStr === 'deal') {
+                openInteractionModal(true);
+              } else if (onLogEventForEntity) {
                 onLogEventForEntity(entity, 'stage');
               }
             }}
@@ -775,17 +604,6 @@ export default function ContactDetailsModal({
         >
           <Pressable style={styles.menuBackdrop} onPress={() => setShowMenu(false)}>
             <View style={[styles.menuContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {
-                  setShowMenu(false);
-                  setIsEditing(true);
-                }}
-              >
-                <Ionicons name="create-outline" size={16} color={theme.text} />
-                <Text style={[styles.menuItemText, { color: theme.text }]}>Edit Details</Text>
-              </TouchableOpacity>
-
               <TouchableOpacity
                 style={styles.menuItem}
                 onPress={handleDeleteEntity}
@@ -963,24 +781,40 @@ export default function ContactDetailsModal({
                   zIndex: 9999,
                 }}
               >
-                {/* Header: Native Back Arrow | Select Event Title */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, height: 48, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border + '30', marginBottom: 12 }}>
-                  <TouchableOpacity onPress={() => setShowIconPickerDrawer(false)} hitSlop={12} style={{ padding: 4 }}>
-                    <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={24} color={theme.text} />
-                  </TouchableOpacity>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>
+                {/* Header: Title + Contact Subtitle */}
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text, paddingLeft: 4 }}>
                     Select Event
                   </Text>
+                  {(() => {
+                    const isDeal = typeStr === 'deal';
+                    const contactName = isDeal
+                      ? resolveContactName(entity.data?.customer || entity.data?.contact_id || entity.data?.client || '')
+                      : name;
+                    if (!contactName) return null;
+                    const avatarColor = getAvatarColor(contactName);
+                    const initials = getInitials(contactName);
+                    return (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4, marginTop: 4 }}>
+                        <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: avatarColor, alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: '#ffffff' }}>{initials}</Text>
+                        </View>
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: theme.textMuted }} numberOfLines={1}>
+                          {contactName}
+                        </Text>
+                      </View>
+                    );
+                  })()}
                 </View>
 
-                {/* Event Types Content (Compact, Clean Spacing) */}
-                <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 16, paddingBottom: 16 }}>
+                {/* Event Types Content */}
+                <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 20, paddingBottom: 16 }}>
                   {/* Category 1: Interaction types */}
                   <View style={{ gap: 8 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                       Interaction types
                     </Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                       {INTERACTION_TYPES_ICONS.map((item) => (
                         <TouchableOpacity
                           key={item.id}
@@ -989,9 +823,9 @@ export default function ContactDetailsModal({
                             setShowIconPickerDrawer(false);
                           }}
                           style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: 22,
+                            width: 48,
+                            height: 48,
+                            borderRadius: 24,
                             backgroundColor: theme.border + '15',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -1005,10 +839,10 @@ export default function ContactDetailsModal({
 
                   {/* Category 2: Messaging apps */}
                   <View style={{ gap: 8 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                       Messaging apps
                     </Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                       {MESSAGING_APPS_ICONS.map((app) => (
                         <TouchableOpacity
                           key={app.id}
@@ -1017,9 +851,9 @@ export default function ContactDetailsModal({
                             setShowIconPickerDrawer(false);
                           }}
                           style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: 22,
+                            width: 48,
+                            height: 48,
+                            borderRadius: 24,
                             backgroundColor: theme.border + '15',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -1033,7 +867,7 @@ export default function ContactDetailsModal({
 
                   {/* Category 3: Deal stage pipeline */}
                   <View style={{ gap: 8 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                       Deal stage pipeline
                     </Text>
                     <View style={{ gap: 8 }}>
@@ -1085,104 +919,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  headerBar: {
-    height: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 12,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    flex: 1,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  actionTextBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  actionText: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
   scrollBody: {
     paddingHorizontal: 16,
     paddingTop: 16,
   },
-  fieldsSection: {
-    marginBottom: 24,
-  },
-  fieldRow: {
-    minHeight: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  fieldLabel: {
-    width: 80,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  fieldTextValue: {
-    flex: 1,
-    fontSize: 15,
-  },
-  fieldInput: {
-    flex: 1,
-    fontSize: 15,
-    paddingVertical: 12,
-  },
   timelineSection: {
     marginTop: 8,
-  },
-  timelineHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  sectionHeading: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  addEventTextBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  addEventText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  motionRow: {
-    paddingVertical: 10,
-  },
-  motionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  motionSub: {
-    fontSize: 12,
-  },
-  emptyTimelineText: {
-    fontSize: 13,
-    fontStyle: 'italic',
-    paddingVertical: 8,
   },
   menuBackdrop: {
     flex: 1,
@@ -1213,9 +955,5 @@ const styles = StyleSheet.create({
   menuItemText: {
     fontSize: 13.5,
     fontWeight: '500',
-  },
-  menuDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginVertical: 2,
   },
 });

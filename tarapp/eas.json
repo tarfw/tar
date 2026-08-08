@@ -11,6 +11,17 @@
         "buildType": "apk"
       }
     },
+    "internal": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_TARFLUE_URL": "https://taragent.tar-54d.workers.dev",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "226183831843-5sjvl1hsv4d04aucnqsqn19u83o4f5ku.apps.googleusercontent.com"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "android": {

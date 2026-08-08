@@ -30,8 +30,17 @@ export interface ContactCreateModalProps {
   resultMessage: string | null;
   initialType?: string;
   allEntities?: any[];
+  editEntity?: any | null;
   onClose: () => void;
   onSave: (contactData: {
+    name: string;
+    role: string;
+    email: string;
+    phone: string;
+    org: string;
+    notes?: string;
+  }) => void;
+  onUpdate?: (contactData: {
     name: string;
     role: string;
     email: string;
@@ -48,8 +57,10 @@ export default function ContactCreateModal({
   resultMessage,
   initialType = 'Customer',
   allEntities = [],
+  editEntity = null,
   onClose,
   onSave,
+  onUpdate,
 }: ContactCreateModalProps) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
@@ -61,16 +72,28 @@ export default function ContactCreateModal({
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [showCompanyPicker, setShowCompanyPicker] = useState(false);
 
+  const isEditMode = !!editEntity;
+
   useEffect(() => {
     if (visible) {
-      setName('');
-      setRole(initialType || 'Customer');
-      setEmail('');
-      setPhone('');
-      setOrg('');
-      setNotes('');
+      if (editEntity) {
+        setName(editEntity.name || editEntity.title || '');
+        const entityType = (editEntity.type || editEntity.subRole || initialType || 'Customer');
+        setRole(entityType.charAt(0).toUpperCase() + entityType.slice(1));
+        setEmail(editEntity.data?.email || '');
+        setPhone(editEntity.data?.phone || '');
+        setOrg(editEntity.company || editEntity.data?.company || editEntity.data?.org || '');
+        setNotes(editEntity.notes || editEntity.data?.notes || editEntity.data?.description || '');
+      } else {
+        setName('');
+        setRole(initialType || 'Customer');
+        setEmail('');
+        setPhone('');
+        setOrg('');
+        setNotes('');
+      }
     }
-  }, [visible, initialType]);
+  }, [visible, initialType, editEntity]);
 
   if (!visible) return null;
 
@@ -87,10 +110,11 @@ export default function ContactCreateModal({
       org: org.trim(),
       notes: notes.trim(),
     };
-    console.log(`[ContactComposeModal] 💾 Save triggered — role: "${role}", name: "${name}"`);
-    console.log(`[ContactComposeModal] 📤 Payload built:`, payload);
-    onSave(payload);
-    console.log(`[ContactComposeModal] ✅ Contact payload submitted!`);
+    if (isEditMode && onUpdate) {
+      onUpdate(payload);
+    } else {
+      onSave(payload);
+    }
   };
 
   return (

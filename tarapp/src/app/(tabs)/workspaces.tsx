@@ -32,11 +32,12 @@ import { fetchInbox, markTaskDone } from '@/lib/inbox';
 import AdBanner from '@/components/AdBanner';
 import EventComposeModal from '@/components/EventComposeModal';
 import ContactDetailsModal from '@/components/ContactDetailsModal';
-import DirectoryModal from '@/components/DirectoryModal';
-import ExploreModal from '@/components/ExploreModal';
 import ItemComposeModal from '@/components/ItemComposeModal';
 import ContactCreateModal from '@/components/ContactCreateModal';
 import WorkspaceSiteScreen from '@/components/WorkspaceSiteScreen';
+import DirectoryOverlay from '@/components/DirectoryOverlay';
+import ExploreOverlay from '@/components/ExploreOverlay';
+import CanvasOverlay from '@/components/CanvasOverlay';
 import { updateStock } from '@/lib/inventory';
 
 interface Workspace {
@@ -173,27 +174,10 @@ export default function WorkspacesScreen() {
   const [newWsCreating, setNewWsCreating] = useState(false);
   const [selectedVertical, setSelectedVertical] = useState<string>('business');
   const [selectedEntityDetails, setSelectedEntityDetails] = useState<any | null>(null);
-  const [showDirectoryModal, setShowDirectoryModal] = useState(false);
-  const [showExploreModal, setShowExploreModal] = useState(false);
-  const [showCanvasModal, setShowCanvasModal] = useState(false);
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [entityHistory, setEntityHistory] = useState<any[]>([]);
   const [inboxTasks, setInboxTasks] = useState<LinearInboxItem[]>([]);
   const [loadingInbox, setLoadingInbox] = useState(false);
   const [allEntities, setAllEntities] = useState<any[]>([]);
-  useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setIsKeyboardVisible(true)
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setIsKeyboardVisible(false)
-    );
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
   const [selectedAction, setSelectedAction] = useState<any | null>(null);
   const [formParams, setFormParams] = useState<Record<string, string>>({});
@@ -213,9 +197,15 @@ export default function WorkspacesScreen() {
   const [initialContactType, setInitialContactType] = useState('Customer');
   const [submittingContact, setSubmittingContact] = useState(false);
   const [contactResultMessage, setContactResultMessage] = useState<string | null>(null);
+  const [editContactEntity, setEditContactEntity] = useState<any | null>(null);
 
   // Inbox Task Resolution State
   const [resolvingTaskId, setResolvingTaskId] = useState<string | null>(null);
+
+  // Overlay panel state (bottom bar triggers)
+  const [showDirectoryOverlay, setShowDirectoryOverlay] = useState(false);
+  const [showExploreOverlay, setShowExploreOverlay] = useState(false);
+  const [showCanvasOverlay, setShowCanvasOverlay] = useState(false);
 
   const hasAnyValue = selectedAction?.params?.some((p: any) => {
     const paramName = typeof p === 'string' ? p : p.name;
@@ -854,11 +844,13 @@ ${membersYaml}
       });
       if (action.name === 'action_add_contact') {
         setInitialContactType('Customer');
+        setEditContactEntity(null);
         setShowContactModal(true);
         return;
       }
       if (action.name === 'action_add_company') {
         setInitialContactType('Company');
+        setEditContactEntity(null);
         setShowContactModal(true);
         return;
       }
@@ -1203,7 +1195,7 @@ ${membersYaml}
         <KeyboardAwareScrollView
           ref={scrollViewRef}
           style={{ flex: 1 }}
-          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 12, paddingTop: 12, paddingBottom: 16 }}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 12, paddingBottom: 16 }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
@@ -1514,7 +1506,9 @@ ${membersYaml}
         </View>
       </View>
 
-      {/* Persistent Material 3 Icon-Only Bottom Navigation Bar */}
+      </KeyboardAvoidingView>
+
+      {/* Bottom Bar — Directory, Explore, Canvas overlay triggers (outside KAV, always visible) */}
       <View
         style={{
           flexDirection: 'row',
@@ -1523,79 +1517,55 @@ ${membersYaml}
           backgroundColor: theme.background,
           borderTopWidth: 1,
           borderTopColor: theme.border,
-          height: 48 + (isKeyboardVisible ? 0 : Math.max(insets.bottom, 4)),
-          paddingBottom: isKeyboardVisible ? 0 : Math.max(insets.bottom, 4),
-          paddingTop: 0,
-          marginTop: 0,
+          paddingTop: 6,
+          paddingBottom: Math.max(insets.bottom, 8),
         }}
       >
-        {/* Directory Tab */}
+        {/* Directory */}
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => setShowDirectoryModal(prev => !prev)}
+          onPress={() => setShowDirectoryOverlay(true)}
           style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
         >
           <View style={{
-            width: 60,
-            height: 32,
-            borderRadius: 16,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: showDirectoryModal ? theme.primary + '25' : 'transparent',
+            width: 60, height: 32, borderRadius: 16,
+            alignItems: 'center', justifyContent: 'center',
           }}>
-            <Ionicons
-              name={showDirectoryModal ? 'folder' : 'folder-outline'}
-              size={22}
-              color={showDirectoryModal ? theme.primary : theme.textSecondary}
-            />
+            <Ionicons name="folder-outline" size={22} color={theme.textSecondary} />
           </View>
+          <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 1 }}>Directory</Text>
         </TouchableOpacity>
 
-        {/* Explore Tab */}
+        {/* Explore */}
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => setShowExploreModal(prev => !prev)}
+          onPress={() => setShowExploreOverlay(true)}
           style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
         >
           <View style={{
-            width: 60,
-            height: 32,
-            borderRadius: 16,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: showExploreModal ? theme.primary + '25' : 'transparent',
+            width: 60, height: 32, borderRadius: 16,
+            alignItems: 'center', justifyContent: 'center',
           }}>
-            <Ionicons
-              name={showExploreModal ? 'globe' : 'globe-outline'}
-              size={22}
-              color={showExploreModal ? theme.primary : theme.textSecondary}
-            />
+            <Ionicons name="globe-outline" size={22} color={theme.textSecondary} />
           </View>
+          <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 1 }}>Explore</Text>
         </TouchableOpacity>
 
-        {/* Canvas Tab */}
+        {/* Canvas */}
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => setShowCanvasModal(prev => !prev)}
+          onPress={() => setShowCanvasOverlay(true)}
           style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
         >
           <View style={{
-            width: 56,
-            height: 32,
-            borderRadius: 16,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: showCanvasModal ? theme.primary + '25' : 'transparent',
+            width: 56, height: 32, borderRadius: 16,
+            alignItems: 'center', justifyContent: 'center',
           }}>
-            <MaterialCommunityIcons
-              name="space-invaders"
-              size={21}
-              color={showCanvasModal ? theme.primary : theme.textSecondary}
-            />
+            <MaterialCommunityIcons name="robot-outline" size={22} color={theme.textSecondary} />
           </View>
+          <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 1 }}>Canvas</Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
 
       {/* Workspace Switcher Selector Modal (Ultra-Minimalist) */}
       <Modal
@@ -1676,111 +1646,6 @@ ${membersYaml}
             </ScrollView>
           </Pressable>
         </Pressable>
-      </Modal>
-
-      {/* Full Screen Workspace Canvas GenUI Modal */}
-      <Modal
-        visible={showCanvasModal}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowCanvasModal(false)}
-      >
-        <View style={{ flex: 1, backgroundColor: theme.background, paddingTop: insets.top }}>
-          {/* Canvas Modal Header */}
-          <View style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: 16,
-            paddingVertical: 12,
-            borderBottomWidth: 1,
-            borderBottomColor: theme.border,
-            backgroundColor: theme.background,
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <WorkspaceThumbnail name={currentWorkspace?.name || currentWorkspace?.subdomain || 'Canvas'} size={32} theme={theme} />
-              <View>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>
-                  Workspace Canvas
-                </Text>
-                <Text style={{ fontSize: 12, color: theme.textMuted }}>
-                  {currentWorkspace?.subdomain || 'Dynamic GenUI Layout'}
-                </Text>
-              </View>
-            </View>
-
-            <Pressable
-              onPress={() => setShowCanvasModal(false)}
-              style={({ pressed }) => [{
-                padding: 6,
-                borderRadius: 20,
-                backgroundColor: theme.backgroundElement,
-                opacity: pressed ? 0.7 : 1,
-              }]}
-            >
-              <Ionicons name="close" size={22} color={theme.text} />
-            </Pressable>
-          </View>
-
-          {/* Canvas GenUI Content */}
-          <ScrollView contentContainerStyle={{ padding: 12 }}>
-            <WorkspaceCanvas
-              designTokens={designTokens || {
-                colors: { primary: theme.primary || '#0f172a', secondary: '#3b82f6', background: '#ffffff' },
-                rounded: { sm: 8, md: 12, lg: 16 },
-                spacing: { sm: 8, md: 16 },
-                typography: {}
-              }}
-              blocks={canvasBlocks}
-              layouts={canvasLayouts}
-              onExecuteAction={async (actionName, params) => {
-                if (actionName === 'view_entity' && params?.entity) {
-                  setSelectedEntityDetails(params.entity);
-                  return { success: true };
-                }
-                if (actionName.startsWith('action_add_') || actionName === 'create_entity') {
-                  handleTriggerAction({
-                    name: actionName,
-                    params: [
-                      { name: 'name', type: 'text', required: true },
-                      { name: 'role', type: 'text', required: true },
-                      { name: 'company', type: 'text', required: false },
-                      { name: 'value', type: 'number', required: false },
-                    ],
-                  });
-                  setFormParams({
-                    role: params?.category || 'person',
-                  });
-                  return { success: true };
-                }
-                if (currentWorkspace?.scope) {
-                  console.log(`[Canvas] Action "${actionName}" triggered — local execution.`);
-                  Promise.all([
-                    refreshProducts(currentWorkspace.scope),
-                    refreshOrders(currentWorkspace.scope),
-                    refreshEntities(currentWorkspace.scope),
-                  ]).catch(() => null);
-                  return { success: true };
-                }
-                throw new Error('No active workspace scope');
-              }}
-              metricsData={{
-                'orders': orders.length,
-                'inventory': products.length,
-                'bookings': orders.filter(o => o.type === 'booking').length
-              }}
-              tableData={{
-                'orders': orders,
-                'inventory': products,
-                'order': orders,
-                'product': products,
-                'directory': allEntities,
-                'entity-directory': allEntities,
-                'plan5-directory': allEntities
-              }}
-            />
-          </ScrollView>
-        </View>
       </Modal>
 
       {/* Create Workspace Modal — Minimal Clean Style */}
@@ -1935,7 +1800,16 @@ ${membersYaml}
         entity={selectedEntityDetails}
         scope={currentWorkspace?.scope}
         theme={theme}
-        onClose={() => setSelectedEntityDetails(null)}
+        allEntities={allEntities}
+        onClose={() => {
+          if (entityHistory.length > 0) {
+            const prev = entityHistory[entityHistory.length - 1];
+            setEntityHistory((h) => h.slice(0, -1));
+            setSelectedEntityDetails(prev);
+          } else {
+            setSelectedEntityDetails(null);
+          }
+        }}
         onRefresh={async () => {
           if (currentWorkspace?.scope) {
             await refreshProducts(currentWorkspace.scope);
@@ -2005,54 +1879,13 @@ ${membersYaml}
             setFormParams(initialParams);
           }
         }}
-      />
-
-      {/* Standalone Full-Screen Directory Modal (Free from Canvas) */}
-      <DirectoryModal
-        visible={showDirectoryModal}
-        scope={currentWorkspace?.scope}
-        theme={theme}
-        onClose={() => setShowDirectoryModal(false)}
-        onSelectEntity={(entity) => {
-          const typeLower = (entity.type || entity.category || '').toLowerCase();
-          if (
-            typeLower.includes('product') ||
-            typeLower.includes('item') ||
-            typeLower.includes('service') ||
-            typeLower.includes('asset') ||
-            typeLower.includes('listing') ||
-            typeLower.includes('document') ||
-            entity.data?.item_subtype
-          ) {
-            setItemInitialData(entity);
-            setShowItemModal(true);
-          } else {
-            setSelectedEntityDetails(entity);
-          }
-        }}
-        onAddNewEntity={(category) => {
-          if (category === 'items') {
-            setItemInitialData({ item_subtype: 'Product' });
-            setShowItemModal(true);
-            return;
-          }
-          if (category === 'companies') {
-            setInitialContactType('Company');
-            setShowContactModal(true);
-            return;
-          }
-          setInitialContactType('Customer');
+        onEditEntity={(entity) => {
+          setEditContactEntity(entity);
           setShowContactModal(true);
         }}
-      />
-
-      {/* Standalone Dedicated Explore Marketplace Modal */}
-      <ExploreModal
-        visible={showExploreModal}
-        theme={theme}
-        onClose={() => setShowExploreModal(false)}
-        onSelectWorkspace={(ws) => {
-          console.log('[Workspace] Selected public workspace from explore:', ws.subdomain);
+        onSelectDeal={(deal) => {
+          setEntityHistory((prev) => [...prev, selectedEntityDetails]);
+          setSelectedEntityDetails(deal);
         }}
       />
 
@@ -2172,9 +2005,11 @@ ${membersYaml}
         resultMessage={contactResultMessage}
         initialType={initialContactType}
         allEntities={allEntities}
+        editEntity={editContactEntity}
         onClose={() => {
           setShowContactModal(false);
           setContactResultMessage(null);
+          setEditContactEntity(null);
         }}
         onSave={async (contactData: { name: string; role: string; email: string; phone: string; org: string; notes?: string }) => {
           if (!currentWorkspace?.scope) return;
@@ -2204,6 +2039,39 @@ ${membersYaml}
             setSubmittingContact(false);
           }
         }}
+        onUpdate={async (contactData: { name: string; role: string; email: string; phone: string; org: string; notes?: string }) => {
+          if (!currentWorkspace?.scope || !editContactEntity?.id) return;
+          setSubmittingContact(true);
+          try {
+            let matterType = 'customer';
+            if (['Company', 'Vendor', 'Partner'].includes(contactData.role)) {
+              matterType = 'company';
+            }
+            await tar.tool('update', {
+              table: 'matter',
+              id: editContactEntity.id,
+              scope: currentWorkspace.scope,
+              patch: {
+                title: contactData.name,
+                type: matterType,
+                data: contactData,
+              },
+            });
+            await refreshEntities(currentWorkspace.scope);
+            setContactResultMessage('Contact updated successfully!');
+            setTimeout(() => {
+              setSelectedEntityDetails(null);
+              setShowContactModal(false);
+              setSubmittingContact(false);
+              setContactResultMessage(null);
+              setEditContactEntity(null);
+            }, 1000);
+          } catch (errContact) {
+            console.error('[Workspace] Contact update failed:', errContact);
+            setContactResultMessage('Failed to update contact.');
+            setSubmittingContact(false);
+          }
+        }}
       />
 
       {/* Standalone Workspace Site Screen Modal */}
@@ -2214,6 +2082,57 @@ ${membersYaml}
         subdomain={currentWorkspace?.subdomain || ''}
         scope={activeScope || ''}
         products={products}
+      />
+
+      {/* Overlay Panels — Bottom Bar triggers */}
+      <DirectoryOverlay
+        visible={showDirectoryOverlay}
+        onClose={() => setShowDirectoryOverlay(false)}
+        entities={allEntities}
+        theme={theme}
+        onSelectEntity={(entity) => {
+          setShowDirectoryOverlay(false);
+          const typeLower = (entity.type || entity.category || '').toLowerCase();
+          if (
+            typeLower.includes('product') ||
+            typeLower.includes('item') ||
+            typeLower.includes('service') ||
+            typeLower.includes('asset') ||
+            typeLower.includes('listing') ||
+            typeLower.includes('document') ||
+            entity.data?.item_subtype
+          ) {
+            setItemInitialData(entity);
+            setShowItemModal(true);
+          } else {
+            setSelectedEntityDetails(entity);
+          }
+        }}
+        onAddNewEntity={(category) => {
+          setShowDirectoryOverlay(false);
+          if (category === 'items') {
+            setItemInitialData({ item_subtype: 'Product' });
+            setShowItemModal(true);
+            return;
+          }
+          setInitialContactType(category === 'companies' ? 'Company' : 'Customer');
+          setEditContactEntity(null);
+          setShowContactModal(true);
+        }}
+      />
+
+      <ExploreOverlay
+        visible={showExploreOverlay}
+        onClose={() => setShowExploreOverlay(false)}
+        theme={theme}
+      />
+
+      <CanvasOverlay
+        visible={showCanvasOverlay}
+        onClose={() => setShowCanvasOverlay(false)}
+        theme={theme}
+        scope={currentWorkspace?.scope}
+        subdomain={currentWorkspace?.subdomain}
       />
     </View>
   );
@@ -2553,6 +2472,7 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 0,
     paddingTop: 8,
+    minHeight: 52,
   },
   hintsContainer: {
     flexDirection: 'row',
@@ -2584,6 +2504,7 @@ const styles = StyleSheet.create({
     paddingRight: 8,
     paddingVertical: 10,
     marginHorizontal: 0,
+    minHeight: 48,
   },
   textInput: {
     flex: 1,

@@ -130,7 +130,9 @@
       "Bash(sed -n '1594,1606p' \"app/\\(tabs\\)/workspaces.tsx\")",
       "Bash(sed -i '1824,1872d' \"app/\\(tabs\\)/workspaces.tsx\")",
       "Bash(sed -n '1818,1830p' \"app/\\(tabs\\)/workspaces.tsx\")",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(git commit *)",
+      "Bash(gcloud version *)"
     ]
   }
 }

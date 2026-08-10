@@ -20,6 +20,7 @@ export interface IntentResult {
 }
 
 const MODULE_KEYWORDS: Record<string, string[]> = {
+  workspace: ['workspace', 'new workspace', 'create workspace', 'add workspace', 'workspaces', 'switch workspace'],
   site: ['site', 'website', 'storefront', 'web', 'page', 'publish'],
   transactions: ['transaction', 'order', 'sale', 'sales', 'pos', 'receipt', 'billing', 'refund', 'invoice', 'void'],
   orders: ['order', 'sale', 'sales', 'pos', 'transaction', 'receipt', 'billing', 'refund', 'invoice'],

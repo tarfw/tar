@@ -97,7 +97,6 @@ export default function ItemComposeModal({
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [tempImageUrl, setTempImageUrl] = useState('');
   const [imageGenerating, setImageGenerating] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
 
   // History motions state
   const [stockHistory, setStockHistory] = useState<any[]>([]);
@@ -126,7 +125,6 @@ export default function ItemComposeModal({
       setNotes(dataObj?.notes || '');
       setCommitted(Number(dataObj?.committed || 0));
       setLocationsMap(dataObj?.locations && typeof dataObj.locations === 'object' ? dataObj.locations : {});
-      setShowMenu(false);
 
       const targetIdOrTitle = initialData?.id;
       if (targetIdOrTitle && scope) {
@@ -337,71 +335,47 @@ Respond strictly in valid JSON format:
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          {/* Top Bar (Only rendered for EDIT and CREATE modes) */}
+          {/* Top Bar (Rendered for EDIT and CREATE modes) */}
           {currentMode !== 'view' && (
             <View style={[styles.headerBar, { borderBottomColor: theme.border }]}>
-              {currentMode === 'edit' ? (
-                <>
-                  <TouchableOpacity onPress={() => setCurrentMode('view')} hitSlop={8}>
-                    <Text style={{ fontSize: 16, color: theme.textMuted }}>Cancel</Text>
-                  </TouchableOpacity>
+              <Pressable
+                onPress={() => setShowTypePicker(true)}
+                hitSlop={8}
+                style={({ pressed }) => [styles.headerPill, { opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Text style={[styles.headerPillText, { color: theme.text }]}>{subType}</Text>
+                <Ionicons name="chevron-down" size={14} color={theme.textMuted} />
+              </Pressable>
 
-                  <Text style={[styles.headerPillText, { color: theme.text }]}>Edit Product</Text>
-
+              <View style={styles.rightActions}>
+                {currentMode === 'create' && (
                   <TouchableOpacity
-                    onPress={handleSave}
-                    disabled={submitting || !isFormValid}
+                    onPress={handleAiAutoFill}
+                    disabled={aiFilling || !title.trim()}
                     hitSlop={8}
-                    style={[styles.saveBtn, { opacity: isFormValid && !submitting ? 1 : 0.4 }]}
+                    style={[styles.aiTextBtn, { opacity: title.trim() && !aiFilling ? 1 : 0.35 }]}
                   >
-                    {submitting ? (
+                    {aiFilling ? (
                       <ActivityIndicator size="small" color={theme.primary} />
                     ) : (
-                      <Text style={[styles.saveText, { color: theme.primary }]}>Save</Text>
+                      <Text style={[styles.aiTextLabel, { color: theme.primary }]}>AI</Text>
                     )}
                   </TouchableOpacity>
-                </>
-              ) : (
-                /* CREATE Mode Top Bar */
-                <>
-                  <Pressable
-                    onPress={() => setShowTypePicker(true)}
-                    hitSlop={8}
-                    style={({ pressed }) => [styles.headerPill, { opacity: pressed ? 0.6 : 1 }]}
-                  >
-                    <Text style={[styles.headerPillText, { color: theme.text }]}>{subType}</Text>
-                    <Ionicons name="chevron-down" size={14} color={theme.textMuted} />
-                  </Pressable>
+                )}
 
-                  <View style={styles.rightActions}>
-                    <TouchableOpacity
-                      onPress={handleAiAutoFill}
-                      disabled={aiFilling || !title.trim()}
-                      hitSlop={8}
-                      style={[styles.aiTextBtn, { opacity: title.trim() && !aiFilling ? 1 : 0.35 }]}
-                    >
-                      {aiFilling ? (
-                        <ActivityIndicator size="small" color={theme.primary} />
-                      ) : (
-                        <Text style={[styles.aiTextLabel, { color: theme.primary }]}>AI</Text>
-                      )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={handleSave}
-                      disabled={submitting || !isFormValid}
-                      hitSlop={8}
-                      style={[styles.saveBtn, { opacity: isFormValid && !submitting ? 1 : 0.4 }]}
-                    >
-                      {submitting ? (
-                        <ActivityIndicator size="small" color={theme.primary} />
-                      ) : (
-                        <Text style={[styles.saveText, { color: theme.primary }]}>Save</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
+                <TouchableOpacity
+                  onPress={handleSave}
+                  disabled={submitting || !isFormValid}
+                  hitSlop={8}
+                  style={[styles.saveBtn, { opacity: isFormValid && !submitting ? 1 : 0.4 }]}
+                >
+                  {submitting ? (
+                    <ActivityIndicator size="small" color={theme.primary} />
+                  ) : (
+                    <Text style={[styles.saveText, { color: theme.primary }]}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -433,8 +407,13 @@ Respond strictly in valid JSON format:
             {/* VIEW MODE UI */}
             {currentMode === 'view' ? (
               <View style={{ gap: 14 }}>
-                {/* Hero Product Card with Three-Dots Menu on Right */}
-                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginTop: 4 }}>
+                {/* Hero Product Card — Tap Image to Edit Product */}
+                <Pressable
+                  onPress={() => setCurrentMode('edit')}
+                  style={({ pressed }) => [
+                    { flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginTop: 4, opacity: pressed ? 0.75 : 1 },
+                  ]}
+                >
                   {imageUrl ? (
                     <Image source={{ uri: imageUrl }} style={styles.viewHeroImage} />
                   ) : (
@@ -443,12 +422,7 @@ Respond strictly in valid JSON format:
                     </View>
                   )}
                   <View style={{ flex: 1, gap: 2 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text, flex: 1, marginRight: 6 }} numberOfLines={2}>{title}</Text>
-                      <TouchableOpacity onPress={() => setShowMenu(true)} hitSlop={12} style={{ padding: 2, marginTop: -2 }}>
-                        <Ionicons name="ellipsis-vertical" size={20} color={theme.text} />
-                      </TouchableOpacity>
-                    </View>
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text, marginRight: 6 }} numberOfLines={2}>{title}</Text>
                     <Text style={{ fontSize: 12, color: theme.primary, fontWeight: '600' }}>{category || subType}</Text>
                     {sku ? (
                       <Text style={{ fontSize: 12, color: theme.textMuted, fontWeight: '500', marginTop: 1 }}>
@@ -456,7 +430,7 @@ Respond strictly in valid JSON format:
                       </Text>
                     ) : null}
                   </View>
-                </View>
+                </Pressable>
 
                 {/* Stock Stats — ON HAND + AVAILABLE only */}
                 <View style={[styles.minimalInventoryContainer, { borderTopColor: theme.border + '25', borderBottomColor: theme.border + '25' }]}>
@@ -572,7 +546,7 @@ Respond strictly in valid JSON format:
               /* CREATE & EDIT FORM MODES */
               <>
                 {/* Title & Image Row */}
-                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 16, marginTop: 8 }}>
+                <View style={[styles.fieldRow, { borderBottomColor: theme.border, minHeight: 64, gap: 12 }]}>
                   <Pressable
                     onPress={() => {
                       setTempImageUrl(imageUrl);
@@ -590,153 +564,123 @@ Respond strictly in valid JSON format:
                     {imageUrl ? (
                       <Image source={{ uri: imageUrl }} style={styles.thumbnailImage} />
                     ) : (
-                      <View style={styles.thumbnailPlaceholder}>
-                        <Ionicons name="camera-outline" size={20} color={theme.textMuted} />
-                        <Text style={[styles.uploadText, { color: theme.textMuted }]}>Upload</Text>
-                      </View>
+                      <Ionicons name="camera-outline" size={22} color={theme.textMuted} />
                     )}
                   </Pressable>
 
-                  <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
-                    {title.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Title *</Text>}
-                    <TextInput
-                      style={[styles.fieldInput, { color: theme.text, fontWeight: '600', fontSize: 17 }]}
-                      value={title}
-                      onChangeText={setTitle}
-                      placeholder="Title *"
-                      placeholderTextColor={theme.textMuted + '80'}
-                    />
-                  </View>
-                </View>
-
-                {/* Price & Unit Row */}
-                <View style={styles.twoColumnRow}>
-                  <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
-                    {price.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Price ($)</Text>}
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      {price.length > 0 && <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text, marginRight: 2 }}>$</Text>}
-                      <TextInput
-                        style={[styles.fieldInput, { flex: 1, color: theme.text, fontWeight: '600' }]}
-                        value={price}
-                        keyboardType="numeric"
-                        onChangeText={setPrice}
-                        placeholder="Price ($)"
-                        placeholderTextColor={theme.textMuted + '80'}
-                      />
-                    </View>
-                  </View>
-
-                  <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
-                    {unit.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Unit</Text>}
-                    <TextInput
-                      style={[styles.fieldInput, { color: theme.text }]}
-                      value={unit}
-                      onChangeText={setUnit}
-                      placeholder="Unit (pcs, kg, hr)"
-                      placeholderTextColor={theme.textMuted + '80'}
-                    />
-                  </View>
-                </View>
-
-                {/* Stock & Low Stock Alert (min) Row */}
-                <View style={styles.twoColumnRow}>
-                  <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
-                    <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
-                      {subType === 'Service' ? 'Capacity / Slots' : 'Stock Qty'} {currentMode === 'edit' ? '(Read-only)' : ''}
-                    </Text>
-                    {currentMode === 'edit' ? (
-                      <View style={{ paddingVertical: 6 }}>
-                        <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }}>{stock || '0'}</Text>
-                        <Text style={{ fontSize: 11, color: theme.textMuted, marginTop: 2, fontStyle: 'italic' }}>
-                          Use Adjust or Receive Stock events to modify inventory
-                        </Text>
-                      </View>
-                    ) : (
-                      <TextInput
-                        style={[styles.fieldInput, { color: theme.text }]}
-                        value={stock}
-                        keyboardType="numeric"
-                        onChangeText={setStock}
-                        placeholder={subType === 'Service' ? 'Capacity / Slots' : 'Stock Qty'}
-                        placeholderTextColor={theme.textMuted + '80'}
-                      />
-                    )}
-                  </View>
-
-                  <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
-                    {minStock.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Min Alert Qty</Text>}
-                    <TextInput
-                      style={[styles.fieldInput, { color: theme.text }]}
-                      value={minStock}
-                      keyboardType="numeric"
-                      onChangeText={setMinStock}
-                      placeholder="Min Alert Qty"
-                      placeholderTextColor={theme.textMuted + '80'}
-                    />
-                  </View>
-                </View>
-
-                {/* SKU / Barcode & Category */}
-                <View style={styles.twoColumnRow}>
-                  <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
-                    {sku.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>SKU / Barcode</Text>}
-                    <TextInput
-                      style={[styles.fieldInput, { color: theme.text }]}
-                      value={sku}
-                      onChangeText={setSku}
-                      placeholder="SKU / Barcode"
-                      placeholderTextColor={theme.textMuted + '80'}
-                    />
-                  </View>
-
-                  <View style={[styles.fieldBlock, { flex: 1, borderBottomColor: theme.border }]}>
-                    {category.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Category</Text>}
-                    <TextInput
-                      style={[styles.fieldInput, { color: theme.text }]}
-                      value={category}
-                      onChangeText={setCategory}
-                      placeholder="Category"
-                      placeholderTextColor={theme.textMuted + '80'}
-                    />
-                  </View>
-                </View>
-
-                {/* Reference URL */}
-                <View style={[styles.fieldBlock, { borderBottomColor: theme.border }]}>
-                  {refUrl.length > 0 && <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>External Reference URL / Link</Text>}
                   <TextInput
-                    style={[styles.fieldInput, { color: theme.text }]}
-                    value={refUrl}
-                    onChangeText={setRefUrl}
-                    placeholder="External Reference URL / Link"
-                    placeholderTextColor={theme.textMuted + '80'}
+                    style={[styles.fieldInput, { color: theme.text, fontWeight: '500', fontSize: 16 }]}
+                    value={title}
+                    onChangeText={setTitle}
+                    placeholder="Title *"
+                    placeholderTextColor={theme.textMuted}
                   />
                 </View>
 
-                {/* Description Section */}
-                <Text style={[styles.sectionLabel, { color: theme.text, marginTop: 16 }]}>Description</Text>
-                <View style={[styles.bodyContainer, { borderColor: theme.border }]}>
+                {/* Price Row */}
+                <View style={[styles.fieldRow, { borderBottomColor: theme.border, justifyContent: 'space-between' }]}>
+                  <Text style={{ fontSize: 15, color: theme.textMuted, fontWeight: '400' }}>Price ($)</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { flex: 1, textAlign: 'right', color: theme.text }]}
+                    value={price}
+                    keyboardType="numeric"
+                    onChangeText={setPrice}
+                    placeholder="0"
+                    placeholderTextColor={theme.textMuted}
+                  />
+                </View>
+
+                {/* Unit Row */}
+                <View style={[styles.fieldRow, { borderBottomColor: theme.border, justifyContent: 'space-between' }]}>
+                  <Text style={{ fontSize: 15, color: theme.textMuted, fontWeight: '400' }}>Unit</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { flex: 1, textAlign: 'right', color: theme.text }]}
+                    value={unit}
+                    onChangeText={setUnit}
+                    placeholder="pcs"
+                    placeholderTextColor={theme.textMuted}
+                  />
+                </View>
+
+                {/* Stock Qty Row */}
+                <View style={[styles.fieldRow, { borderBottomColor: theme.border, justifyContent: 'space-between' }]}>
+                  <Text style={{ fontSize: 15, color: theme.textMuted, fontWeight: '400' }}>
+                    {subType === 'Service' ? 'Capacity / Slots' : 'Stock Qty'}
+                  </Text>
+                  {currentMode === 'edit' ? (
+                    <Text style={{ fontSize: 15, color: theme.text, fontWeight: '600', textAlign: 'right' }}>
+                      {stock || '0'}
+                    </Text>
+                  ) : (
+                    <TextInput
+                      style={[styles.fieldInput, { flex: 1, textAlign: 'right', color: theme.text }]}
+                      value={stock}
+                      keyboardType="numeric"
+                      onChangeText={setStock}
+                      placeholder="0"
+                      placeholderTextColor={theme.textMuted}
+                    />
+                  )}
+                </View>
+
+                {/* Min Alert Qty Row */}
+                <View style={[styles.fieldRow, { borderBottomColor: theme.border, justifyContent: 'space-between' }]}>
+                  <Text style={{ fontSize: 15, color: theme.textMuted, fontWeight: '400' }}>Min Alert Qty</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { flex: 1, textAlign: 'right', color: theme.text }]}
+                    value={minStock}
+                    keyboardType="numeric"
+                    onChangeText={setMinStock}
+                    placeholder="0"
+                    placeholderTextColor={theme.textMuted}
+                  />
+                </View>
+
+                {/* SKU / Barcode Row */}
+                <View style={[styles.fieldRow, { borderBottomColor: theme.border, justifyContent: 'space-between' }]}>
+                  <Text style={{ fontSize: 15, color: theme.textMuted, fontWeight: '400' }}>SKU / Barcode</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { flex: 1, textAlign: 'right', color: theme.text }]}
+                    value={sku}
+                    onChangeText={setSku}
+                    placeholder="Optional"
+                    placeholderTextColor={theme.textMuted}
+                  />
+                </View>
+
+                {/* Category Row */}
+                <View style={[styles.fieldRow, { borderBottomColor: theme.border, justifyContent: 'space-between' }]}>
+                  <Text style={{ fontSize: 15, color: theme.textMuted, fontWeight: '400' }}>Category</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { flex: 1, textAlign: 'right', color: theme.text }]}
+                    value={category}
+                    onChangeText={setCategory}
+                    placeholder="General"
+                    placeholderTextColor={theme.textMuted}
+                  />
+                </View>
+
+                {/* Description & Notes (Clean Borderless Compose Body) */}
+                <View style={styles.bodyContainer}>
                   <TextInput
                     style={[styles.bodyInput, { color: theme.text }]}
                     multiline
                     value={description}
                     onChangeText={setDescription}
                     placeholder="Compose item description or specs..."
-                    placeholderTextColor={theme.textMuted + '80'}
+                    placeholderTextColor={theme.textMuted}
                     textAlignVertical="top"
                   />
                 </View>
 
-                {/* Internal Notes */}
-                <Text style={[styles.sectionLabel, { color: theme.text, marginTop: 16 }]}>Internal Notes</Text>
-                <View style={[styles.bodyContainer, { minHeight: 80, borderColor: theme.border }]}>
+                <View style={[styles.bodyContainer, { paddingTop: 0, minHeight: 120 }]}>
                   <TextInput
-                    style={[styles.bodyInput, { color: theme.text, minHeight: 60 }]}
+                    style={[styles.bodyInput, { color: theme.text, minHeight: 100 }]}
                     multiline
                     value={notes}
                     onChangeText={setNotes}
                     placeholder="Private team notes or supplier specifications..."
-                    placeholderTextColor={theme.textMuted + '80'}
+                    placeholderTextColor={theme.textMuted}
                     textAlignVertical="top"
                   />
                 </View>
@@ -745,74 +689,7 @@ Respond strictly in valid JSON format:
           </ScrollView>
         </KeyboardAvoidingView>
 
-        {/* Bottom Sheet Drawer Modal for Options */}
-        <Modal
-          visible={showMenu}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowMenu(false)}
-        >
-          <Pressable style={styles.drawerBackdrop} onPress={() => setShowMenu(false)}>
-            <Pressable style={[styles.drawerContainer, { backgroundColor: theme.backgroundElement || theme.background }]}>
-              <View style={[styles.drawerDragHandle, { backgroundColor: theme.border + '80' }]} />
 
-              <Text style={[styles.drawerTitle, { color: theme.textMuted }]}>PRODUCT OPTIONS</Text>
-
-              <TouchableOpacity
-                style={styles.drawerItem}
-                onPress={() => {
-                  setShowMenu(false);
-                  setCurrentMode('edit');
-                }}
-              >
-                <Ionicons name="create-outline" size={20} color={theme.text} />
-                <Text style={[styles.drawerItemText, { color: theme.text }]}>Edit Product</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.drawerItem}
-                onPress={() => {
-                  setShowMenu(false);
-                  if (initialData?.id && onDelete) {
-                    Alert.alert(
-                      'Delete Product',
-                      `Are you sure you want to delete "${title}"?`,
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Delete',
-                          style: 'destructive',
-                          onPress: () => onDelete(initialData.id!),
-                        },
-                      ]
-                    );
-                  }
-                }}
-              >
-                <Ionicons name="trash-outline" size={20} color="#dc2626" />
-                <Text style={[styles.drawerItemText, { color: '#dc2626' }]}>Delete Product</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.drawerItem}
-                onPress={() => {
-                  setShowMenu(false);
-                  onClose();
-                }}
-              >
-                <Ionicons name="close-circle-outline" size={20} color={theme.textMuted} />
-                <Text style={[styles.drawerItemText, { color: theme.textMuted }]}>Close Product Screen</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.drawerCancelBtn, { backgroundColor: theme.border + '20' }]}
-                onPress={() => setShowMenu(false)}
-              >
-                <Text style={[styles.drawerCancelText, { color: theme.text }]}>Cancel</Text>
-              </TouchableOpacity>
-            </Pressable>
-          </Pressable>
-        </Modal>
 
         {/* Item Sub-Type Picker Modal */}
         <Modal
@@ -1023,44 +900,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
   },
-  twoColumnRow: {
+  fieldRow: {
+    minHeight: 50,
     flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
-  fieldBlock: {
-    minHeight: 48,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 2,
-    justifyContent: 'center',
-    paddingVertical: 4,
-  },
-  fieldLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginBottom: -2,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
   fieldInput: {
+    flex: 1,
     fontSize: 15,
-    paddingVertical: 6,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.8,
+    paddingVertical: 12,
   },
   bodyContainer: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    padding: 10,
-    minHeight: 120,
-    marginTop: 6,
+    paddingTop: 16,
+    minHeight: 180,
   },
   bodyInput: {
-    fontSize: 15,
-    lineHeight: 22,
-    minHeight: 100,
+    fontSize: 16,
+    lineHeight: 24,
+    minHeight: 160,
   },
   modalOverlay: {
     flex: 1,
@@ -1094,11 +953,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   imageUploadCard: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
+    width: 56,
+    height: 56,
+    borderRadius: 8,
     borderWidth: 1,
-    borderStyle: 'dashed',
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1107,16 +965,11 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     resizeMode: 'cover',
+    borderRadius: 8,
   },
   thumbnailPlaceholder: {
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  uploadText: {
-    fontSize: 9,
-    fontWeight: '600',
-    marginTop: 2,
-    textTransform: 'uppercase',
   },
   urlInput: {
     flex: 1,
@@ -1145,9 +998,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   viewHeroImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 14,
+    width: 64,
+    height: 64,
+    borderRadius: 8,
     resizeMode: 'cover',
   },
   inventoryCard: {

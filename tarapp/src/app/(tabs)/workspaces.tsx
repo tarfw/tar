@@ -38,6 +38,8 @@ import WorkspaceSiteScreen from '@/components/WorkspaceSiteScreen';
 import DirectoryOverlay from '@/components/DirectoryOverlay';
 import ExploreOverlay from '@/components/ExploreOverlay';
 import CanvasOverlay from '@/components/CanvasOverlay';
+import CreateWorkspace from '@/components/CreateWorkspace';
+import { TarLogo } from '@/components/TarLogo';
 import { updateStock } from '@/lib/inventory';
 
 interface Workspace {
@@ -125,6 +127,7 @@ export const PLAN5_EVENT_MOTIONS = [
   { event: 'Assignment', actionName: 'action_create_task', whatHappened: 'Task assigned', linksTo: 'Project', params: [{ name: 'title', type: 'text', required: true }, { name: 'description', type: 'text', required: false }, { name: 'assignee_id', type: 'text', required: false }, { name: 'due_date', type: 'text', required: false }] },
   { event: 'Receive Stock', actionName: 'action_receive_po', whatHappened: 'Stock added from supplier', linksTo: 'Product', params: [{ name: 'product_id', type: 'text', required: true }, { name: 'qty', type: 'number', required: true }, { name: 'po_id', type: 'text', required: false }] },
   { event: 'Site', actionName: 'action_open_site', whatHappened: 'View/edit live website storefront', linksTo: 'Storefront', params: [] },
+  { event: 'New Workspace', actionName: 'action_create_workspace', whatHappened: 'Create a new AI-powered workspace', linksTo: 'Workspace', params: [] },
   { event: 'Add Item', actionName: 'action_add_product', whatHappened: 'Item cataloged', linksTo: 'Item', params: [{ name: 'title', type: 'text', required: true }, { name: 'item_subtype', type: 'text', required: true }, { name: 'price', type: 'number', required: false }, { name: 'stock', type: 'number', required: false }, { name: 'category', type: 'text', required: false }] },
 ];
 
@@ -712,6 +715,11 @@ ${membersYaml}
             setExecuting(false);
             setAgentFeedback({ text: 'Opened workspace site manager.', type: 'success' });
             return;
+          } else if (resolved.moduleName === 'workspace' || resolved.moduleName === 'new_workspace' || cleanText.includes('new workspace') || cleanText.includes('create workspace')) {
+            setIsCreatingWorkspace(true);
+            setExecuting(false);
+            setAgentFeedback({ text: 'Opened AI workspace creator.', type: 'success' });
+            return;
           } else if (resolved.moduleName === 'inventory') {
             await refreshProducts(scope);
           } else if (resolved.moduleName === 'orders') {
@@ -831,6 +839,10 @@ ${membersYaml}
   const handleTriggerAction = (action: any) => {
     if (action.name === 'action_open_site' || action.actionName === 'action_open_site') {
       setShowSiteScreen(true);
+      return;
+    }
+    if (action.name === 'action_create_workspace' || action.actionName === 'action_create_workspace' || action.name === 'action_open_create_workspace') {
+      setIsCreatingWorkspace(true);
       return;
     }
     if (action.moduleName) {
@@ -1517,100 +1529,94 @@ ${membersYaml}
           backgroundColor: theme.background,
           borderTopWidth: 1,
           borderTopColor: theme.border,
-          paddingTop: 6,
-          paddingBottom: Math.max(insets.bottom, 8),
+          paddingTop: 4,
+          paddingBottom: Math.max(insets.bottom, 6),
         }}
       >
         {/* Directory */}
         <TouchableOpacity
-          activeOpacity={0.7}
+          activeOpacity={0.6}
           onPress={() => setShowDirectoryOverlay(true)}
-          style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
+          hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
+          style={{ flex: 1, height: 48, alignItems: 'center', justifyContent: 'center' }}
         >
           <View style={{
-            width: 60, height: 32, borderRadius: 16,
+            width: 64, height: 36, borderRadius: 18,
+            backgroundColor: showDirectoryOverlay ? theme.primary + '18' : 'transparent',
             alignItems: 'center', justifyContent: 'center',
           }}>
-            <Ionicons name="folder-outline" size={22} color={theme.textSecondary} />
+            <Ionicons name="folder-outline" size={22} color={showDirectoryOverlay ? theme.primary : theme.textSecondary} />
           </View>
-          <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 1 }}>Directory</Text>
         </TouchableOpacity>
 
         {/* Explore */}
         <TouchableOpacity
-          activeOpacity={0.7}
+          activeOpacity={0.6}
           onPress={() => setShowExploreOverlay(true)}
-          style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
+          hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
+          style={{ flex: 1, height: 48, alignItems: 'center', justifyContent: 'center' }}
         >
           <View style={{
-            width: 60, height: 32, borderRadius: 16,
+            width: 64, height: 36, borderRadius: 18,
+            backgroundColor: showExploreOverlay ? theme.primary + '18' : 'transparent',
             alignItems: 'center', justifyContent: 'center',
           }}>
-            <Ionicons name="globe-outline" size={22} color={theme.textSecondary} />
+            <Ionicons name="globe-outline" size={22} color={showExploreOverlay ? theme.primary : theme.textSecondary} />
           </View>
-          <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 1 }}>Explore</Text>
         </TouchableOpacity>
 
         {/* Canvas */}
         <TouchableOpacity
-          activeOpacity={0.7}
+          activeOpacity={0.6}
           onPress={() => setShowCanvasOverlay(true)}
-          style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
+          hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
+          style={{ flex: 1, height: 48, alignItems: 'center', justifyContent: 'center' }}
         >
           <View style={{
-            width: 56, height: 32, borderRadius: 16,
+            width: 64, height: 36, borderRadius: 18,
+            backgroundColor: showCanvasOverlay ? theme.primary + '18' : 'transparent',
             alignItems: 'center', justifyContent: 'center',
           }}>
-            <MaterialCommunityIcons name="robot-outline" size={22} color={theme.textSecondary} />
+            <TarLogo size={18} color={showCanvasOverlay ? theme.primary : theme.textSecondary} />
           </View>
-          <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 1 }}>Canvas</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Workspace Switcher Selector Modal (Ultra-Minimalist) */}
+      {/* Workspace Switcher Selector Modal (Max Uncluttered Bottom Drawer) */}
       <Modal
         visible={showDropdown}
         transparent={true}
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setShowDropdown(false)}
       >
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowDropdown(false)}>
-          <BlurView
-            intensity={100}
-            tint="default"
-            style={[StyleSheet.absoluteFill, { backgroundColor: theme.background + 'E6' }]}
-          />
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' }}
+          onPress={() => setShowDropdown(false)}
+        >
           <Pressable
-            style={[
-              styles.dropdownContent,
-              {
-                backgroundColor: theme.background,
-                borderColor: theme.border + '80',
-                borderRadius: 16,
-                padding: 16,
-                width: '88%',
-                maxWidth: 380,
-                elevation: 0,
-                shadowOpacity: 0,
-              }
-            ]}
+            style={{
+              backgroundColor: theme.background,
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              borderTopWidth: 1,
+              borderColor: theme.border + '60',
+              paddingTop: 10,
+              paddingHorizontal: 16,
+              paddingBottom: Math.max(insets.bottom + 12, 24),
+              maxHeight: 340,
+            }}
             onPress={() => {}}
           >
-            {/* Minimal Header with + Icon Button on Right End */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, paddingHorizontal: 2 }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textMuted, letterSpacing: 0.6, textTransform: 'uppercase' }}>
-                Workspaces
-              </Text>
-              <Pressable
-                onPress={() => { setShowDropdown(false); setIsCreatingWorkspace(true); }}
-                hitSlop={12}
-                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, padding: 2 }]}
-              >
-                <Ionicons name="add" size={22} color={theme.primary} />
-              </Pressable>
-            </View>
+            {/* Minimal Handle */}
+            <View style={{ width: 32, height: 4, borderRadius: 2, backgroundColor: theme.textMuted + '30', alignSelf: 'center', marginBottom: 12 }} />
 
-            <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
+            {/* Simple Minimal Title */}
+            <Text style={{ fontSize: 11, fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8, paddingHorizontal: 4 }}>
+              Workspaces
+            </Text>
+
+            {/* List with Highlighted Active Item */}
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 240 }}>
               {workspaces.map((w) => {
                 const isActive = w.subdomain === currentWorkspace?.subdomain;
                 const name = w.name || w.subdomain;
@@ -1622,22 +1628,28 @@ ${membersYaml}
                       {
                         flexDirection: 'row',
                         alignItems: 'center',
+                        justifyContent: 'space-between',
                         backgroundColor: isActive ? theme.primary + '15' : 'transparent',
                         borderRadius: 10,
-                        paddingVertical: 10,
+                        paddingVertical: 9,
                         paddingHorizontal: 10,
-                        marginBottom: 4,
+                        marginBottom: 2,
                         opacity: pressed ? 0.7 : 1,
                       }
                     ]}
                   >
-                    <WorkspaceThumbnail name={name} size={34} theme={theme} />
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{ color: theme.text, fontWeight: isActive ? '700' : '600', fontSize: 14 }} numberOfLines={1}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <WorkspaceThumbnail name={name} size={30} theme={theme} />
+                      <Text
+                        style={{
+                          color: isActive ? theme.primary : theme.text,
+                          fontWeight: isActive ? '700' : '500',
+                          fontSize: 14,
+                          marginLeft: 10,
+                        }}
+                        numberOfLines={1}
+                      >
                         {name}
-                      </Text>
-                      <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: 1 }} numberOfLines={1}>
-                        {w.subdomain}.tarai.space
                       </Text>
                     </View>
                   </Pressable>
@@ -1648,128 +1660,20 @@ ${membersYaml}
         </Pressable>
       </Modal>
 
-      {/* Create Workspace Modal — Minimal Clean Style */}
-      <Modal
+      {/* Agentic Full Screen AI Workspace Creation Experience */}
+      <CreateWorkspace
         visible={showCreateModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => {
-          if (workspaces.length > 0) closeCreateModal();
+        canClose={workspaces.length > 0}
+        onClose={closeCreateModal}
+        onSuccess={async (slug) => {
+          closeCreateModal();
+          await fetchWorkspacesList();
+          const found = workspaces.find((w) => w.subdomain === slug);
+          if (found) {
+            setCurrentWorkspace(found);
+          }
         }}
-      >
-        <Pressable 
-          style={styles.modalBackdrop} 
-          onPress={() => {
-            if (workspaces.length > 0) closeCreateModal();
-          }}
-        >
-          <Pressable
-            style={[
-              styles.dropdownContent,
-              {
-                backgroundColor: theme.background,
-                borderColor: theme.border,
-                paddingBottom: Math.max(insets.bottom + 16, 32),
-                paddingHorizontal: 20,
-              }
-            ]}
-            onPress={() => {}}
-          >
-            <View style={[styles.drawerHandle, { backgroundColor: theme.textMuted + '30', marginBottom: 12 }]} />
-            
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>New Workspace</Text>
-              {workspaces.length > 0 && (
-                <Pressable onPress={closeCreateModal} hitSlop={12}>
-                  <Ionicons name="close" size={20} color={theme.textMuted} />
-                </Pressable>
-              )}
-            </View>
-
-            <TextInput
-              style={{
-                height: 44,
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: theme.border,
-                paddingHorizontal: 14,
-                fontSize: 15,
-                color: theme.text,
-                backgroundColor: theme.backgroundElement,
-                marginBottom: 14,
-              }}
-              value={newWsName}
-              onChangeText={setNewWsName}
-              placeholder="Workspace Name"
-              placeholderTextColor={theme.textMuted}
-              autoFocus
-            />
-
-            {/* Business Vertical Selector */}
-            <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 }}>
-              Business Vertical
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
-              {BUSINESS_VERTICALS.map((vert) => {
-                const selected = selectedVertical === vert.id;
-                return (
-                  <Pressable
-                    key={vert.id}
-                    onPress={() => setSelectedVertical(vert.id)}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 6,
-                      paddingHorizontal: 12,
-                      paddingVertical: 7,
-                      borderRadius: 16,
-                      borderWidth: 1,
-                      borderColor: selected ? theme.primary : theme.border,
-                      backgroundColor: selected ? theme.primary + '15' : 'transparent',
-                    }}
-                  >
-                    <Ionicons
-                      name={vert.icon as any}
-                      size={14}
-                      color={selected ? theme.primary : theme.textSecondary}
-                    />
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: selected ? '600' : '400',
-                        color: selected ? theme.primary : theme.textSecondary,
-                      }}
-                    >
-                      {vert.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={handleCreateInlineWorkspace}
-              disabled={!newWsName.trim() || newWsCreating}
-              style={{
-                height: 44,
-                borderRadius: 10,
-                backgroundColor: newWsName.trim() ? theme.primary : theme.border,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {newWsCreating ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <Text style={{ color: newWsName.trim() ? '#ffffff' : theme.textMuted, fontSize: 15, fontWeight: '600' }}>
-                  Create
-                </Text>
-              )}
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      />
 
 
       {/* Full-Screen Gmail Mobile App Style Event Compose Modal */}

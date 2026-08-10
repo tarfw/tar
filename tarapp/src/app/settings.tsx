@@ -11,6 +11,7 @@ import { getCurrentUser, signOutGoogle, type UserProfile } from "@/lib/auth";
 import { useEmbeddings } from "@/db/embeddings-provider";
 import { useLLM, models } from "react-native-executorch";
 import { isHammerCached, isLfmCached } from "@/lib/hammer";
+import { TarLogo } from "@/components/TarLogo";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -266,9 +267,12 @@ export default function SettingsScreen() {
       )}
 
       {/* Footer */}
-      <Text style={[styles.footerText, { color: theme.textSecondary }]}>
-        Version 1.0.0
-      </Text>
+      <View style={{ alignItems: 'center', marginTop: 32, marginBottom: 48 }}>
+        <TarLogo size={42} color={theme.primary} style={{ marginBottom: 12 }} />
+        <Text style={[styles.footerText, { color: theme.textSecondary, marginTop: 0, marginBottom: 0 }]}>
+          tar. Version 1.0.0
+        </Text>
+      </View>
 
       </ScrollView>
     </View>

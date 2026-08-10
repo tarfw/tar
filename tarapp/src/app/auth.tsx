@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, View, Text, Pressable, ActivityIndicator, Alert, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
@@ -8,6 +8,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
 import { signInWithGoogle, getCurrentUser, trySilentSignIn } from '@/lib/auth';
 import { setUserId } from '@/lib/tar';
+import { TarLogo } from '@/components/TarLogo';
 
 const SOLUTIONS = [
   { icon: 'ellipse-outline' as const, label: 'Projects & Tasks' },
@@ -24,7 +25,10 @@ export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
+  const { height: windowHeight } = useWindowDimensions();
   const [loading, setLoading] = useState(false);
+
+  const logoHeight = Math.round(windowHeight * 0.28);
 
   useEffect(() => {
     console.log(`[AUTH] ${ms()} — useEffect START (checking user)`);
@@ -106,11 +110,12 @@ export default function AuthScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.content, { paddingTop: insets.top + 80 }]}>
-
+      <View style={[styles.content, { paddingTop: insets.top + 20 }]}>
+        <View style={styles.logoContainer}>
+          <TarLogo size={logoHeight} color="#392878" />
+        </View>
         <Text style={[styles.title, { color: theme.text }]}>tar.</Text>
         <Text style={[styles.subtitle, { color: theme.text }]}>Everything app</Text>
-
       </View>
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
@@ -146,6 +151,12 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { flex: 1, paddingHorizontal: 32, justifyContent: 'flex-start' },
+  logoContainer: {
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    backgroundColor: 'transparent',
+    marginBottom: 12,
+  },
   title: { fontSize: 64, fontWeight: '800', letterSpacing: -2 },
   subtitle: { fontSize: 28, fontWeight: '700', marginTop: 4 },
   bottom: { paddingHorizontal: 32 },

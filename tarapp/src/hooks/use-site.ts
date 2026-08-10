@@ -19,13 +19,13 @@ function getDb() {
   return dbRef;
 }
 
-async function publishToWorker(subdomain: string, layout: SiteLayout): Promise<void> {
+async function publishToWorker(subdomain: string, layout: SiteLayout, workspaceName?: string): Promise<void> {
   try {
     const cleanSub = subdomain.replace(/^w:/, '');
     const res = await fetch(`https://${cleanSub}.tarai.space/publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subdomain: cleanSub, layout }),
+      body: JSON.stringify({ subdomain: cleanSub, workspaceName: workspaceName || cleanSub, layout }),
     });
 
     if (!res.ok) {
@@ -137,7 +137,7 @@ export function useSite(storeIdInput?: string) {
     pushDraftToWorker(cleanId, layout);
   }, [storeId, cleanId, scope, draftId]);
 
-  const publish = useCallback(async (subdomainOverride?: string) => {
+  const publish = useCallback(async (subdomainOverride?: string, workspaceName?: string) => {
     const activeLayout = draft || DEFAULT_LAYOUT;
     const json = JSON.stringify(activeLayout);
     const targetForm = cleanId;
@@ -156,9 +156,11 @@ export function useSite(storeIdInput?: string) {
     }
     setPublished(activeLayout);
 
+    // Always prefer explicit subdomain override (from WorkspaceSiteScreen or workspace card).
+    // cleanId may be an internal scope ID (e.g. "abc123") not the URL slug (e.g. "velvet-brew").
     const sub = subdomainOverride || cleanId;
     if (sub) {
-      await publishToWorker(sub, activeLayout);
+      await publishToWorker(sub, activeLayout, workspaceName);
     }
   }, [storeId, cleanId, scope, draft]);
 

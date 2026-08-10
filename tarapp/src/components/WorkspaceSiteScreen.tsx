@@ -92,7 +92,7 @@ export default function WorkspaceSiteScreen({
     setPublishing(true);
     setFeedback(null);
     try {
-      await publish(cleanSub);
+      await publish(cleanSub, workspaceName || cleanSub);
       setFeedback({ text: `Published live to ${siteUrl}`, type: 'success' });
     } catch (err: any) {
       setFeedback({ text: err?.message || 'Failed to publish site.', type: 'error' });

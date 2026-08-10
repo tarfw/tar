@@ -827,7 +827,8 @@ ${membersYaml}
     setExecuting(true);
     setAgentFeedback(null);
     try {
-      await publish();
+      // Always pass subdomain and workspaceName explicitly so publishToWorker uses the correct URL and site title
+      await publish(currentWorkspace.subdomain, currentWorkspace.name || currentWorkspace.subdomain);
       setAgentFeedback({ text: `Site published successfully! It is live at: https://${currentWorkspace.subdomain}.tarai.space`, type: 'success' });
     } catch (e: any) {
       setAgentFeedback({ text: e.message || 'Failed to publish site.', type: 'error' });

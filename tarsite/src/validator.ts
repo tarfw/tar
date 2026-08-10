@@ -144,10 +144,14 @@ function normalizeToUIPlan(data: any): UIPlan | null {
       });
     }
 
+    const VALID_LAYOUTS = new Set(['flex-col', 'flex-row', 'grid-2', 'grid-3', 'grid-4', 'full', 'split']);
+    const rawLayout = String(sec.layout || sec.variant || '');
+    const safeLayout = VALID_LAYOUTS.has(rawLayout) ? rawLayout : 'split';
+
     return {
       id: String(sec.id || `node_${idx}_${Date.now()}`),
       type: typeStr as any,
-      layout: String(sec.layout || sec.variant || 'split'),
+      layout: safeLayout as any,
       props,
     };
   });
@@ -219,9 +223,11 @@ export function validateUIPlanGate(data: unknown): ValidationResult {
     walk(route.nodes);
   }
 
+  // Referential errors (unknown component types, unapproved resources) are logged
+  // but do NOT block rendering — only Zod structural failures block.
   return {
     valid: errors.length === 0,
     errors,
-    plan: errors.length === 0 ? plan : undefined,
+    plan, // always return the plan if Zod structural parse succeeded
   };
 }

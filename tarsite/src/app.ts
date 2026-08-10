@@ -112,6 +112,27 @@ app.post('/planner', async (c) => {
   }
 });
 
+// ── 4a. DEBUG endpoint — inspect KV state for a slug ─────────────────
+app.get('/debug/:slug', async (c) => {
+  const slug = c.req.param('slug');
+  if (!c.env.STOREFRONT_CACHE) {
+    return c.json({ error: 'No KV binding' });
+  }
+  const published = await c.env.STOREFRONT_CACHE.get(`published:${slug}`);
+  const draft = await c.env.STOREFRONT_CACHE.get(`draft:${slug}`);
+  const publishedAlt = await c.env.STOREFRONT_CACHE.get(`published:${slug.replace(/-/g, '_')}`);
+  
+  return c.json({
+    slug,
+    keys: {
+      [`published:${slug}`]: published ? `FOUND (${published.length} chars)` : 'MISSING',
+      [`published:${slug.replace(/-/g, '_')}`]: publishedAlt ? `FOUND (${publishedAlt.length} chars)` : 'MISSING',
+      [`draft:${slug}`]: draft ? `FOUND (${draft.length} chars)` : 'MISSING',
+    },
+    publishedPreview: published ? JSON.parse(published) : null,
+  });
+});
+
 // ── 4. Public Form Submissions (/api/contact, /api/order, /api/booking) ─
 
 app.post('/api/contact', async (c) => {

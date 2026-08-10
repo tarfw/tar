@@ -1,11 +1,11 @@
 /**
- * Re-exports from gen-ui/memory.ts for backward compatibility.
+ * UI Memory Module.
  */
 
-export {
-  getMemory,
-  saveMemory,
-  updateMemory,
-  buildPlannerContext,
-  applyMemoryPriority,
-} from '../gen-ui/memory';
+export interface UIMemory {
+  userId: string;
+  workspaceId: string;
+  role: 'owner' | 'staff' | 'customer';
+}
+
+export function getMemory() { return null; }

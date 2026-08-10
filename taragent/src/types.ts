@@ -1,22 +1,16 @@
 /**
- * Re-exports from gen-ui/types.ts for backward compatibility.
- * The canonical types live in gen-ui/types.ts.
+ * Canonical UIPlan and Site types for TAR.
+ * Re-exports cleanly from tarsite UIPlan Runtime Engine.
  */
 
 export {
   UINodeSchema,
   UIRouteSchema,
-  SiteLayoutSchema,
-  validateSiteLayout,
-  flattenNodes,
+  UIPlanSchema as SiteLayoutSchema,
+  validateUIPlan as validateSiteLayout,
   type UINode,
   type UIRoute,
-  type SiteLayout,
-  type ComponentCatalogEntry,
-  type ResourceCatalogEntry,
-  type ActionCatalogEntry,
-  type UIMemory,
-  UIMemorySchema,
-  type PlannerContext,
+  type UIPlan as SiteLayout,
+  type DesignTokens,
   type UIRevision,
-} from './gen-ui/types';
+} from '../tarsite/src/types';

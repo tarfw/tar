@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { handleSiteRequest } from './site-renderer';
 import { initClient } from './lib/db';
 import { findActionMemories, incrementMemoryUsage } from './lib/memory';
 import { getUserTimeline } from './lib/inbox';
@@ -10,17 +9,10 @@ import { uploadWorkspaceFile, readWorkspaceFile, readWorkspaceIndex, deleteWorks
 import { CORE_MODULES } from './lib/core-modules';
 import { extractBusinessInfo } from './lib/extract-business';
 import { writeEvent, getUserInbox, markTaskDone } from './lib/events';
-import { runRuleCritic } from './gen-ui/rule-critic';
-import { loadDesign } from './gen-ui/design-loader';
-import { renderSectionsToHtml } from './gen-ui/renderer';
-
 import { getOrCreateWorkspaceDb } from './lib/workspace-db';
 import { dbContext, envContext } from './lib/db';
 import { parseSkillMarkdown, generateCompactActionIndex } from './lib/skill-parser';
 import { executeAITask } from './lib/action-executor';
-import genUiRoutes from './gen-ui/api';
-
-
 
 function storePendingPage(slug: string): string {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${slug}</title><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-gray-50 flex items-center justify-center min-h-screen"><div class="text-center"><h1 class="text-4xl font-bold text-gray-900 mb-4">${slug}</h1><p class="text-gray-500 mb-4">This workspace is being set up.</p></div></body></html>`;
@@ -34,9 +26,6 @@ app.use('*', async (c, next) => {
   if (url) initClient(url, token);
   return envContext.run(c.env, next);
 });
-
-// ── Gen UI routes ───────────────────────────────────────────────────
-app.route('/gen-ui', genUiRoutes);
 
 // ============================================================
 // API Routes
@@ -1165,25 +1154,7 @@ app.notFound(async (c) => {
       return fn();
     };
 
-    if (pathname === '/publish') {
-      const body = await c.req.json();
-      const layout = body.layout || body;
-      await uploadWorkspaceFile(c.env, scope, 'site/layouts/home.json', JSON.stringify(layout));
-
-      if (c.env.STOREFRONT_CACHE) {
-        await c.env.STOREFRONT_CACHE.delete(`site_config:${workspaceSlug}`).catch(() => {});
-        await c.env.STOREFRONT_CACHE.delete(`ui_plan:${workspaceSlug}:web`).catch(() => {});
-      }
-
-      return c.json({ ok: true, url: `https://${workspaceSlug}.tarai.space` });
-    }
-
-    if (pathname === '/draft') {
-      const body = await c.req.json();
-      const layout = body.layout || body;
-      await uploadWorkspaceFile(c.env, scope, 'site/layouts/draft.json', JSON.stringify(layout));
-      return c.json({ ok: true });
-    }
+    // Public Form Submissions (Order, Booking, Contact)
 
     if (pathname === '/api/order') {
       const body = await c.req.json();
@@ -1283,8 +1254,7 @@ app.notFound(async (c) => {
     }
   }
 
-  // Delegate standard pages to handleSiteRequest
-  return handleSiteRequest(c.env, workspaceSlug, pathname, method, c.req.raw);
+  return c.json({ message: `TAR Agent API service for workspace ${workspaceSlug}` });
 });
 
 export default app;

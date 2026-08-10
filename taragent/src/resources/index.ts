@@ -1,11 +1,11 @@
 /**
- * Re-exports from gen-ui/resources.ts for backward compatibility.
+ * System Resource Catalog.
  */
 
-export {
-  RESOURCE_CATALOG,
-  getResourceEntry,
-  getResourceIds,
-  isValidResource,
-  resolveResource,
-} from '../gen-ui/resources';
+export const RESOURCE_CATALOG: Record<string, any> = {
+  'matter.product': { id: 'matter.product', label: 'Products' },
+  'matter.menu_item': { id: 'matter.menu_item', label: 'Menu Items' },
+};
+
+export function getResourceIds() { return Object.keys(RESOURCE_CATALOG); }
+export function isValidResource(id: string) { return Boolean(RESOURCE_CATALOG[id]); }

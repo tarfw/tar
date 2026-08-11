@@ -18,8 +18,10 @@ export async function handleChannelMessage(
   env: { DB?: D1Database }
 ): Promise<ChannelMessage | null> {
   switch (platform) {
-    case 'telegram':
-      return handleTelegramUpdate(payload, env);
+    case 'telegram': {
+      const res = await handleTelegramUpdate(payload, env);
+      return res ? res.message : null;
+    }
     case 'slack':
       return handleSlackEvent(payload);
     case 'discord':

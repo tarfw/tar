@@ -3,6 +3,8 @@ import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 
+import * as SplashScreen from 'expo-splash-screen';
+
 import { ThemeProvider, useThemeMode } from '@/hooks/use-theme-context';
 import { DbProvider } from '@/db/provider';
 import { EmbeddingsProvider } from '@/db/embeddings-provider';
@@ -10,6 +12,9 @@ import { Colors } from '@/constants/theme';
 import { initDb, getSelfId } from '@/lib/db';
 import { initEmbeddings } from '@/lib/embeddings';
 import { setUserId } from '@/lib/tar';
+
+// Keep the splash screen visible while assets & DB load
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const T0 = Date.now();
 function ms() { return `${Date.now() - T0}ms`; }
@@ -41,6 +46,7 @@ function RootLayoutInner() {
       } finally {
         console.log(`[BOOT] ${ms()} — ready → true`);
         setReady(true);
+        await SplashScreen.hideAsync().catch(() => {});
       }
     })();
   }, []);

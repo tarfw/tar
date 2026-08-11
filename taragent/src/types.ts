@@ -13,4 +13,4 @@ export {
   type UIPlan as SiteLayout,
   type DesignTokens,
   type UIRevision,
-} from '../tarsite/src/types';
+} from '../../tarsite/src/types';

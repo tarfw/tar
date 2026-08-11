@@ -52,7 +52,7 @@ export type SectionContract = z.infer<typeof SectionContractSchema>;
 
 // ── 3. UINode AST Contract (Recursive Layout) ────────────────────────
 
-export const UINodeSchema: z.ZodType<UINode, z.ZodTypeDef, any> = z.lazy(() =>
+export const UINodeSchema: z.ZodType<UINode> = z.lazy(() =>
   z.object({
     id: z.string().min(1),
     type: z.string().min(1),
@@ -70,7 +70,7 @@ export const UINodeSchema: z.ZodType<UINode, z.ZodTypeDef, any> = z.lazy(() =>
     bindings: z.record(z.string(), BindingSchema).optional(),
     actions: z.record(z.string(), ActionRefSchema).optional(),
     children: z.array(UINodeSchema).optional(),
-  })
+  }) as any
 );
 
 export type UINode = {

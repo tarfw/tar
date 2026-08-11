@@ -11,7 +11,10 @@ export const TEMPLATES = [
   'minimal-clean',
   'editorial-chalk',
   'notion',
-  'lululemon'
+  'lululemon',
+  'eql',
+  'joandso',
+  'empire'
 ] as const;
 export type TemplateName = typeof TEMPLATES[number];
 
@@ -29,7 +32,15 @@ export interface Section {
   id: string;
   type: string;
   variant?: string;
-  config: Record<string, any>;
+  contract?: Record<string, any>;
+  config?: Record<string, any>;
+  title?: string;
+  subtitle?: string;
+  text?: string;
+  layout?: string;
+  ctaText?: string;
+  items?: Array<Record<string, any>>;
+  [key: string]: any;
 }
 
 export interface WidgetConfig {

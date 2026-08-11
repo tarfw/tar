@@ -79,3 +79,41 @@ export function getWorkspaceClient(env: any, url: string, token: string) {
   }
   return cachedClient;
 }
+
+/**
+ * Executes a SQL query against the per-workspace Turso DB found in D1's workspaces table.
+ */
+export async function executeWorkspaceTursoQuery(
+  d1: D1Database,
+  env: any,
+  scope: string,
+  sql: string,
+  args: any[] = []
+): Promise<any> {
+  try {
+    const subdomain = scope.replace(/^[tw]:/, '');
+    
+    // Look up workspace Turso DB credentials from D1
+    const ws = await d1
+      .prepare('SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ? OR scope = ? OR scope = ?')
+      .bind(subdomain, scope, `w:${subdomain}`)
+      .first<{ turso_url?: string; turso_auth_token?: string }>();
+
+    let url = ws?.turso_url || env?.TURSO_DATABASE_URL;
+    let token = ws?.turso_auth_token || env?.TURSO_GROUP_TOKEN || env?.TURSO_AUTH_TOKEN;
+
+    if (!url || !token) {
+      console.warn(`[turso] No Turso DB credentials found for scope ${scope}`);
+      return null;
+    }
+
+    const client = getWorkspaceClient(env, url, token);
+    const result = await client.execute({ sql, args });
+    console.log(`[turso] Successfully executed query on workspace Turso DB (${url})`);
+    return result;
+  } catch (err) {
+    console.error(`[turso] Error executing query on workspace Turso DB for scope ${scope}:`, err);
+    return null;
+  }
+}
+

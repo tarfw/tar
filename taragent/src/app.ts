@@ -1007,33 +1007,21 @@ app.post('/agents/master/:sessionId', async (c) => {
 
 // POST /channels/telegram/webhook
 app.post('/channels/telegram/webhook', async (c) => {
-  const body = await c.req.json();
-  const message = await handleChannelMessage('telegram', body, { DB: c.env.DB });
-  if (!message) return c.json({ ok: true });
+  try {
+    const body = await c.req.json();
+    const { handleTelegramUpdate, sendTelegramMessage } = await import('./channels/telegram');
+    const result = await handleTelegramUpdate(body, { DB: c.env.DB });
+    if (!result) return c.json({ ok: true });
 
-  // Look up scope from D1
-  let scope = 'global';
-  if (c.env.DB) {
-    const row = await c.env.DB.prepare(
-      'SELECT scope FROM channels WHERE chat_id = ?'
-    ).bind(message.chatId).first();
-    if (row?.scope) scope = row.scope;
+    // Send response back to Telegram chat
+    const botToken = c.env?.TELEGRAM_BOT_TOKEN || process.env?.TELEGRAM_BOT_TOKEN || '8923998794:AAGgKVD75suBu1zEXzL_5sEza42xUg0qI1w';
+    await sendTelegramMessage({ platform: 'telegram', botToken }, result.response);
+
+    return c.json({ ok: true, response: result.response.text });
+  } catch (err: any) {
+    console.error('[Telegram Webhook Error]:', err);
+    return c.json({ ok: false, error: err.message }, 200);
   }
-
-  // Process message through agent (placeholder — would call agent here)
-  const reply = `Received: ${message.content}`;
-
-  // Send response
-  const config = await getChannelConfig('telegram', scope);
-  if (config) {
-    await sendChannelMessage('telegram', config, {
-      chatId: message.chatId,
-      text: reply,
-      replyToMessageId: message.messageId,
-    });
-  }
-
-  return c.json({ ok: true });
 });
 
 // POST /channels/slack/events

@@ -21,21 +21,11 @@ import { tar } from '@/lib/tar';
 import { generateSiteLayout } from '@/lib/site-ai';
 import * as SecureStore from 'expo-secure-store';
 
-const BUSINESS_VERTICALS = [
-  { id: 'business', label: 'General', icon: 'briefcase-outline' },
-  { id: 'retail', label: 'Retail & Store', icon: 'cart-outline' },
-  { id: 'restaurant', label: 'Restaurant & Cafe', icon: 'restaurant-outline' },
-  { id: 'salon', label: 'Salon & Spa', icon: 'cut-outline' },
-  { id: 'clinic', label: 'Healthcare', icon: 'medical-outline' },
-  { id: 'logistics', label: 'Logistics', icon: 'car-outline' },
-  { id: 'tech', label: 'Tech & SaaS', icon: 'hardware-chip-outline' },
-];
-
-const PRESET_IDEAS = [
-  { label: '☕ Cafe & Bakery', name: 'Velvet Brew', prompt: 'Specialty coffee shop and bakery with menu items and table orders' },
-  { label: '🛍️ Retail Store', name: 'Kicks Vault', prompt: 'High-end sneakers and streetwear store with inventory tracking' },
-  { label: '✂️ Salon & Spa', name: 'Glow Studio', prompt: 'Beauty salon with appointment scheduling and service catalog' },
-  { label: '🚀 Tech Startup', name: 'CloudPulse', prompt: 'SaaS tech product landing page with subscription pricing' },
+const STARTER_PILLS = [
+  { label: 'Cafe & Bakery', name: 'Velvet Brew', prompt: 'Specialty coffee shop and bakery with table orders' },
+  { label: 'Retail Store', name: 'Kicks Vault', prompt: 'Streetwear sneakers boutique with stock inventory' },
+  { label: 'Salon & Spa', name: 'Glow Studio', prompt: 'Beauty salon with appointment scheduling catalog' },
+  { label: 'Tech Startup', name: 'CloudPulse', prompt: 'SaaS tech product landing page with subscription plans' },
 ];
 
 interface CreateWorkspaceProps {
@@ -43,6 +33,7 @@ interface CreateWorkspaceProps {
   onClose: () => void;
   onSuccess: (subdomain: string) => Promise<void>;
   canClose: boolean;
+  existingSubdomains?: string[];
 }
 
 export default function CreateWorkspace({
@@ -50,22 +41,16 @@ export default function CreateWorkspace({
   onClose,
   onSuccess,
   canClose,
+  existingSubdomains = [],
 }: CreateWorkspaceProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [workspaceName, setWorkspaceName] = useState('');
   const [promptInput, setPromptInput] = useState('');
-  const [selectedVertical, setSelectedVertical] = useState('business');
-  const [showPromptInput, setShowPromptInput] = useState(false);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Exact TarLogo color matched to Auth Screen
-  const logoBrandColor = theme.dark ? '#a78bfa' : '#392878';
-
-  // Pulse animation for TAR Logo
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -73,7 +58,7 @@ export default function CreateWorkspace({
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.1,
+            toValue: 1.06,
             duration: 800,
             easing: Easing.inOut(Easing.ease),
             useNativeDriver: true,
@@ -91,37 +76,83 @@ export default function CreateWorkspace({
     }
   }, [isSynthesizing, pulseAnim]);
 
-  // Clean subdomain slug calculation
-  const derivedSlug = (workspaceName.trim() || promptInput.trim().split(' ').slice(0, 2).join(' ') || 'workspace')
+  // Subdomain slug calculation
+  const rawText = promptInput.trim();
+  const rawWords = rawText.split(/\s+/).filter(Boolean);
+  const extractedName = rawWords.slice(0, 3).join(' ') || 'Workspace';
+
+  let baseSlug = extractedName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 30) || 'ws-app';
+    .slice(0, 24) || 'workspace';
 
-  const handleSelectPreset = (preset: typeof PRESET_IDEAS[0]) => {
-    setWorkspaceName(preset.name);
-    setPromptInput(preset.prompt);
+  let resolvedSlug = baseSlug;
+  if (existingSubdomains.includes(resolvedSlug)) {
+    let counter = 2;
+    while (existingSubdomains.includes(`${baseSlug}-${counter}`)) {
+      counter++;
+    }
+    resolvedSlug = `${baseSlug}-${counter}`;
+  }
+
+  const detectVertical = (text: string) => {
+    const lower = text.toLowerCase();
+    if (lower.includes('coffee') || lower.includes('cafe') || lower.includes('bakery') || lower.includes('restaurant') || lower.includes('food')) {
+      return 'restaurant';
+    }
+    if (lower.includes('store') || lower.includes('shop') || lower.includes('retail') || lower.includes('sneaker') || lower.includes('apparel')) {
+      return 'retail';
+    }
+    if (lower.includes('salon') || lower.includes('spa') || lower.includes('beauty') || lower.includes('hair') || lower.includes('clinic')) {
+      return 'salon';
+    }
+    if (lower.includes('saas') || lower.includes('tech') || lower.includes('app') || lower.includes('software') || lower.includes('cloud')) {
+      return 'tech';
+    }
+    return 'business';
+  };
+
+  const handleSelectPill = (pill: typeof STARTER_PILLS[0]) => {
+    setPromptInput(pill.prompt);
   };
 
   const handleCreate = async () => {
-    if (isSynthesizing) return;
-    const finalName = workspaceName.trim() || promptInput.trim().slice(0, 24) || 'New Workspace';
-    const finalSlug = finalName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || `ws-${Date.now().toString(36)}`;
+    if (isSynthesizing || !promptInput.trim()) return;
+
+    const finalName = extractedName.charAt(0).toUpperCase() + extractedName.slice(1);
+    const vertical = detectVertical(promptInput);
 
     setIsSynthesizing(true);
     setErrorMessage(null);
     setCurrentStep(1);
 
     try {
-      await new Promise((res) => setTimeout(res, 500));
+      await new Promise((res) => setTimeout(res, 400));
       setCurrentStep(2);
 
-      await tar.createWorkspace({
-        name: finalName,
-        subdomain: finalSlug,
-        description: promptInput.trim() || `${finalName} workspace`,
-        type: selectedVertical,
-      });
+      let finalSlug = resolvedSlug;
+      try {
+        await tar.createWorkspace({
+          name: finalName,
+          subdomain: finalSlug,
+          description: promptInput.trim(),
+          type: vertical,
+        });
+      } catch (createErr: any) {
+        if (createErr?.message?.includes('already exists') || createErr?.message?.includes('duplicate')) {
+          finalSlug = `${baseSlug}-${Math.floor(100 + Math.random() * 900)}`;
+          await tar.createWorkspace({
+            name: finalName,
+            subdomain: finalSlug,
+            description: promptInput.trim(),
+            type: vertical,
+          });
+        } else {
+          throw createErr;
+        }
+      }
+
       await SecureStore.setItemAsync('active_workspace_subdomain', finalSlug).catch(() => null);
 
       setCurrentStep(3);
@@ -129,26 +160,25 @@ export default function CreateWorkspace({
         const starterLayout = await generateSiteLayout(
           finalName,
           [],
-          promptInput.trim() || `Create a starter site for ${finalName} (${selectedVertical})`,
+          promptInput.trim(),
           null,
-          selectedVertical
+          vertical
         );
-        await tar.okf.write(`t:${finalSlug}`, 'site/draft.json', JSON.stringify(starterLayout));
-        await tar.okf.write(`t:${finalSlug}`, 'site/published.json', JSON.stringify(starterLayout));
+        await tar.okf.upload(`t:${finalSlug}`, 'site/draft.json', JSON.stringify(starterLayout));
+        await tar.okf.upload(`t:${finalSlug}`, 'site/published.json', JSON.stringify(starterLayout));
       } catch (siteErr) {
-        console.warn('[AgenticCreate] Starter site skipped:', siteErr);
+        console.warn('[CreateWorkspace] Starter layout deferred:', siteErr);
       }
 
       setCurrentStep(4);
-      await new Promise((res) => setTimeout(res, 400));
+      await new Promise((res) => setTimeout(res, 300));
 
-      setWorkspaceName('');
       setPromptInput('');
       setIsSynthesizing(false);
       setCurrentStep(0);
       await onSuccess(finalSlug);
     } catch (err: any) {
-      console.error('[AgenticCreate] Error creating workspace:', err);
+      console.error('[CreateWorkspace] Creation error:', err);
       setErrorMessage(err?.message || 'Failed to create workspace. Please try again.');
       setIsSynthesizing(false);
       setCurrentStep(0);
@@ -156,72 +186,72 @@ export default function CreateWorkspace({
   };
 
   const stepLabels = [
-    'Synthesizing architecture...',
-    'Provisioning database & scope...',
-    'Generating starter site...',
-    'Launching workspace...',
+    'Building workspace...',
+    'Setting up database...',
+    'Generating layout...',
+    'Launching...',
   ];
 
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="fade"
       presentationStyle="pageSheet"
       statusBarTranslucent
       onRequestClose={() => { if (canClose && !isSynthesizing) onClose(); }}
     >
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} style={{ flex: 1 }}>
-          {/* Header Bar */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          {/* Header Bar: Only close button with light border */}
           <View style={[styles.headerBar, { paddingTop: Math.max(insets.top + 8, 16) }]}>
-            <Text style={[styles.headerTitle, { color: theme.text }]}>New Workspace</Text>
+            <View style={{ flex: 1 }} />
             {canClose && !isSynthesizing && (
-              <Pressable onPress={onClose} style={[styles.closeBtn, { backgroundColor: theme.backgroundElement }]} hitSlop={8}>
-                <Ionicons name="close" size={20} color={theme.textSecondary} />
+              <Pressable onPress={onClose} style={[styles.closeBtn, { borderColor: theme.border }]} hitSlop={8}>
+                <Ionicons name="close" size={18} color={theme.textSecondary} />
               </Pressable>
             )}
           </View>
 
-          {/* Main Uncluttered Scroll Container */}
           <ScrollView
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 24, 40) }]}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 20, 32) }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* TarLogo Hero Avatar (Identical design language to Auth screen) */}
-            <View style={styles.heroSection}>
-              <Animated.View style={{ transform: [{ scale: pulseAnim }], marginBottom: 14 }}>
-                <TarLogo size={76} color={logoBrandColor} />
+            {/* Left-Aligned AI Chat Header */}
+            <View style={styles.chatHeaderSection}>
+              <Animated.View style={[styles.avatarCircle, { transform: [{ scale: pulseAnim }] }]}>
+                <TarLogo size={44} color="#007AFF" />
               </Animated.View>
-              <Text style={[styles.heroTitle, { color: theme.text }]}>
-                {isSynthesizing ? 'Setting Up Workspace' : 'Create Workspace'}
+              <Text style={[styles.questionText, { color: theme.text }]}>
+                What would you like to build?
               </Text>
-              <Text style={[styles.heroSub, { color: theme.textMuted }]}>
-                {derivedSlug}.tarai.space
-              </Text>
+              <View style={[styles.urlBadge, { borderColor: theme.border }]}>
+                <Text style={[styles.urlText, { color: theme.textMuted }]}>
+                  <Text style={{ color: '#007AFF', fontWeight: '700' }}>{resolvedSlug}</Text>.tarai.space
+                </Text>
+              </View>
             </View>
 
-            {/* Error Message */}
+            {/* Error Banner */}
             {errorMessage && (
-              <View style={[styles.errorCard, { backgroundColor: '#ef444415', borderColor: '#ef444440' }]}>
-                <Ionicons name="alert-circle-outline" size={18} color="#ef4444" />
+              <View style={[styles.errorCard, { borderColor: '#ef444460' }]}>
                 <Text style={[styles.errorText, { color: '#ef4444' }]}>{errorMessage}</Text>
               </View>
             )}
 
             {isSynthesizing ? (
-              /* Clean Minimal Progress View */
-              <View style={[styles.progressBox, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                <ActivityIndicator size="large" color={theme.primary} style={{ marginBottom: 14 }} />
-                <Text style={[styles.progressStatus, { color: theme.text }]}>
+              /* Building View with light border */
+              <View style={[styles.buildingCard, { borderColor: theme.border }]}>
+                <ActivityIndicator size="small" color="#007AFF" style={{ marginBottom: 12 }} />
+                <Text style={[styles.buildingStatus, { color: theme.text }]}>
                   {stepLabels[Math.min(currentStep - 1, stepLabels.length - 1)] || 'Initializing...'}
                 </Text>
-                <View style={[styles.progressBarTrack, { backgroundColor: theme.border }]}>
+                <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
                   <View
                     style={[
-                      styles.progressBarFill,
+                      styles.progressFill,
                       {
-                        backgroundColor: theme.primary,
+                        backgroundColor: '#007AFF',
                         width: `${(currentStep / stepLabels.length) * 100}%`,
                       },
                     ]}
@@ -229,132 +259,59 @@ export default function CreateWorkspace({
                 </View>
               </View>
             ) : (
-              /* Clean Uncluttered Form */
-              <View style={styles.formContent}>
-                {/* Workspace Name */}
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Workspace Name</Text>
-                  <TextInput
-                    style={[
-                      styles.nameInput,
-                      {
-                        color: theme.text,
-                        backgroundColor: theme.backgroundElement,
-                        borderColor: theme.border,
-                      },
-                    ]}
-                    value={workspaceName}
-                    onChangeText={setWorkspaceName}
-                    placeholder="Workspace Name (e.g. Storea, Velvet Brew)"
-                    placeholderTextColor={theme.textMuted}
-                    autoFocus
-                  />
-                </View>
+              /* Input & Chips with soft light borders and no grey background */
+              <View style={styles.inputSection}>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    {
+                      color: theme.text,
+                      borderColor: theme.border,
+                    },
+                  ]}
+                  value={promptInput}
+                  onChangeText={setPromptInput}
+                  placeholder="Describe your vision..."
+                  placeholderTextColor={theme.textMuted}
+                  multiline
+                  numberOfLines={4}
+                  autoFocus
+                />
 
-                {/* Vertical Category Selection Chips */}
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Business Category</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                    {BUSINESS_VERTICALS.map((vert) => {
-                      const selected = selectedVertical === vert.id;
-                      return (
-                        <Pressable
-                          key={vert.id}
-                          onPress={() => setSelectedVertical(vert.id)}
-                          style={[
-                            styles.chip,
-                            {
-                              backgroundColor: selected ? theme.primary + '18' : theme.backgroundElement,
-                              borderColor: selected ? theme.primary : theme.border,
-                            },
-                          ]}
-                        >
-                          <Ionicons
-                            name={vert.icon as any}
-                            size={15}
-                            color={selected ? theme.primary : theme.textSecondary}
-                          />
-                          <Text
-                            style={[
-                              styles.chipText,
-                              { color: selected ? theme.primary : theme.textSecondary, fontWeight: selected ? '600' : '400' },
-                            ]}
-                          >
-                            {vert.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-
-                {/* Optional AI Prompt Collapsible Box */}
-                {!showPromptInput ? (
-                  <Pressable
-                    onPress={() => setShowPromptInput(true)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}
-                  >
-                    <Ionicons name="sparkles-outline" size={15} color={theme.primary} />
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: theme.primary }}>+ Add AI Prompt Vision (Optional)</Text>
-                  </Pressable>
-                ) : (
-                  <View style={styles.inputGroup}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>AI Vision & Prompt</Text>
-                      <Pressable onPress={() => setShowPromptInput(false)}>
-                        <Ionicons name="close-circle-outline" size={16} color={theme.textMuted} />
-                      </Pressable>
-                    </View>
-                    <TextInput
-                      style={[
-                        styles.promptInput,
+                {/* Horizontal Chips */}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsRow}>
+                  {STARTER_PILLS.map((pill, idx) => (
+                    <Pressable
+                      key={idx}
+                      onPress={() => handleSelectPill(pill)}
+                      style={({ pressed }) => [
+                        styles.chip,
                         {
-                          color: theme.text,
-                          backgroundColor: theme.backgroundElement,
                           borderColor: theme.border,
+                          opacity: pressed ? 0.7 : 1,
                         },
                       ]}
-                      value={promptInput}
-                      onChangeText={setPromptInput}
-                      placeholder="Describe what your workspace does..."
-                      placeholderTextColor={theme.textMuted}
-                      multiline
-                      numberOfLines={2}
-                    />
-                  </View>
-                )}
+                    >
+                      <Text style={[styles.chipText, { color: theme.text }]}>{pill.label}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
 
-                {/* Quick Presets */}
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Quick Starter Ideas</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                    {PRESET_IDEAS.map((preset, idx) => (
-                      <Pressable
-                        key={idx}
-                        onPress={() => handleSelectPreset(preset)}
-                        style={[styles.presetChip, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-                      >
-                        <Text style={[styles.presetText, { color: theme.text }]}>{preset.label}</Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Create CTA Button */}
+                {/* Primary Action Button */}
                 <Pressable
                   onPress={handleCreate}
-                  disabled={!workspaceName.trim() && !promptInput.trim()}
+                  disabled={!promptInput.trim()}
                   style={({ pressed }) => [
-                    styles.createButton,
+                    styles.submitButton,
                     {
-                      backgroundColor: (workspaceName.trim() || promptInput.trim()) ? theme.primary : theme.border,
-                      opacity: pressed ? 0.9 : 1,
+                      backgroundColor: promptInput.trim() ? '#007AFF' : theme.background,
+                      borderColor: promptInput.trim() ? '#007AFF' : theme.border,
+                      opacity: pressed ? 0.8 : promptInput.trim() ? 1 : 0.5,
                     },
                   ]}
                 >
-                  <TarLogo size={20} color="#ffffff" style={{ marginRight: 8 }} />
-                  <Text style={[styles.createButtonText, { color: (workspaceName.trim() || promptInput.trim()) ? '#ffffff' : theme.textMuted }]}>
-                    Create Workspace
+                  <Text style={[styles.submitButtonText, { color: promptInput.trim() ? '#FFFFFF' : theme.textMuted }]}>
+                    Build Workspace
                   </Text>
                 </Pressable>
               </View>
@@ -373,43 +330,51 @@ const styles = StyleSheet.create({
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
+    paddingBottom: 8,
   },
   closeBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 16,
   },
-  heroSection: {
+  chatHeaderSection: {
+    alignItems: 'flex-start',
+    marginVertical: 20,
+  },
+  avatarCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F0F6FF',
     alignItems: 'center',
-    marginBottom: 24,
+    justifyContent: 'center',
+    marginBottom: 14,
   },
-  heroTitle: {
-    fontSize: 22,
+  questionText: {
+    fontSize: 26,
     fontWeight: '800',
-    letterSpacing: -0.4,
-    marginBottom: 4,
+    letterSpacing: -0.6,
+    marginBottom: 10,
+    textAlign: 'left',
   },
-  heroSub: {
+  urlBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  urlText: {
     fontSize: 13,
     fontWeight: '500',
   },
   errorCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
     padding: 12,
     borderRadius: 10,
     borderWidth: 1,
@@ -419,87 +384,66 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
-  formContent: {
-    gap: 18,
+  inputSection: {
+    marginTop: 16,
+    gap: 16,
   },
-  inputGroup: {
+  textInput: {
+    minHeight: 100,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlignVertical: 'top',
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  pillsRow: {
     gap: 8,
   },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  nameInput: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    fontSize: 15,
-  },
-  promptInput: {
-    minHeight: 56,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    textAlignVertical: 'top',
-  },
   chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
+    paddingVertical: 9,
+    borderRadius: 10,
     borderWidth: 1,
+    backgroundColor: 'transparent',
   },
   chipText: {
     fontSize: 13,
-  },
-  presetChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  presetText: {
-    fontSize: 12,
     fontWeight: '600',
   },
-  createButton: {
-    height: 50,
+  submitButton: {
+    height: 52,
     borderRadius: 14,
-    flexDirection: 'row',
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
-  createButtonText: {
+  submitButtonText: {
     fontSize: 16,
     fontWeight: '700',
   },
-  progressBox: {
-    borderRadius: 16,
-    borderWidth: 1,
+  buildingCard: {
+    borderRadius: 14,
     padding: 24,
+    borderWidth: 1,
     alignItems: 'center',
   },
-  progressStatus: {
-    fontSize: 15,
+  buildingStatus: {
+    fontSize: 14,
     fontWeight: '600',
     marginBottom: 16,
   },
-  progressBarTrack: {
+  progressTrack: {
     width: '100%',
-    height: 6,
-    borderRadius: 3,
+    height: 4,
+    borderRadius: 2,
     overflow: 'hidden',
   },
-  progressBarFill: {
+  progressFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 2,
   },
 });
+

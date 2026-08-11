@@ -2,6 +2,7 @@ import { StyleSheet, View, Text, Pressable, ActivityIndicator, Alert, useWindowD
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
+import { StatusBar } from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -109,21 +110,22 @@ export default function AuthScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <View style={[styles.container, { backgroundColor: '#1E5631' }]}>
+      <StatusBar style="light" />
       <View style={[styles.content, { paddingTop: insets.top + 20 }]}>
         <View style={styles.logoContainer}>
-          <TarLogo size={logoHeight} color="#392878" />
+          <TarLogo size={logoHeight} color="#EBA827" />
         </View>
-        <Text style={[styles.title, { color: theme.text }]}>tar.</Text>
-        <Text style={[styles.subtitle, { color: theme.text }]}>Everything app</Text>
+        <Text style={[styles.title, { color: '#FFFFFF' }]}>tar.</Text>
+        <Text style={[styles.subtitle, { color: '#E2F1E8' }]}>Everything app</Text>
       </View>
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.solutions}>
           {SOLUTIONS.map((item) => (
             <View key={item.label} style={styles.solutionRow}>
-              <Ionicons name={item.icon} size={22} color={theme.text} />
-              <Text style={[styles.solutionLabel, { color: theme.text }]}>{item.label}</Text>
+              <Ionicons name={item.icon} size={22} color="#E2F1E8" />
+              <Text style={[styles.solutionLabel, { color: '#E2F1E8' }]}>{item.label}</Text>
             </View>
           ))}
         </View>
@@ -131,15 +133,15 @@ export default function AuthScreen() {
         <View style={{ height: 32 }} />
 
         <Pressable
-          style={[styles.authButton, { backgroundColor: theme.backgroundElement }]}
+          style={[styles.authButton, { backgroundColor: '#FFFFFF' }]}
           onPress={handleGoogleAuth}
           disabled={loading}>
           {loading ? (
-            <ActivityIndicator size="small" color={theme.text} />
+            <ActivityIndicator size="small" color="#1E5631" />
           ) : (
             <>
-              <Ionicons name="logo-google" size={20} color={theme.text} />
-              <Text style={[styles.authButtonText, { color: theme.text }]}>Continue with Google</Text>
+              <Ionicons name="logo-google" size={20} color="#1E5631" />
+              <Text style={[styles.authButtonText, { color: '#1E5631' }]}>Continue with Google</Text>
             </>
           )}
         </Pressable>

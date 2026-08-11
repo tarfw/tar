@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
+import { TarLogo } from '@/components/TarLogo';
 
 export interface LinearInboxItem {
   id: string;
@@ -167,10 +168,10 @@ export default function LinearInboxList({
         </View>
       ) : !tasks || tasks.length === 0 ? (
         <View style={[styles.emptyContainer, { borderColor: theme.border + '40' }]}>
-          <Ionicons name="checkmark-done-circle-outline" size={32} color={theme.textMuted} />
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>All Inbox Tasks Done</Text>
+          <TarLogo size={32} color={theme.textMuted} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>All caught up</Text>
           <Text style={[styles.emptySub, { color: theme.textMuted }]}>
-            No pending operational tasks or notifications in this workspace.
+            No pending tasks
           </Text>
         </View>
       ) : (
@@ -248,6 +249,7 @@ const styles = StyleSheet.create({
     fontWeight: '400',
   },
   emptyContainer: {
+    minHeight: 380,
     paddingVertical: 40,
     paddingHorizontal: 20,
     alignItems: 'center',
@@ -255,7 +257,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderStyle: 'dashed',
-    marginVertical: 8,
+    marginVertical: 20,
   },
   emptyTitle: {
     fontSize: 14,

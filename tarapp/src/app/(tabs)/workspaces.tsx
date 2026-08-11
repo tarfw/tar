@@ -1621,6 +1621,7 @@ ${membersYaml}
               {workspaces.map((w) => {
                 const isActive = w.subdomain === currentWorkspace?.subdomain;
                 const name = w.name || w.subdomain;
+                const roleLabel = w.role === 'owner' ? 'Owner' : (w.role || 'Member');
                 return (
                   <Pressable
                     key={w.scope}
@@ -1641,17 +1642,21 @@ ${membersYaml}
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                       <WorkspaceThumbnail name={name} size={30} theme={theme} />
-                      <Text
-                        style={{
-                          color: isActive ? theme.primary : theme.text,
-                          fontWeight: isActive ? '700' : '500',
-                          fontSize: 14,
-                          marginLeft: 10,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {name}
-                      </Text>
+                      <View style={{ marginLeft: 10, flex: 1 }}>
+                        <Text
+                          style={{
+                            color: isActive ? theme.primary : theme.text,
+                            fontWeight: isActive ? '700' : '500',
+                            fontSize: 14,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {name}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: theme.textMuted }}>
+                          {w.subdomain}.tarai.space • {roleLabel}
+                        </Text>
+                      </View>
                     </View>
                   </Pressable>
                 );
@@ -1665,6 +1670,7 @@ ${membersYaml}
       <CreateWorkspace
         visible={showCreateModal}
         canClose={workspaces.length > 0}
+        existingSubdomains={workspaces.map((w) => w.subdomain)}
         onClose={closeCreateModal}
         onSuccess={async (slug) => {
           closeCreateModal();

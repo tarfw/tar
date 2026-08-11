@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
 import { TarLogo } from '@/components/TarLogo';
+import { TarLogoLoader } from '@/components/TarLogoLoader';
 import { tar } from '@/lib/tar';
 import { generateSiteLayout } from '@/lib/site-ai';
 import * as SecureStore from 'expo-secure-store';
@@ -242,7 +243,7 @@ export default function CreateWorkspace({
             {isSynthesizing ? (
               /* Building View with light border */
               <View style={[styles.buildingCard, { borderColor: theme.border }]}>
-                <ActivityIndicator size="small" color="#007AFF" style={{ marginBottom: 12 }} />
+                <TarLogoLoader size={36} color="#007AFF" style={{ marginBottom: 12 }} />
                 <Text style={[styles.buildingStatus, { color: theme.text }]}>
                   {stepLabels[Math.min(currentStep - 1, stepLabels.length - 1)] || 'Initializing...'}
                 </Text>

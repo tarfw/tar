@@ -3,6 +3,7 @@ import { Modal, View, Pressable, StyleSheet, Text, TextInput, FlatList, Activity
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { tar } from '@/lib/tar';
+import { TarLogoLoader } from '@/components/TarLogoLoader';
 
 const MOCK_PUBLIC_WORKSPACES = [
   { subdomain: 'croissant-bakery', scope: 's:croissant-bakery', type: 'bakery', name: 'Croissant & Cafe', description: 'Artisanal French pastries, fresh sourdough bread, and premium coffee.' },
@@ -142,7 +143,7 @@ export default function ExploreOverlay({ visible, onClose, theme }: ExploreOverl
         <View style={styles.content}>
           {loading ? (
             <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color={theme.primary} />
+              <TarLogoLoader size={36} color={theme.primary} />
             </View>
           ) : (
             <FlatList

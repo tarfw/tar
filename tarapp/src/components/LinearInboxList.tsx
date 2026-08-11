@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
 import { TarLogo } from '@/components/TarLogo';
+import { TarLogoLoader } from '@/components/TarLogoLoader';
 
 export interface LinearInboxItem {
   id: string;
@@ -163,8 +164,8 @@ export default function LinearInboxList({
       </View>
 
       {loading ? (
-        <View style={[styles.center, { paddingVertical: 40 }]}>
-          <ActivityIndicator size="small" color={theme.primary} />
+        <View style={[styles.emptyContainer, { borderColor: theme.border + '40' }]}>
+          <TarLogoLoader size={36} color={theme.primary} />
         </View>
       ) : !tasks || tasks.length === 0 ? (
         <View style={[styles.emptyContainer, { borderColor: theme.border + '40' }]}>

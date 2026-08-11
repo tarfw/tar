@@ -40,6 +40,7 @@ import ExploreOverlay from '@/components/ExploreOverlay';
 import CanvasOverlay from '@/components/CanvasOverlay';
 import CreateWorkspace from '@/components/CreateWorkspace';
 import { TarLogo } from '@/components/TarLogo';
+import { TarLogoLoader } from '@/components/TarLogoLoader';
 import { updateStock } from '@/lib/inventory';
 
 interface Workspace {
@@ -1190,7 +1191,7 @@ ${membersYaml}
   if (loadingWorkspaces) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <TarLogoLoader size={44} color={theme.primary} />
       </View>
     );
   }
@@ -1231,7 +1232,7 @@ ${membersYaml}
         {activeWidget ? (
           loadingCanvas ? (
             <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color={theme.primary} />
+              <TarLogoLoader size={32} color={theme.primary} />
               <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>
                 Loading...
               </Text>

@@ -7,6 +7,7 @@ import * as SecureStore from 'expo-secure-store';
 import { tar } from '@/lib/tar';
 import { parseDesignTokens } from '@/lib/design-tokens';
 import { parseYamlFrontmatter, parseCanvasMarkdown, buildModuleLayout } from '@/lib/layout-engine';
+import { TarLogoLoader } from '@/components/TarLogoLoader';
 import WorkspaceCanvas from '@/components/WorkspaceCanvas';
 import ContactDetailsModal from '@/components/ContactDetailsModal';
 
@@ -141,7 +142,7 @@ export default function CanvasOverlay({ visible, onClose, theme, scope: propScop
         <View style={styles.content}>
           {loading ? (
             <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color={theme.primary} />
+              <TarLogoLoader size={36} color={theme.primary} />
             </View>
           ) : !scope ? (
             <View style={{ paddingVertical: 40, alignItems: 'center' }}>

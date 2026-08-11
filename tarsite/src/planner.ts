@@ -36,7 +36,7 @@ async function callGroqLLM(options: PlannerOptions): Promise<any | null> {
   const systemPrompt = `You are a Principal UI/UX Architect compiling a versioned UIPlan AST for a Webflow-standard web layout.
 Respond strictly with valid JSON conforming to this schema:
 {
-  "template": "notion | lululemon | luxury-black | minimal-clean",
+  "template": "notion | lululemon | luxury-black | minimal-clean | aesop | kith",
   "routes": [
     {
       "id": "route_home",
@@ -97,6 +97,203 @@ Products: ${JSON.stringify(options.products || [])}`;
  */
 function orchestrateIA(options: PlannerOptions): UIRoute[] {
   const { workspaceName, instruction, templateHint, products = [] } = options;
+
+  if (templateHint === 'kith' || instruction?.toLowerCase().includes('kith') || instruction?.toLowerCase().includes('streetwear')) {
+    const wsUpper = (workspaceName || 'KITH').toUpperCase();
+    const kithNodes: UINode[] = [
+      {
+        id: 'node_announcement',
+        type: 'announcement_bar',
+        props: { text: `FREE SHIPPING ON ORDERS OVER $150  |  EASY RETURNS  |  ${wsUpper} DROP LIVE NOW` },
+      },
+      {
+        id: 'node_header',
+        type: 'header_nav',
+        props: { title: wsUpper }
+      },
+      {
+        id: 'node_hero_carousel',
+        type: 'hero_carousel',
+        props: {
+          items: [
+            { title: `${wsUpper}\nSummer 2026`, subtitle: 'New Delivery', ctaText: 'Shop Now', image: 'https://images.unsplash.com/photo-1556906781-9a412961c28c?w=1920&h=960&fit=crop' },
+            { title: 'City\nClassics', subtitle: 'Monochrome', ctaText: 'Explore', image: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1920&h=960&fit=crop' },
+            { title: 'Womens\nCollection', subtitle: 'New Season', ctaText: 'Shop Womens', image: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1920&h=960&fit=crop' },
+            { title: `${wsUpper} x\nAdidas`, subtitle: 'Collaborations', ctaText: 'View Collection', image: 'https://images.unsplash.com/photo-1556906781-9a412961c28c?w=1920&h=960&fit=crop&sat=-100' },
+          ]
+        }
+      },
+      {
+        id: 'node_section_hero_summer',
+        type: 'section_hero',
+        props: {
+          subtitle: 'New Delivery',
+          headline: `${wsUpper} Summer\nCollection`,
+          image: 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=1920&h=960&fit=crop',
+          buttons: [{ text: 'Mens', url: '#products' }, { text: 'Womens', url: '#products' }]
+        }
+      },
+      {
+        id: 'node_lookbook_1',
+        type: 'lookbook_grid',
+        props: {
+          images: [
+            'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=600&h=800&fit=crop',
+            'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=600&h=800&fit=crop',
+            'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=600&h=800&fit=crop',
+            'https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=600&h=800&fit=crop'
+          ]
+        }
+      },
+      {
+        id: 'node_section_hero_kin',
+        type: 'section_hero',
+        props: {
+          subtitle: 'Lifestyle',
+          headline: `&Kin ${wsUpper}\n2026`,
+          image: 'https://images.unsplash.com/photo-1445205170230-053b83016050?w=1920&h=960&fit=crop',
+          buttons: [{ text: 'Shop Lifestyle', url: '#products' }]
+        }
+      },
+      {
+        id: 'node_lookbook_2',
+        type: 'lookbook_grid',
+        props: {
+          images: [
+            'https://images.unsplash.com/photo-1434389677669-e08b4cda3a23?w=600&h=800&fit=crop',
+            'https://images.unsplash.com/photo-1507680434567-5739c80be1ac?w=600&h=800&fit=crop',
+            'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=600&h=800&fit=crop',
+            'https://images.unsplash.com/photo-1542272604-787c3835535d?w=600&h=800&fit=crop'
+          ]
+        }
+      },
+      {
+        id: 'node_products_kith',
+        type: 'product_grid',
+        layout: 'grid-4',
+        props: {
+          title: 'Featured Collection',
+          subtitle: `New drops & ${wsUpper} classics`,
+          items: products.length > 0 ? products : [
+            { name: `${wsUpper} Classic Logo Tee`, brand: wsUpper, price: 95, badge: 'New', image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=600&h=800&fit=crop' },
+            { name: `${wsUpper} Heavyweight Hoodie`, brand: wsUpper, price: 195, image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=600&h=800&fit=crop' },
+            { name: `${wsUpper} Coach Jacket`, brand: wsUpper, price: 245, image: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=600&h=800&fit=crop' },
+            { name: `${wsUpper} Crewneck`, brand: wsUpper, price: 165, badge: 'Sold Out', image: 'https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=600&h=800&fit=crop' },
+            { name: `${wsUpper} Cargo Pant`, brand: wsUpper, price: 225, badge: 'New', image: 'https://images.unsplash.com/photo-1434389677669-e08b4cda3a23?w=600&h=800&fit=crop' },
+            { name: `${wsUpper} x Adidas Samba`, brand: `${wsUpper} x Adidas`, price: 180, image: 'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=600&h=800&fit=crop' },
+            { name: `${wsUpper} Half Zip Pullover`, brand: wsUpper, price: 175, image: 'https://images.unsplash.com/photo-1542272604-787c3835535d?w=600&h=800&fit=crop' },
+            { name: `${wsUpper} Linen Short`, brand: wsUpper, price: 95, comparePrice: 135, image: 'https://images.unsplash.com/photo-1485462537746-965f33f7f6a7?w=600&h=800&fit=crop' },
+          ]
+        }
+      },
+      {
+        id: 'node_newsletter',
+        type: 'newsletter',
+        props: {
+          title: 'Join Our List',
+          subtitle: 'Sign up for exclusive access to new releases, sales, and more.'
+        }
+      },
+      {
+        id: 'node_footer',
+        type: 'footer',
+        props: {
+          text: `© ${new Date().getFullYear()} ${wsUpper} RETAIL LLC. ALL RIGHTS RESERVED.`
+        }
+      }
+    ];
+
+    return [
+      { id: 'route_home', path: '/', title: 'Home', nodes: kithNodes },
+      { id: 'route_catalog', path: '/catalog', title: 'Catalog', nodes: kithNodes },
+    ];
+  }
+
+  if (templateHint === 'milo' || instruction?.toLowerCase().includes('milo') || instruction?.toLowerCase().includes('pet')) {
+    const wsUpper = (workspaceName || 'MILO').toUpperCase();
+    const miloNodes: UINode[] = [
+      {
+        id: 'node_announcement',
+        type: 'announcement_bar',
+        props: { text: `100% VET EXPENSE REIMBURSEMENT  |  DIGITAL PET INSURANCE  |  ${wsUpper}` },
+      },
+      {
+        id: 'node_header',
+        type: 'header_nav',
+        props: { title: `${wsUpper}.` }
+      },
+      {
+        id: 'node_hero',
+        type: 'hero_banner',
+        layout: 'split',
+        props: {
+          badge: 'COMPREHENSIVE PET HEALTH INSURANCE',
+          headline: `Vet Insurance That Truly Delivers for ${wsUpper}`,
+          subtitle: '100% reimbursement on vet bills with zero paperwork. Fast, digital, and transparent.',
+          ctaText: 'Get Your Price 🐾',
+          ctaUrl: '#products',
+          secondaryCtaText: 'View Coverage ›',
+          secondaryCtaUrl: '#coberturas',
+        }
+      },
+      {
+        id: 'node_features',
+        type: 'category_tiles',
+        props: {
+          title: `Why Pet Owners Choose ${wsUpper}`,
+          subtitle: 'Designed by pet lovers for ultimate veterinary peace of mind.',
+          items: [
+            { title: '100% Reimbursement', description: 'Get 100% of vet expenses refunded directly to your bank in under 72 hours.' },
+            { title: 'Any Vet Clinic', description: 'Visit any licensed vet clinic or emergency hospital nationwide.' },
+            { title: '100% Digital Claims', description: 'Upload a photo of your receipt from your phone in under 30 seconds.' },
+            { title: 'No Hidden Fees', description: 'We cover consultations, surgeries, diagnostics, and 24/7 emergencies.' },
+          ]
+        }
+      },
+      {
+        id: 'node_checklist',
+        type: 'editorial_split',
+        props: {
+          title: `Everything Included in ${wsUpper} Protection`,
+          subtitle: 'Consultations, surgeries, hospitalizations, diagnostics, and 24/7 emergency care with zero deductible surprises.',
+        }
+      },
+      {
+        id: 'node_products',
+        type: 'product_grid',
+        layout: 'grid-3',
+        props: {
+          title: 'Coverage Plans',
+          subtitle: 'Choose the ideal protection plan for your pet',
+          items: products.length > 0 ? products : [
+            { name: 'Essential Plan', price: 29, badge: 'Popular', description: 'Full emergency & accident coverage.' },
+            { name: 'Total 100% Plan', price: 45, badge: 'Recommended', description: '100% reimbursement on all visits & wellness.' },
+            { name: 'Senior Gold Plan', price: 59, badge: 'Comprehensive', description: 'Specialized care for dogs over 7 years.' },
+          ]
+        }
+      },
+      {
+        id: 'node_newsletter',
+        type: 'newsletter',
+        props: {
+          title: 'How Much Does Protecting Your Dog Cost?',
+          subtitle: 'Get your custom price quote in less than 1 minute with no obligation.'
+        }
+      },
+      {
+        id: 'node_footer',
+        type: 'footer',
+        props: {
+          text: `© ${new Date().getFullYear()} ${wsUpper} PET CARE INC. ALL RIGHTS RESERVED.`
+        }
+      }
+    ];
+
+    return [
+      { id: 'route_home', path: '/', title: 'Home', nodes: miloNodes },
+      { id: 'route_catalog', path: '/catalog', title: 'Catalog', nodes: miloNodes },
+    ];
+  }
 
   const homeNodes: UINode[] = [
     {
@@ -206,9 +403,9 @@ export async function compileUIPlan(options: PlannerOptions): Promise<{ plan: UI
     const presetName = aiOutput?.template || options.templateHint || 'minimal-clean';
     const tokens: DesignTokens = getPresetDesignTokens(presetName, options.workspaceName);
 
-    const routes: UIRoute[] = (aiOutput?.routes && Array.isArray(aiOutput.routes) && aiOutput.routes.length > 0)
-      ? aiOutput.routes
-      : orchestrateIA(options);
+    const routes: UIRoute[] = (!aiOutput?.routes || !Array.isArray(aiOutput.routes) || aiOutput.routes.length === 0 || (aiOutput.routes[0]?.nodes?.length || 0) < 5)
+      ? orchestrateIA(options)
+      : aiOutput.routes;
 
     const rawPlan: UIPlan = {
       workspaceId: options.workspaceId,

@@ -8,9 +8,18 @@ import { UIPlanSchema, type UIPlan, type UINode } from './types';
 import { getPresetDesignTokens } from './tokens';
 
 export const APPROVED_COMPONENTS = new Set([
+  'marquee_strip',
+  'navigation_bar',
+  'media_hero',
+  'content_grid',
+  'story_banner',
+  'action_strip',
   'announcement_bar',
   'header_nav',
   'hero_banner',
+  'hero_carousel',
+  'section_hero',
+  'lookbook_grid',
   'category_tiles',
   'product_grid',
   'perks_bar',
@@ -24,6 +33,7 @@ export const APPROVED_COMPONENTS = new Set([
   'contact_form',
   'booking_form',
   'cart_widget',
+  'newsletter',
   'footer',
 ]);
 
@@ -151,6 +161,8 @@ function normalizeToUIPlan(data: any): UIPlan | null {
     return {
       id: String(sec.id || `node_${idx}_${Date.now()}`),
       type: typeStr as any,
+      variant: sec.variant ? String(sec.variant) : undefined,
+      contract: isPlainObject(sec.contract) ? sec.contract : undefined,
       layout: safeLayout as any,
       props,
     };

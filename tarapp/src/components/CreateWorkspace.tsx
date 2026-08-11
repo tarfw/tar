@@ -166,11 +166,12 @@ export default function CreateWorkspace({
     <Modal
       visible={visible}
       animationType="slide"
-      presentationStyle="fullScreen"
+      presentationStyle="pageSheet"
+      statusBarTranslucent
       onRequestClose={() => { if (canClose && !isSynthesizing) onClose(); }}
     >
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} style={{ flex: 1 }}>
           {/* Header Bar */}
           <View style={[styles.headerBar, { paddingTop: Math.max(insets.top + 8, 16) }]}>
             <Text style={[styles.headerTitle, { color: theme.text }]}>New Workspace</Text>
@@ -359,8 +360,8 @@ export default function CreateWorkspace({
               </View>
             )}
           </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }

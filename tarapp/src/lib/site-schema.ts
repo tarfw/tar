@@ -1,4 +1,6 @@
 export const TEMPLATES = [
+  'milo',
+  'kith',
   'streetwear-dark',
   'luxury-black',
   'minimal-white',

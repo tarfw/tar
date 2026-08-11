@@ -71,121 +71,55 @@ export function parseDesignMarkdown(mdContent: string, presetSlug?: string): Des
 }
 
 export const PRESET_TOKENS: Record<string, DesignTokens> = {
-  notion: {
-    name: 'Notion Workspace',
-    preset: 'notion',
+  kith: {
+    name: 'KITH Streetwear & Lifestyle',
+    preset: 'kith',
     colors: {
-      primary: '#0075DE',
-      secondary: '#213183',
-      tertiary: '#0075DE',
-      background: '#F6F5F4',
-      surface: '#FFFFFF',
-      text: '#000000',
-      muted: '#666666',
-      border: 'rgba(0,0,0,0.06)',
-    },
-    typography: {
-      fontHeading: 'Inter',
-      fontBody: 'Inter',
-      headingWeight: '600',
-      bodyWeight: '400',
-    },
-    radii: { sm: '4px', md: '8px', lg: '12px', full: '9999px' },
-    spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '48px' },
-  },
-  lululemon: {
-    name: 'Lululemon Activewear',
-    preset: 'lululemon',
-    colors: {
-      primary: '#D31334',
-      secondary: '#111111',
-      tertiary: '#D31334',
+      primary: '#000000',
+      secondary: '#E5E5E5',
+      tertiary: '#000000',
       background: '#FFFFFF',
-      surface: '#F7F7F7',
-      text: '#111111',
-      muted: '#666666',
-      border: 'rgba(0,0,0,0.12)',
+      surface: '#F5F5F5',
+      text: '#000000',
+      muted: '#999999',
+      border: 'rgba(0,0,0,0.1)',
     },
     typography: {
       fontHeading: 'Inter',
       fontBody: 'Inter',
-      headingWeight: '800',
+      headingWeight: '700',
       bodyWeight: '400',
     },
     radii: { sm: '0px', md: '0px', lg: '0px', full: '0px' },
     spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '48px' },
   },
-  'luxury-black': {
-    name: 'Luxury Dark',
-    preset: 'luxury-black',
+  milo: {
+    name: 'Milo Pet Care & Insurance',
+    preset: 'milo',
     colors: {
-      primary: '#D4AF37',
-      secondary: '#3F3F46',
-      tertiary: '#D4AF37',
-      background: '#09090B',
-      surface: '#18181B',
-      text: '#FAFAFA',
-      muted: '#A1A1AA',
-      border: 'rgba(255,255,255,0.12)',
-    },
-    typography: {
-      fontHeading: 'Playfair Display',
-      fontBody: 'Inter',
-      headingWeight: '700',
-      bodyWeight: '400',
-    },
-    radii: { sm: '6px', md: '12px', lg: '20px', full: '9999px' },
-    spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '48px' },
-  },
-  'minimal-clean': {
-    name: 'Minimal Clean',
-    preset: 'minimal-clean',
-    colors: {
-      primary: '#5E6AD2',
-      secondary: '#0F172A',
-      tertiary: '#5E6AD2',
-      background: '#F8FAFC',
+      primary: '#1FCB60',
+      secondary: '#032E1C',
+      tertiary: '#B5EB79',
+      background: '#FAF7F2',
       surface: '#FFFFFF',
-      text: '#0F172A',
+      text: '#032E1C',
       muted: '#64748B',
-      border: 'rgba(0,0,0,0.08)',
+      border: 'rgba(3,46,28,0.08)',
     },
     typography: {
-      fontHeading: 'Outfit',
-      fontBody: 'Inter',
+      fontHeading: 'Marcellus',
+      fontBody: 'Montserrat',
       headingWeight: '700',
       bodyWeight: '400',
     },
-    radii: { sm: '6px', md: '12px', lg: '16px', full: '9999px' },
-    spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '48px' },
-  },
-  aesop: {
-    name: 'Aesop Earth Tones',
-    preset: 'aesop',
-    colors: {
-      primary: '#332E2B',
-      secondary: '#8C6D53',
-      tertiary: '#8C6D53',
-      background: '#F7F3E9',
-      surface: '#EFEBE0',
-      text: '#222222',
-      muted: '#777777',
-      border: 'rgba(0,0,0,0.08)',
-    },
-    typography: {
-      fontHeading: 'Playfair Display',
-      fontBody: 'Inter',
-      headingWeight: '600',
-      bodyWeight: '400',
-    },
-    radii: { sm: '4px', md: '6px', lg: '10px', full: '9999px' },
+    radii: { sm: '8px', md: '20px', lg: '24px', full: '9999px' },
     spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '48px' },
   },
 };
 
 export function getPresetDesignTokens(hint?: string, name?: string): DesignTokens {
-  const matched = hint ? PRESET_TOKENS[hint] : PRESET_TOKENS['minimal-clean'];
-  const base = matched || PRESET_TOKENS['minimal-clean'];
+  const matched = hint ? PRESET_TOKENS[hint] : PRESET_TOKENS['milo'];
+  const base = matched || PRESET_TOKENS['milo'];
   return { ...base, name: name || base.name };
 }
 

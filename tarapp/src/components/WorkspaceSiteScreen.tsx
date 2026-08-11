@@ -21,12 +21,11 @@ import { generateSiteLayout } from '@/lib/site-ai';
 import { sectionSummary, Section } from '@/lib/site-schema';
 
 const DESIGN_PRESETS = [
-  { id: 'notion', label: 'Notion', prompt: 'Use notion design and create a saas workspace page' },
-  { id: 'lululemon', label: 'Lululemon', prompt: 'Use lululemon design and create activewear store' },
-  { id: 'pouch', label: 'Drink Pouch', prompt: 'Use drinkpouch design and create formula store' },
-  { id: 'tech', label: 'Minimal Tech', prompt: 'Minimalist tech product landing page' },
-  { id: 'luxury', label: 'Luxury Dark', prompt: 'Luxury fashion boutique with dark aesthetic' },
-  { id: 'cafe', label: 'Artisan Cafe', prompt: 'Modern cafe & bakery with menu and hours' },
+  { id: 'milo', label: 'Milo Pet', prompt: 'Use milo design system and create pet care insurance landing page' },
+  { id: 'kith', label: 'Kith', prompt: 'Use kith design system and create luxury streetwear store' },
+  { id: 'empire', label: 'EMPIRE Music', prompt: 'Use empire music label design and create independent music publisher site' },
+  { id: 'joandso', label: 'JO & SO Travel', prompt: 'Use joandso boutique hotel design system and create curated hotel guide site' },
+  { id: 'eql', label: 'EQL Launch', prompt: 'Use eql hype launch platform design system and create fair product drop site' },
 ];
 
 interface WorkspaceSiteScreenProps {
@@ -105,9 +104,9 @@ export default function WorkspaceSiteScreen({
   const activeSections: Section[] = (draft as any)?.sections || [];
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" statusBarTranslucent onRequestClose={onClose}>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} style={{ flex: 1 }}>
           {/* Minimal Header */}
           <View style={[styles.header, { borderBottomColor: theme.border + '40', paddingTop: Math.max(insets.top, 14) }]}>
             <View style={{ flex: 1 }}>
@@ -148,11 +147,16 @@ export default function WorkspaceSiteScreen({
               <ActivityIndicator color={theme.primary} />
             </View>
           ) : (
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent}>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+            >
               {/* Minimal Preset Pills */}
               <View style={styles.presetSection}>
                 <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>PRESETS</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsRow}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsRow} keyboardShouldPersistTaps="handled">
                   {DESIGN_PRESETS.map((preset) => (
                     <Pressable
                       key={preset.id}
@@ -269,8 +273,8 @@ export default function WorkspaceSiteScreen({
               )}
             </View>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }

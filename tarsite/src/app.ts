@@ -11,6 +11,7 @@ import { validateUIPlanGate } from './validator';
 import { resolveRouteData } from './resolver';
 import { matchPath } from './router';
 import { compileRouteToHtml } from './renderer';
+import { parseOkfDesign } from './okf-parser';
 import { type UIPlan } from './types';
 
 const app = new Hono<{ Bindings: { STOREFRONT_CACHE?: any; DB?: any; GROQ_API_KEY?: string } }>();
@@ -52,10 +53,9 @@ app.post('/publish', async (c) => {
 
       if (c.env.STOREFRONT_CACHE) {
         await c.env.STOREFRONT_CACHE.put(`published:${cleanSub}`, jsonStr);
-        // Also save variant slug for hyphen/underscore instant lookup
-        if (cleanSub.includes('-')) {
-          await c.env.STOREFRONT_CACHE.put(`published:${cleanSub.replace(/-/g, '_')}`, jsonStr);
-        }
+        await c.env.STOREFRONT_CACHE.put(`published:${cleanSub.replace(/-/g, '_')}`, jsonStr);
+        await c.env.STOREFRONT_CACHE.put(`published:${cleanSub.replace(/_/g, '-')}`, jsonStr);
+        await c.env.STOREFRONT_CACHE.put(`draft:${cleanSub}`, jsonStr);
       }
     }
 
@@ -153,63 +153,98 @@ app.post('/api/booking', async (c) => {
 // ── 5. Edge Storefront Request Router (GET /*) ──────────────────────
 
 app.get('*', async (c) => {
-  const host = c.req.header('host') || '';
-  const pathname = c.req.path;
+  try {
+    const host = c.req.header('host') || '';
+    const pathname = c.req.path;
 
-  let slug = host.split('.')[0].toLowerCase();
-  if (slug === 'localhost' || slug === '127' || slug.includes('tarai') || !slug) {
-    slug = c.req.query('ws') || 'storea';
-  }
+    let slug = host.split('.')[0].toLowerCase();
+    if (slug === 'localhost' || slug === '127' || slug === 'tarai' || !slug) {
+      slug = c.req.query('ws') || 'storea';
+    }
 
-  // 1. Fetch layout from KV cache with slug variant fallbacks
-  let planRaw: string | null = null;
-  if (c.env.STOREFRONT_CACHE) {
-    planRaw = await c.env.STOREFRONT_CACHE.get(`published:${slug}`);
-    if (!planRaw) {
-      planRaw = await c.env.STOREFRONT_CACHE.get(`published:${slug.replace(/-/g, '_')}`);
-    }
-    if (!planRaw) {
-      planRaw = await c.env.STOREFRONT_CACHE.get(`published:${slug.replace(/_/g, '-')}`);
-    }
-    if (!planRaw) {
-      planRaw = await c.env.STOREFRONT_CACHE.get(`draft:${slug}`);
-    }
-  }
+    const wsTitle = slug.replace(/[-_]/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 
-  // 2. Fallback: Generate starter UIPlan on the fly if not yet published
-  let plan: UIPlan | null = null;
-  if (planRaw) {
-    try {
-      const parsed = JSON.parse(planRaw);
-      const gate = validateUIPlanGate(parsed);
-      if (gate.plan) {
-        plan = gate.plan;
+    // 1. Fetch layout from KV cache with slug variant fallbacks
+    let planRaw: string | null = null;
+    if (c.env?.STOREFRONT_CACHE) {
+      try {
+        planRaw = await c.env.STOREFRONT_CACHE.get(`published:${slug}`);
+        if (!planRaw) {
+          planRaw = await c.env.STOREFRONT_CACHE.get(`published:${slug.replace(/-/g, '_')}`);
+        }
+        if (!planRaw) {
+          planRaw = await c.env.STOREFRONT_CACHE.get(`published:${slug.replace(/_/g, '-')}`);
+        }
+        if (!planRaw) {
+          planRaw = await c.env.STOREFRONT_CACHE.get(`draft:${slug}`);
+        }
+      } catch (kvErr) {
+        console.warn('[app] KV read warning:', kvErr);
       }
-    } catch {}
-  }
+    }
 
-  if (!plan) {
-    const { plan: starterPlan } = await compileUIPlan({
-      workspaceId: slug,
-      workspaceName: slug.toUpperCase(),
-      instruction: `Starter storefront for ${slug}`,
+    // 2. Parse or generate starter UIPlan / OKF design
+    let plan: UIPlan | null = null;
+    if (planRaw) {
+      try {
+        if (planRaw.trim().startsWith('---')) {
+          plan = parseOkfDesign(planRaw, slug);
+        } else {
+          const parsed = JSON.parse(planRaw);
+          const gate = validateUIPlanGate(parsed);
+          if (gate.plan) {
+            plan = gate.plan;
+          }
+        }
+      } catch {
+        try {
+          plan = parseOkfDesign(planRaw, slug);
+        } catch {}
+      }
+    }
+
+    if (!plan) {
+      const { plan: starterPlan } = await compileUIPlan({
+        workspaceId: slug,
+        workspaceName: wsTitle,
+        instruction: `Storefront for ${wsTitle}`,
+        templateHint: slug,
+      });
+      plan = starterPlan;
+    }
+
+    if (!plan) {
+      return c.html('<!DOCTYPE html><html><head><title>Setting up</title></head><body style="font-family:sans-serif;text-align:center;padding:100px;"><h1>Setting up</h1><p>Storefront is initializing.</p></body></html>');
+    }
+
+    // 3. Match Route & Resolve Data
+    const routeMatch = matchPath(pathname, plan);
+    const targetRoute = routeMatch.route || plan.routes[0];
+
+    const resolvedRoute = await resolveRouteData(targetRoute, { env: c.env, workspaceSlug: slug }).catch(() => targetRoute);
+
+    // 4. Compile & Stream Webflow-Quality HTML with no-cache headers for instant updates
+    const html = compileRouteToHtml(resolvedRoute, plan.designTokens);
+    c.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+    c.header('Pragma', 'no-cache');
+    c.header('Expires', '0');
+    return c.html(html);
+  } catch (err: any) {
+    console.error('[app] GET * Handler Error:', err);
+    // Emergency fallback layout rendering
+    const fallbackTitle = 'Storefront';
+    const { plan: emergencyPlan } = await compileUIPlan({
+      workspaceId: 'emergency',
+      workspaceName: fallbackTitle,
+      instruction: 'Emergency recovery storefront',
+      templateHint: 'kith',
     });
-    plan = starterPlan;
+    if (emergencyPlan) {
+      const html = compileRouteToHtml(emergencyPlan.routes[0], emergencyPlan.designTokens);
+      return c.html(html);
+    }
+    return c.html('<!DOCTYPE html><html><body><h1>Storefront Loading...</h1><script>setTimeout(()=>location.reload(), 1000);</script></body></html>', 500);
   }
-
-  if (!plan) {
-    return c.html('<!DOCTYPE html><html><head><title>Setting up</title></head><body style="font-family:sans-serif;text-align:center;padding:100px;"><h1>Setting up</h1><p>Storefront is initializing.</p></body></html>');
-  }
-
-  // 3. Match Route & Resolve Data
-  const routeMatch = matchPath(pathname, plan);
-  const targetRoute = routeMatch.route || plan.routes[0];
-
-  const resolvedRoute = await resolveRouteData(targetRoute, { env: c.env, workspaceSlug: slug });
-
-  // 4. Compile & Stream Webflow-Quality HTML in < 5ms
-  const html = compileRouteToHtml(resolvedRoute, plan.designTokens);
-  return c.html(html);
 });
 
 export default app;

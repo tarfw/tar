@@ -13,7 +13,7 @@ import { z } from 'zod';
 export const BindingSchema = z.object({
   resource: z.string().min(1),
   params: z.record(z.string(), z.any()).optional(),
-  transform: z.enum(['array', 'single', 'count']).default('array'),
+  transform: z.enum(['array', 'single', 'count']).optional(),
 });
 
 export type Binding = z.infer<typeof BindingSchema>;
@@ -25,15 +25,40 @@ export const ActionRefSchema = z.object({
 
 export type ActionRef = z.infer<typeof ActionRefSchema>;
 
-// ── 2. UINode AST Contract (Recursive Layout) ────────────────────────
+// ── 2. Section Contract (Universal OKF Contract) ───────────────────
 
-export const UINodeSchema: z.ZodType<UINode> = z.lazy(() =>
+export const SectionContractSchema = z.object({
+  columns: z.number().optional(),
+  aspect_ratio: z.string().optional(),
+  hover_zoom: z.number().optional(),
+  gap: z.string().optional(),
+  card_bg: z.string().optional(),
+  card_border: z.string().optional(),
+  card_radius: z.string().optional(),
+  backdrop_blur: z.string().optional(),
+  sticky: z.boolean().optional(),
+  speed: z.string().optional(),
+  bg: z.string().optional(),
+  text_color: z.string().optional(),
+  cta_bg: z.string().optional(),
+  cta_text: z.string().optional(),
+  height: z.string().optional(),
+  logo_position: z.enum(['left', 'center', 'right']).optional(),
+  cta_shape: z.enum(['pill', 'rounded', 'square']).optional(),
+  layout_mode: z.enum(['split', 'full', 'grid', 'overlay']).optional(),
+}).passthrough();
+
+export type SectionContract = z.infer<typeof SectionContractSchema>;
+
+// ── 3. UINode AST Contract (Recursive Layout) ────────────────────────
+
+export const UINodeSchema: z.ZodType<UINode, z.ZodTypeDef, any> = z.lazy(() =>
   z.object({
     id: z.string().min(1),
     type: z.string().min(1),
     variant: z.string().optional(),
     layout: z.enum(['flex-col', 'flex-row', 'grid-2', 'grid-3', 'grid-4', 'full', 'split']).optional(),
-    props: z.record(z.string(), z.any()).default({}),
+    props: z.record(z.string(), z.any()).optional().default({}),
     css: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
     responsive: z
       .object({
@@ -41,6 +66,7 @@ export const UINodeSchema: z.ZodType<UINode> = z.lazy(() =>
         tablet: z.record(z.string(), z.any()).optional(),
       })
       .optional(),
+    contract: z.record(z.string(), z.any()).optional(),
     bindings: z.record(z.string(), BindingSchema).optional(),
     actions: z.record(z.string(), ActionRefSchema).optional(),
     children: z.array(UINodeSchema).optional(),
@@ -52,7 +78,8 @@ export type UINode = {
   type: string;
   variant?: string;
   layout?: 'flex-col' | 'flex-row' | 'grid-2' | 'grid-3' | 'grid-4' | 'full' | 'split';
-  props: Record<string, any>;
+  contract?: Record<string, any>;
+  props?: Record<string, any>;
   css?: Record<string, string | number>;
   responsive?: {
     mobile?: Record<string, any>;

@@ -1,8 +1,9 @@
 ---
+import "../styles/global.css";
 import Head from "../components/Head.astro";
 import Nav from "../components/Nav.astro";
 import HeroSection from "../components/HeroSection.astro";
-import DeploySection from "../components/DeploySection.astro";
+import AgentCards from "../components/AgentCards.astro";
 import FooterSection from "../components/FooterSection.astro";
 ---
 <!doctype html>
@@ -17,8 +18,8 @@ import FooterSection from "../components/FooterSection.astro";
         <Nav />
         <HeroSection />
       </div>
+      <AgentCards />
       <div class="astro-Covf2">
-        <DeploySection />
         <FooterSection />
       </div>
     </div>
@@ -26,6 +27,28 @@ import FooterSection from "../components/FooterSection.astro";
 </body>
 </html>
 <style is:global>
+  /* Enforce dark theme background and text contrast across light/dark system settings */
+  :root,
+  html,
+  body,
+  :root body,
+  #main,
+  .astro-gZhQL.astro-2xzlkm {
+    background-color: #0e2a1a !important;
+    color: #ffffff;
+    color-scheme: dark !important;
+    --token-c3f02322-be9d-420d-8e79-93cce2505e72: #0e2a1a !important;
+    --token-5ef2cc4f-bbf5-45a1-b98e-639daedae9df: #ffffff !important;
+    --token-55083370-ab20-4c67-afb7-a07b02453172: #0e2a1a !important;
+    --token-0f5df43e-5ed0-4f1e-a6d2-7cb268036ab4: #ffffff !important;
+  }
+
+  /* Hide legacy customer block inside HeroSection so only AgentCards renders */
+  #customer,
+  .astro-9mj5g {
+    display: none !important;
+  }
+
   .astro-16nt41d-container {
     display: none !important;
   }

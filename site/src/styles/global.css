@@ -200,6 +200,7 @@ button {
   .reveal { opacity: 1; transform: none; }
 }
 
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
@@ -209,3 +210,252 @@ button {
   border: 2px solid var(--bg);
 }
 ::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+
+/* ==========================================================================
+   Agent Cards Grid ("Built for teams at every scale")
+   ========================================================================== */
+
+#customer,
+.astro-9mj5g {
+  height: auto !important;
+  min-height: auto !important;
+  position: relative !important;
+  padding: 4rem 1.5rem !important;
+  max-width: 1280px;
+  margin: 0 auto;
+  overflow: visible !important;
+}
+
+/* Hide leftover Framer ticker/benchmark absolute layers inside #customer */
+.astro-9mj5g .astro-1dowbby,
+.astro-9mj5g .astro-1r4wuu8,
+.astro-9mj5g .astro-6wjoo5,
+.astro-9mj5g .astro-akkqve,
+.astro-9mj5g .astro-16ysag6,
+.astro-9mj5g .astro-1t6qe6p,
+.astro-9mj5g .astro-x8ts37-container,
+.astro-9mj5g .astro-y309eq,
+.astro-9mj5g .astro-1l79kw0 {
+  display: none !important;
+}
+
+/* Grid Container */
+.agent-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 1200px;
+  margin: 3rem auto 0 auto;
+  position: relative;
+  z-index: 10;
+}
+
+@media (min-width: 1024px) {
+  .agent-cards-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Base Card Style */
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: 20px;
+  padding: 1.75rem 1.5rem;
+  min-height: 250px;
+  position: relative;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.agent-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+}
+
+/* Card Content Area */
+.card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.7);
+  margin-bottom: 0.25rem;
+  backdrop-filter: blur(4px);
+}
+
+.card-title {
+  font-family: var(--font-body);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.card-description {
+  font-family: var(--font-body);
+  font-size: 0.925rem;
+  line-height: 1.5;
+  opacity: 0.85;
+  margin: 0;
+}
+
+/* Card Stats Area */
+.card-stats {
+  display: flex;
+  align-items: flex-end;
+  gap: 2rem;
+  margin-top: 1.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.stat-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.stat-number {
+  font-family: var(--font-body);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.stat-text {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  line-height: 1.3;
+  opacity: 0.75;
+  font-weight: 450;
+}
+
+/* Color Variants */
+.card-workspace {
+  background-color: #e0e7ff;
+  color: #1e1b4b;
+}
+.card-workspace .card-icon {
+  color: #4338ca;
+  background: rgba(255, 255, 255, 0.8);
+}
+.card-workspace .stat-number {
+  color: #3730a3;
+}
+
+.card-crm {
+  background-color: #ede9fe;
+  color: #2e1065;
+}
+.card-crm .card-icon {
+  color: #6d28d9;
+  background: rgba(255, 255, 255, 0.8);
+}
+.card-crm .stat-number {
+  color: #5b21b6;
+}
+
+.card-whatsapp {
+  background-color: #dcfce7;
+  color: #052e16;
+}
+.card-whatsapp .card-icon {
+  color: #15803d;
+  background: rgba(255, 255, 255, 0.8);
+}
+.card-whatsapp .stat-number {
+  color: #166534;
+}
+
+.card-leads {
+  background-color: #ffedd5;
+  color: #431407;
+}
+.card-leads .card-icon {
+  color: #c2410c;
+  background: rgba(255, 255, 255, 0.8);
+}
+.card-leads .stat-number {
+  color: #9a3412;
+}
+
+.card-computer {
+  background-color: #cff4fc;
+  color: #042f2e;
+}
+.card-computer .card-icon {
+  color: #0e7490;
+  background: rgba(255, 255, 255, 0.8);
+}
+.card-computer .stat-number {
+  color: #155e75;
+}
+
+.card-marketing {
+  background-color: #fce7f3;
+  color: #500724;
+}
+.card-marketing .card-icon {
+  color: #be185d;
+  background: rgba(255, 255, 255, 0.8);
+}
+.card-marketing .stat-number {
+  color: #9d174d;
+}
+
+.card-ditto {
+  background: linear-gradient(135deg, #d946ef 0%, #ec4899 50%, #c084fc 100%);
+  color: #ffffff;
+  border: none;
+}
+.card-ditto .card-icon {
+  color: #d946ef;
+  background: rgba(255, 255, 255, 0.9);
+}
+.card-ditto .card-stats {
+  border-top-color: rgba(255, 255, 255, 0.25);
+}
+.card-ditto .stat-number,
+.card-ditto .card-title {
+  color: #ffffff;
+}
+.card-ditto .card-description,
+.card-ditto .stat-text {
+  opacity: 0.9;
+}
+
+.card-rho {
+  background-color: #0e2a1a;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.card-rho .card-icon {
+  color: #10b981;
+  background: rgba(255, 255, 255, 0.12);
+}
+.card-rho .card-stats {
+  border-top-color: rgba(255, 255, 255, 0.15);
+}
+.card-rho .stat-number,
+.card-rho .card-title {
+  color: #ffffff;
+}
+.card-rho .card-description,
+.card-rho .stat-text {
+  opacity: 0.85;
+}
+

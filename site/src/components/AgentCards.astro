@@ -1,0 +1,268 @@
+---
+const agents = [
+  {
+    id: "workspace",
+    title: "Workspace agent.",
+    body: " Every worker owns their workspace as portable .md files - custom workspace name, unlimited workspaces, no lock-in, ever.",
+    iconColor: "#3b82f6",
+    bgColor: "#e0e7ff",
+    textColor: "#1e1b4b",
+    stat: "Unlimited",
+    statLabel: "Workspaces"
+  },
+  {
+    id: "crm",
+    title: "CRM.",
+    body: " Turn every conversation into a customer record - contacts, orders, invoices, and follow-ups, all in one workspace.",
+    iconColor: "#8b5cf6",
+    bgColor: "#ede9fe",
+    textColor: "#2e1065",
+    stat: "1",
+    statLabel: "Workspace"
+  },
+  {
+    id: "leads",
+    title: "Leads agent.",
+    body: " Capture, qualify, and route every lead automatically - no inquiry ever slips through the cracks.",
+    iconColor: "#f97316",
+    bgColor: "#ffedd5",
+    textColor: "#431407",
+    stat: "3s",
+    statLabel: "Avg. Response"
+  },
+  {
+    id: "whatsapp",
+    title: "WhatsApp agent.",
+    body: " Reply to every customer on WhatsApp automatically - orders, follow-ups, and support, right in the chat.",
+    iconColor: "#16a34a",
+    bgColor: "#dcfce7",
+    textColor: "#052e16",
+    stat: "24/7",
+    statLabel: "Auto Reply"
+  },
+  {
+    id: "marketing",
+    title: "Marketing agent.",
+    body: " Plan, write, and send campaigns across every channel - content, segments, and analytics in one place.",
+    iconColor: "#ec4899",
+    bgColor: "#fce7f3",
+    textColor: "#500724",
+    stat: "3x",
+    statLabel: "Campaign Speed"
+  },
+  {
+    id: "computer",
+    title: "Computer agent.",
+    body: " Automate desktop work - files, folders, and apps, orchestrated by plain-English commands.",
+    iconColor: "#06b6d4",
+    bgColor: "#cff4fc",
+    textColor: "#042f2e",
+    stat: "100%",
+    statLabel: "No-Code"
+  }
+];
+---
+
+<section class="agents-section" id="agents">
+  <div class="agents-container">
+    <div class="agents-header">
+      <h2 class="agents-title">Built for teams at every scale</h2>
+      <p class="agents-subtitle">
+        Deploy intelligent pixel-powered agents that automate communication, sales, CRM, and desktop tasks effortlessly.
+      </p>
+    </div>
+
+    <div class="agents-grid">
+      {agents.map((agent) => (
+        <div class="agent-card" style={`--card-bg: ${agent.bgColor}; --card-text: ${agent.textColor}; --icon-color: ${agent.iconColor}`}>
+          <div class="agent-icon">
+            <svg width="34" height="34" viewBox="0 0 7 7.1" fill="currentColor" style="display:block" aria-hidden="true">
+              <rect x="0" y="0.000" width="1" height="1.000"/>
+              <rect x="1" y="0.000" width="1" height="1.000"/>
+              <rect x="5" y="0.000" width="1" height="1.000"/>
+              <rect x="6" y="0.000" width="1" height="1.000"/>
+              <rect x="1" y="1.000" width="1" height="1.000"/>
+              <rect x="2" y="1.000" width="1" height="1.000"/>
+              <rect x="3" y="1.000" width="1" height="1.000"/>
+              <rect x="4" y="1.000" width="1" height="1.000"/>
+              <rect x="5" y="1.000" width="1" height="1.000"/>
+              <rect x="0" y="2.000" width="1" height="1.000"/>
+              <rect x="1" y="2.000" width="1" height="1.000"/>
+              <rect x="2" y="2.000" width="1" height="1.000"/>
+              <rect x="3" y="2.000" width="1" height="1.000"/>
+              <rect x="4" y="2.000" width="1" height="1.000"/>
+              <rect x="5" y="2.000" width="1" height="1.000"/>
+              <rect x="6" y="2.000" width="1" height="1.000"/>
+              <rect x="0" y="3.000" width="1" height="1.000"/>
+              <rect x="1" y="3.000" width="1" height="1.000"/>
+              <rect x="3" y="3.000" width="1" height="1.000"/>
+              <rect x="5" y="3.000" width="1" height="1.000"/>
+              <rect x="6" y="3.000" width="1" height="1.000"/>
+              <rect x="0" y="4.000" width="1" height="1.100"/>
+              <rect x="1" y="4.000" width="1" height="1.100"/>
+              <rect x="2" y="4.000" width="1" height="1.100"/>
+              <rect x="3" y="4.000" width="1" height="1.100"/>
+              <rect x="4" y="4.000" width="1" height="1.100"/>
+              <rect x="5" y="4.000" width="1" height="1.100"/>
+              <rect x="6" y="4.000" width="1" height="1.100"/>
+              <rect x="0" y="5.100" width="1" height="1.100"/>
+              <rect x="1" y="5.100" width="1" height="1.100"/>
+              <rect x="2" y="5.100" width="1" height="1.100"/>
+              <rect x="3" y="5.100" width="1" height="1.100"/>
+              <rect x="4" y="5.100" width="1" height="1.100"/>
+              <rect x="5" y="5.100" width="1" height="1.100"/>
+              <rect x="6" y="5.100" width="1" height="1.100"/>
+              <rect x="0" y="6.200" width="1" height="0.550"/>
+              <rect x="3" y="6.200" width="1" height="0.550"/>
+              <rect x="6" y="6.200" width="1" height="0.550"/>
+              <rect x="3" y="6.750" width="1" height="0.350"/>
+            </svg>
+          </div>
+
+          <p class="agent-card-text">
+            <strong class="agent-card-title">{agent.title}</strong>{agent.body}
+          </p>
+
+          <div class="agent-card-stats">
+            <div class="stat-value">{agent.stat}</div>
+            <div class="stat-label">{agent.statLabel}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .agents-section {
+    position: relative;
+    padding: 4rem 1.5rem 6rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+    z-index: 10;
+    font-family: "PolySans Arabic VF Variable Slim", "PolySans Arabic VF Variable Slim Placeholder", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .agents-container {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+    align-items: center;
+  }
+
+  .agents-header {
+    text-align: center;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .agents-title {
+    font-size: clamp(2.25rem, 4.5vw, 3rem);
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+    margin: 0;
+    font-family: "PolySans Arabic VF Variable Slim", "PolySans Arabic VF Variable Slim Placeholder", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .agents-subtitle {
+    font-size: 1.08rem;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.6;
+    margin: 0;
+    font-family: "PolySans Arabic VF Variable Slim", "PolySans Arabic VF Variable Slim Placeholder", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .agents-grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1.75rem;
+    width: 100%;
+  }
+
+  @media (min-width: 768px) {
+    .agents-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .agents-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .agent-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background-color: var(--card-bg);
+    color: var(--card-text);
+    border-radius: 28px;
+    padding: 2.25rem 2rem 2rem 2rem;
+    aspect-ratio: 1 / 1 !important;
+    width: 100%;
+    box-sizing: border-box;
+    position: relative;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .agent-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  }
+
+  .agent-icon {
+    color: var(--icon-color);
+    margin-bottom: 1rem;
+  }
+
+  .agent-card-text {
+    font-size: 1.05rem;
+    line-height: 1.55;
+    color: inherit;
+    opacity: 0.92;
+    margin: 0 0 1.5rem 0;
+    font-family: "PolySans Arabic VF Variable Slim", "PolySans Arabic VF Variable Slim Placeholder", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .agent-card-title {
+    font-weight: 700;
+    color: inherit;
+  }
+
+  .agent-card-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    align-items: flex-start;
+    width: 100%;
+    margin-top: auto;
+  }
+
+  .stat-value {
+    font-size: 2.15rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: inherit;
+    font-family: "PolySans Arabic VF Variable Slim", "PolySans Arabic VF Variable Slim Placeholder", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .stat-label {
+    font-size: 0.825rem;
+    font-weight: 500;
+    opacity: 0.75;
+    line-height: 1.2;
+    color: inherit;
+    letter-spacing: -0.01em;
+    font-family: "PolySans Arabic VF Variable Slim", "PolySans Arabic VF Variable Slim Placeholder", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+</style>

@@ -3,7 +3,7 @@
  */
 
 export interface ChannelMessage {
-  platform: 'telegram' | 'slack' | 'discord' | 'whatsapp';
+  platform: 'telegram' | 'slack' | 'discord' | 'whatsapp' | 'google-chat';
   chatId: string;
   userId: string;
   userName: string;

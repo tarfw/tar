@@ -1014,7 +1014,7 @@ app.post('/channels/telegram/webhook', async (c) => {
     if (!result) return c.json({ ok: true });
 
     // Send response back to Telegram chat
-    const botToken = c.env?.TELEGRAM_BOT_TOKEN || process.env?.TELEGRAM_BOT_TOKEN || '8923998794:AAGgKVD75suBu1zEXzL_5sEza42xUg0qI1w';
+    const botToken = c.env?.TELEGRAM_BOT_TOKEN || process.env?.TELEGRAM_BOT_TOKEN;
     await sendTelegramMessage({ platform: 'telegram', botToken }, result.response);
 
     return c.json({ ok: true, response: result.response.text });
@@ -1058,29 +1058,56 @@ app.post('/channels/slack/events', async (c) => {
 
 // POST /channels/discord/webhook
 app.post('/channels/discord/webhook', async (c) => {
-  const body = await c.req.json();
-  const message = await handleChannelMessage('discord', body, { DB: c.env.DB });
-  if (!message) return c.json({ ok: true });
+  try {
+    const signature = c.req.header('x-signature-ed25519') || null;
+    const timestamp = c.req.header('x-signature-timestamp') || null;
+    const rawBody = await c.req.text();
+    const publicKey = c.env?.DISCORD_PUBLIC_KEY || process.env?.DISCORD_PUBLIC_KEY;
 
-  let scope = 'global';
-  if (c.env.DB) {
-    const row = await c.env.DB.prepare(
-      'SELECT scope FROM channels WHERE chat_id = ?'
-    ).bind(message.chatId).first();
-    if (row?.scope) scope = row.scope;
-  }
+    const { verifyDiscordKey, processDiscordMessage } = await import('./channels/discord');
 
-  const reply = `Received: ${message.content}`;
-  const config = await getChannelConfig('discord', scope);
-  if (config) {
-    await sendChannelMessage('discord', config, {
-      chatId: message.chatId,
-      text: reply,
+    const isValid = await verifyDiscordKey(rawBody, signature, timestamp, publicKey);
+    if (!isValid) {
+      return c.text('Invalid request signature', 401);
+    }
+
+    const body = rawBody ? JSON.parse(rawBody) : {};
+
+    // Discord PING verification (type 1)
+    if (body.type === 1) {
+      return c.json({ type: 1 });
+    }
+
+    const replyText = await processDiscordMessage(body, c.env);
+
+    return c.json({
+      type: 4,
+      data: { content: replyText || 'Message received' }
     });
+  } catch (err: any) {
+    console.error('[Discord Webhook Error]:', err);
+    return c.json({ type: 1 });
   }
-
-  return c.json({ ok: true });
 });
+
+// POST /channels/google-chat/webhook
+app.post('/channels/google-chat/webhook', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { handleGoogleChatEvent, formatGoogleChatResponse } = await import('./channels/google-chat');
+    const message = handleGoogleChatEvent(body);
+    
+    if (!message) return c.json({});
+
+    // Process message with AI or motion dispatcher
+    const replyText = `Hello ${message.userName}, I received your message: "${message.content}"`;
+    return c.json(formatGoogleChatResponse(replyText));
+  } catch (err: any) {
+    console.error('[Google Chat Webhook Error]:', err);
+    return c.json({ text: 'An error occurred while processing your message.' });
+  }
+});
+
 
 // Workspace site routes (only for *.tarai.space)
 app.notFound(async (c) => {

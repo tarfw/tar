@@ -6,6 +6,7 @@ import type { ChannelMessage, ChannelConfig, ChannelResponse } from './types';
 import { handleTelegramUpdate, sendTelegramMessage } from './telegram';
 import { handleSlackEvent, sendSlackMessage } from './slack';
 import { handleDiscordEvent, sendDiscordMessage } from './discord';
+import { handleGoogleChatEvent } from './google-chat';
 
 export type { ChannelMessage, ChannelConfig, ChannelResponse };
 
@@ -26,6 +27,8 @@ export async function handleChannelMessage(
       return handleSlackEvent(payload);
     case 'discord':
       return handleDiscordEvent(payload);
+    case 'google-chat':
+      return handleGoogleChatEvent(payload);
     default:
       console.warn(`[Channel] Unknown platform: ${platform}`);
       return null;

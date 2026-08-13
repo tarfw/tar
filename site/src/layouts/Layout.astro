@@ -1,8 +1,9 @@
 ---
+import "../styles/global.css";
 interface Props { title?: string; description?: string; }
 const {
-  title = "TAR — Everything you need. One app.",
-  description = "Food, rides, shopping, payments, services, parcels — everything your city needs, in one app.",
+  title = "tarapp | Bring your agents to iMessage, WhatsApp, Telegram, Slack, and beyond",
+  description = "An open framework that connects your agents to iMessage, WhatsApp, Discord, Slack, Telegram, Instagram, and other interfaces people use every day.",
 } = Astro.props;
 ---
 <!doctype html>
@@ -11,10 +12,34 @@ const {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content={description} />
-  <meta name="theme-color" content="#FFFFFF" />
+  <meta name="theme-color" content="#0b0b0b" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <title>{title}</title>
-  <link rel="stylesheet" href="/src/styles/global.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500;600&family=Fragment+Mono&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <script>
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const reveal = () => {
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting) e.target.classList.add('in-view');
+          }
+        },
+        { threshold: 0.12, rootMargin: '0px 0px -8% 0px' }
+      );
+      document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', reveal);
+    } else {
+      reveal();
+    }
+  </script>
 </head>
 <body><slot /></body>
 </html>

@@ -1,37 +1,177 @@
 ---
+const columns = [
+  {
+    head: "Product",
+    links: ["Spectrum", "iMessage", "WhatsApp", "Telegram", "Platform", "Pricing"],
+  },
+  {
+    head: "Developers",
+    links: ["Docs", "Resources", "Brand", "Changelog"],
+  },
+  {
+    head: "Company",
+    links: ["Overview", "Manifesto", "Blog", "Community", "Contact"],
+  },
+];
 ---
 
 <footer class="footer">
-  <div class="footer__cta-section">
-    <h2 class="footer__cta-title">Build with us</h2>
-    <p class="footer__cta-sub">Open source. Open network. Open to everyone.</p>
-    <div class="footer__cta-actions">
-      <a href="#" class="footer__btn footer__btn--primary">Start free</a>
-      <a href="#" class="footer__btn footer__btn--outline">View on GitHub</a>
-    </div>
-  </div>
-
-  <div class="footer__bar">
-    <div class="footer__bar-inner">
-      <div class="footer__brand">tar</div>
-
-      <div class="footer__links">
-        <a href="#">Terms</a>
-        <a href="#">Privacy</a>
-        <a href="#">Cookies</a>
+  <div class="container">
+    <!-- CTA -->
+    <div class="footer__cta reveal">
+      <span class="overline">Ready when you are</span>
+      <h2 class="display footer__cta-title">Start building with tarapp today</h2>
+      <div class="footer__cta-actions">
+        <a href="#docs" class="btn btn--primary">View Docs</a>
+        <a href="#expert" class="btn btn--ghost">Talk to an Expert</a>
       </div>
+    </div>
 
-      <div class="footer__socials">
-        <a href="#" aria-label="X">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+    <!-- Link columns -->
+    <div class="footer__cols">
+      <div class="footer__brand-col">
+        <a href="/" class="footer__logo">
+          <span class="footer__logo-mark">
+            <svg width="20" height="20" viewBox="0 0 28 28" fill="none">
+              <rect x="0" y="0" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="4" y="0" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="20" y="0" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="24" y="0" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="4" y="3.94" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="8" y="3.94" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="12" y="3.94" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="16" y="3.94" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="20" y="3.94" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="0" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="4" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="8" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="12" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="16" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="20" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="24" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="0" y="11.83" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="4" y="11.83" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="12" y="11.83" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="20" y="11.83" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="24" y="11.83" width="4.5" height="4.44" fill="#392878"/>
+              <rect x="0" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="4" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="8" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="12" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="16" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="20" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="24" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="0" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="4" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="8" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="12" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="16" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="20" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="24" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+              <rect x="0" y="24.45" width="4.5" height="2.67" fill="#392878"/>
+              <rect x="12" y="24.45" width="4.5" height="2.67" fill="#392878"/>
+              <rect x="24" y="24.45" width="4.5" height="2.67" fill="#392878"/>
+              <rect x="12" y="26.62" width="4.5" height="1.88" fill="#392878"/>
+            </svg>
+          </span>
+          <span class="footer__logo-text">tarapp</span>
         </a>
-        <a href="#" aria-label="GitHub">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
-        </a>
+        <p class="footer__tagline">Bring your agents to the interfaces millions already use.</p>
+      </div>
+      {columns.map((col) => (
+        <div class="footer__col">
+          <h4 class="footer__col-head">{col.head}</h4>
+          <ul class="footer__col-links">
+            {col.links.map((l) => <li><a href="#{l.toLowerCase().replace(/\s+/g, '-')}">{l}</a></li>)}
+          </ul>
+        </div>
+      ))}
+    </div>
+
+    <!-- Bottom bar -->
+    <div class="footer__bar">
+      <div class="footer__status">
+        <span class="footer__status-dot"></span>
+        <span>All System Operational</span>
+      </div>
+      <p class="footer__copy">© tarapp 2026 All Rights Reserved.</p>
+      <div class="footer__legal">
+        <a href="#terms">Terms of Service</a>
+        <a href="#privacy">Privacy Policy</a>
       </div>
     </div>
   </div>
 </footer>
+
+<style>
+  .footer {
+    background: linear-gradient(180deg, var(--bg), #070707);
+    border-top: 1px solid var(--border-soft);
+    padding-top: clamp(3rem, 8vw, 6rem);
+  }
+  .footer__cta {
+    text-align: center;
+    padding-bottom: clamp(3rem, 7vw, 5rem);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .footer__cta-title {
+    font-size: clamp(2.2rem, 5.5vw, 4.2rem);
+    font-style: italic;
+    margin: 1.25rem auto 2rem;
+    max-width: 16ch;
+  }
+  .footer__cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+  .footer__cols {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr 1fr;
+    gap: 2.5rem;
+    padding: clamp(3rem, 6vw, 4.5rem) 0;
+  }
+  .footer__logo { display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 600; font-size: 1.1rem; color: var(--text); }
+  .footer__logo-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(0,187,255,0.14), rgba(187,136,255,0.14));
+    border: 1px solid var(--border);
+  }
+  .footer__tagline { margin-top: 1rem; color: var(--text-mute); font-size: 0.9rem; max-width: 26ch; line-height: 1.6; }
+  .footer__col-head { font-size: 0.8rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 1rem; }
+  .footer__col-links { list-style: none; display: flex; flex-direction: column; gap: 0.6rem; }
+  .footer__col-links a { color: var(--text-mute); font-size: 0.92rem; transition: color 0.15s ease; }
+  .footer__col-links a:hover { color: var(--text); }
+  .footer__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 1.5rem 0 2rem;
+    border-top: 1px solid var(--border-soft);
+  }
+  .footer__status { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--text-dim); font-family: var(--font-mono); }
+  .footer__status-dot { width: 8px; height: 8px; border-radius: 50%; background: #37e0a0; box-shadow: 0 0 0 0 rgba(55, 224, 160, 0.5); animation: fpulse 2.4s infinite; }
+  @keyframes fpulse {
+    0% { box-shadow: 0 0 0 0 rgba(55, 224, 160, 0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(55, 224, 160, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(55, 224, 160, 0); }
+  }
+  .footer__copy { color: var(--text-mute); font-size: 0.82rem; }
+  .footer__legal { display: flex; gap: 1.5rem; }
+  .footer__legal a { color: var(--text-mute); font-size: 0.82rem; transition: color 0.15s ease; }
+  .footer__legal a:hover { color: var(--text); }
+  @media (max-width: 800px) {
+    .footer__cols { grid-template-columns: 1fr 1fr; }
+    .footer__brand-col { grid-column: 1 / -1; }
+  }
+  @media (max-width: 520px) {
+    .footer__cols { grid-template-columns: 1fr; }
+    .footer__bar { flex-direction: column; text-align: center; }
+  }
+</style>
 
 <style>
   .footer {

@@ -1,9 +1,11 @@
-import { View, Text, TextInput, ScrollView, StyleSheet, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, ScrollView, StyleSheet, Pressable, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { useState, useRef, useEffect } from 'react';
 import { tar } from '@/lib/tar';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ChatAutocomplete } from '@/components/ChatAutocomplete';
+import { TarLogo } from '@/components/TarLogo';
+import { ContactMentionPicker, ContactMentionModal, ContactItem } from '@/components/ContactMentionPicker';
 import { ActionCard } from '@/components/ActionCard';
 import { useLLM, models } from 'react-native-executorch';
 import { isHammerCached, isLfmCached } from '@/lib/hammer';
@@ -37,6 +39,48 @@ export default function ChatScreen() {
   const [isHammerCachedState, setIsHammerCachedState] = useState(false);
   const [isLfmCachedState, setIsLfmCachedState] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Mention (@ / #) state
+  const [showMentionPopover, setShowMentionPopover] = useState(false);
+  const [showMentionModal, setShowMentionModal] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionPrefix, setMentionPrefix] = useState<'@' | '#'>('@');
+
+  const handleInputChange = (text: string) => {
+    setInput(text);
+    const match = text.match(/([@#])([a-zA-Z0-9_\s.-]*)$/);
+    if (match) {
+      setMentionPrefix(match[1] as '@' | '#');
+      setShowMentionPopover(true);
+      setMentionQuery(match[2]);
+    } else {
+      setShowMentionPopover(false);
+      setMentionQuery('');
+    }
+  };
+
+  const handleAtButtonPress = () => {
+    setInput(prev => {
+      const next = prev.endsWith('@') ? prev : prev ? prev + ' @' : '@';
+      return next;
+    });
+    setShowMentionPopover(true);
+    setMentionQuery('');
+  };
+
+  const handleSelectMentionContact = (contact: ContactItem) => {
+    setInput(prev => {
+      const match = prev.match(/([@#])([a-zA-Z0-9_\s.-]*)$/);
+      if (match) {
+        const prefix = match[1];
+        const atIdx = prev.lastIndexOf(prefix + match[2]);
+        return prev.substring(0, atIdx) + `${prefix}${contact.name} `;
+      }
+      return prev ? prev + ` @${contact.name} ` : `@${contact.name} `;
+    });
+    setShowMentionPopover(false);
+    setShowMentionModal(false);
+  };
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -261,7 +305,91 @@ export default function ChatScreen() {
         <ChatAutocomplete memories={memories} onSelect={handleMemorySelect} />
       )}
 
-      <View style={[styles.inputBar, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
+      {/* Contact & Item Mention Popover */}
+      <ContactMentionPicker
+        visible={showMentionPopover}
+        query={mentionQuery}
+        prefix={mentionPrefix}
+        theme={theme}
+        onSelectContact={handleSelectMentionContact}
+        onClose={() => setShowMentionPopover(false)}
+        onOpenFullModal={() => {
+          setShowMentionPopover(false);
+          setShowMentionModal(true);
+        }}
+      />
+
+      {/* Quick Symbol Accessory Bar */}
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        backgroundColor: theme.background,
+        borderTopWidth: 1,
+        borderTopColor: theme.border + '60',
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => {
+              setInput(prev => (prev ? (prev.endsWith(' ') ? prev + '@' : prev + ' @') : '@'));
+              setMentionPrefix('@');
+              setShowMentionPopover(true);
+              setMentionQuery('');
+            }}
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+              borderRadius: 12,
+              backgroundColor: theme.primary + '18',
+              borderWidth: 1,
+              borderColor: theme.primary + '35',
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '800', color: theme.primary }}>@</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => {
+              setInput(prev => (prev ? (prev.endsWith(' ') ? prev + '#' : prev + ' #') : '#'));
+              setMentionPrefix('#');
+              setShowMentionPopover(true);
+              setMentionQuery('');
+            }}
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+              borderRadius: 12,
+              backgroundColor: theme.primary + '18',
+              borderWidth: 1,
+              borderColor: theme.primary + '35',
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '800', color: theme.primary }}>#</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Globe Icon Button at Right End */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push('/(tabs)/workspaces')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{
+            paddingHorizontal: 8,
+            paddingVertical: 4,
+            borderRadius: 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons name="globe-outline" size={20} color={theme.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={[styles.inputBar, { backgroundColor: theme.background, borderTopColor: theme.border, paddingTop: 10, paddingBottom: Math.max(insets.bottom + 10, 20) }]}>
         {messages.length > 0 && (
           <Pressable
             style={[styles.clearButton, { backgroundColor: theme.backgroundElement }]}
@@ -272,7 +400,7 @@ export default function ChatScreen() {
         <TextInput
           style={[styles.input, { backgroundColor: theme.backgroundElement, color: theme.text }]}
           value={input}
-          onChangeText={setInput}
+          onChangeText={handleInputChange}
           placeholder={
             chatMode !== 'cloud'
               ? !isActiveCached
@@ -280,12 +408,28 @@ export default function ChatScreen() {
                 : !activeLlm?.isReady
                   ? `Loading ${activeModelName}...`
                   : `Chat locally with ${chatMode === 'hammer' ? 'Hammer' : 'LFM'}...`
-              : 'Type a message...'
+              : 'Type a message or @ to mention...'
           }
           placeholderTextColor={theme.textMuted}
+          keyboardType="twitter"
+          inputMode="email"
+          autoCapitalize="none"
           onSubmitEditing={sendMessage}
           editable={!loading && (chatMode === 'cloud' || (isActiveCached && activeLlm?.isReady))}
         />
+        <Pressable
+          style={({ pressed }) => [
+            styles.atButton,
+            {
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+          onPress={() => router.push('/(tabs)/workspaces')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TarLogo size={16} color={theme.text} />
+        </Pressable>
         <Pressable
           style={[
             styles.sendButton,
@@ -309,6 +453,14 @@ export default function ChatScreen() {
           />
         </Pressable>
       </View>
+
+      {/* Standalone Contact Mention Modal */}
+      <ContactMentionModal
+        visible={showMentionModal}
+        theme={theme}
+        onSelectContact={handleSelectMentionContact}
+        onClose={() => setShowMentionModal(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -336,4 +488,6 @@ const styles = StyleSheet.create({
   input: { flex: 1, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, fontSize: 15 },
   sendButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   clearButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  atButton: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  atButtonText: { fontSize: 15, fontWeight: '800' },
 });

@@ -35,6 +35,7 @@ import ContactDetailsModal from '@/components/ContactDetailsModal';
 import ItemComposeModal from '@/components/ItemComposeModal';
 import ContactCreateModal from '@/components/ContactCreateModal';
 import WorkspaceSiteScreen from '@/components/WorkspaceSiteScreen';
+import { ContactMentionPicker, ContactMentionModal, ContactItem } from '@/components/ContactMentionPicker';
 import DirectoryOverlay from '@/components/DirectoryOverlay';
 import ExploreOverlay from '@/components/ExploreOverlay';
 import CanvasOverlay from '@/components/CanvasOverlay';
@@ -202,6 +203,73 @@ export default function WorkspacesScreen() {
   const [submittingContact, setSubmittingContact] = useState(false);
   const [contactResultMessage, setContactResultMessage] = useState<string | null>(null);
   const [editContactEntity, setEditContactEntity] = useState<any | null>(null);
+
+  // Mention (@ / #) state
+  const [showMentionPopover, setShowMentionPopover] = useState(false);
+  const [showMentionModal, setShowMentionModal] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionPrefix, setMentionPrefix] = useState<'@' | '#'>('@');
+
+  const handleInputChange = (text: string) => {
+    setInput(text);
+    const match = text.match(/([@#])([a-zA-Z0-9_\s.-]*)$/);
+    if (match) {
+      setMentionPrefix(match[1] as '@' | '#');
+      setShowMentionPopover(true);
+      setMentionQuery(match[2]);
+    } else {
+      setShowMentionPopover(false);
+      setMentionQuery('');
+    }
+  };
+
+  const handleAtButtonPress = () => {
+    setInput(prev => {
+      const next = prev.endsWith('@') ? prev : prev ? prev + ' @' : '@';
+      return next;
+    });
+    setShowMentionPopover(true);
+    setMentionQuery('');
+  };
+
+  const handleSelectMentionContact = (contact: ContactItem) => {
+    setInput(prev => {
+      const match = prev.match(/([@#])([a-zA-Z0-9_\s.-]*)$/);
+      if (match) {
+        const prefix = match[1];
+        const atIdx = prev.lastIndexOf(prefix + match[2]);
+        return prev.substring(0, atIdx) + `${prefix}${contact.name} `;
+      }
+      return prev ? prev + ` @${contact.name} ` : `@${contact.name} `;
+    });
+    setShowMentionPopover(false);
+    setShowMentionModal(false);
+  };
+
+  const handleOpenEntityOrItemDetails = (entity: any) => {
+    setShowMentionPopover(false);
+    setShowMentionModal(false);
+    if (!entity) return;
+    const typeLower = (entity.type || entity.category || '').toLowerCase();
+    const isItem =
+      entity.kind === 'item' ||
+      typeLower.includes('product') ||
+      typeLower.includes('item') ||
+      typeLower.includes('service') ||
+      typeLower.includes('asset') ||
+      typeLower.includes('listing') ||
+      typeLower.includes('document') ||
+      entity.data?.item_subtype;
+
+    const raw = entity.rawEntity || entity;
+
+    if (isItem) {
+      setItemInitialData(raw);
+      setShowItemModal(true);
+    } else {
+      setSelectedEntityDetails(raw);
+    }
+  };
 
   // Inbox Task Resolution State
   const [resolvingTaskId, setResolvingTaskId] = useState<string | null>(null);
@@ -1482,6 +1550,99 @@ ${membersYaml}
             ))}
           </View>
         ) : null}
+        {/* Contact Mention Picker Popover above text input */}
+        <ContactMentionPicker
+          visible={showMentionPopover}
+          query={mentionQuery}
+          prefix={mentionPrefix}
+          entities={allEntities}
+          theme={theme}
+          onSelectContact={handleSelectMentionContact}
+          onOpenContactDetails={handleOpenEntityOrItemDetails}
+          onClose={() => setShowMentionPopover(false)}
+          onOpenFullModal={() => {
+            setShowMentionPopover(false);
+            setShowMentionModal(true);
+          }}
+          onAddNewContact={() => {
+            setShowMentionPopover(false);
+            setInitialContactType('Customer');
+            setEditContactEntity(null);
+            setShowContactModal(true);
+          }}
+        />
+
+        {/* Quick Symbol Accessory Bar with @ and # chips and Globe icon at right end */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 16,
+          paddingVertical: 6,
+          backgroundColor: theme.background,
+          borderTopWidth: 1,
+          borderTopColor: theme.border + '60',
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => {
+                setInput(prev => (prev ? (prev.endsWith(' ') ? prev + '@' : prev + ' @') : '@'));
+                setMentionPrefix('@');
+                setShowMentionPopover(true);
+                setMentionQuery('');
+              }}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 4,
+                borderRadius: 12,
+                backgroundColor: theme.primary + '18',
+                borderWidth: 1,
+                borderColor: theme.primary + '35',
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '800', color: theme.primary }}>@</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                setInput(prev => (prev ? (prev.endsWith(' ') ? prev + '#' : prev + ' #') : '#'));
+                setMentionPrefix('#');
+                setShowMentionPopover(true);
+                setMentionQuery('');
+              }}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 4,
+                borderRadius: 12,
+                backgroundColor: theme.primary + '18',
+                borderWidth: 1,
+                borderColor: theme.primary + '35',
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '800', color: theme.primary }}>#</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Globe Icon Button at Right End (Opens Explore Overlay) */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setShowExploreOverlay(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 12,
+              backgroundColor: showExploreOverlay ? theme.primary + '18' : 'transparent',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="globe-outline" size={20} color={showExploreOverlay ? theme.primary : theme.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
         {/* Text Input Bar — Full Width, Square Corners */}
         <View style={[
           styles.textInputWrapper,
@@ -1495,26 +1656,42 @@ ${membersYaml}
             borderRadius: 0,
             marginHorizontal: 0,
             paddingHorizontal: 16,
+            paddingTop: 10,
+            paddingBottom: Math.max(insets.bottom + 10, 20),
             alignItems: 'center',
             flexDirection: 'row',
           }
         ]}>
           <TextInput
             value={input}
-            onChangeText={setInput}
+            onChangeText={handleInputChange}
+            placeholder="Type a message or @ to mention..."
             placeholderTextColor={theme.textMuted}
             style={[styles.textInput, { color: theme.text, flex: 1 }]}
             multiline={true}
+            keyboardType="twitter"
+            inputMode="email"
+            autoCapitalize="none"
             onSubmitEditing={() => handleSend()}
           />
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 4 }}>
-            {/* Send Button */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 4 }}>
+            {/* Colored Touch-Friendly Canvas Button */}
             <Pressable
-              onPress={() => handleSend()}
-              style={[styles.sendButton, { backgroundColor: input.trim() ? theme.primary : theme.border }]}
-              disabled={!input.trim()}
+              onPress={() => setShowCanvasOverlay(true)}
+              style={({ pressed }) => [
+                {
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: theme.primary,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="arrow-up" size={18} color="#ffffff" />
+              <TarLogo size={20} color="#ffffff" />
             </Pressable>
           </View>
         </View>
@@ -1522,67 +1699,7 @@ ${membersYaml}
 
       </KeyboardAvoidingView>
 
-      {/* Bottom Bar — Directory, Explore, Canvas overlay triggers (outside KAV, always visible) */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-around',
-          backgroundColor: theme.background,
-          borderTopWidth: 1,
-          borderTopColor: theme.border,
-          paddingTop: 4,
-          paddingBottom: Math.max(insets.bottom, 6),
-        }}
-      >
-        {/* Directory */}
-        <TouchableOpacity
-          activeOpacity={0.6}
-          onPress={() => setShowDirectoryOverlay(true)}
-          hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
-          style={{ flex: 1, height: 48, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <View style={{
-            width: 64, height: 36, borderRadius: 18,
-            backgroundColor: showDirectoryOverlay ? theme.primary + '18' : 'transparent',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Ionicons name="folder-outline" size={22} color={showDirectoryOverlay ? theme.primary : theme.textSecondary} />
-          </View>
-        </TouchableOpacity>
 
-        {/* Explore */}
-        <TouchableOpacity
-          activeOpacity={0.6}
-          onPress={() => setShowExploreOverlay(true)}
-          hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
-          style={{ flex: 1, height: 48, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <View style={{
-            width: 64, height: 36, borderRadius: 18,
-            backgroundColor: showExploreOverlay ? theme.primary + '18' : 'transparent',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Ionicons name="globe-outline" size={22} color={showExploreOverlay ? theme.primary : theme.textSecondary} />
-          </View>
-        </TouchableOpacity>
-
-        {/* Canvas */}
-        <TouchableOpacity
-          activeOpacity={0.6}
-          onPress={() => setShowCanvasOverlay(true)}
-          hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
-          style={{ flex: 1, height: 48, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <View style={{
-            width: 64, height: 36, borderRadius: 18,
-            backgroundColor: showCanvasOverlay ? theme.primary + '18' : 'transparent',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <TarLogo size={18} color={showCanvasOverlay ? theme.primary : theme.textSecondary} />
-          </View>
-        </TouchableOpacity>
-      </View>
 
       {/* Workspace Switcher Selector Modal (Max Uncluttered Bottom Drawer) */}
       <Modal
@@ -1986,7 +2103,21 @@ ${membersYaml}
         }}
       />
 
-      {/* Standalone Workspace Site Screen Modal */}
+      {/* Dedicated Contact Mention Modal */}
+      <ContactMentionModal
+        visible={showMentionModal}
+        entities={allEntities}
+        theme={theme}
+        onSelectContact={handleSelectMentionContact}
+        onOpenContactDetails={handleOpenEntityOrItemDetails}
+        onClose={() => setShowMentionModal(false)}
+        onAddNewContact={() => {
+          setShowMentionModal(false);
+          setInitialContactType('Customer');
+          setEditContactEntity(null);
+          setShowContactModal(true);
+        }}
+      />
       <WorkspaceSiteScreen
         visible={showSiteScreen}
         onClose={() => setShowSiteScreen(false)}
@@ -2734,6 +2865,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     paddingHorizontal: 16,
+  },
+  atButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  atButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
   },
 });
 

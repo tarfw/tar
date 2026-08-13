@@ -1,12 +1,82 @@
 ---
-import Layout from "../layouts/Layout.astro";
-import Hero from "../components/Hero.astro";
-import Plan from "../components/Plan.astro";
-import Footer from "../components/Footer.astro";
+import Head from "../components/Head.astro";
+import Nav from "../components/Nav.astro";
+import HeroSection from "../components/HeroSection.astro";
+import DeploySection from "../components/DeploySection.astro";
+import FooterSection from "../components/FooterSection.astro";
 ---
+<!doctype html>
+<html lang="en">
+<head>
+  <Head />
+</head>
+<body>
+  <div id="main">
+    <div class="astro-gZhQL astro-2xzlkm">
+      <div class="astro-mf5sl3-container">
+        <Nav />
+        <HeroSection />
+      </div>
+      <div class="astro-Covf2">
+        <DeploySection />
+        <FooterSection />
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+<style is:global>
+  .astro-16nt41d-container {
+    display: none !important;
+  }
 
-<Layout>
-  <Hero />
-  <Plan />
-  <Footer />
-</Layout>
+  /* Collapse the 600vh hero scroll wrapper down to content height.
+     The hero's sticky text no longer has scroll-through imagery, so the
+     wrapper must not reserve ~5400px of empty space. */
+  .astro-duhvo5,
+  .astro-1ix8595 {
+    height: auto !important;
+    min-height: 100vh !important;
+  }
+
+  /* Hide the leftover empty image/video zones that now render as blank
+     absolute boxes overlapping the hero text. */
+  .astro-160t8na,
+  .astro-hp1x3m,
+  .astro-1oz2rpf {
+    display: none !important;
+  }
+
+  /* Hide the "Trusted by" X-card embed grid: it renders as a grid of empty
+     boxes (the embedded card content is no longer available) and creates a
+     ~1340px dead zone before the Deploy section. */
+  .astro-l0nf4r,
+  .astro-2fr4am {
+    display: none !important;
+  }
+
+  /* Hide empty "image 42" placeholders in the Build-for-teams cards that
+     only render blank background wrappers. */
+  .astro-bydapr,
+  .astro-cpy06w {
+    display: none !important;
+  }
+
+  /* Hide the empty image placeholder in the Manifesto section (astro-3vz3by)
+     that renders as a blank ~464px box between "Read blogs" and the CTA. */
+  .astro-3vz3by {
+    display: none !important;
+  }
+
+  /* Footer: spread the four link columns across the full container width
+     instead of cramming them into the right edge. */
+  .astro-18bhv8a {
+    justify-content: space-between !important;
+  }
+
+  /* Footer link contrast: 0.25-alpha white is unreadable on the dark green
+     background, raise it for legibility. */
+  .astro-styles-preset-1iolcjx {
+    color: rgba(255, 255, 255, 0.7) !important;
+  }
+</style>

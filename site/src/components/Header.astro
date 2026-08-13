@@ -1,82 +1,230 @@
+---
+const nav = [
+  { label: "Spectrum", href: "#spectrum" },
+  { label: "iMessage", href: "#imessage" },
+  { label: "Docs", href: "#docs" },
+  { label: "Resources", href: "#resources" },
+  { label: "Community", href: "#community" },
+  { label: "Pricing", href: "#pricing" },
+];
+---
 <header class="header">
-  <nav class="header__nav page-container page-container--wide">
-    <a href="/" class="header__logo">
-      <span class="header__logo-mark">t</span>
-      <span class="header__logo-text">TAR</span>
+  <nav class="header__nav container" aria-label="Primary">
+    <a href="/" class="header__logo" aria-label="tarapp home">
+      <span class="header__logo-symbol" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
+          <rect x="0" y="0" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="4" y="0" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="20" y="0" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="24" y="0" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="4" y="3.94" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="8" y="3.94" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="12" y="3.94" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="16" y="3.94" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="20" y="3.94" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="0" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="4" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="8" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="12" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="16" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="20" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="24" y="7.89" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="0" y="11.83" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="4" y="11.83" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="12" y="11.83" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="20" y="11.83" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="24" y="11.83" width="4.5" height="4.44" fill="#392878"/>
+          <rect x="0" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="4" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="8" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="12" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="16" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="20" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="24" y="15.77" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="0" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="4" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="8" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="12" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="16" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="20" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="24" y="20.11" width="4.5" height="4.84" fill="#392878"/>
+          <rect x="0" y="24.45" width="4.5" height="2.67" fill="#392878"/>
+          <rect x="12" y="24.45" width="4.5" height="2.67" fill="#392878"/>
+          <rect x="24" y="24.45" width="4.5" height="2.67" fill="#392878"/>
+          <rect x="12" y="26.62" width="4.5" height="1.88" fill="#392878"/>
+        </svg>
+      </span>
+      <span class="header__logo-text">tarapp</span>
     </a>
-    <div class="header__links">
-      <a href="#features">Features</a>
-      <a href="#plan">Plan</a>
-      <a href="/plan">Pricing</a>
-      <a href="#download" class="header__cta">Get the app</a>
+
+    <div class="header__links" id="headerLinks">
+      {nav.map((n) => (
+        <a href={n.href} class="header__link">{n.label}</a>
+      ))}
+    </div>
+
+    <div class="header__right">
+      <a href="#gh" class="header__star">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 .587l3.668 7.431 8.2 1.191-5.934 5.787 1.401 8.168L12 18.896l-7.335 3.858 1.4-8.168L.132 9.209l8.2-1.191z" />
+        </svg>
+        <span>3.2k</span>
+      </a>
+      <a href="#contact" class="header__contact">Contact</a>
+      <a href="#dashboard" class="header__dashboard">Dashboard</a>
+      <button class="header__burger" id="burgerBtn" aria-label="Toggle menu" aria-expanded="false" aria-controls="headerLinks">
+        <span></span><span></span>
+      </button>
     </div>
   </nav>
 </header>
+
+<script>
+  const burger = document.getElementById('burgerBtn');
+  const links = document.getElementById('headerLinks');
+  if (burger && links) {
+    burger.addEventListener('click', () => {
+      const open = links.classList.toggle('open');
+      burger.classList.toggle('open', open);
+      burger.setAttribute('aria-expanded', String(open));
+    });
+  }
+</script>
 
 <style>
   .header {
     position: sticky;
     top: 0;
     z-index: 100;
-    background: rgba(255,255,255,0.97);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--color-border);
+    background: rgba(11, 11, 11, 0.82);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border-soft);
   }
   .header__nav {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 52px;
+    height: 64px;
+    gap: 1rem;
   }
   .header__logo {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    text-decoration: none;
-    color: var(--color-text);
+    gap: 0.6rem;
     font-weight: 600;
-    font-size: var(--text-lg);
+    font-size: 1.05rem;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    flex-shrink: 0;
   }
-  .header__logo-mark {
+  .header__logo-symbol {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
-    background: var(--color-text);
-    color: white;
-    border-radius: var(--radius-sm);
-    font-size: var(--text-sm);
-    font-weight: 700;
-  }
-  .header__logo-text {
-    font-weight: 600;
-    letter-spacing: -0.02em;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(0,187,255,0.16), rgba(187,136,255,0.16));
+    border: 1px solid var(--border);
   }
   .header__links {
     display: flex;
     align-items: center;
-    gap: var(--space-1);
+    gap: 0.25rem;
   }
-  .header__links a {
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-md);
-    color: var(--color-text-secondary);
-    font-size: var(--text-sm);
-    text-decoration: none;
-    transition: background 0.15s ease, color 0.15s ease;
+  .header__link {
+    padding: 0.45rem 0.85rem;
+    border-radius: var(--radius-full);
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    transition: color 0.15s ease, background 0.15s ease;
   }
-  .header__links a:hover {
-    background: var(--color-bg-hover);
-    color: var(--color-text);
+  .header__link:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
   }
-  .header__cta {
-    background: var(--color-blue);
-    color: white !important;
+  .header__right {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+  }
+  .header__star {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.8rem;
+    border-radius: var(--radius-full);
+    color: var(--text-dim);
+    font-size: 0.86rem;
+    border: 1px solid var(--border-soft);
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .header__star:hover { color: var(--yellow); border-color: var(--border-strong); }
+  .header__star svg { color: var(--yellow); }
+  .header__contact {
+    padding: 0.45rem 0.85rem;
+    border-radius: var(--radius-full);
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    transition: color 0.15s ease;
+  }
+  .header__contact:hover { color: var(--text); }
+  .header__dashboard {
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-full);
+    background: #fff;
+    color: #0b0b0b;
+    font-size: 0.88rem;
     font-weight: 500;
+    transition: background 0.15s ease;
   }
-  .header__cta:hover {
-    background: var(--color-blue-hover) !important;
-    color: white !important;
+  .header__dashboard:hover { background: rgba(255,255,255,0.86); }
+  .header__burger {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    background: none;
+    border: none;
+    padding: 10px;
+  }
+  .header__burger span {
+    width: 20px;
+    height: 2px;
+    background: var(--text);
+    border-radius: 2px;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+  .header__burger.open span:first-child { transform: translateY(3.5px) rotate(45deg); }
+  .header__burger.open span:last-child { transform: translateY(-3.5px) rotate(-45deg); }
+
+  @media (max-width: 960px) {
+    .header__links {
+      position: fixed;
+      top: 64px;
+      left: 0;
+      right: 0;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+      background: rgba(11,11,11,0.98);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem;
+      display: none;
+    }
+    .header__links.open { display: flex; }
+    .header__link {
+      padding: 0.9rem 1rem;
+      border-radius: var(--radius-md);
+      font-size: 1rem;
+    }
+    .header__burger { display: flex; }
+    .header__star { display: none; }
+  }
+  @media (max-width: 640px) {
+    .header__contact { display: none; }
+    .header__nav { height: 60px; }
+    .header__links { top: 60px; }
   }
 </style>

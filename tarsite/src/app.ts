@@ -189,22 +189,130 @@ app.get('/debug/:slug', async (c) => {
   });
 });
 
-// ── 4. Public Form Submissions (/api/contact, /api/order, /api/booking) ─
+// ── 4. Public Form Submissions & Turso Event Emission ───────────────────
+
+async function emitStorefrontEvent(
+  env: any,
+  subdomain: string,
+  type: string,
+  title: string,
+  data: any,
+  ref: string
+) {
+  const url = (env.TURSO_DATABASE_URL || '').replace('libsql://', 'https://');
+  const token = env.TURSO_AUTH_TOKEN || env.TURSO_GROUP_TOKEN;
+  if (!url || !token) return;
+
+  const scope = `w:${subdomain.replace(/^w:/, '')}`;
+  const eventId = `ev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
+  const nowUnix = Math.floor(Date.now() / 1000);
+
+  const motionSql = `INSERT INTO motion (id, type, ref, data, by, at, scope) VALUES (?, ?, ?, ?, 'storefront', ?, ?)`;
+  const inboxSql = `INSERT INTO inbox (id, type, title, status, ref, data, scope, created_at) VALUES (?, ?, ?, 'open', ?, ?, ?, datetime('now'))`;
+
+  try {
+    await fetch(`${url}/v2/pipeline`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            type: 'execute',
+            stmt: {
+              sql: motionSql,
+              args: [
+                { type: 'text', value: eventId },
+                { type: 'text', value: type },
+                { type: 'text', value: ref },
+                { type: 'text', value: dataStr },
+                { type: 'integer', value: nowUnix },
+                { type: 'text', value: scope },
+              ],
+            },
+          },
+          {
+            type: 'execute',
+            stmt: {
+              sql: inboxSql,
+              args: [
+                { type: 'text', value: eventId },
+                { type: 'text', value: type },
+                { type: 'text', value: title },
+                { type: 'text', value: ref },
+                { type: 'text', value: dataStr },
+                { type: 'text', value: scope },
+              ],
+            },
+          },
+          { type: 'close' },
+        ],
+      }),
+    });
+  } catch (err) {
+    console.warn('[Turso event emission note]', err);
+  }
+}
 
 app.post('/api/contact', async (c) => {
+  const host = c.req.header('host') || '';
+  const subdomain = host.split('.')[0].toLowerCase() || 'default';
   const body = await c.req.json().catch(() => ({}));
-  return c.json({ success: true, message: 'Contact submission received', data: body });
+  const ref = `msg_${Date.now()}`;
+  const senderName = body.name || body.email || 'Visitor';
+
+  await emitStorefrontEvent(
+    c.env,
+    subdomain,
+    'contact',
+    `New message from ${senderName}`,
+    body,
+    ref
+  );
+
+  return c.json({ success: true, ref, message: 'Contact submission received', data: body });
 });
 
 app.post('/api/order', async (c) => {
+  const host = c.req.header('host') || '';
+  const subdomain = host.split('.')[0].toLowerCase() || 'default';
   const body = await c.req.json().catch(() => ({}));
   const orderId = `ord_${Date.now()}`;
+  const itemName = body.item || body.title || body.product || 'Store Order';
+  const customer = body.name || body.customer || 'Customer';
+
+  await emitStorefrontEvent(
+    c.env,
+    subdomain,
+    'order',
+    `New Order #${orderId.slice(-6)} — ${itemName} (${customer})`,
+    body,
+    orderId
+  );
+
   return c.json({ success: true, orderId, message: 'Order created successfully', data: body });
 });
 
 app.post('/api/booking', async (c) => {
+  const host = c.req.header('host') || '';
+  const subdomain = host.split('.')[0].toLowerCase() || 'default';
   const body = await c.req.json().catch(() => ({}));
   const bookingId = `book_${Date.now()}`;
+  const serviceName = body.service || body.title || 'Appointment';
+  const clientName = body.name || body.customer || 'Client';
+
+  await emitStorefrontEvent(
+    c.env,
+    subdomain,
+    'booking',
+    `New Booking #${bookingId.slice(-6)} — ${serviceName} (${clientName})`,
+    body,
+    bookingId
+  );
+
   return c.json({ success: true, bookingId, message: 'Booking confirmed', data: body });
 });
 

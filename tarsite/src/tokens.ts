@@ -1,14 +1,13 @@
 /**
- * tarsite — Standardized DesignTokens & CSS Skins (Phase 9)
- * Decouples theme styling entirely from layout structures.
- * Generates CSS Custom Properties for Google DESIGN.md specs.
- * Includes dynamic Markdown parser for DESIGN.md files.
+ * tarsite — Standardized DesignTokens & CSS Skins
+ * Generates CSS Custom Properties for DESIGN.md specs.
+ * Includes dynamic Markdown parser for DESIGN.md files and tables.
  */
 
 import { type DesignTokens } from './types';
 
 /**
- * Dynamic Markdown Parser — converts any DESIGN.md text content into DesignTokens automatically
+ * Dynamic Markdown Parser — converts any DESIGN.md text content or Refero markdown table into DesignTokens
  */
 export function parseDesignMarkdown(mdContent: string, presetSlug?: string): DesignTokens {
   const getMatch = (regex: RegExp, fallback: string): string => {
@@ -16,24 +15,29 @@ export function parseDesignMarkdown(mdContent: string, presetSlug?: string): Des
     return match ? match[1].trim() : fallback;
   };
 
-  const name = getMatch(/-\s*\*?Name\*?:\s*([^\n]+)/i, 'Custom Design');
-  const bg = getMatch(/-\s*\*?Background\*?:\s*`?([^`\n]+)`?/i, '#FFFFFF');
-  const surface = getMatch(/-\s*\*?Surface\*?:\s*`?([^`\n]+)`?/i, '#FFFFFF');
-  const text = getMatch(/-\s*\*?Text\*?:\s*`?([^`\n]+)`?/i, '#111111');
-  const muted = getMatch(/-\s*\*?Muted\*?:\s*`?([^`\n]+)`?/i, '#666666');
-  const primary = getMatch(/-\s*\*?Primary\*?:\s*`?([^`\n]+)`?/i, '#000000');
-  const secondary = getMatch(/-\s*\*?Secondary\*?:\s*`?([^`\n]+)`?/i, '#333333');
-  const border = getMatch(/-\s*\*?Border\*?:\s*`?([^`\n]+)`?/i, 'rgba(0,0,0,0.1)');
+  const getTableColor = (name: string, fallback: string): string => {
+    const regex = new RegExp(`\\|\\s*${name}\\s*\\|\\s*([#a-fA-F0-9]+)\\s*\\|`, 'i');
+    const match = mdContent.match(regex);
+    return match ? match[1].trim() : fallback;
+  };
 
-  const fontHeading = getMatch(/-\s*\*?Heading Font\*?:\s*`?([^`\n]+)`?/i, 'Inter');
-  const fontBody = getMatch(/-\s*\*?Body Font\*?:\s*`?([^`\n]+)`?/i, 'Inter');
-  const headingWeight = getMatch(/-\s*\*?Heading Weight\*?:\s*`?([^`\n]+)`?/i, '700');
-  const bodyWeight = getMatch(/-\s*\*?Body Weight\*?:\s*`?([^`\n]+)`?/i, '400');
+  const name = getMatch(/#\s*([^\n—\-]+)/i, getMatch(/-\s*\*?Name\*?:\s*([^\n]+)/i, 'Storefront'));
+  
+  // Refero table color extraction with fallback to key-value
+  const primary = getTableColor('Obsidian', getTableColor('Primary', getMatch(/primary:\s*["']?([^"'\n]+)["']?/i, '#000000')));
+  const bg = getTableColor('Paper White', getTableColor('Background', getMatch(/background:\s*["']?([^"'\n]+)["']?/i, '#FFFFFF')));
+  const surface = getTableColor('Surface', getMatch(/surface:\s*["']?([^"'\n]+)["']?/i, '#F8F8F7'));
+  const text = getTableColor('Deep Ink', getTableColor('Text', getMatch(/text:\s*["']?([^"'\n]+)["']?/i, '#121211')));
+  const muted = getTableColor('Graphite', getTableColor('Muted', getMatch(/muted:\s*["']?([^"'\n]+)["']?/i, '#575551')));
+  const secondary = getTableColor('Warm Stone', getTableColor('Secondary', getMatch(/secondary:\s*["']?([^"'\n]+)["']?/i, '#958D7E')));
+  const accent = getTableColor('Ember Tag', getTableColor('Accent', getMatch(/accent:\s*["']?([^"'\n]+)["']?/i, '#E8552B')));
+  const border = getMatch(/border:\s*["']?([^"'\n]+)["']?/i, 'rgba(0,0,0,0.08)');
 
-  const radiusSm = getMatch(/-\s*\*?Border Radius Small\*?:\s*`?([^`\n]+)`?/i, '4px');
-  const radiusMd = getMatch(/-\s*\*?Border Radius Medium\*?:\s*`?([^`\n]+)`?/i, '8px');
-  const radiusLg = getMatch(/-\s*\*?Border Radius Large\*?:\s*`?([^`\n]+)`?/i, '12px');
-  const radiusFull = getMatch(/-\s*\*?Border Radius Full\*?:\s*`?([^`\n]+)`?/i, '9999px');
+  const fontHeading = getMatch(/fontHeading:\s*["']?([^"'\n]+)["']?/i, 'Inter');
+  const fontBody = getMatch(/fontBody:\s*["']?([^"'\n]+)["']?/i, 'Inter');
+
+  const cardRadius = getMatch(/card:\s*["']?([^"'\n]+)["']?/i, getMatch(/cardRadius:\s*["']?([^"'\n]+)["']?/i, '4px'));
+  const buttonRadius = getMatch(/button:\s*["']?([^"'\n]+)["']?/i, getMatch(/buttonRadius:\s*["']?([^"'\n]+)["']?/i, '4px'));
 
   return {
     name,
@@ -41,7 +45,7 @@ export function parseDesignMarkdown(mdContent: string, presetSlug?: string): Des
     colors: {
       primary,
       secondary,
-      tertiary: primary,
+      tertiary: accent,
       background: bg,
       surface,
       text,
@@ -51,14 +55,14 @@ export function parseDesignMarkdown(mdContent: string, presetSlug?: string): Des
     typography: {
       fontHeading: fontHeading.replace(/['"]/g, '').split(',')[0],
       fontBody: fontBody.replace(/['"]/g, '').split(',')[0],
-      headingWeight,
-      bodyWeight,
+      headingWeight: '700',
+      bodyWeight: '400',
     },
     radii: {
-      sm: radiusSm,
-      md: radiusMd,
-      lg: radiusLg,
-      full: radiusFull,
+      sm: '4px',
+      md: cardRadius,
+      lg: '12px',
+      full: buttonRadius === '999px' || buttonRadius === '9999px' ? '9999px' : buttonRadius,
     },
     spacing: {
       xs: '4px',
@@ -71,6 +75,28 @@ export function parseDesignMarkdown(mdContent: string, presetSlug?: string): Des
 }
 
 export const PRESET_TOKENS: Record<string, DesignTokens> = {
+  planhat: {
+    name: 'Planhat Tech',
+    preset: 'planhat',
+    colors: {
+      primary: '#000000',
+      secondary: '#958D7E',
+      tertiary: '#E8552B',
+      background: '#FFFFFF',
+      surface: '#F8F8F7',
+      text: '#121211',
+      muted: '#575551',
+      border: 'rgba(0,0,0,0.08)',
+    },
+    typography: {
+      fontHeading: 'Inter',
+      fontBody: 'Inter',
+      headingWeight: '700',
+      bodyWeight: '400',
+    },
+    radii: { sm: '4px', md: '4px', lg: '8px', full: '4px' },
+    spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '48px' },
+  },
   kith: {
     name: 'KITH Streetwear & Lifestyle',
     preset: 'kith',
@@ -107,12 +133,34 @@ export const PRESET_TOKENS: Record<string, DesignTokens> = {
       border: 'rgba(3,46,28,0.08)',
     },
     typography: {
-      fontHeading: 'Marcellus',
-      fontBody: 'Montserrat',
+      fontHeading: 'Outfit',
+      fontBody: 'Inter',
       headingWeight: '700',
       bodyWeight: '400',
     },
-    radii: { sm: '8px', md: '20px', lg: '24px', full: '9999px' },
+    radii: { sm: '8px', md: '16px', lg: '24px', full: '9999px' },
+    spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '48px' },
+  },
+  eql: {
+    name: 'EQL Launch & Hype Drop',
+    preset: 'eql',
+    colors: {
+      primary: '#0A0A0C',
+      secondary: '#FFE600',
+      tertiary: '#FFF6C7',
+      background: '#FFFFFF',
+      surface: '#F4F4F6',
+      text: '#0A0A0C',
+      muted: '#6B7280',
+      border: 'rgba(10,10,12,0.1)',
+    },
+    typography: {
+      fontHeading: 'Plus Jakarta Sans',
+      fontBody: 'Inter',
+      headingWeight: '800',
+      bodyWeight: '500',
+    },
+    radii: { sm: '6px', md: '12px', lg: '16px', full: '9999px' },
     spacing: { xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '48px' },
   },
 };

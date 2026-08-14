@@ -1,32 +1,82 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   TextInput,
   Pressable,
-  ActivityIndicator,
   ScrollView,
   Modal,
   KeyboardAvoidingView,
   Platform,
-  Animated,
-  Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@/hooks/use-theme';
-import { TarLogo } from '@/components/TarLogo';
 import { TarLogoLoader } from '@/components/TarLogoLoader';
 import { tar } from '@/lib/tar';
-import { generateSiteLayout } from '@/lib/site-ai';
 import * as SecureStore from 'expo-secure-store';
 
-const STARTER_PILLS = [
-  { label: 'Cafe & Bakery', name: 'Velvet Brew', prompt: 'Specialty coffee shop and bakery with table orders' },
-  { label: 'Retail Store', name: 'Kicks Vault', prompt: 'Streetwear sneakers boutique with stock inventory' },
-  { label: 'Salon & Spa', name: 'Glow Studio', prompt: 'Beauty salon with appointment scheduling catalog' },
-  { label: 'Tech Startup', name: 'CloudPulse', prompt: 'SaaS tech product landing page with subscription plans' },
+// ── 1. Business Categories ───────────────────────────────────────────
+const BUSINESS_CATEGORIES = [
+  { id: 'cafe', label: 'Cafe & Bakery', icon: 'cafe-outline', defaultTheme: 'milo', starterName: 'Velvet Brew' },
+  { id: 'retail', label: 'Fashion & Retail', icon: 'shirt-outline', defaultTheme: 'kith', starterName: 'Kicks Vault' },
+  { id: 'salon', label: 'Salon & Spa', icon: 'sparkles-outline', defaultTheme: 'milo', starterName: 'Glow Studio' },
+  { id: 'tech', label: 'Tech & SaaS', icon: 'cube-outline', defaultTheme: 'planhat', starterName: 'CloudPulse' },
+  { id: 'travel', label: 'Hotel & Travel', icon: 'bed-outline', defaultTheme: 'joandso', starterName: 'Casa Sol' },
+  { id: 'music', label: 'Music & Creative', icon: 'musical-notes-outline', defaultTheme: 'empire', starterName: 'Sonic Lab' },
+];
+
+// ── 2. Visual Theme Cards (Powered by R2 Themes) ────────────────────
+const THEME_PRESETS = [
+  {
+    id: 'planhat',
+    name: 'Planhat Tech',
+    vibe: 'Cinematic Monochrome · Obsidian & Ember',
+    tag: 'SaaS & Enterprise',
+    bg: '#000000',
+    accent: '#E8552B',
+  },
+  {
+    id: 'milo',
+    name: 'Milo Fresh',
+    vibe: 'Clean Botanical · Earthy Green & Cream',
+    tag: 'Wellness & Cafe',
+    bg: '#032E1C',
+    accent: '#1FCB60',
+  },
+  {
+    id: 'kith',
+    name: 'Kith Modern',
+    vibe: 'Luxury Monochrome · Sharp Boxy Streetwear',
+    tag: 'Streetwear & Retail',
+    bg: '#111111',
+    accent: '#FFFFFF',
+  },
+  {
+    id: 'eql',
+    name: 'EQL Launch',
+    vibe: 'High-Heat Drops · Bold Yellow Badges',
+    tag: 'Limited Releases',
+    bg: '#FFE600',
+    accent: '#0A0A0C',
+  },
+  {
+    id: 'joandso',
+    name: 'JO & SO',
+    vibe: 'Warm Editorial · Warm Taupe & Sand',
+    tag: 'Boutique & Hotel',
+    bg: '#F5F2EB',
+    accent: '#2C2A29',
+  },
+  {
+    id: 'empire',
+    name: 'EMPIRE Dark',
+    vibe: 'Deep Obsidian · Modern Creative Label',
+    tag: 'Music & Creators',
+    bg: '#0A0A0C',
+    accent: '#E5E7EB',
+  },
 ];
 
 interface CreateWorkspaceProps {
@@ -47,46 +97,21 @@ export default function CreateWorkspace({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [promptInput, setPromptInput] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(BUSINESS_CATEGORIES[0]);
+  const [selectedTheme, setSelectedTheme] = useState(THEME_PRESETS[1]);
+  const [storeName, setStoreName] = useState(BUSINESS_CATEGORIES[0].starterName);
+
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (isSynthesizing) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.06,
-            duration: 800,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 800,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [isSynthesizing, pulseAnim]);
-
-  // Subdomain slug calculation
-  const rawText = promptInput.trim();
-  const rawWords = rawText.split(/\s+/).filter(Boolean);
-  const extractedName = rawWords.slice(0, 3).join(' ') || 'Workspace';
-
-  let baseSlug = extractedName
+  // Subdomain Calculation
+  const rawName = storeName.trim() || 'store';
+  let baseSlug = rawName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 24) || 'workspace';
+    .slice(0, 24) || 'store';
 
   let resolvedSlug = baseSlug;
   if (existingSubdomains.includes(resolvedSlug)) {
@@ -97,39 +122,23 @@ export default function CreateWorkspace({
     resolvedSlug = `${baseSlug}-${counter}`;
   }
 
-  const detectVertical = (text: string) => {
-    const lower = text.toLowerCase();
-    if (lower.includes('coffee') || lower.includes('cafe') || lower.includes('bakery') || lower.includes('restaurant') || lower.includes('food')) {
-      return 'restaurant';
-    }
-    if (lower.includes('store') || lower.includes('shop') || lower.includes('retail') || lower.includes('sneaker') || lower.includes('apparel')) {
-      return 'retail';
-    }
-    if (lower.includes('salon') || lower.includes('spa') || lower.includes('beauty') || lower.includes('hair') || lower.includes('clinic')) {
-      return 'salon';
-    }
-    if (lower.includes('saas') || lower.includes('tech') || lower.includes('app') || lower.includes('software') || lower.includes('cloud')) {
-      return 'tech';
-    }
-    return 'business';
+  const handleSelectCategory = (cat: typeof BUSINESS_CATEGORIES[0]) => {
+    setSelectedCategory(cat);
+    setStoreName(cat.starterName);
+    const matchingTheme = THEME_PRESETS.find((t) => t.id === cat.defaultTheme) || THEME_PRESETS[0];
+    setSelectedTheme(matchingTheme);
   };
 
-  const handleSelectPill = (pill: typeof STARTER_PILLS[0]) => {
-    setPromptInput(pill.prompt);
-  };
+  const handleLaunch = async () => {
+    if (isSynthesizing || !storeName.trim()) return;
 
-  const handleCreate = async () => {
-    if (isSynthesizing || !promptInput.trim()) return;
-
-    const finalName = extractedName.charAt(0).toUpperCase() + extractedName.slice(1);
-    const vertical = detectVertical(promptInput);
-
+    const finalName = storeName.trim();
     setIsSynthesizing(true);
     setErrorMessage(null);
     setCurrentStep(1);
 
     try {
-      await new Promise((res) => setTimeout(res, 400));
+      await new Promise((res) => setTimeout(res, 200));
       setCurrentStep(2);
 
       let finalSlug = resolvedSlug;
@@ -137,8 +146,8 @@ export default function CreateWorkspace({
         await tar.createWorkspace({
           name: finalName,
           subdomain: finalSlug,
-          description: promptInput.trim(),
-          type: vertical,
+          description: `${selectedCategory.label} powered by ${selectedTheme.name}`,
+          type: selectedCategory.id,
         });
       } catch (createErr: any) {
         if (createErr?.message?.includes('already exists') || createErr?.message?.includes('duplicate')) {
@@ -146,8 +155,8 @@ export default function CreateWorkspace({
           await tar.createWorkspace({
             name: finalName,
             subdomain: finalSlug,
-            description: promptInput.trim(),
-            type: vertical,
+            description: `${selectedCategory.label} powered by ${selectedTheme.name}`,
+            type: selectedCategory.id,
           });
         } else {
           throw createErr;
@@ -157,24 +166,25 @@ export default function CreateWorkspace({
       await SecureStore.setItemAsync('active_workspace_subdomain', finalSlug).catch(() => null);
 
       setCurrentStep(3);
+
+      // Instant 1-Click Edge Publish (< 50ms)
       try {
-        const starterLayout = await generateSiteLayout(
-          finalName,
-          [],
-          promptInput.trim(),
-          null,
-          vertical
-        );
-        await tar.okf.upload(`t:${finalSlug}`, 'site/draft.json', JSON.stringify(starterLayout));
-        await tar.okf.upload(`t:${finalSlug}`, 'site/published.json', JSON.stringify(starterLayout));
+        await fetch(`https://${finalSlug}.tarai.space/publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subdomain: finalSlug,
+            workspaceName: finalName,
+            template: selectedTheme.id,
+          }),
+        }).catch((e) => console.warn('[CreateWorkspace] Edge publish note:', e));
       } catch (siteErr) {
-        console.warn('[CreateWorkspace] Starter layout deferred:', siteErr);
+        console.warn('[CreateWorkspace] Edge publish fallback deferred:', siteErr);
       }
 
       setCurrentStep(4);
-      await new Promise((res) => setTimeout(res, 300));
+      await new Promise((res) => setTimeout(res, 200));
 
-      setPromptInput('');
       setIsSynthesizing(false);
       setCurrentStep(0);
       await onSuccess(finalSlug);
@@ -187,137 +197,176 @@ export default function CreateWorkspace({
   };
 
   const stepLabels = [
-    'Building workspace...',
-    'Setting up database...',
-    'Generating layout...',
-    'Launching...',
+    'Setting up workspace...',
+    'Initializing database...',
+    'Publishing live storefront...',
+    'Ready!',
   ];
 
   return (
     <Modal
       visible={visible}
-      animationType="fade"
+      animationType="slide"
       presentationStyle="pageSheet"
       statusBarTranslucent
-      onRequestClose={() => { if (canClose && !isSynthesizing) onClose(); }}
+      onRequestClose={() => {
+        if (canClose && !isSynthesizing) onClose();
+      }}
     >
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          {/* Header Bar: Only close button with light border */}
-          <View style={[styles.headerBar, { paddingTop: Math.max(insets.top + 8, 16) }]}>
-            <View style={{ flex: 1 }} />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
+          {/* Header Bar */}
+          <View style={[styles.headerBar, { paddingTop: Math.max(insets.top + 6, 14) }]}>
+            <View>
+              <Text style={[styles.headerTitle, { color: theme.text }]}>New Storefront</Text>
+              <Text style={[styles.headerSub, { color: theme.textMuted }]}>3-step instant launchpad</Text>
+            </View>
             {canClose && !isSynthesizing && (
-              <Pressable onPress={onClose} style={[styles.closeBtn, { borderColor: theme.border }]} hitSlop={8}>
+              <Pressable onPress={onClose} style={[styles.closeBtn, { borderColor: theme.border + '60' }]} hitSlop={8}>
                 <Ionicons name="close" size={18} color={theme.textSecondary} />
               </Pressable>
             )}
           </View>
 
-          <ScrollView
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 20, 32) }]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Left-Aligned AI Chat Header */}
-            <View style={styles.chatHeaderSection}>
-              <Animated.View style={[styles.avatarCircle, { transform: [{ scale: pulseAnim }] }]}>
-                <TarLogo size={44} color="#007AFF" />
-              </Animated.View>
-              <Text style={[styles.questionText, { color: theme.text }]}>
-                What would you like to build?
+          {isSynthesizing ? (
+            /* Loader State */
+            <View style={styles.loaderContainer}>
+              <TarLogoLoader size={40} color="#007AFF" style={{ marginBottom: 16 }} />
+              <Text style={[styles.loaderStatus, { color: theme.text }]}>
+                {stepLabels[Math.min(currentStep - 1, stepLabels.length - 1)] || 'Launching...'}
               </Text>
-              <View style={[styles.urlBadge, { borderColor: theme.border }]}>
-                <Text style={[styles.urlText, { color: theme.textMuted }]}>
-                  <Text style={{ color: '#007AFF', fontWeight: '700' }}>{resolvedSlug}</Text>.tarai.space
-                </Text>
-              </View>
+              <Text style={[styles.loaderSub, { color: theme.textMuted }]}>
+                {resolvedSlug}.tarai.space
+              </Text>
             </View>
+          ) : (
+            /* Clean Compact Form */
+            <ScrollView
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {errorMessage && (
+                <View style={styles.errorBanner}>
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              )}
 
-            {/* Error Banner */}
-            {errorMessage && (
-              <View style={[styles.errorCard, { borderColor: '#ef444460' }]}>
-                <Text style={[styles.errorText, { color: '#ef4444' }]}>{errorMessage}</Text>
+              {/* STEP 1: BUSINESS TYPE */}
+              <View style={styles.sectionBlock}>
+                <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>1. BUSINESS TYPE</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowList}>
+                  {BUSINESS_CATEGORIES.map((cat) => {
+                    const isSelected = selectedCategory.id === cat.id;
+                    return (
+                      <Pressable
+                        key={cat.id}
+                        onPress={() => handleSelectCategory(cat)}
+                        style={[
+                          styles.catPill,
+                          {
+                            backgroundColor: isSelected ? '#007AFF15' : theme.backgroundElement,
+                            borderColor: isSelected ? '#007AFF' : theme.border + '50',
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={cat.icon as any}
+                          size={15}
+                          color={isSelected ? '#007AFF' : theme.textSecondary}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text style={[styles.catText, { color: isSelected ? '#007AFF' : theme.text }]}>
+                          {cat.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
               </View>
-            )}
 
-            {isSynthesizing ? (
-              /* Building View with light border */
-              <View style={[styles.buildingCard, { borderColor: theme.border }]}>
-                <TarLogoLoader size={36} color="#007AFF" style={{ marginBottom: 12 }} />
-                <Text style={[styles.buildingStatus, { color: theme.text }]}>
-                  {stepLabels[Math.min(currentStep - 1, stepLabels.length - 1)] || 'Initializing...'}
-                </Text>
-                <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        backgroundColor: '#007AFF',
-                        width: `${(currentStep / stepLabels.length) * 100}%`,
-                      },
-                    ]}
+              {/* STEP 2: DESIGN THEME */}
+              <View style={styles.sectionBlock}>
+                <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>2. DESIGN THEME</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowList}>
+                  {THEME_PRESETS.map((t) => {
+                    const isSelected = selectedTheme.id === t.id;
+                    return (
+                      <Pressable
+                        key={t.id}
+                        onPress={() => setSelectedTheme(t)}
+                        style={[
+                          styles.themeCard,
+                          {
+                            borderColor: isSelected ? '#007AFF' : theme.border + '50',
+                            borderWidth: isSelected ? 2 : 1,
+                            backgroundColor: theme.backgroundElement,
+                          },
+                        ]}
+                      >
+                        <View style={[styles.themeBanner, { backgroundColor: t.bg }]}>
+                          <View style={[styles.themeDot, { backgroundColor: t.accent }]} />
+                          {isSelected && (
+                            <Ionicons name="checkmark-circle" size={16} color="#007AFF" style={styles.cardCheck} />
+                          )}
+                        </View>
+                        <View style={styles.themeBody}>
+                          <Text style={[styles.themeTitle, { color: theme.text }]}>{t.name}</Text>
+                          <Text style={[styles.themeDesc, { color: theme.textMuted }]} numberOfLines={1}>
+                            {t.vibe}
+                          </Text>
+                          <View style={styles.badge}>
+                            <Text style={styles.badgeText}>{t.tag}</Text>
+                          </View>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {/* STEP 3: STORE NAME & SUBDOMAIN */}
+              <View style={styles.sectionBlock}>
+                <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>3. STORE NAME & DOMAIN</Text>
+                <View style={[styles.inputContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border + '60' }]}>
+                  <Ionicons name="storefront-outline" size={16} color={theme.textMuted} style={{ marginRight: 8 }} />
+                  <TextInput
+                    style={[styles.inputField, { color: theme.text }]}
+                    value={storeName}
+                    onChangeText={setStoreName}
+                    placeholder="Store Name"
+                    placeholderTextColor={theme.textMuted}
                   />
                 </View>
-              </View>
-            ) : (
-              /* Input & Chips with soft light borders and no grey background */
-              <View style={styles.inputSection}>
-                <TextInput
-                  style={[
-                    styles.textInput,
-                    {
-                      color: theme.text,
-                      borderColor: theme.border,
-                    },
-                  ]}
-                  value={promptInput}
-                  onChangeText={setPromptInput}
-                  placeholder="Describe your vision..."
-                  placeholderTextColor={theme.textMuted}
-                  multiline
-                  numberOfLines={4}
-                  autoFocus
-                />
 
-                {/* Horizontal Chips */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsRow}>
-                  {STARTER_PILLS.map((pill, idx) => (
-                    <Pressable
-                      key={idx}
-                      onPress={() => handleSelectPill(pill)}
-                      style={({ pressed }) => [
-                        styles.chip,
-                        {
-                          borderColor: theme.border,
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.chipText, { color: theme.text }]}>{pill.label}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-
-                {/* Primary Action Button */}
-                <Pressable
-                  onPress={handleCreate}
-                  disabled={!promptInput.trim()}
-                  style={({ pressed }) => [
-                    styles.submitButton,
-                    {
-                      backgroundColor: promptInput.trim() ? '#007AFF' : theme.background,
-                      borderColor: promptInput.trim() ? '#007AFF' : theme.border,
-                      opacity: pressed ? 0.8 : promptInput.trim() ? 1 : 0.5,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.submitButtonText, { color: promptInput.trim() ? '#FFFFFF' : theme.textMuted }]}>
-                    Build Workspace
+                <View style={[styles.urlBadge, { backgroundColor: '#007AFF0D', borderColor: '#007AFF25' }]}>
+                  <Ionicons name="globe-outline" size={13} color="#007AFF" style={{ marginRight: 5 }} />
+                  <Text style={[styles.urlLabel, { color: theme.textMuted }]}>
+                    Live at: <Text style={{ color: '#007AFF', fontWeight: '700' }}>{resolvedSlug}</Text>.tarai.space
                   </Text>
-                </Pressable>
+                </View>
               </View>
-            )}
-          </ScrollView>
+
+              {/* Launch Button */}
+              <Pressable
+                onPress={handleLaunch}
+                style={({ pressed }) => [
+                  styles.launchBtn,
+                  {
+                    backgroundColor: '#007AFF',
+                    opacity: pressed || !storeName.trim() ? 0.8 : 1,
+                  },
+                ]}
+                disabled={!storeName.trim()}
+              >
+                <Ionicons name="rocket-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.launchBtnText}>Launch Storefront Live</Text>
+              </Pressable>
+            </ScrollView>
+          )}
         </KeyboardAvoidingView>
       </View>
     </Modal>
@@ -331,120 +380,166 @@ const styles = StyleSheet.create({
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 8,
+    paddingBottom: 10,
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.02,
+  },
+  headerSub: {
+    fontSize: 11,
+    marginTop: 1,
   },
   closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   scrollContent: {
     paddingHorizontal: 20,
-  },
-  chatHeaderSection: {
-    alignItems: 'flex-start',
-    marginVertical: 20,
-  },
-  avatarCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#F0F6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  questionText: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.6,
-    marginBottom: 10,
-    textAlign: 'left',
-  },
-  urlBadge: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  urlText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  errorCard: {
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 16,
-  },
-  errorText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  inputSection: {
-    marginTop: 16,
+    paddingTop: 8,
     gap: 16,
   },
-  textInput: {
-    minHeight: 100,
-    fontSize: 15,
-    lineHeight: 22,
-    textAlignVertical: 'top',
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    backgroundColor: 'transparent',
+  sectionBlock: {
+    gap: 6,
   },
-  pillsRow: {
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 10,
-    borderWidth: 1,
-    backgroundColor: 'transparent',
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  submitButton: {
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  submitButtonText: {
-    fontSize: 16,
+  sectionTitle: {
+    fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 0.06,
+    textTransform: 'uppercase',
   },
-  buildingCard: {
-    borderRadius: 14,
-    padding: 24,
-    borderWidth: 1,
+  rowList: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  catPill: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
   },
-  buildingStatus: {
-    fontSize: 14,
+  catText: {
+    fontSize: 12,
     fontWeight: '600',
-    marginBottom: 16,
   },
-  progressTrack: {
-    width: '100%',
-    height: 4,
-    borderRadius: 2,
+  themeCard: {
+    width: 155,
+    borderRadius: 12,
     overflow: 'hidden',
   },
-  progressFill: {
-    height: '100%',
-    borderRadius: 2,
+  themeBanner: {
+    height: 32,
+    width: '100%',
+    padding: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  themeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  cardCheck: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+  },
+  themeBody: {
+    padding: 8,
+    gap: 2,
+  },
+  themeTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  themeDesc: {
+    fontSize: 10,
+  },
+  badge: {
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+    marginTop: 2,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#666',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  inputField: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    padding: 0,
+  },
+  urlBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    marginTop: 2,
+  },
+  urlLabel: {
+    fontSize: 11,
+  },
+  launchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  launchBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  loaderContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  loaderStatus: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  loaderSub: {
+    fontSize: 13,
+  },
+  errorBanner: {
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#ef444415',
+    borderWidth: 1,
+    borderColor: '#ef444450',
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#ef4444',
+    fontWeight: '600',
   },
 });
-

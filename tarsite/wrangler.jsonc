@@ -27,6 +27,16 @@
       "id": "9fcfbb6bc68542e7a6a3762dd61c6c10"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "THEMES_BUCKET",
+      "bucket_name": "tar-themes"
+    },
+    {
+      "binding": "SITES_BUCKET",
+      "bucket_name": "tar-sites"
+    }
+  ],
   "vars": {
     "GROQ_API_KEY": "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",
     "TURSO_DATABASE_URL": "libsql://global-tarapp.aws-eu-west-1.turso.io",

@@ -199,61 +199,102 @@ async function emitStorefrontEvent(
   data: any,
   ref: string
 ) {
-  const url = (env.TURSO_DATABASE_URL || '').replace('libsql://', 'https://');
-  const token = env.TURSO_AUTH_TOKEN || env.TURSO_GROUP_TOKEN;
+  const cleanSub = subdomain.replace(/^w:/, '').trim().toLowerCase();
+  let url = (env.TURSO_DATABASE_URL || '').replace('libsql://', 'https://');
+  let token = env.TURSO_AUTH_TOKEN || env.TURSO_GROUP_TOKEN;
+
+  // 1. Resolve workspace-isolated Turso database from Cloudflare D1
+  if (env.DB && cleanSub) {
+    try {
+      const ws = await env.DB.prepare(
+        'SELECT turso_url, turso_auth_token FROM workspaces WHERE subdomain = ?'
+      ).bind(cleanSub).first();
+
+      if (ws?.turso_url && ws?.turso_auth_token) {
+        url = ws.turso_url.replace('libsql://', 'https://');
+        token = ws.turso_auth_token;
+      }
+    } catch (err) {
+      console.warn('[emitStorefrontEvent] D1 lookup note:', err);
+    }
+  }
+
   if (!url || !token) return;
 
-  const scope = `w:${subdomain.replace(/^w:/, '')}`;
+  const scope = `w:${cleanSub}`;
   const eventId = `ev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
   const nowUnix = Math.floor(Date.now() / 1000);
 
   const motionSql = `INSERT INTO motion (id, type, ref, data, by, at, scope) VALUES (?, ?, ?, ?, 'storefront', ?, ?)`;
-  const inboxSql = `INSERT INTO inbox (id, type, title, status, ref, data, scope, created_at) VALUES (?, ?, ?, 'open', ?, ?, ?, datetime('now'))`;
+  const inboxSql = `INSERT INTO inbox (id, scope, type, title, status, ref, data, at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?)`;
+  const matterSql = `INSERT OR REPLACE INTO matter (id, type, title, value, status, data, scope, at, updated) VALUES (?, 'order', ?, ?, 'open', ?, ?, ?, ?)`;
+
+  const orderValue = typeof data?.price === 'number' ? data.price : typeof data?.total === 'number' ? data.total : 0;
 
   try {
+    const pipelineRequests: any[] = [
+      {
+        type: 'execute',
+        stmt: {
+          sql: motionSql,
+          args: [
+            { type: 'text', value: eventId },
+            { type: 'text', value: type },
+            { type: 'text', value: ref },
+            { type: 'text', value: dataStr },
+            { type: 'integer', value: String(nowUnix) },
+            { type: 'text', value: scope },
+          ],
+        },
+      },
+      {
+        type: 'execute',
+        stmt: {
+          sql: inboxSql,
+          args: [
+            { type: 'text', value: eventId },
+            { type: 'text', value: scope },
+            { type: 'text', value: type },
+            { type: 'text', value: title },
+            { type: 'text', value: ref },
+            { type: 'text', value: dataStr },
+            { type: 'integer', value: String(nowUnix) },
+          ],
+        },
+      },
+    ];
+
+    if (type === 'order') {
+      pipelineRequests.push({
+        type: 'execute',
+        stmt: {
+          sql: matterSql,
+          args: [
+            { type: 'text', value: ref },
+            { type: 'text', value: title },
+            { type: 'real', value: String(orderValue) },
+            { type: 'text', value: dataStr },
+            { type: 'text', value: scope },
+            { type: 'integer', value: String(nowUnix) },
+            { type: 'integer', value: String(nowUnix) },
+          ],
+        },
+      });
+    }
+
+    pipelineRequests.push({ type: 'close' });
+
     await fetch(`${url}/v2/pipeline`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        requests: [
-          {
-            type: 'execute',
-            stmt: {
-              sql: motionSql,
-              args: [
-                { type: 'text', value: eventId },
-                { type: 'text', value: type },
-                { type: 'text', value: ref },
-                { type: 'text', value: dataStr },
-                { type: 'integer', value: nowUnix },
-                { type: 'text', value: scope },
-              ],
-            },
-          },
-          {
-            type: 'execute',
-            stmt: {
-              sql: inboxSql,
-              args: [
-                { type: 'text', value: eventId },
-                { type: 'text', value: type },
-                { type: 'text', value: title },
-                { type: 'text', value: ref },
-                { type: 'text', value: dataStr },
-                { type: 'text', value: scope },
-              ],
-            },
-          },
-          { type: 'close' },
-        ],
-      }),
+      body: JSON.stringify({ requests: pipelineRequests }),
     });
   } catch (err) {
-    console.warn('[Turso event emission note]', err);
+    console.warn('[Turso event emission error]', err);
   }
 }
 
